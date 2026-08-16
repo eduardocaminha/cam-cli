@@ -1,12 +1,3 @@
-// test/ci-workflow.test.ts
-//
-// Green-local == green-CI proof (US-003, CAM-59 PRD).
-//
-// Runs check:ci-parity logic against the REAL committed
-// .github/workflows/ci.yml and asserts it is structurally correct.
-// This test must stay in sync with the workflow file; if ci.yml drifts,
-// this test fails locally before the bad commit reaches CI.
-
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,90 +5,26 @@ import { join } from 'node:path';
 import { checkParityFromFile } from '../scripts/check-ci-parity.ts';
 import { GATES } from '../scripts/check-all.ts';
 
-// ---------------------------------------------------------------------------
-// Resolve the real ci.yml path relative to this test file's directory
-// ---------------------------------------------------------------------------
+const projectRoot = join(import.meta.dir, '..');
+const workflowPath = join(projectRoot, '.github', 'workflows', 'ci.yml');
+const workflow = readFileSync(workflowPath, 'utf8');
 
-const PROJECT_ROOT = join(import.meta.dir, '..');
-const CI_YML = join(PROJECT_ROOT, '.github', 'workflows', 'ci.yml');
-const ciContent = readFileSync(CI_YML, 'utf8');
-
-// ---------------------------------------------------------------------------
-// Parity: the real ci.yml passes checkParityFromFile
-// ---------------------------------------------------------------------------
-
-describe('ci.yml parity check', () => {
-	test('checkParityFromFile passes against the real ci.yml', () => {
-		const result = checkParityFromFile(CI_YML, GATES);
-		if (!result.ok) {
-			// Surface the exact errors so a failing run is actionable
-			throw new Error(
-				`ci-parity check failed:\n${result.errors.join('\n')}`,
-			);
-		}
-		expect(result.ok).toBe(true);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Structural assertions: macos-latest + tmux install
-// ---------------------------------------------------------------------------
-
-describe('ci.yml structural assertions', () => {
-	test('declares runs-on: macos-latest', () => {
-		expect(ciContent).toContain('runs-on: macos-latest');
+describe('CI workflow', () => {
+	test('runs the same gate spine as local development', () => {
+		expect(checkParityFromFile(workflowPath, GATES)).toEqual({ ok: true, errors: [] });
+		expect(workflow).toContain('bun run check:all -- --json');
 	});
 
-	test('installs tmux via brew', () => {
-		expect(ciContent).toContain('brew install tmux');
+	test('uses one host job with the pinned Bun version', () => {
+		expect(workflow).toContain('runs-on: ubuntu-latest');
+		expect(workflow).toContain('bun-version-file: .bun-version');
+		expect(workflow).toContain('bun install --frozen-lockfile');
+		expect(workflow).not.toContain('ci-container:');
+		expect(workflow).not.toContain('tmux');
 	});
 
-	test('uses oven-sh/setup-bun@v2', () => {
-		expect(ciContent).toContain('oven-sh/setup-bun@v2');
-	});
-
-	test('installs deps with --frozen-lockfile', () => {
-		expect(ciContent).toContain('bun install --frozen-lockfile');
-	});
-
-	test('invokes only bun run check:all as the gate spine', () => {
-		expect(ciContent).toContain('bun run check:all');
-	});
-
-	test('triggers on pull_request', () => {
-		expect(ciContent).toContain('pull_request');
-	});
-
-	test('sets cancel-in-progress: true', () => {
-		expect(ciContent).toContain('cancel-in-progress: true');
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Structural assertions: ci-container job (US-001, CAM-244)
-// ---------------------------------------------------------------------------
-
-describe('ci-container job structural assertions', () => {
-	test('declares a ci-container job on ubuntu-latest', () => {
-		expect(ciContent).toContain('ci-container:');
-		expect(ciContent).toContain('runs-on: ubuntu-latest');
-	});
-
-	test('has no workflow-level or job-level paths: filter that would skip the job', () => {
-		expect(ciContent).not.toMatch(/^\s*paths:/m);
-	});
-
-	test('computes container-scoped path changes via a pin-free git diff step', () => {
-		expect(ciContent).toContain('git diff --name-only');
-		expect(ciContent).toContain('.devcontainer');
-		expect(ciContent).toContain('.tool-versions');
-	});
-
-	test('gates the in-container suite on the changed-paths output', () => {
-		expect(ciContent).toContain("steps.changes.outputs.container_changed == 'true'");
-	});
-
-	test('invokes bun scripts/test-in-container.ts directly (not via bun run)', () => {
-		expect(ciContent).toContain('bun scripts/test-in-container.ts');
+	test('runs for pull requests and cancels stale runs', () => {
+		expect(workflow).toContain('pull_request:');
+		expect(workflow).toContain('cancel-in-progress: true');
 	});
 });

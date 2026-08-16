@@ -1,7 +1,7 @@
 // src/version.ts
 //
-// Single source of truth for the cam-cli version string. Surfaced via
-// `cam --version` and embedded in the compiled binary (US-011).
+// Single source of truth for the Gateship version string. Surfaced via
+// `gship --version` and embedded in the compiled binary.
 //
 // We keep this as a plain TS constant rather than reading `package.json` at
 // runtime because:
@@ -15,7 +15,7 @@
 //      `test/version.test.ts` asserts they stay equal so they cannot
 //      silently diverge.
 //
-// Bumping the version: edit CAM_VERSION here, run the build + tag flow in
+// Bumping the version: edit GSHIP_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const CAM_VERSION = '0.292.0';
+export const GSHIP_VERSION = '0.292.0';

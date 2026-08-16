@@ -4,13 +4,13 @@
 // an IssueEntry[]. Groups open issues by lifecycle stage, sorts within each
 // group, and annotates each entry with its unmet blockers.
 //
-// deriveBacklogJson() -- pure derivation of the `cam issue list --json`
+// deriveBacklogJson() -- pure derivation of the web backlog snapshot
 // machine snapshot ({ counts, plannable, byStage }). See src/commands/
 // issue-list.ts (US-002, this PRD) for the I/O-owning command that renders
 // it to stdout.
 //
 // No I/O here: the file-backed seam (readBacklogFromMain) lives in
-// src/issues/backlog.ts and is wired up by the cam issue list command
+// src/issues/backlog.ts and is wired into the web idle state
 // (src/commands/issue-list.ts, US-002).
 //
 // CAM-190 US-001.
@@ -180,7 +180,7 @@ export interface BacklogJsonByStage {
 	shipped?: BacklogJsonRow[];
 }
 
-/** The full `cam issue list --json` payload. */
+/** The full web backlog snapshot payload. */
 export interface BacklogJsonView {
 	counts: BacklogJsonCounts;
 	plannable: BacklogJsonRow[];
@@ -198,7 +198,7 @@ function toJsonRow(issue: IssueEntry): BacklogJsonRow {
 }
 
 /**
- * Derives the `cam issue list --json` machine snapshot from a full
+ * Derives the web backlog machine snapshot from a full
  * IssueEntry[] backlog.
  *
  * - counts / byStage: per lifecycle-stage groups of status:'open' entries

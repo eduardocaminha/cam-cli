@@ -1,3 +1,0 @@
-All work for this story is committed and pushed. Final status line:
-
-`CAM_IMPLEMENTER_STATUS=DONE story=US-001`

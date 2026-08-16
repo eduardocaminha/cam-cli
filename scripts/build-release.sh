@@ -19,9 +19,7 @@
 # This script only ever runs on a macOS host (codesign is macOS-only and is
 # required to re-sign the two darwin artifacts).
 #
-# Install is additive: it creates `gateship` and `gship` at the destination
-# and NEVER removes a pre-existing `cam` binary (the loop self-spawns by
-# binary name in several places; removal is a deliberate operator step).
+# Install creates the `gateship` and `gship` aliases at the destination.
 #
 # Install-time swap: each destination is replaced by an atomic rename(2) from
 # a staged temp in the SAME directory, never a `cp` straight into the
@@ -62,9 +60,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Read the version literal from src/version.ts --------------------------
-VERSION_LINE="$(grep -E "^export const CAM_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/version.ts || true)"
+VERSION_LINE="$(grep -E "^export const GSHIP_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/version.ts || true)"
 if [[ -z "${VERSION_LINE}" ]]; then
-	echo "ERROR: could not parse CAM_VERSION from src/version.ts" >&2
+	echo "ERROR: could not parse GSHIP_VERSION from src/version.ts" >&2
 	exit 1
 fi
 VERSION="$(echo "${VERSION_LINE}" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")"
@@ -161,20 +159,10 @@ if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
 fi
 echo "[build-release]   ${ACTUAL}"
 
-# --- Sanity: init runs, soft-checks (host-native artifact only) --------------
-# `gship init` validates PATH for claude. On a CI box it may fail when the
-# binary is absent. We log and
-# conditionally abort on non-zero depending on whether claude is installed:
-#   - claude absent from PATH: non-zero is acceptable (machine without claude).
-#   - claude present but init still fails: real init crash -- abort the build.
-#
-# The soft-check MUST be hermetic. `gship init` chains `runSetup`, which can
-# write optional project metadata. We isolate it on every axis: a throwaway
-# tmpdir as cwd, --existing --issue-system none
-# (skip the interactive setup wizard so it never blocks), </dev/null
-# (belt-and-braces on stdin). The binary is referenced by an absolute path so the
-# cd does not break resolution. Canonical rule: lessons.archive.md 2026-06-06
-# (no mutating command in a build smoke); the 2026-06-13 entry records this fix.
+# --- Sanity: init machine check (host-native artifact only) ------------------
+# `gship init` only checks for the signed-in Claude CLI and writes no project
+# files. Run it from a throwaway cwd anyway so release verification stays
+# hermetic. A missing Claude binary is acceptable on a build machine.
 echo "[build-release] invoking init (soft-check, hermetic, ${HOST_BIN})"
 SMOKE_DIR="$(mktemp -d)"
 STAGED=""
@@ -184,8 +172,8 @@ STAGED=""
 # later verification step aborts before the rename (ADR-0058).
 trap 'rm -rf "${SMOKE_DIR:-}" ${STAGED:+"${STAGED}"}' EXIT
 BIN_ABS="${REPO_ROOT}/${HOST_BIN}"
-if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init --existing --issue-system none --merge-mode immediate --plan-approval operator </dev/null); then
-	echo "[build-release]   init: ok (hermetic tmpdir, web-first setup)"
+if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init </dev/null); then
+	echo "[build-release]   init: ok"
 else
 	rc=$?
 	# Distinguish claude-absent (acceptable) from a real init crash (fatal).

@@ -119,7 +119,7 @@ function parseBatchOutput(outputBytes: Buffer): string[] {
  * Fail-closed (US-001, CAM-307): throws if the `git cat-file --batch` spawn
  * reports an error or a non-zero exit status, instead of silently parsing a
  * truncated buffer. Callers that need this to be non-fatal (e.g. a
- * best-effort sidecar sweep) must wrap the call in their own try/catch.
+ * best-effort background reads) must wrap the call in their own try/catch.
  *
  * @param cwd   Absolute path to the git repo root.
  * @param spawn Injectable spawnSync (defaults to node:child_process.spawnSync).

@@ -28,11 +28,7 @@
     "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false
   },
-  // Exclude vendored upstream code from typecheck — those files target the
-  // reporter monorepo's looser tsconfig (no `noUncheckedIndexedAccess`) and
-  // are invoked by cam-cli via `bun <file>` at runtime, not as imports.
-  // The drift smoke (`test/embedded.test.ts` + `bun run embed-vendor:check`) is
-  // what guards them against regressions; static type checking is not the right
-  // tool here.
-  "exclude": ["node_modules", "vendor", "claude-code-harness", "webui"]
+  // claude-code-harness is an optional, gitignored reference checkout used
+  // during research; it is not Gateship source.
+  "exclude": ["node_modules", "claude-code-harness", "webui"]
 }

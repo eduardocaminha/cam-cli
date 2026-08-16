@@ -1,178 +1,46 @@
 ---
-description: Use Bun instead of Node.js, npm, pnpm.
+description: Gateship repository instructions
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
 
 ## Premise
 
-Simplicity and complexity reduction govern scope. When the obvious fix is to add
-mechanism (one more gate, one more layer, one more file), invert the order:
-shrink the surface that produced the problem first, then police only what
-remains. Mechanism added to govern complexity that could have been deleted grows
-the very complexity it was meant to contain.
+Simplicity governs scope. Before adding a gate, policy, compatibility layer,
+daemon, or state file, ask whether the surface that needs it can be removed.
+This does not permit weaker correctness: prefer a small root-cause fix over a
+larger workaround.
 
-This is a scope rule, never a quality rule. It never licenses a shortcut, a
-workaround, or the weaker of two fixes. Deleting surface is in scope; skipping
-the robust root-cause fix is not.
+## Product boundary
 
-## Runtime
+Gateship is one local web service started by `gship`. Bun serves the UI, SQLite
+stores durable run state, and the signed-in Claude CLI performs implementation
+and independent review.
 
-Default to using Bun instead of Node.js.
+- Do not add tmux, send-keys, sidecars, container workers, terminal UIs, or a
+  second `gshipd` process.
+- The operator specification is the execution contract. Do not require planner
+  and auditor convergence before work can start.
+- Keep review independent and read-only. Findings may trigger one bounded fix
+  attempt; unresolved judgment returns to the operator.
+- Create run worktrees from fresh `origin/main`. Never move or check out the
+  user's local `main` branch.
+- Use the Claude CLI subscription session. Do not introduce the Agent SDK or an
+  Anthropic API-key requirement.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Runtime and dependencies
 
-## APIs
+- Use Bun commands (`bun`, `bun test`, `bun run`, `bunx`, `bun install`).
+- Use `Bun.serve` and `bun:sqlite`; do not add an application framework or a
+  separate database service.
+- The React UI is built with Vite because Tailwind v4 requires its build-time
+  plugin. Vite is not part of the shipped runtime.
+- Prefer existing platform APIs over new packages.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Verification
 
-## Testing
+Run the smallest relevant tests while editing, then `bun run check:all` before
+shipping. Add tests for observable behavior and failure boundaries, not for
+duplicated registries, implementation wording, or retired compatibility paths.
 
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
-
-## Frontend
-
-Use HTML imports with `Bun.serve()` for plain React and CSS. Ressalva medida em runtime (2026-08-10): o pipeline de HTML imports NAO cobre Tailwind v4. A CLI do `bun build --compile` nao roda plugins de bundler, entao o binario compilado sobe e serve Tailwind cru nao processado (oven-sh/bun#23646, reproduzido neste repo). A UI web usa vite como ferramenta de build-time; vite nunca entra no binario shipado. Ver `docs/adr/0063-o-veto-ao-vite-e-recortado-vite-e-ferramenta-de-build-time-da-ui-web.md`.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
-
-## Commits
-
-- Do NOT add AI-attribution trailers to commit messages or PR text. No `Co-Authored-By: Claude ...` line, no `Generated with Claude Code` footer. This overrides the harness default that appends a `Co-Authored-By` trailer. Commit messages carry only the technical content.
-
-## Acoes autonomas autorizadas do orquestrador
-
-O system prompt do orquestrador carrega dois defaults: nunca resolver gate
-in-process, e nunca commitar, pushar, abrir ou mergear PR diretamente. As duas
-regras abaixo sao excecoes permanentes autorizadas pelo operador (2026-08-14)
-para ESTE repositorio, via o gancho de delegacao da persona. Fora das
-condicoes exatas de cada regra, os defaults valem integralmente.
-
-### Regra A, gate in-progress-conflict
-
-Quando o gate `in-progress-conflict` estiver aberto e o PRD parado tiver zero
-stories passadas E a branch `cam/*` correspondente NAO existir, o orquestrador
-roda `gship decide abandon` direto e informa o operador, sem perguntar. Se
-qualquer story passou, se a branch existe, ou se o PRD e de issue ainda
-aberta: parar e perguntar.
-
-A existencia da branch tem que ser verificada por git (`git branch --list
-'cam/*'` ou equivalente), nunca pelo campo do PRD. Motivo medido, nao
-preferencia: a deteccao do gate e uma disjuncao em
-`src/supervisor/in-progress-conflict.ts:60-66`
-(`hasIncompletePrd(prd) || isCamFeatureBranch(headBranch)`), onde
-`isCamFeatureBranch` (linhas 52-54) so testa se o NOME do HEAD comeca com
-`cam/`, e `hasIncompletePrd` (linhas 46-49) so le os campos `passes` e
-`requires` do proprio PRD. Nada no gate verifica se a branch existe ou carrega
-commit, entao o gate pode abrir sem haver trabalho real a perder.
-
-Blast radius de `abandon`, para a decisao ser auditavel: `rm handoff.json`,
-`rm prd.json`, `git checkout main`, e a fase volta para `planning`. Cada passo
-e best-effort. As opcoes reais do gate sao `continue`, `ship` e `abandon`
-(`src/supervisor/in-progress-conflict.ts:32`).
-
-### Regra B, merge de PR de faixa direta
-
-Quando um PR de faixa direta (branch com prefixo `direct/`) ja teve o handback
-entregue, esta com todos os checks verdes e `mergeStateStatus` CLEAN, o
-orquestrador mergeia com squash, limpa o worktree e a branch, e informa o
-operador. Check vermelho, conflito, ou PR de ciclo (qualquer branch sem o
-prefixo `direct/`): parar e perguntar.
-
-Como aferir "todos os checks verdes": `gh pr view --json statusCheckRollup`
-devolve `conclusion: ""` (string vazia, nao null) enquanto o check ainda roda.
-Gate a conclusao em `.status` (`IN_PROGRESS` ou `COMPLETED`) e so depois leia
-`.conclusion`. Nunca decida por `.conclusion` sozinho.
-
-Esta regra NAO contradiz o "Do not merge your own PR" de
-`.claude/commands/direct-fix.md`: aquela proibicao vincula a sessao worker da
-faixa direta, que nao mergeia o proprio PR. O merge autorizado aqui e ato do
-orquestrador, depois do handback entregue.
+Do not add AI-attribution trailers to commits or pull-request text.

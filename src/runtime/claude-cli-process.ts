@@ -7,7 +7,7 @@
 // whole process group to the service on cancellation. Keeping one lifecycle
 // here is what lets the reviewer be a second role instead of a second engine.
 
-import { classifyHeadlessStreamLine } from '../supervisor/headless-stream.ts';
+import { classifyHeadlessStreamLine } from './claude-stream.ts';
 import { terminateProcessGroup } from './process-group.ts';
 
 const CLAUDE_NESTING_ENV = [

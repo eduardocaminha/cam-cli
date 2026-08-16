@@ -1,6 +1,6 @@
 // scripts/check-all.ts
 //
-// GATES-as-data manifest and gate-spine runner (US-001, CAM-59 PRD).
+// GATES-as-data manifest and gate-spine runner.
 //
 // Exports the ordered GATES manifest so other scripts can import it.
 // Runs each gate in order; prints one quiet line per gate:
@@ -19,11 +19,10 @@
 // only dumped everything at once on exit -- a post-hoc replay, not a tee;
 // this story's fix replaces that shape with a real streaming tee.) The
 // combined stdout+stderr text is still handed to the optional onSuiteOutput
-// hook as one shared blob once the run completes. The coverage and
-// skip-ratchet gates (US-002, CAM-488 PRD) are IN-PROCESS gates rather than
-// spawned consumer scripts: they reach their verdict by calling
-// checkCoverage()/checkSkipRatchet() directly, fed this same shared blob, so
-// one check:all run costs one suite execution instead of three. Every other
+// hook as one shared blob once the run completes. The coverage gate is an
+// IN-PROCESS gate rather than a spawned consumer script: it reaches its
+// verdict from this same shared blob, so one check:all run costs one suite
+// execution instead of two. Every other
 // gate keeps inherited stdio and stays a spawned subprocess; pass/fail
 // verdicts for spawn gates always come from spawnFn's own success/exitCode,
 // never from the captured text. Because the suite gate now streams,
@@ -36,18 +35,13 @@
 //           Quiet per-gate lines are still printed to stdout.
 //           Exit code is still aggregate (nonzero if any gate fails).
 //
-// Every run, flag or no flag, also appends one line to the gitignored
-// .claude/cam-gate-history.jsonl -- { ts, results } -- so gate outcomes
-// accumulate across runs and can answer which gates ever catch anything.
-
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import type { ResourceUsage, SyncSubprocess } from 'bun';
 
 import { checkCoverage, parseCoverageOutput } from './check-coverage.ts';
-import { checkSkipRatchet } from './check-skip-ratchet.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency type
@@ -89,7 +83,7 @@ export interface GateResult {
 
 /**
  * A gate is EITHER a spawn gate (cmd/args passed to spawnFn) OR an in-process
- * gate (a `run` fn fed the shared suite-output blob, US-002, CAM-488 PRD) --
+ * gate (a `run` fn fed the shared suite-output blob) --
  * never both. `cmd`/`args` and `run` are declared optional on one flat
  * interface (rather than a discriminated union) so existing per-gate tests
  * that read `gate?.cmd`/`gate?.args` on a spawn gate keep their original,
@@ -107,9 +101,7 @@ export interface Gate {
 	 * Reach a verdict from the shared suite output blob and cwd, in-process,
 	 * instead of spawning a consumer script. Present only on an in-process
 	 * gate. `cwd` is threaded through so the gate can still read its real
-	 * budget/expectations file off disk: only the SUITE RUN itself is shared,
-	 * every other production adapter (staged-diff read, lane-expectations
-	 * read) stays wired to its real default.
+	 * coverage budget off disk; only the suite output itself is shared.
 	 */
 	run?: (suiteOutput: string, cwd: string) => { ok: boolean; errors: string[] };
 }
@@ -130,10 +122,8 @@ function g(name: string, cmdStr: string): Gate {
 
 /**
  * In-process coverage gate: reaches the same failure condition as
- * check-coverage.ts's CLI (floor-met + staged-diff tracker-ref checks), but
- * fed the shared suite blob for `getCoverage` instead of re-running the
- * suite. Every other check-coverage.ts dependency (the staged-diff reader
- * included) is intentionally left at its production default.
+ * check-coverage.ts's CLI, but fed the shared suite blob instead of re-running
+ * the suite.
  */
 const coverageGate: Gate = {
 	name: 'coverage',
@@ -144,41 +134,18 @@ const coverageGate: Gate = {
 };
 
 /**
- * In-process skip-ratchet gate: reaches the same failure condition as
- * check-skip-ratchet.ts's CLI (suite-ran-to-completion, pass-floor headroom,
- * skip-count delta), but fed the shared suite blob for `getSuiteOutput`
- * instead of re-running the suite. Every other check-skip-ratchet.ts
- * dependency (the lane-expectations reader included) is intentionally left
- * at its production default.
- */
-const skipRatchetGate: Gate = {
-	name: 'skip-ratchet',
-	run: (suiteOutput, cwd) => {
-		const result = checkSkipRatchet({ cwd, getSuiteOutput: () => suiteOutput });
-		return { ok: result.ok, errors: result.ok ? [] : [result.message] };
-	},
-};
-
-/**
  * Ordered gate-spine manifest.
  * Importable by other scripts so they share one canonical list.
  */
 export const GATES: Gate[] = [
 	g('typecheck', 'bun run typecheck'),
 	g('test', 'bun test --coverage'),
-	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
-	g('lint', 'bunx biome lint --error-on-warnings'),
-	g('file-size', 'bun scripts/check-file-sizes.ts'),
-	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
-	g('version-skips', 'bun scripts/check-version-skips.ts'),
+	g('lint', 'bun run lint'),
 	coverageGate,
 	// --bun: run knip on Bun's own runtime, not a delegated system `node` (avoids a <20 node:util gap).
 	g('dead-code', 'bunx --bun knip'),
 	g('dup', 'bunx jscpd --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
-	g('test-sleeps', 'bun scripts/check-test-sleeps.ts'),
-	g('test-tmpdir', 'bun scripts/check-test-tmpdir.ts'),
-	skipRatchetGate,
 ];
 
 // ---------------------------------------------------------------------------
@@ -204,7 +171,7 @@ export interface RunGatesOptions {
 	 * Called once, immediately after the suite ('test') gate runs, with its
 	 * combined stdout+stderr blob (decodeCapturedOutput's output: stdout-
 	 * decoded text followed by stderr-decoded text). Lets downstream
-	 * consumers (coverage, skip-ratchet) reuse this single `bun test
+	 * consumers (currently coverage) reuse this single `bun test
 	 * --coverage` run instead of re-invoking the suite themselves.
 	 */
 	onSuiteOutput?: (output: string) => void;
@@ -339,8 +306,7 @@ async function runSpawnGate(
 
 /**
  * Run an in-process gate's `run` fn against the shared suite blob and cwd.
- * `gate.run` is arbitrary gate-owned code (e.g. checkCoverage/checkSkipRatchet
- * do readFileSync + JSON.parse on real budget/expectations files) and can
+ * `gate.run` is arbitrary gate-owned code (coverage reads its floor file) and can
  * throw (ENOENT, malformed JSON, etc.). A throw here must not escape and
  * abort the rest of the spine (US-R1-002, CAM-488 PRD): map it to a failed
  * GateResult instead, mirroring how a spawned gate's non-zero exit is
@@ -436,30 +402,6 @@ export async function runGates(options: RunGatesOptions = {}): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Gate history
-// ---------------------------------------------------------------------------
-
-/** Gitignored append-only log of gate outcomes, one JSON line per check:all run. */
-const GATE_HISTORY_PATH = join('.claude', 'cam-gate-history.jsonl');
-
-/**
- * Append one `{ts, results}` line to the gate history.
- *
- * Instrumentation only: it answers "which gates have ever failed anything?"
- * over weeks of runs, so a failure to write must never change the suite's
- * verdict -- any error is swallowed.
- */
-function appendHistoryLine(results: GateResult[]): void {
-	try {
-		const path = join(process.cwd(), GATE_HISTORY_PATH);
-		mkdirSync(dirname(path), { recursive: true });
-		appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), results }) + '\n');
-	} catch {
-		// Non-fatal: instrumentation must not fail the gate spine.
-	}
-}
-
-// ---------------------------------------------------------------------------
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
@@ -468,12 +410,6 @@ if (import.meta.main) {
 	const jsonFlag = process.argv.includes('--json');
 
 	const onResults = (results: GateResult[]) => {
-		// Every run appends one line to the gate history, --json or not: the
-		// worker runs check:all without --json, so gating gate-outcome data on
-		// that flag threw away every worker run's results. Gitignored, never
-		// committed -- a mid-cycle auto-commit on main is what puts the open PR
-		// BEHIND (CAM-480).
-		appendHistoryLine(results);
 		if (!jsonFlag) return;
 		const outPath = join(process.cwd(), 'gate-results.json');
 		writeFileSync(outPath, JSON.stringify(results, null, 2) + '\n');

@@ -88,7 +88,7 @@ describe('createTestTmpdir', () => {
 		'location-independent fence: the same holds even when the spawn site does NOT forward live process.env (US-R1-003, CAM-508)',
 		async () => {
 			// Reproduces the exact hazard the review finding named: a git spawn
-			// call with no `env` option (matching src/commands/sidecar.ts's
+			// call with no `env` option (matching a production child spawn's
 			// checkoutMainFn/proceedBranchFn call shape) never sees the runtime
 			// GIT_CEILING_DIRECTORIES mutation set by ensureScratchRoot -- so this
 			// proves the fence holds on ensureScratchRootIsAGitRepo's stub repo
