@@ -2,10 +2,10 @@
   "id": "CAM-537",
   "title": "Fonte unica de templates, parte 4 de 4: derivar o inventario de arquivos instalados do mapa embarcado",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-08-11T11:11:25.785Z",
-  "updatedAt": "2026-08-11T11:11:25.785Z",
+  "updatedAt": "2026-08-16T15:31:58.543Z",
   "description": "Replace the four parallel hand-enumerations of the installed file set (two of them already stale: setup.ts claims 6 commands where 7 ship and 3 scripts/cam files where 7 ship) with a derivation from the embedded template map. Independent of the other three slices: it touches src/commands/setup.ts and index.ts only, and no template or installed copy.\n\n---\n\nPROCEDENCIA\n\nFatia derivada do CAM-534, que por sua vez carrega o spec corrigido do CAM-530. A divisao foi decidida depois de duas escalacoes do plan (quatro rodadas de planner e auditor) em que o auditor sinalizou atomicidade nas duas vezes e o PRD unico chegou a 15 criterios numa unica story sobre cerca de 12 arquivos. As quatro fatias sao mudancas quase independentes; a medicao completa, a classificacao dos 39 hunks e a decisao de mecanismo vivem no CAM-530 e no CAM-534 e nao sao repetidas aqui.",
   "specSource": "derived",
   "derivedFrom": [
@@ -60,5 +60,6 @@
     "timeCriticality": 4,
     "riskReduction": 5,
     "jobSize": 5
-  }
+  },
+  "abandonedReason": "Premissa morta: o issue depende de src/commands/setup.ts e de um mapa de templates embarcado que nao existem mais no produto web-first. Derivar o inventario de arquivos instalados recriaria o runtime de instalacao ja aposentado."
 }
