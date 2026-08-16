@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-595",
+  "title": "Conversa operacional: live edge e conteudo longo sem overflow",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T16:35:29.022Z",
+  "updatedAt": "2026-08-16T16:35:29.022Z",
+  "description": "Corrigir a ergonomia observada no shell responsivo sem alterar API, persistencia ou runtime. A conversa deve abrir no turno mais recente e acompanhar mensagens novas apenas enquanto o operador permanecer no limite ao vivo; se ele rolar para ler historico, novas mensagens nao devem roubar sua posicao. O transcript deve ser uma regiao focavel e anunciavel com semantica apropriada. Em viewport movel, mensagens, resumo do run, eventos, hashes, comandos e IDs longos devem quebrar ou conter seu conteudo sem criar overflow horizontal no painel; a navegacao horizontal intencional pode continuar. Preservar todos os handlers, renderizacao estatica e estados existentes. Aplicar apenas o subconjunto de comportamento inspirado no shadcn MessageScroller que o transporte atual realmente usa: nao adicionar @shadcn/react, dependencia, streaming, Markdown, attachment, marker, persistencia de scroll ou abstracao generica.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir a ergonomia observada no shell responsivo sem alterar API, persistencia ou runtime. A conversa deve abrir no turno mais recente e acompanhar mensagens novas apenas enquanto o operador permanecer no limite ao vivo; se ele rolar para ler historico, novas mensagens nao devem roubar sua posicao. O transcript deve ser uma regiao focavel e anunciavel com semantica apropriada. Em viewport movel, mensagens, resumo do run, eventos, hashes, comandos e IDs longos devem quebrar ou conter seu conteudo sem criar overflow horizontal no painel; a navegacao horizontal intencional pode continuar. Preservar todos os handlers, renderizacao estatica e estados existentes. Aplicar apenas o subconjunto de comportamento inspirado no shadcn MessageScroller que o transporte atual realmente usa: nao adicionar @shadcn/react, dependencia, streaming, Markdown, attachment, marker, persistencia de scroll ou abstracao generica.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck"
+    ]
+  }
+}
