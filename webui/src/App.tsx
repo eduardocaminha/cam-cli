@@ -74,9 +74,22 @@ function eventDetail(event: RunEventView): string | null {
 	return details.length === 0 ? null : details.join('\n');
 }
 
+/**
+ * Provider chatter the operator cannot act on: thinking-token accounting, and
+ * assistant turns whose public projection came back with nothing to show. It is
+ * dropped before the window so a burst of it cannot push cycle events out.
+ */
+function isOperational(event: RunEventView): boolean {
+	if (event.kind.endsWith('.system')) return event.payload['subtype'] !== 'thinking_tokens';
+	if (event.kind.endsWith('.activity')) return eventDetail(event) !== null;
+	return true;
+}
+
 function RunActivity({ run, events }: Pick<AppProps, 'run' | 'events'>): React.ReactElement | null {
 	if (run === null) return null;
-	const visible = events.filter((event) => event.runId === run.id).slice(-30);
+	const visible = events
+		.filter((event) => event.runId === run.id && isOperational(event))
+		.slice(-30);
 	return (
 		<Card>
 			<CardHeader>

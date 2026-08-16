@@ -210,6 +210,77 @@ describe('operational screen', () => {
 		expect(html).toContain('Ferramentas: Read, Edit');
 		expect(html).toContain('03:04:05');
 	});
+
+	test('provider noise never pushes a cycle event out of the activity window', () => {
+		const noise: AppProps['events'] = Array.from({ length: 40 }, (_, index) => ({
+			seq: index + 2,
+			runId: 'run-1',
+			kind: index % 2 === 0 ? 'provider.system' : 'provider.activity',
+			fromState: 'working' as const,
+			toState: 'working' as const,
+			payload: index % 2 === 0 ? { subtype: 'thinking_tokens' } : {},
+			createdAt: '2026-08-16T03:05:00.000Z',
+		}));
+		const html = render({
+			run: runIn('working'),
+			events: [
+				{
+					seq: 1,
+					runId: 'run-1',
+					kind: 'verify.command.started',
+					fromState: 'working',
+					toState: 'verify',
+					payload: { command: 'bun run check:all' },
+					createdAt: '2026-08-16T03:04:05.000Z',
+				},
+				...noise,
+			],
+		});
+
+		expect(html).toContain('verify.command.started');
+		expect(html).toContain('bun run check:all');
+		expect(html).not.toContain('thinking_tokens');
+		expect(html).toContain('1 evento(s) recente(s)');
+	});
+
+	test('activity with public detail survives alongside the noise it is buried in', () => {
+		const html = render({
+			run: runIn('working'),
+			events: [
+				{
+					seq: 1,
+					runId: 'run-1',
+					kind: 'provider.activity',
+					fromState: 'working',
+					toState: 'working',
+					payload: {},
+					createdAt: '2026-08-16T03:04:05.000Z',
+				},
+				{
+					seq: 2,
+					runId: 'run-1',
+					kind: 'provider.activity',
+					fromState: 'working',
+					toState: 'working',
+					payload: { tools: ['Grep'] },
+					createdAt: '2026-08-16T03:04:06.000Z',
+				},
+				{
+					seq: 3,
+					runId: 'run-1',
+					kind: 'provider.system',
+					fromState: 'working',
+					toState: 'working',
+					payload: { subtype: 'init' },
+					createdAt: '2026-08-16T03:04:07.000Z',
+				},
+			],
+		});
+
+		expect(html).toContain('Ferramentas: Grep');
+		expect(html).toContain('subtype: init');
+		expect(html).toContain('2 evento(s) recente(s)');
+	});
 });
 
 describe('screen derivations', () => {
