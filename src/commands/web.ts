@@ -944,18 +944,31 @@ function readSourceSha(cwd: string): string | null {
 }
 
 /**
- * Directory the issue backlog lives in. A commit that only touches paths under
- * it moves the ledger, not the process: archiving, approving and closing an
- * issue all land commits here continuously, and none of them are code the
- * running process loaded.
+ * Single files the running process loads at boot: the entrypoint itself, and
+ * the two manifests that pin what `bun` installs.
  */
-const ISSUE_LEDGER_PREFIX = '.gateship/';
+const LOADED_FILES = ['index.ts', 'package.json', 'bun.lock'];
 
 /**
- * Whether the two shas differ on any path outside `.gateship/` -- true if so,
- * false if every changed path is under it, null when the listing itself
- * failed. A caller that can't tell code from ledger must not guess: null is
- * its own outcome, never coerced to true or false.
+ * Directories the running process loads at boot, per the import graph rooted
+ * at `index.ts`: everything under `src/`, and the built browser bundle under
+ * `webui/dist/` (resolved via the static `with { type: "file" }` imports in
+ * `src/commands/web-assets.ts`). Anything else -- docs, `test/`, `.github/`,
+ * `scripts/`, `.gateship/` -- changes the tree without changing what this
+ * process has in memory.
+ */
+const LOADED_DIR_PREFIXES = ['src/', 'webui/dist/'];
+
+function isLoadedPath(path: string): boolean {
+	return LOADED_FILES.includes(path) || LOADED_DIR_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+/**
+ * Whether the two shas differ on any path the running process actually loads
+ * -- true if so, false if every changed path falls outside that set, null
+ * when the listing itself failed. A caller that can't tell loaded code from
+ * everything else must not guess: null is its own outcome, never coerced to
+ * true or false.
  */
 function changedPathsTouchCode(cwd: string, bootSha: string, currentSha: string): boolean | null {
 	const result = defaultRunGit(cwd, ['diff', '--name-only', bootSha, currentSha]);
@@ -964,15 +977,15 @@ function changedPathsTouchCode(cwd: string, bootSha: string, currentSha: string)
 		.split('\n')
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0)
-		.some((path) => !path.startsWith(ISSUE_LEDGER_PREFIX));
+		.some((path) => isLoadedPath(path));
 }
 
 /**
  * Compare the sha this process booted on with the current one. A sha that
  * cannot be resolved -- on either side -- is unknown, not divergent: the
  * notice is omitted rather than invented. Same for the changed-path listing:
- * a diff that only touches `.gateship/`, or one that can't be listed at all,
- * omits the notice rather than firing on ledger churn or a guess.
+ * a diff that touches nothing the process loads, or one that can't be listed
+ * at all, omits the notice rather than firing on unrelated churn or a guess.
  */
 function staleServiceNotice(cwd: string, bootSha: string | null): StaleServiceNotice | null {
 	if (bootSha === null) return null;

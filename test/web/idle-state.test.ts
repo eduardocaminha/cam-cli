@@ -117,9 +117,13 @@ function sourceSha(cwd: string): string {
 	return new TextDecoder().decode(result.stdout).trim();
 }
 
-/** Land one more commit on the remote's main and refresh the tracking ref. */
+/**
+ * Land one more commit on the remote's main that touches `src/`, the shape of
+ * an ordinary code change, and refresh the tracking ref.
+ */
 function advanceRemoteMain(cwd: string): void {
-	writeFileSync(join(cwd, 'later.txt'), 'landed after the service booted\n');
+	mkdirSync(join(cwd, 'src'), { recursive: true });
+	writeFileSync(join(cwd, 'src', 'later.ts'), 'export const landed = true;\n');
 	git(cwd, ['add', '.']);
 	git(cwd, ['commit', '-q', '-m', 'land after boot']);
 	git(cwd, ['push', '-q', 'origin', 'main']);
@@ -127,29 +131,48 @@ function advanceRemoteMain(cwd: string): void {
 }
 
 /**
- * Land one more commit on the remote's main that only touches `.gateship/`,
- * the shape of an archive, an approve or a close, and refresh the tracking
- * ref.
+ * Land one more commit on the remote's main that only touches a doc file --
+ * the shape of a `HANDOFF.md` edit -- and refresh the tracking ref. Agents
+ * read instruction files from the run's worktree, cut fresh from
+ * `origin/main`, so a doc change never requires a restart.
  */
-function advanceRemoteMainLedgerOnly(cwd: string): void {
-	const issueDir = join(cwd, '.gateship', 'issues');
-	writeFileSync(join(issueDir, 'GSHIP-4.json'), JSON.stringify(issue({ id: 'GSHIP-4', title: 'archived' })));
+function advanceRemoteMainDocsOnly(cwd: string): void {
+	writeFileSync(join(cwd, 'HANDOFF.md'), 'updated instructions\n');
 	git(cwd, ['add', '.']);
-	git(cwd, ['commit', '-q', '-m', 'archive an issue']);
+	git(cwd, ['commit', '-q', '-m', 'update handoff notes']);
+	git(cwd, ['push', '-q', 'origin', 'main']);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+}
+
+/** Land one more commit on the remote's main that touches `webui/dist/`. */
+function advanceRemoteMainWebuiDist(cwd: string): void {
+	mkdirSync(join(cwd, 'webui', 'dist'), { recursive: true });
+	writeFileSync(join(cwd, 'webui', 'dist', 'app.js'), 'console.log("built");\n');
+	git(cwd, ['add', '.']);
+	git(cwd, ['commit', '-q', '-m', 'ship a rebuilt bundle']);
+	git(cwd, ['push', '-q', 'origin', 'main']);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+}
+
+/** Land one more commit on the remote's main that touches `package.json`. */
+function advanceRemoteMainManifest(cwd: string): void {
+	writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'gateship', version: '0.0.1' }));
+	git(cwd, ['add', '.']);
+	git(cwd, ['commit', '-q', '-m', 'bump a dependency']);
 	git(cwd, ['push', '-q', 'origin', 'main']);
 	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 }
 
 /**
- * Land one more commit on the remote's main that touches both `.gateship/`
- * and a path outside it in the same commit, and refresh the tracking ref.
+ * Land one more commit on the remote's main that touches both a doc file and
+ * `src/` in the same commit, and refresh the tracking ref.
  */
 function advanceRemoteMainMixed(cwd: string): void {
-	const issueDir = join(cwd, '.gateship', 'issues');
-	writeFileSync(join(issueDir, 'GSHIP-4.json'), JSON.stringify(issue({ id: 'GSHIP-4', title: 'archived' })));
-	writeFileSync(join(cwd, 'later.txt'), 'landed after the service booted\n');
+	writeFileSync(join(cwd, 'HANDOFF.md'), 'updated instructions\n');
+	mkdirSync(join(cwd, 'src'), { recursive: true });
+	writeFileSync(join(cwd, 'src', 'new-module.ts'), 'export const x = 1;\n');
 	git(cwd, ['add', '.']);
-	git(cwd, ['commit', '-q', '-m', 'archive an issue and ship code']);
+	git(cwd, ['commit', '-q', '-m', 'update docs and ship code']);
 	git(cwd, ['push', '-q', 'origin', 'main']);
 	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 }
@@ -266,19 +289,53 @@ describe('GET /api/snapshot service freshness', () => {
 		});
 	});
 
-	test('a diff confined to .gateship/ says nothing -- archiving, approving and closing land there continuously', async () => {
+	test('a diff confined to documentation says nothing -- the running process never loads it', async () => {
 		const cwd = seedIdleRepo();
 
 		await withSnapshotServer(cwd, async (readSnapshot) => {
 			expect((await readSnapshot())['staleService']).toBeUndefined();
 
-			advanceRemoteMainLedgerOnly(cwd);
+			advanceRemoteMainDocsOnly(cwd);
 
 			expect((await readSnapshot())['staleService']).toBeUndefined();
 		});
 	});
 
-	test('a diff mixing .gateship/ and code still reports the restart', async () => {
+	test('a diff touching webui/dist/ reports the restart', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			advanceRemoteMainWebuiDist(cwd);
+			const currentSha = sourceSha(cwd);
+
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+		});
+	});
+
+	test('a diff touching package.json reports the restart', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			advanceRemoteMainManifest(cwd);
+			const currentSha = sourceSha(cwd);
+
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+		});
+	});
+
+	test('a diff mixing documentation and code still reports the restart', async () => {
 		const cwd = seedIdleRepo();
 		const bootSha = sourceSha(cwd);
 
