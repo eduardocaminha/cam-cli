@@ -42,6 +42,7 @@ import {
 	specifyIssue,
 	startCodexLogin,
 	startRun,
+	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
 import {
@@ -74,6 +75,7 @@ function useOperationalRun(): {
 	runs: RunView[];
 	events: RunEventView[];
 	workspaceNotices: WorkspaceNoticeView[];
+	staleService: StaleServiceView | null;
 	chatMessages: ChatMessageView[];
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
@@ -94,6 +96,7 @@ function useOperationalRun(): {
 	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
+	const [staleService, setStaleService] = useState<StaleServiceView | null>(null);
 	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
 	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
 	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
@@ -134,6 +137,7 @@ function useOperationalRun(): {
 				setDrafts(backlogSnapshot.drafts);
 				setProposals(proposalSnapshot);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
+				setStaleService(backlogSnapshot.staleService);
 				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
 				setSelectedProvider(providerSnapshot.selected);
@@ -197,6 +201,7 @@ function useOperationalRun(): {
 		runs,
 		events,
 		workspaceNotices,
+		staleService,
 		chatMessages,
 		providers,
 		selectedProvider,
@@ -221,6 +226,7 @@ function Screen(): ReactElement {
 		runs,
 		events,
 		workspaceNotices,
+		staleService,
 		chatMessages,
 		providers,
 		selectedProvider,
@@ -304,6 +310,7 @@ function Screen(): ReactElement {
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}
+			staleService={staleService}
 			status={status}
 			version={version}
 			workspaceNotices={workspaceNotices}

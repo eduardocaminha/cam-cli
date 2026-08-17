@@ -140,6 +140,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			runs={[]}
 			selectedIssueId={null}
 			selectedProvider="claude"
+			staleService={null}
 			status={null}
 			version=""
 			workspaceNotices={[]}
@@ -900,6 +901,48 @@ describe('operator shell', () => {
 		expect(html).toContain('>failed<');
 	});
 
+	test('a service older than origin/main is reported wherever the operator is', () => {
+		const staleService = {
+			bootSha: '1'.repeat(40),
+			currentSha: '2'.repeat(40),
+			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+		};
+
+		// The ordinary case says nothing at all, on any surface.
+		for (const route of SURFACE_PATHS) {
+			expect(shellHeader(renderAt(route))).not.toContain('Reinicie o serviço');
+		}
+		// While it lasts it is on every surface, with both shas, and it stays:
+		// there is no button to acknowledge it away.
+		for (const route of SURFACE_PATHS) {
+			const header = shellHeader(renderAt(route, { staleService }));
+
+			expect(header).toContain('Reinicie o serviço');
+			expect(header).toContain(staleService.detail);
+			expect(header).toContain(staleService.bootSha);
+			expect(header).toContain(staleService.currentSha);
+			expect(hasButton(header, 'Dispensar')).toBe(false);
+		}
+	});
+
+	test('an outdated service reports, and holds no operator command back', () => {
+		const staleService = {
+			bootSha: '1'.repeat(40),
+			currentSha: '2'.repeat(40),
+			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+		};
+		const html = runsPage({ runs: [runIn('ready-to-ship')], staleService });
+
+		expect(shellHeader(html)).toContain('Reinicie o serviço');
+		// The human state is the run's own, and every command it admits is offered.
+		expect(shellHeader(html)).toContain('Precisa de você');
+		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
+		expect(buttonIsEnabled(
+			workPage({ staleService, selectedIssueId: 'CAM-900' }),
+			'Iniciar run',
+		)).toBe(true);
+	});
+
 	test('a preserved workspace asks for the operator whatever the run is doing', () => {
 		expect(shellHeader(runsPage({ runs: [runIn('done')], workspaceNotices: NOTICES })))
 			.toContain('Precisa de você');
@@ -946,6 +989,11 @@ describe('conversation transcript', () => {
 				branch: `gship/cam-1-${HASH}`,
 				detail: `workspace ${HASH} is not owned by a persisted run`,
 			}],
+			staleService: {
+				bootSha: HASH,
+				currentSha: `b${HASH.slice(1)}`,
+				detail: `Reinicie o serviço: origin/main saiu de ${HASH}.`,
+			},
 			status: `Falha ao ler /api/runs/run-${HASH}`,
 		});
 	}
@@ -1475,6 +1523,7 @@ describe('same-origin transport', () => {
 					ideas: [],
 					drafts: [],
 				workspaceNotices: [],
+				staleService: null,
 				version: '',
 			});
 		});
@@ -1487,8 +1536,29 @@ describe('same-origin transport', () => {
 					ideas: [BACKLOG[0]!],
 					drafts: [],
 				workspaceNotices: [],
+				staleService: null,
 				version: '0.292.0',
 			});
+		});
+	});
+
+	test('the outdated-service notice is read from its own snapshot field', async () => {
+		const staleService = {
+			bootSha: '1'.repeat(40),
+			currentSha: '2'.repeat(40),
+			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+		};
+		await withRecordedFetch({ staleService }, 200, async (calls) => {
+			expect((await fetchBacklog()).staleService).toEqual(staleService);
+			expect(calls).toEqual([{ url: SNAPSHOT_PATH, method: 'GET', body: null }]);
+		});
+		// The absent field is the ordinary case, and a notice missing a sha is not
+		// a divergence the screen is willing to announce.
+		await withRecordedFetch({ workspaceNotices: [] }, 200, async () => {
+			expect((await fetchBacklog()).staleService).toBeNull();
+		});
+		await withRecordedFetch({ staleService: { bootSha: '1'.repeat(40) } }, 200, async () => {
+			expect((await fetchBacklog()).staleService).toBeNull();
 		});
 	});
 
