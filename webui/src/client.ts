@@ -31,7 +31,7 @@ export interface CreatedIssue {
 	title: string;
 }
 
-export type RunAction = 'resume' | 'cancel' | 'ship';
+export type RunAction = 'resume' | 'abandon' | 'cancel' | 'ship';
 
 export interface BacklogSnapshot {
 	plannable: PlannableIssue[];

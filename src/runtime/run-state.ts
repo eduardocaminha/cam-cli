@@ -9,6 +9,7 @@ export const RUN_STATES = [
 	'waiting-user',
 	'failed',
 	'interrupted',
+	'cancelled',
 ] as const;
 
 export type RunState = (typeof RUN_STATES)[number];
@@ -30,7 +31,10 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	done: [],
 	'waiting-user': ['working', 'interrupted'],
 	failed: [],
-	interrupted: ['working'],
+	// An interrupted run is the only one the operator can still end instead of
+	// resume: abandoning it is the explicit way out of the provider session.
+	interrupted: ['working', 'cancelled'],
+	cancelled: [],
 };
 
 export function isRunState(value: string): value is RunState {
@@ -38,7 +42,7 @@ export function isRunState(value: string): value is RunState {
 }
 
 export function isTerminalRunState(state: RunState): boolean {
-	return state === 'done' || state === 'failed';
+	return state === 'done' || state === 'failed' || state === 'cancelled';
 }
 
 export function canTransition(fromState: RunState, toState: RunState): boolean {

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-611",
   "title": "Run interrompida: encerramento terminal sem retomar o provider",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T22:46:27.061Z",
-  "updatedAt": "2026-08-17T01:16:14.079Z",
+  "updatedAt": "2026-08-17T01:31:53.073Z",
   "description": "Adicionar um estado terminal cancelled e uma ação tipada abandon_run, elegível apenas para run interrupted.\nA ação encerra sem retomar a sessão do provider, libera somente workspace e branch próprios e limpos, preserva e sinaliza qualquer workspace sujo, e deixa de bloquear o início de outra issue.\nExpor a ação pela API same-origin e pelos controles existentes somente quando elegível; done, failed e cancelled permanecem terminais e não admitem a ação.\nNão alterar o cancelamento de uma run ativa, que continua produzindo interrupted e resumível.\nFora de escopo: scheduler, batch, autoabandono, timeout e limpeza destrutiva.",
   "specSource": "operator",
   "spec": {

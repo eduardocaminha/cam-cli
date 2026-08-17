@@ -533,6 +533,37 @@ async function resumeDurableRun(
 	}
 }
 
+/**
+ * End an interrupted run without resuming its provider session. Only that state
+ * admits the action: done, failed and cancelled are terminal and refuse it, and
+ * cancelling an active run still produces a resumable interrupted run.
+ */
+function abandonDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	runId: string,
+): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (runtime.getRun(runId) === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	try {
+		return Response.json({ ok: true, run: runtime.abandonRun(runId) });
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'run-not-abandonable',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: 409 },
+		);
+	}
+}
+
 function readRunEvents(runtime: RunRuntime, runId: string): Response {
 	if (runtime.getRun(runId) === null) {
 		return Response.json(
@@ -691,6 +722,10 @@ async function executeOrchestratorCommand(
 			if (run === null) throw new Error(`run not found: ${command.runId}`);
 			return `Run ${run.id} está ${run.state}.`;
 		}
+		case 'abandon_run': {
+			const run = runtime.abandonRun(command.runId);
+			return `Run ${run.id} abandonada sem retomar o provider.`;
+		}
 		case 'ship_run': {
 			const run = runtime.shipRun(command.runId);
 			return `Ship da run ${run.id} iniciado.`;
@@ -834,6 +869,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/runs/:runId/cancel': {
 				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/runs/:runId/abandon': {
+				POST: (request) => abandonDurableRun(request, runRuntime, request.params.runId),
 			},
 			'/api/runs/:runId/events': {
 				GET: (request) => readRunEvents(runRuntime, request.params.runId),

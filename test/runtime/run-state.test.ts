@@ -32,3 +32,25 @@ describe('the ship phase of the run state machine', () => {
 		expect(canTransition('shipping', 'working')).toBe(false);
 	});
 });
+
+// GSHIP-611: an interrupted run has a second way out -- abandoning it ends the
+// run as cancelled instead of resuming the provider session.
+describe('the abandoned end of a run', () => {
+	test('cancelled is a terminal state reached only from interrupted', () => {
+		expect(isRunState('cancelled')).toBe(true);
+		expect(canTransition('interrupted', 'cancelled')).toBe(true);
+		expect(canTransition('interrupted', 'working')).toBe(true);
+		for (const state of ['queued', 'working', 'verify', 'review', 'ready-to-ship', 'shipping', 'waiting-user'] as const) {
+			expect(canTransition(state, 'cancelled')).toBe(false);
+		}
+	});
+
+	test('done, failed and cancelled are terminal and admit nothing', () => {
+		expect(isTerminalRunState('cancelled')).toBe(true);
+		expect(isTerminalRunState('interrupted')).toBe(false);
+		expect(canTransition('cancelled', 'working')).toBe(false);
+		expect(canTransition('cancelled', 'cancelled')).toBe(false);
+		expect(canTransition('done', 'cancelled')).toBe(false);
+		expect(canTransition('failed', 'cancelled')).toBe(false);
+	});
+});

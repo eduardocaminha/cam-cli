@@ -169,8 +169,7 @@ export class RunRuntime {
 		}
 		const normalizedIssueId = issueId.trim();
 		if (normalizedIssueId.length === 0) throw new Error('issueId is required');
-		const blockingRun = this.#store.listRuns().find((run) =>
-			run.state !== 'done' && run.state !== 'failed');
+		const blockingRun = this.#store.listRuns().find((run) => !isTerminalRunState(run.state));
 		if (blockingRun !== undefined) {
 			throw new RuntimeConflictError(
 				`run ${blockingRun.id} is still ${blockingRun.state}; resume or finish it first`,
@@ -219,6 +218,25 @@ export class RunRuntime {
 				: { operatorGuidance: guidance }),
 		});
 		return run;
+	}
+
+	/**
+	 * End an interrupted run the operator does not want to resume. The provider
+	 * session is never reopened -- abandoning is the opposite of resuming -- and
+	 * the run settles as cancelled, so it stops blocking the next issue. Only the
+	 * run's own clean workspace and branch are released; a dirty leftover is
+	 * preserved and surfaced, exactly as it is for a merged run.
+	 */
+	abandonRun(runId: string): RunRecord {
+		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
+		const run = this.#store.getRun(runId);
+		if (run === null) throw new Error(`run not found: ${runId}`);
+		if (run.state !== 'interrupted') {
+			throw new Error(`run cannot be abandoned from state ${run.state}`);
+		}
+		const abandoned = this.#transition(runId, 'cancelled', 'run.abandoned').run;
+		this.#releaseFinishedWorkspace(abandoned, false);
+		return abandoned;
 	}
 
 	/**
@@ -590,11 +608,13 @@ export class RunRuntime {
 		for (const listener of this.#listeners) listener(event);
 	}
 
-	/** Retry cleanup of runs whose merge was already durably confirmed. */
+	/** Retry cleanup of runs a merge or an abandon already settled durably. */
 	#reconcileFinishedWorkspaces(): void {
 		if (this.#workspace?.release === undefined) return;
 		for (const run of this.#store.listRuns(10_000)) {
-			if (run.state === 'done') this.#releaseFinishedWorkspace(run, true, false);
+			if (run.state === 'done' || run.state === 'cancelled') {
+				this.#releaseFinishedWorkspace(run, true, false);
+			}
 		}
 	}
 
@@ -649,7 +669,9 @@ export class RunRuntime {
 				runId: run.id,
 				issueId: run.issueId,
 				workspacePath: run.workspacePath,
-				state: run.state === 'done' ? 'done' : run.state === 'failed' ? 'failed' : 'active',
+				state: run.state === 'done' || run.state === 'failed' || run.state === 'cancelled'
+					? run.state
+					: 'active',
 			}));
 		this.#workspaceNotices = inspect.call(this.#workspace, runs);
 	}

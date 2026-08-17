@@ -26,7 +26,8 @@ export type WorkspaceReleaseResult =
 	| { outcome: 'preserved'; branch: string; detail: string };
 
 export interface WorkspaceRunReference extends ReleaseWorkspaceInput {
-	state: 'active' | 'done' | 'failed';
+	/** `cancelled` is settled like `done`: only `failed` is kept for inspection. */
+	state: 'active' | 'done' | 'failed' | 'cancelled';
 }
 
 export interface WorkspaceNotice {

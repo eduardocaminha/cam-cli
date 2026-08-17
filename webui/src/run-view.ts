@@ -16,7 +16,8 @@ export type RunState =
 	| 'done'
 	| 'waiting-user'
 	| 'failed'
-	| 'interrupted';
+	| 'interrupted'
+	| 'cancelled';
 
 export interface RunView {
 	id: string;
@@ -56,6 +57,8 @@ export const RUN_PHASES: readonly RunState[] = [
 const OFF_SPINE_PHASE: Readonly<Record<string, RunState>> = {
 	'waiting-user': 'working',
 	interrupted: 'working',
+	// Abandoning ends the run where it stopped; it never advances the spine.
+	cancelled: 'working',
 	failed: 'review',
 };
 
@@ -96,6 +99,8 @@ const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
 	failed: 'Precisa de você',
 	interrupted: 'Precisa de você',
 	done: 'Ocioso',
+	// The operator already decided this one: nothing is pending on it.
+	cancelled: 'Ocioso',
 };
 
 /**
@@ -145,9 +150,13 @@ const CANCELLABLE: readonly RunState[] = [
 	'shipping',
 ];
 
+/** Mirrors isTerminalRunState in src/runtime/run-state.ts. */
+const TERMINAL: readonly RunState[] = ['done', 'failed', 'cancelled'];
+
 export interface RunActions {
 	start: boolean;
 	resume: boolean;
+	abandon: boolean;
 	cancel: boolean;
 	ship: boolean;
 }
@@ -158,10 +167,13 @@ export interface RunActions {
  */
 export function actionsFor(run: RunView | null, hasSelection: boolean): RunActions {
 	const state = run?.state;
-	const settled = state === undefined || state === 'done' || state === 'failed';
+	const settled = state === undefined || TERMINAL.includes(state);
 	return {
 		start: hasSelection && settled,
 		resume: state === 'interrupted' || state === 'waiting-user',
+		// The way out of an interrupted run that is not worth resuming, and the
+		// only state that admits it.
+		abandon: state === 'interrupted',
 		cancel: state !== undefined && CANCELLABLE.includes(state),
 		// A verified run ships itself, so the command is only the explicit retry
 		// of an attempt that came back to ready-to-ship.

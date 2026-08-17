@@ -106,6 +106,7 @@ export interface AppProps {
 	onApproveIssue: (issueId: string) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
+	onAbandon: () => void;
 	onCancel: () => void;
 	onShip: () => void;
 	onConnectCodex: () => void;
@@ -282,9 +283,10 @@ function RunCommands({
 	run,
 	pending,
 	onResume,
+	onAbandon,
 	onCancel,
 	onShip,
-}: Pick<AppProps, 'pending' | 'onResume' | 'onCancel' | 'onShip'> & {
+}: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	run: RunView | null;
 }): React.ReactElement | null {
 	// Only `start` depends on a backlog selection, and no run surface offers it.
@@ -299,6 +301,9 @@ function RunCommands({
 			shown: actions.resume && run?.state !== 'waiting-user',
 			onClick: () => onResume(),
 		},
+		// The other way out of an interrupted run: end it here, without reopening
+		// the provider session, so the next issue is no longer blocked by it.
+		{ label: 'Abandonar', shown: actions.abandon, onClick: onAbandon },
 		{ label: 'Cancelar', shown: actions.cancel, onClick: onCancel },
 		{ label: 'Shipar', shown: actions.ship, onClick: onShip },
 	].filter((command) => command.shown);
@@ -330,9 +335,10 @@ function RunCard({
 	footer,
 	pending,
 	onResume,
+	onAbandon,
 	onCancel,
 	onShip,
-}: Pick<AppProps, 'pending' | 'onResume' | 'onCancel' | 'onShip'> & {
+}: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	run: RunView | null;
 	title: string;
 	footer?: React.ReactNode;
@@ -350,6 +356,7 @@ function RunCard({
 				<CardPanel className="flex flex-col gap-4">
 					{run === null ? null : <RunProgress run={run} />}
 					<RunCommands
+						onAbandon={onAbandon}
 						onCancel={onCancel}
 						onResume={onResume}
 						onShip={onShip}
@@ -1079,6 +1086,7 @@ function HomeSurface(props: AppProps): React.ReactElement {
 							Ver detalhes da execução
 						</a>
 					}
+					onAbandon={props.onAbandon}
 					onCancel={props.onCancel}
 					onResume={props.onResume}
 					onShip={props.onShip}
@@ -1096,6 +1104,7 @@ function RunsSurface(props: AppProps): React.ReactElement {
 	return (
 		<SurfaceColumn label="Execuções" status={props.status}>
 			<RunCard
+				onAbandon={props.onAbandon}
 				onCancel={props.onCancel}
 				onResume={props.onResume}
 				onShip={props.onShip}
