@@ -2,7 +2,10 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `b0b99391` (approval/plannability repair, PR #438)
+> Product baseline: `main` at `f3a58546` (GSHIP-611 shipped through PR #441)
+> Active provider: Claude Code. Codex exhausted its subscription credit on
+> 2026-08-16 mid-stage, so continuation moved provider without changing scope,
+> direction or stage. This file is the resume point if the Claude side degrades.
 
 ## How to use this file
 
@@ -18,8 +21,9 @@ than silently assuming either is current.
 
 ## Current stage
 
-**Stage 4 of 15 — derived-idea inbox (next; specification pending human
-approval).**
+**Stage 4 of 15 — derived-idea inbox (specified as GSHIP-612; awaiting operator
+approval, no implementation started). GSHIP-611 shipped in the meantime and
+closed the interrupted-run lifecycle gap.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -50,21 +54,42 @@ as plannable. PR #438 moved the approval-fingerprint check into `isPlannable`;
 the final browser check showed zero executable issues, one reviewable draft, and
 an approval button enabled only after confirmation.
 
-GSHIP-611 is intentionally still an **unapproved draft**. It proposes a terminal
-`cancelled` path for an interrupted run so the operator can abandon it without
-resuming a quota-blocked provider. It was captured after GSHIP-608 exposed that
-lifecycle gap and must be reviewed by a human before it can run.
+GSHIP-611 is complete and shipped through PR #441. The operator approved its
+fingerprint on `/work`, the run executed on Claude and merged with no fix round.
+Run state gains a terminal `cancelled` reachable only from `interrupted`, plus
+`abandonRun`, `POST /api/runs/:runId/abandon`, the typed `abandon_run` command
+and an "Abandonar" control rendered only when eligible. Abandoning never reopens
+the provider session, releases only the run's own clean worktree and branch,
+preserves and surfaces a dirty one, and stops blocking the next issue. That run
+was also the first end-to-end proof of the full loop on the Claude provider
+after the Codex credit ran out.
 
-### Proposed next bounded slice
+The executor flagged one non-blocking factor worth capturing later: abandon
+reuses the merged-run release contract, so a clean worktree whose branch still
+holds unmerged commits loses that branch. Uncommitted work makes the worktree
+dirty and is therefore preserved. No new gate was added because destructive
+cleanup was out of that slice's scope.
 
-Specify the smallest Stage 4 backend contract for capturing a discovery made
-during a run as a non-executable proposal. The proposal should carry its title,
-reason/evidence, source run and source issue, and an explicit relationship to
-the source. A human may dismiss it or promote it into the existing specified
-draft lifecycle; promotion must not approve or start it. Do not add automatic
-deduplication, ranking, embeddings, a knowledge graph, a planner, scheduling, or
-provider-authored scope expansion in this slice. Present the exact spec and
-verification command to the operator before implementation.
+GSHIP-612 is the Stage 4 slice already specified and also still an **unapproved
+draft**. It extends the shared Claude/Codex structured result with a required
+`proposals` array, empty by default and capped at 3 items, each carrying a
+non-empty `title` and `evidence`. On an accepted `completed` result the
+`RunRuntime` persists every item in the `RunStore` as a `pending` proposal with a
+stable id, `derived-from` relationship, `sourceRunId` and `sourceIssueId`.
+Proposals change no run state, issue, spec, approval, backlog or execution order.
+Out of scope in this slice: HTTP API, UI, dismiss, promotion to draft,
+deduplication, ranking, embeddings, graph, scheduler and reviewer changes.
+
+### Proposed next bounded action
+
+No implementation slice is pending specification. The next action belongs to the
+operator: review GSHIP-612 on `/work` and approve or revise it. Only after an
+explicit approval may an agent start the corresponding run. Verification command
+already recorded in GSHIP-612:
+
+```
+bun test test/runtime/run-store.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/run-runtime.test.ts && bun run typecheck
+```
 
 ### Recent process evidence
 
@@ -78,6 +103,18 @@ verification command to the operator before implementation.
   local bootstrap repair: separate PR, full `bun run check:all`, CI, and browser
   validation, but no provider review. Recheck provider availability instead of
   assuming this temporary condition persists.
+- Codex then exhausted its credit entirely and the operator continued on Claude
+  Code from commit `9dbd8d55`. Nothing about the product direction, the stage or
+  the approval discipline changed with the provider. If a Claude session goes
+  wrong, resume from this checkpoint rather than reconstructing the state from a
+  transcript.
+- GSHIP-611 then ran end to end on Claude, from operator approval to squash
+  merge, in about thirteen minutes with no fix round. The provider swap is
+  therefore validated on the real loop, not only in principle.
+- A stale `gship` binary in `~/.local/bin` served a UI seven hours older than
+  the repository and read as a product regression. While iterating, run the
+  service from the repository; reinstall the compiled binary only at the end of
+  a cycle, and re-sign it with `codesign` on arm64.
 
 ## Product objective
 
@@ -245,7 +282,7 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stage 3 is complete. The next action is to turn the proposed
-> Stage 4 backend slice above into an exact specification and verification
-> command for human validation; do not implement it, add its web surface, or
-> approve GSHIP-611 implicitly in the same cycle.
+> bounded slice. Stage 3 is complete and the Stage 4 backend slice is already
+> specified as GSHIP-612. GSHIP-611 already shipped, and GSHIP-612 is still an
+> unapproved draft, so do not start, implement, expand or implicitly approve it.
+> Report the current state and wait for the operator's explicit approval.
