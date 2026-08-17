@@ -20,6 +20,14 @@ export interface AgentSessionResult {
 	structuredOutput?: unknown;
 }
 
+/**
+ * Thrown when a session's own structured protocol reports a clean
+ * application-level refusal -- an unknown model or a plan without access to
+ * it -- as opposed to a timeout, a killed process or a transport failure. The
+ * message is the CLI's own text, which already tells the two apart.
+ */
+export class ProviderRefusalError extends Error {}
+
 /** Minimal bus implemented by every supported subscription-backed agent. */
 export interface AgentSession {
 	readonly provider: AgentProviderId;

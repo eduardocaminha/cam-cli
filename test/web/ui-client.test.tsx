@@ -1315,6 +1315,35 @@ describe('same-origin transport', () => {
 		});
 	});
 
+	// GSHIP-620: a probed slot's own outcome is folded into the save status,
+	// with the CLI's own message when it was refused or stayed inconclusive.
+	test('the save status reports a refused or inconclusive slot with the CLI\'s own message', async () => {
+		await withRecordedFetch({
+			ok: true,
+			settings: {},
+			probes: {
+				claude: { executor: { outcome: 'refused', message: 'model "ghost" was not found' } },
+				codex: { reviewer: { outcome: 'inconclusive', message: 'timed out' } },
+			},
+		}, 200, async () => {
+			const status = await saveModelSettings(EMPTY_MODEL_SETTINGS);
+			expect(status).toContain('claude/executor');
+			expect(status).toContain('model "ghost" was not found');
+			expect(status).toContain('codex/reviewer');
+			expect(status).toContain('timed out');
+		});
+
+		// An accepted slot, or one that was never probed, adds nothing beyond the
+		// base confirmation: no news there is the expected outcome.
+		await withRecordedFetch({
+			ok: true,
+			settings: {},
+			probes: { claude: { executor: { outcome: 'accepted' } } },
+		}, 200, async () => {
+			expect(await saveModelSettings(EMPTY_MODEL_SETTINGS)).toBe('Modelos por papel atualizados.');
+		});
+	});
+
 	test('a refused brief surfaces the server validation message', async () => {
 		await withRecordedFetch({
 			ok: false,

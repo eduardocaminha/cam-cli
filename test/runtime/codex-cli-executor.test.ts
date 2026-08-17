@@ -8,6 +8,7 @@ import {
 	buildCodexReviewArgv,
 	CodexAgentSession,
 	CodexCliExecutor,
+	probeCodexModel,
 } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -60,6 +61,9 @@ describe('Codex CLI runtime executor', () => {
 		expect(readOnly).toContain('--ignore-user-config');
 		expect(readOnly).toContain('sandbox_mode="read-only"');
 		expect(readOnly).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+		// GSHIP-620: without this, a read-only turn started outside a directory
+		// Codex already trusts is refused before it ever reaches the model check.
+		expect(readOnly).toContain('--skip-git-repo-check');
 	});
 
 	// GSHIP-617: Codex takes the same pair as `-m` and a reasoning-effort override.
@@ -237,5 +241,53 @@ describe('Codex CLI runtime executor', () => {
 		);
 		await runtime.stop();
 		runtime.close();
+	});
+
+	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.
+	describe('probeCodexModel', () => {
+		test('accepts a clean read-only turn for the probed model and effort', async () => {
+			const result = await probeCodexModel(
+				{ model: 'gpt-5-codex', effort: 'high' },
+				createTestTmpdir('gship-codex-probe-accept-'),
+				{ command: ['bun', FIXTURE] },
+			);
+			expect(result).toEqual({ outcome: 'accepted' });
+		});
+
+		test('reports an explicit CLI refusal with the CLI\'s own message, carrying the probed flags', async () => {
+			const result = await probeCodexModel(
+				{ model: 'ghost-model', effort: 'high' },
+				createTestTmpdir('gship-codex-probe-refuse-'),
+				{ command: ['bun', FIXTURE, '--fixture-mode=error'] },
+			);
+			expect(result.outcome).toBe('refused');
+			// The refusal text is echoed by the fixture from the actual argv, so this
+			// also proves the probe's read-only argv carried -m and the effort override.
+			expect(result.message).toContain('ghost-model');
+			expect(result.message).toContain('high');
+		});
+
+		test('reports an inconclusive probe on timeout, never a refusal', async () => {
+			const result = await probeCodexModel(
+				{ model: 'gpt-5-codex' },
+				createTestTmpdir('gship-codex-probe-timeout-'),
+				{ command: ['bun', FIXTURE, '--fixture-mode=wait'], timeoutMs: 50 },
+			);
+			expect(result.outcome).toBe('inconclusive');
+			expect(result.message).toBeDefined();
+		});
+
+		test('reports an inconclusive probe for a generic transport error, never a refusal', async () => {
+			// A dead or unreachable process reads the same protocol-level `error`
+			// event whether the model was rejected or the CLI just crashed; only a
+			// clean turn.failed is trusted as an explicit refusal.
+			const result = await probeCodexModel(
+				{ model: 'gpt-5-codex' },
+				createTestTmpdir('gship-codex-probe-transport-error-'),
+				{ command: ['bun', FIXTURE, '--fixture-mode=structured-error-exit'] },
+			);
+			expect(result.outcome).toBe('inconclusive');
+			expect(result.message).toContain('structured fixture diagnostic');
+		});
 	});
 });

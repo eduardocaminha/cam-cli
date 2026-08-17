@@ -294,6 +294,7 @@ export async function saveBrief(brief: ProjectBriefView): Promise<string> {
 
 interface ModelSettingsPayload extends CommandPayload {
 	settings?: unknown;
+	probes?: unknown;
 }
 
 function modelSlotRecord(value: unknown): ModelSlotView {
@@ -329,7 +330,40 @@ export async function fetchModelSettings(): Promise<ModelSettingsView> {
 	return modelSettingsRecord(payload.settings);
 }
 
-/** The whole record is overwritten at once; a refusal surfaces the server's message. */
+/** One line for a probed slot that did not cleanly accept, in the CLI's own words. */
+function describeModelProbe(provider: string, role: string, value: unknown): string | undefined {
+	const probe = value !== null && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+	const message = typeof probe?.['message'] === 'string' ? probe['message'] : '';
+	if (probe?.['outcome'] === 'refused') return `${provider}/${role}: recusado pelo CLI — ${message}`;
+	if (probe?.['outcome'] === 'inconclusive') return `${provider}/${role}: validação não concluída — ${message}`;
+	return undefined;
+}
+
+/**
+ * One line per slot the save actually probed and did not cleanly accept, in
+ * the CLI's own words (GSHIP-620). A slot that was not probed, or that the
+ * CLI accepted outright, adds nothing: no news there is the expected outcome.
+ */
+function describeModelProbes(value: unknown): string {
+	const record = value !== null && typeof value === 'object' ? value as Record<string, unknown> : {};
+	const lines: string[] = [];
+	for (const provider of MODEL_PROVIDER_IDS) {
+		const roles = record[provider] !== null && typeof record[provider] === 'object'
+			? record[provider] as Record<string, unknown>
+			: {};
+		for (const role of MODEL_ROLE_NAMES) {
+			const line = describeModelProbe(provider, role, roles[role]);
+			if (line !== undefined) lines.push(line);
+		}
+	}
+	return lines.join(' ');
+}
+
+/**
+ * The whole record is overwritten at once; a refusal surfaces the server's
+ * message. A slot the CLI probed comes back with its own outcome, folded into
+ * the same status line every other command already reports through.
+ */
 export async function saveModelSettings(settings: ModelSettingsView): Promise<string> {
 	const response = await fetch(MODEL_SETTINGS_PATH, {
 		method: 'PUT',
@@ -337,8 +371,9 @@ export async function saveModelSettings(settings: ModelSettingsView): Promise<st
 		body: JSON.stringify(settings),
 	});
 	const payload = (await response.json()) as ModelSettingsPayload;
-	if (response.ok) return 'Modelos por papel atualizados.';
-	return payload.message ?? `Configuração recusada (${response.status}).`;
+	if (!response.ok) return payload.message ?? `Configuração recusada (${response.status}).`;
+	const notes = describeModelProbes(payload.probes);
+	return notes.length === 0 ? 'Modelos por papel atualizados.' : `Modelos por papel atualizados. ${notes}`;
 }
 
 export async function startCodexLogin(): Promise<string> {

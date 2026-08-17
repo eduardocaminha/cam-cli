@@ -11,6 +11,18 @@ process.stdout.write(`${JSON.stringify({ type: 'system', subtype: 'init' })}\n`)
 if (mode === 'wait') {
 	process.on('SIGTERM', () => process.exit(0));
 	await new Promise(() => {});
+} else if (mode === 'error') {
+	// Echoes the probed --model/--effort back in a clean is_error result, so a
+	// test can confirm the probe's argv actually carried the chosen slot.
+	const flagValue = (flag: string): string | undefined => {
+		const index = process.argv.indexOf(flag);
+		return index >= 0 ? process.argv[index + 1] : undefined;
+	};
+	process.stdout.write(`${JSON.stringify({
+		type: 'result',
+		is_error: true,
+		result: `model "${flagValue('--model')}" effort "${flagValue('--effort')}" not found`,
+	})}\n`);
 } else if (mode === 'review') {
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
