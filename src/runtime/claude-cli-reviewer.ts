@@ -87,6 +87,7 @@ interface ReviewerInvocation {
 	sessionId: string;
 	model?: string;
 	effort?: string;
+	jsonSchema?: Record<string, unknown>;
 }
 
 /** Argv for one review. Never carries `--resume`: each review is a new session. */
@@ -119,6 +120,11 @@ export function buildReviewerCliArgv(input: ReviewerInvocation): string[] {
 		input.sessionId.toLowerCase(),
 	];
 	argv.push(...claudeModelArgv(input));
+	// Same mechanism the executor already uses: the CLI answers through the
+	// dedicated structured-output channel instead of the reviewer having to
+	// append a JSON object to its own prose, which is what let a JSON example
+	// from the review's own prose stand in for a missing verdict.
+	if (input.jsonSchema !== undefined) argv.push('--json-schema', JSON.stringify(input.jsonSchema));
 	return argv;
 }
 
@@ -191,40 +197,6 @@ export const REVIEW_RESULT_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-function parseJsonObject(text: string): Record<string, unknown> | null {
-	const trimmed = text.trim().replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
-	const whole = parseObjectCandidate(trimmed);
-	if (whole !== null) return whole;
-
-	// The verdict is the LAST object in the reply and may be preceded by prose.
-	// Anchor on the final `}` and widen leftwards from the OUTERMOST `{`:
-	// anchoring on the last `{` instead lands inside the nested findings array,
-	// so a prose-prefixed FINDINGS reply would never parse and a valid review
-	// would fail the run instead of buying its single fix round.
-	const end = trimmed.lastIndexOf('}');
-	for (
-		let start = trimmed.indexOf('{');
-		start >= 0 && start < end;
-		start = trimmed.indexOf('{', start + 1)
-	) {
-		const candidate = parseObjectCandidate(trimmed.slice(start, end + 1));
-		if (candidate !== null) return candidate;
-	}
-	return null;
-}
-
-function parseObjectCandidate(text: string): Record<string, unknown> | null {
-	try {
-		const parsed = JSON.parse(text) as unknown;
-		if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-			return parsed as Record<string, unknown>;
-		}
-	} catch {
-		// Not a JSON object; the caller tries the next candidate.
-	}
-	return null;
-}
-
 function formatFindings(findings: unknown[]): string {
 	return findings
 		.map((finding, index) => {
@@ -240,12 +212,17 @@ function formatFindings(findings: unknown[]): string {
 		.join('\n');
 }
 
-/** Turn the reviewer's final text into a structured verdict, or throw. */
-export function parseReviewVerdict(text: string): RuntimeReviewResult {
-	const parsed = parseJsonObject(text);
-	if (parsed === null) {
-		throw new Error(`reviewer did not return a JSON verdict: ${text.trim().slice(-500)}`);
+/**
+ * Turn the reviewer's structured output into a verdict, or throw. Never falls
+ * back to scanning the reviewer's prose for a parseable object: that rescue
+ * is what let a JSON example from the review's own prose stand in for a
+ * verdict the reviewer never actually returned.
+ */
+export function parseReviewVerdict(structuredOutput: unknown, text: string): RuntimeReviewResult {
+	if (structuredOutput === null || typeof structuredOutput !== 'object' || Array.isArray(structuredOutput)) {
+		throw new Error(`reviewer did not return a structured verdict: ${text.trim().slice(-500)}`);
 	}
+	const parsed = structuredOutput as Record<string, unknown>;
 	const verdict = parsed['verdict'];
 	if (verdict === 'CLEAN') return { verdict: 'clean' };
 	if (verdict !== 'FINDINGS') {
@@ -272,6 +249,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 		const argv = buildReviewerCliArgv({
 			command: this.#options.command ?? ['claude'],
 			sessionId: (this.#options.newSessionId ?? randomUUID)(),
+			jsonSchema: REVIEW_RESULT_SCHEMA,
 			...slot,
 		});
 		emitModelSelection(input.emit, 'review', slot);
@@ -283,11 +261,12 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			signal: input.signal,
 			emit: input.emit,
 			eventPrefix: 'review',
+			slot,
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
-		return parseReviewVerdict(result.summary);
+		return parseReviewVerdict(result.structuredOutput, result.summary);
 	}
 }

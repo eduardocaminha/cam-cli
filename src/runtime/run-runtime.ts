@@ -13,6 +13,7 @@ import {
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
 	type ProjectBrief,
+	type RunCostSummary,
 	type RunEvent,
 	type RunRecord,
 	RunStore,
@@ -297,6 +298,15 @@ export class RunRuntime {
 
 	listRunEvents(runId: string): RunEvent[] {
 		return this.#store.listRunEvents(runId);
+	}
+
+	/**
+	 * The run's total reported cost and its breakdown by role and model
+	 * (GSHIP-623), read from the complete event log rather than the display
+	 * window `listRunEvents` caps.
+	 */
+	getRunCost(runId: string): RunCostSummary {
+		return this.#store.getRunCostSummary(runId);
 	}
 
 	listWorkspaceNotices(): WorkspaceNotice[] {

@@ -14,6 +14,7 @@ import {
 	buildReviewerCliArgv,
 	ClaudeCliReviewer,
 	parseReviewVerdict,
+	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
 import type {
 	RuntimeExecutionInput,
@@ -69,7 +70,7 @@ function reviewInput(overrides: Partial<RuntimeExecutionInput> = {}): RuntimeExe
 }
 
 function fixtureReviewer(
-	verdict: 'CLEAN' | 'FINDINGS',
+	verdict: 'CLEAN' | 'FINDINGS' | 'NONE',
 	overrides: Record<string, unknown> = {},
 ): ClaudeCliReviewer {
 	return new ClaudeCliReviewer({
@@ -104,6 +105,23 @@ describe('independent Claude CLI reviewer', () => {
 		expect(argv).toContain('abc-def');
 		expect(argv).not.toContain('--resume');
 		expect(argv).not.toContain('--continue');
+	});
+
+	// GSHIP-626: the same mechanism the executor already uses to guarantee a
+	// structured result, so the reviewer never has to depend on scanning its
+	// own prose for a verdict object.
+	test('loads the review result schema so the CLI answers with a structured verdict', () => {
+		const argv = buildReviewerCliArgv({
+			command: ['claude'],
+			sessionId: 'abc-def',
+			jsonSchema: REVIEW_RESULT_SCHEMA,
+		});
+		expect(flagValue(argv, '--json-schema')).toBe(JSON.stringify(REVIEW_RESULT_SCHEMA));
+	});
+
+	test('omits --json-schema when no schema is given', () => {
+		const argv = buildReviewerCliArgv({ command: ['claude'], sessionId: 'abc-def' });
+		expect(argv).not.toContain('--json-schema');
 	});
 
 	test('closes the built-in, MCP and skill surfaces, not only the permission prompt', () => {
@@ -153,6 +171,7 @@ describe('independent Claude CLI reviewer', () => {
 			expect(argv).toContain('--disable-slash-commands');
 			expect(JSON.parse(flagValue(argv, '--mcp-config') ?? 'null')).toEqual({ mcpServers: {} });
 			expect(argv).not.toContain('--resume');
+			expect(flagValue(argv, '--json-schema')).toBe(JSON.stringify(REVIEW_RESULT_SCHEMA));
 			for (const capable of CAPABLE_TOOLS) {
 				expect(flagValue(argv, '--allowedTools')?.split(',')).not.toContain(capable);
 			}
@@ -192,35 +211,59 @@ describe('independent Claude CLI reviewer', () => {
 		expect(bare).not.toContain('--effort');
 	});
 
-	test('reads a structured verdict out of the child result', async () => {
+	test('reads a CLEAN verdict out of the child\'s structured output', async () => {
 		const result = await fixtureReviewer('CLEAN').review(reviewInput());
 		expect(result).toEqual({ verdict: 'clean' });
 	});
 
-	test('rejects a reply that carries no structured verdict', () => {
-		expect(() => parseReviewVerdict('looks fine to me')).toThrow('did not return a JSON verdict');
-		expect(() => parseReviewVerdict('{"verdict":"MAYBE"}')).toThrow('unknown verdict');
-		expect(() => parseReviewVerdict('{"verdict":"FINDINGS","findings":[]}')).toThrow(
+	test('reads a FINDINGS verdict out of the child\'s structured output', async () => {
+		const result = await fixtureReviewer('FINDINGS').review(reviewInput());
+		expect(result.verdict).toBe('findings');
+	});
+
+	// GSHIP-626: the run that motivated this ended failed with "reviewer
+	// returned an unknown verdict undefined" after a prose-scanning rescue
+	// parser grabbed a JSON example out of the reviewer's own prose. With the
+	// schema mechanism, a reply that never attaches a structured verdict must
+	// fail loudly instead of being guessed at.
+	test('fails on a reply with no structured verdict, quoting its tail instead of guessing', async () => {
+		await expect(fixtureReviewer('NONE').review(reviewInput())).rejects.toThrow(
+			'Still drafting the verdict.',
+		);
+	});
+
+	test('parseReviewVerdict trusts only the structured object, never the reviewer\'s prose', () => {
+		expect(() => parseReviewVerdict(undefined, 'looks fine to me')).toThrow(
+			'did not return a structured verdict',
+		);
+		expect(() => parseReviewVerdict(undefined, 'looks fine to me')).toThrow('looks fine to me');
+		expect(() => parseReviewVerdict({ verdict: 'MAYBE', findings: [] }, '')).toThrow('unknown verdict');
+		expect(() => parseReviewVerdict({ verdict: 'FINDINGS', findings: [] }, '')).toThrow(
 			'without listing any finding',
 		);
-		expect(parseReviewVerdict('Reviewed it.\n{"verdict":"CLEAN","findings":[]}')).toEqual({
+		expect(parseReviewVerdict({ verdict: 'CLEAN', findings: [] }, 'Reviewed it.')).toEqual({
 			verdict: 'clean',
 		});
-		// Prose before a FINDINGS verdict: the nested finding object is the last
-		// `{` in the reply, so anchoring there loses a real verdict and fails the
-		// run instead of buying the single fix round.
 		expect(parseReviewVerdict(
-			'I read the diff.\n{"verdict":"FINDINGS","findings":[{"file":"a.ts","summary":"leaks"}]}',
+			{ verdict: 'FINDINGS', findings: [{ file: 'a.ts', summary: 'leaks' }] },
+			'',
 		)).toEqual({ verdict: 'findings', detail: '1. a.ts: leaks' });
 		expect(parseReviewVerdict(
-			'Checked the {braces} in prose too.\n{"verdict":"FINDINGS","findings":[{"file":"b.ts","summary":"off by one"},{"file":"c.ts","summary":"unused"}]}',
+			{
+				verdict: 'FINDINGS',
+				findings: [
+					{ file: 'b.ts', summary: 'off by one' },
+					{ file: 'c.ts', summary: 'unused' },
+				],
+			},
+			'',
 		)).toEqual({ verdict: 'findings', detail: '1. b.ts: off by one\n2. c.ts: unused' });
-		expect(parseReviewVerdict(
-			'Multi-line verdict:\n{\n\t"verdict": "FINDINGS",\n\t"findings": [{"file": "d.ts", "summary": "races"}]\n}',
-		)).toEqual({ verdict: 'findings', detail: '1. d.ts: races' });
-		expect(parseReviewVerdict(
-			'```json\n{"verdict":"FINDINGS","findings":[{"file":"a.ts","summary":"leaks"}]}\n```',
-		)).toEqual({ verdict: 'findings', detail: '1. a.ts: leaks' });
+		// A JSON example embedded in the reviewer's prose must never stand in for
+		// a missing structured object: that rescue is exactly what GSHIP-623 hit.
+		expect(() => parseReviewVerdict(
+			undefined,
+			'Example payload: {"verdict":"CLEAN","findings":[]}',
+		)).toThrow('did not return a structured verdict');
 	});
 
 	test('cancellation kills and awaits the real reviewer process group', async () => {
