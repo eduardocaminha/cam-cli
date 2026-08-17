@@ -175,6 +175,41 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	test('a ship refused over a foreign head keeps its detection in the run history', async () => {
+		// GSHIP-615: the shipper stops on a head it never pushed. The run must
+		// keep the detection visible and stay shippable, exactly like any other
+		// failed attempt: the diff is untouched and the merge never happened.
+		const runtime = createRuntime({
+			ship: async (input) => {
+				input.emit('ship.pushed', { branch: 'gship/cam-583' });
+				input.emit('ship.head-diverged', {
+					prNumber: 385,
+					headSha: 'aaaa',
+					observedHead: 'bbbb',
+					merged: false,
+				});
+				return { outcome: 'failed', detail: 'pull request #385 now carries bbbb' };
+			},
+		});
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
+
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
+		expect(eventKinds(runtime)).not.toContain('run.shipped');
+		const diverged = runtime.listEvents().find((event) => event.kind === 'ship.head-diverged');
+		expect(diverged?.payload).toEqual({
+			prNumber: 385,
+			headSha: 'aaaa',
+			observedHead: 'bbbb',
+			merged: false,
+		});
+		expect(runtime.listEvents().at(-1)?.payload).toEqual({
+			error: 'pull request #385 now carries bbbb',
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a thrown ship is reported as a retryable failure, not a failed run', async () => {
 		const runtime = createRuntime({
 			ship: async () => {

@@ -23,6 +23,8 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const BRANCH = 'gship/cam-579-2a6af4e6';
 const HEAD_SHA = '9f1c0b7a5d3e2f1908a7b6c5d4e3f2a1b0c9d8e7';
+/** What a force-push from outside the service leaves on the branch (GSHIP-615). */
+const FOREIGN_SHA = '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
 const PR_URL = 'https://github.com/gateship-dev/gateship/pull/385\n';
 
 interface RecordedCall {
@@ -47,6 +49,8 @@ interface FakeRepo {
 	views: number;
 	/** The poll on which `gh pr view` starts reporting MERGED. */
 	mergedOnView: number;
+	/** The poll from which the branch carries a head the service never pushed. */
+	headMovedOnView: number;
 	pushFails: boolean;
 }
 
@@ -63,6 +67,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		prCreates: 0,
 		views: 0,
 		mergedOnView: 1,
+		headMovedOnView: Number.MAX_SAFE_INTEGER,
 		pushFails: false,
 		...overrides,
 	};
@@ -114,12 +119,16 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 			if (args[1] === 'merge') return result(0);
 			if (args[1] === 'view') {
 				repo.views += 1;
+				// A force-push from outside the service is durable too: the pull
+				// request carries the foreign head from this poll onwards.
+				if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
 				const merged = repo.views >= repo.mergedOnView;
 				// A merge is durable: `gh pr list` reports MERGED from now on.
 				if (merged) repo.prState = 'MERGED';
 				return result(0, JSON.stringify({
 					state: merged ? 'MERGED' : 'OPEN',
 					mergeStateStatus: merged ? 'CLEAN' : 'BLOCKED',
+					headRefOid: repo.prHeadRefOid,
 				}));
 			}
 		}
@@ -313,6 +322,78 @@ describe('the GitHub shipper', () => {
 		expect(repo.views).toBe(3);
 		// The pending status is reported once, not once per poll.
 		expect(events.filter((kind) => kind === 'ship.merge-pending')).toHaveLength(1);
+	});
+
+	test('a head moved outside the service ends the monitor instead of waiting for it to merge', async () => {
+		const cwd = createWorkspace();
+		// GSHIP-615: the branch is force-pushed while the monitor waits for CI.
+		// The armed auto-merge is GitHub's promise, so the ship checks the head
+		// itself and refuses to keep waiting for a merge it cannot vouch for.
+		const repo = createRepo({ mergedOnView: Number.MAX_SAFE_INTEGER, headMovedOnView: 2 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		expect((failed as { detail: string }).detail).toContain(FOREIGN_SHA);
+		expect((failed as { detail: string }).detail).toContain('moved outside the service');
+		// The monitor stops on the poll that saw the foreign head.
+		expect(repo.views).toBe(2);
+		expect(events.at(-1)).toBe('ship.head-diverged');
+		expect(events).not.toContain('ship.merged');
+		// Nothing is merged, nothing is re-armed, and origin/main is left alone.
+		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
+		expect(repo.fetches).toBe(0);
+	});
+
+	test('a merge that landed a foreign head is reported as a failure, never as merged', async () => {
+		const cwd = createWorkspace();
+		// The force-push wins the race and GitHub merges the head it left.
+		const repo = createRepo({ mergedOnView: 1, headMovedOnView: 1 });
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, []),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		expect((failed as { detail: string }).detail)
+			.toContain(`merged ${FOREIGN_SHA}, not the head ${HEAD_SHA}`);
+		expect((failed as { detail: string }).detail).toContain('never verified');
+		expect(events.at(-1)).toBe('ship.head-diverged');
+		expect(events).not.toContain('ship.merged');
+		expect(events).not.toContain('ship.source-synced');
+		expect(repo.fetches).toBe(0);
+	});
+
+	test('a head that never moves polls to a merge without any divergence report', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ mergedOnView: 3 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(events).not.toContain('ship.head-diverged');
+		expect(events.slice(-2)).toEqual(['ship.source-synced', 'ship.merged']);
+		// Every poll reads the head, not only the merge state.
+		const views = findCall(calls, 'gh', 'pr', 'view');
+		expect(views).toHaveLength(3);
+		for (const view of views) {
+			expect(view.args).toContain('state,mergeStateStatus,headRefOid');
+		}
 	});
 
 	test('a push failure fails before any pull request exists, and keeps the diff', async () => {

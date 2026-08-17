@@ -18,8 +18,12 @@
 //     this one landed. That refresh writes `refs/remotes/origin/main` only.
 //
 // Auto-merge is armed with `--match-head-commit <sha>`, the exact commit we
-// pushed: if the branch moves outside the service before CI goes green, GitHub
-// refuses the merge instead of shipping a head nobody verified.
+// pushed, but that pin is GitHub's promise, not ours: a branch moved outside
+// the service has been merged with the armed auto-merge still in place. So the
+// ship keeps the sha it pushed and re-checks it on every poll against the pull
+// request's own `headRefOid`. A head that is not the one we published ends the
+// ship as a failure — no merge, no re-arming, no branch deletion — and reports
+// merged only while the head GitHub merged is still the head we pushed.
 //
 // Every `gh` command receives an allowlisted environment with no token
 // variables, so authentication always belongs to gh's own credential store.
@@ -63,6 +67,8 @@ interface WorkspaceIssue {
 interface PullRequestView {
 	state: string;
 	mergeStateStatus: string;
+	/** The head GitHub currently records for the branch, empty when unreported. */
+	headRefOid: string;
 }
 
 /** The branch's most recent pull request, in whatever state it is now. */
@@ -164,10 +170,11 @@ function parsePullRequestView(json: string): PullRequestView {
 	} catch {
 		throw new Error(`gh pr view returned invalid JSON: ${json.slice(0, 200)}`);
 	}
-	const view = parsed as { state?: unknown; mergeStateStatus?: unknown };
+	const view = parsed as { state?: unknown; mergeStateStatus?: unknown; headRefOid?: unknown };
 	return {
 		state: typeof view?.state === 'string' ? view.state : 'UNKNOWN',
 		mergeStateStatus: typeof view?.mergeStateStatus === 'string' ? view.mergeStateStatus : 'UNKNOWN',
+		headRefOid: typeof view?.headRefOid === 'string' ? view.headRefOid : '',
 	};
 }
 
@@ -238,7 +245,7 @@ export class GithubShipper implements RuntimeShipper {
 		);
 		input.emit('ship.automerge-armed', { prNumber, headSha });
 
-		return await this.#awaitMerge(input, prNumber);
+		return await this.#awaitMerge(input, prNumber, headSha);
 	}
 
 	/**
@@ -254,10 +261,7 @@ export class GithubShipper implements RuntimeShipper {
 	): Promise<RuntimeShipResult | null> {
 		if (pullRequest.state === 'MERGED') {
 			if (pullRequest.headRefOid !== headSha) {
-				return {
-					outcome: 'failed',
-					detail: `pull request #${pullRequest.number} merged ${pullRequest.headRefOid}, not the head ${headSha} this run just published`,
-				};
+				return this.#headDiverged(input, pullRequest.number, headSha, pullRequest.headRefOid, true);
 			}
 			return await this.#merged(input, pullRequest.number);
 		}
@@ -268,6 +272,34 @@ export class GithubShipper implements RuntimeShipper {
 			};
 		}
 		return null;
+	}
+
+	/**
+	 * The pull request no longer carries the head this ship pushed: the branch
+	 * moved outside the service. The ship ends here as a failure — nothing is
+	 * merged, no auto-merge is re-armed and no branch is deleted — and the
+	 * detection is recorded so it shows up in the run's history.
+	 *
+	 * `merged` distinguishes the two moments this is caught: a head that moved
+	 * while the monitor was still waiting, and a merge GitHub already performed
+	 * on a head this service never verified. An unreported head counts as a
+	 * divergence too: a head that cannot be read cannot be the one we published.
+	 */
+	#headDiverged(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		observedHead: string,
+		merged: boolean,
+	): RuntimeShipResult {
+		const observed = observedHead.length === 0 ? 'an unreported head' : observedHead;
+		input.emit('ship.head-diverged', { prNumber, headSha, observedHead, merged });
+		return {
+			outcome: 'failed',
+			detail: merged
+				? `pull request #${prNumber} merged ${observed}, not the head ${headSha} this run published: the merge landed a head this service never verified`
+				: `pull request #${prNumber} now carries ${observed}, not the head ${headSha} this run pushed: the branch moved outside the service`,
+		};
 	}
 
 	/**
@@ -337,21 +369,24 @@ export class GithubShipper implements RuntimeShipper {
 		return { number: opened, state: 'OPEN', headRefOid: headSha };
 	}
 
-	/** Watch the armed pull request until GitHub merges it, closes it, or time runs out. */
-	async #awaitMerge(input: RuntimeShipInput, prNumber: number): Promise<RuntimeShipResult> {
+	/**
+	 * Watch the armed pull request until GitHub merges it, closes it, moves off
+	 * the head this ship pushed, or time runs out. The head is re-read on every
+	 * step: the armed `--match-head-commit` is not enough on its own.
+	 */
+	async #awaitMerge(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+	): Promise<RuntimeShipResult> {
 		const deadline = Date.now() + this.#mergeTimeoutMs;
 		let lastStatus = '';
 		for (;;) {
 			const view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus',
+				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
 			]));
-			if (view.state === 'MERGED') return await this.#merged(input, prNumber);
-			if (view.state === 'CLOSED') {
-				return {
-					outcome: 'failed',
-					detail: `pull request #${prNumber} was closed without merging`,
-				};
-			}
+			const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
+			if (verdict !== null) return verdict;
 			if (view.mergeStateStatus !== lastStatus) {
 				lastStatus = view.mergeStateStatus;
 				input.emit('ship.merge-pending', { prNumber, mergeStateStatus: view.mergeStateStatus });
@@ -365,6 +400,34 @@ export class GithubShipper implements RuntimeShipper {
 			await sleep(this.#pollIntervalMs, input.signal);
 			if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
 		}
+	}
+
+	/**
+	 * What one poll decides: a merge of the head this ship published, a pull
+	 * request closed without merging, or a head that is no longer ours. Null is
+	 * the only answer that keeps the monitor waiting.
+	 */
+	async #pollVerdict(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		view: PullRequestView,
+	): Promise<RuntimeShipResult | null> {
+		if (view.state === 'MERGED') {
+			return view.headRefOid === headSha
+				? await this.#merged(input, prNumber)
+				: this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
+		}
+		if (view.state === 'CLOSED') {
+			return {
+				outcome: 'failed',
+				detail: `pull request #${prNumber} was closed without merging`,
+			};
+		}
+		if (view.headRefOid !== headSha) {
+			return this.#headDiverged(input, prNumber, headSha, view.headRefOid, false);
+		}
+		return null;
 	}
 
 	async #run(
