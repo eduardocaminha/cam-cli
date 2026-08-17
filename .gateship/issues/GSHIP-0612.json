@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T22:59:26.681Z",
-  "updatedAt": "2026-08-16T22:59:26.681Z",
+  "updatedAt": "2026-08-17T01:42:54.526Z",
   "description": "Implementar somente a captura backend de ideias fora do escopo descobertas pelo executor. Estender o resultado estruturado compartilhado de Claude e Codex com um array obrigatório proposals, vazio por padrão e limitado a 3 itens; cada item contém title e evidence não vazios e limitados. O prompt deve orientar o executor a manter o issue atual fechado ao escopo e usar proposals apenas para trabalho futuro descoberto durante a implementação. Quando um resultado completed for aceito, o RunRuntime persiste cada item no RunStore como proposta pending com id estável, relationship derived-from, sourceRunId, sourceIssueId, title, evidence e timestamps; disponibilizar leitura determinística pelo RunStore. Propostas não alteram run state, issue, spec, approval, backlog nem ordem de execução. Não capturar waiting-user nem findings do reviewer nesta fatia. Fora de escopo: API HTTP, UI, dismiss, promoção para draft, deduplicação, ranking, embeddings, grafo, scheduler e mudanças no reviewer.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/run-store.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/run-runtime.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "b541511e174d60ffbf8ac91f552fa97d8e891a380ce1f2c21bbf9094de1fdb7b",
+    "approvedAt": "2026-08-17T01:42:54.526Z"
   }
 }
