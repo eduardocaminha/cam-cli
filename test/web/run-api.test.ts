@@ -178,6 +178,77 @@ describe('durable web run API', () => {
 		}
 	});
 
+	// GSHIP-611: the same-origin surface exposes the abandon action, and only for
+	// the one state it is eligible in.
+	test('abandons an interrupted run and refuses every other state', async () => {
+		let markStarted = (): void => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-abandon',
+			executor: {
+				execute: (input) => {
+					markStarted();
+					return new Promise((_resolve, reject) => {
+						input.signal.addEventListener(
+							'abort',
+							() => reject(new DOMException('cancelled', 'AbortError')),
+							{ once: true },
+						);
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-run-abandon-'),
+			runRuntime: runtime,
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const abandon = (runId: string) => fetch(`${origin}/api/runs/${runId}/abandon`, {
+			method: 'POST',
+			headers: { origin },
+		});
+
+		try {
+			await fetch(`${origin}/api/runs`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ issueId: 'GSHIP-611' }),
+			});
+			await started;
+
+			// A working run is cancelled, never abandoned: it stays resumable.
+			const working = await abandon('run-abandon');
+			expect(working.status).toBe(409);
+			expect(await working.json()).toMatchObject({ code: 'run-not-abandonable' });
+
+			await fetch(`${origin}/api/runs/run-abandon/cancel`, { method: 'POST', headers: { origin } });
+			expect(runtime.getRun('run-abandon')?.state).toBe('interrupted');
+
+			const abandoned = await abandon('run-abandon');
+			expect(abandoned.status).toBe(200);
+			expect(await abandoned.json()).toMatchObject({ ok: true, run: { state: 'cancelled' } });
+
+			// Terminal states refuse it, and an unknown run is still a 404.
+			expect((await abandon('run-abandon')).status).toBe(409);
+			expect((await abandon('missing')).status).toBe(404);
+			// A cross-origin write never reaches the runtime.
+			const foreign = await fetch(`${origin}/api/runs/run-abandon/abandon`, {
+				method: 'POST',
+				headers: { origin: 'http://evil.example' },
+			});
+			expect(foreign.status).toBe(403);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('returns an honest 503 until a real executor is connected', async () => {
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
 		const handle = startWebServer({

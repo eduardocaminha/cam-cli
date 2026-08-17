@@ -279,3 +279,155 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 });
+
+// GSHIP-611: an interrupted run the operator does not want to resume is ended
+// here instead of being carried by the provider session forever.
+describe('abandoning an interrupted run', () => {
+	test('settles as cancelled, releases its own workspace and unblocks the next issue', async () => {
+		const executions: string[] = [];
+		const released: string[] = [];
+		let ids = 0;
+		let markStarted = (): void => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => `run-${(ids += 1)}`,
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: ({ runId }) => {
+					released.push(runId);
+					return { outcome: 'released', branch: `gship/cam-20-${runId}` };
+				},
+			},
+			executor: {
+				execute: (input) => {
+					executions.push(input.runId);
+					if (input.runId !== 'run-1') return Promise.resolve({ outcome: 'completed' });
+					markStarted();
+					return new Promise((_resolve, reject) => {
+						input.signal.addEventListener(
+							'abort',
+							() => reject(new DOMException('cancelled', 'AbortError')),
+							{ once: true },
+						);
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-20');
+		await started;
+		await runtime.cancelRun(run.id);
+		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
+		// While it is only interrupted it still owns the runtime.
+		expect(() => runtime.startRun('CAM-21')).toThrow('is still interrupted');
+
+		const abandoned = runtime.abandonRun(run.id);
+
+		expect(abandoned.state).toBe('cancelled');
+		expect(runtime.getRun(run.id)?.state).toBe('cancelled');
+		// The provider session is never reopened: abandoning is not resuming.
+		expect(executions).toEqual(['run-1']);
+		expect(released).toEqual(['run-1']);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.interrupted',
+			'run.abandoned',
+			'workspace.released',
+		]);
+
+		const next = runtime.startRun('CAM-21');
+		await waitFor(() => runtime.getRun(next.id)?.state === 'ready-to-ship');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('preserves and signals a dirty workspace instead of forcing it away', async () => {
+		let markStarted = (): void => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-dirty',
+			workspace: {
+				prepare: () => '/workspaces/run-dirty',
+				release: () => ({
+					outcome: 'preserved',
+					branch: 'gship/cam-22-run-dirt',
+					detail: 'workspace has local changes',
+				}),
+				inspect: (runs) => runs.map((reference) => ({
+					kind: 'dirty',
+					runId: reference.runId,
+					workspacePath: reference.workspacePath,
+					branch: null,
+					detail: `state ${reference.state}`,
+				})),
+			},
+			executor: {
+				execute: (input) => {
+					markStarted();
+					return new Promise((_resolve, reject) => {
+						input.signal.addEventListener(
+							'abort',
+							() => reject(new DOMException('cancelled', 'AbortError')),
+							{ once: true },
+						);
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-22');
+		await started;
+		await runtime.cancelRun(run.id);
+
+		runtime.abandonRun(run.id);
+
+		expect(runtime.getRun(run.id)?.state).toBe('cancelled');
+		expect(runtime.listRunEvents(run.id).at(-1)).toMatchObject({
+			kind: 'workspace.cleanup-warning',
+			payload: { detail: 'workspace has local changes' },
+		});
+		// The preserved leftover is reported as belonging to a settled run.
+		expect(runtime.listWorkspaceNotices()).toEqual([{
+			kind: 'dirty',
+			runId: 'run-dirty',
+			workspacePath: '/workspaces/run-dirty',
+			branch: null,
+			detail: 'state cancelled',
+		}]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('refuses every state that is not interrupted', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-waiting',
+			executor: {
+				execute: async () => ({ outcome: 'waiting-user', summary: 'Which seam?' }),
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-23');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		expect(() => runtime.abandonRun(run.id)).toThrow('cannot be abandoned from state waiting-user');
+		expect(() => runtime.abandonRun('missing')).toThrow('run not found: missing');
+
+		await runtime.cancelRun(run.id);
+		runtime.abandonRun(run.id);
+		// Terminal means terminal: the action does not admit a second call.
+		expect(() => runtime.abandonRun(run.id)).toThrow('cannot be abandoned from state cancelled');
+		await runtime.stop();
+		runtime.close();
+	});
+});

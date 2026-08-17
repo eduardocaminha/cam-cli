@@ -386,6 +386,24 @@ describe('conversational orchestrator', () => {
 		})).toThrow('issueId');
 	});
 
+	// GSHIP-611: ending an interrupted run is a typed command of its own, so the
+	// conversation can offer it without overloading cancel_run.
+	test('abandon_run parses as a run-scoped command and the prompt bounds it', () => {
+		expect(parseOrchestratorResponse({
+			message: 'Vou encerrar essa run sem retomar.',
+			command: { type: 'abandon_run', runId: ' run-1 ' },
+		})).toEqual({
+			message: 'Vou encerrar essa run sem retomar.',
+			command: { type: 'abandon_run', runId: 'run-1' },
+		});
+		expect(() => parseOrchestratorResponse({
+			message: 'Vou encerrar.',
+			command: { type: 'abandon_run' },
+		})).toThrow('runId');
+		expect(buildOrchestratorPrompt({}, emptyProjectBrief(), emptyOrchestratorHandoff(), []))
+			.toContain('Use abandon_run only for a run in state interrupted');
+	});
+
 	test('the structured handoff is durable and shared by both providers', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-orchestrator-handoff-shared-'),

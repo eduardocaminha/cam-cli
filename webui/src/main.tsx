@@ -216,6 +216,7 @@ function Screen(): ReactElement {
 			handoff={handoff}
 			ideas={ideas}
 			notificationPermission={notificationPermission}
+			onAbandon={command('abandon')}
 			onCancel={command('cancel')}
 			onCreateIssue={(draft) => {
 				send(() => createIssue(draft).then((created) => {

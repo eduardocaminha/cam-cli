@@ -103,6 +103,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
 			notificationPermission="default"
+			onAbandon={() => {}}
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
@@ -258,6 +259,18 @@ describe('conversation surface', () => {
 
 		const interrupted = home({ runs: [runIn('interrupted')] });
 		expect(buttonIsEnabled(interrupted, 'Retomar')).toBe(true);
+		// The interrupted run is the only one that can be ended without resuming.
+		expect(buttonIsEnabled(interrupted, 'Abandonar')).toBe(true);
+		expect(hasButton(working, 'Abandonar')).toBe(false);
+		expect(hasButton(readyToShip, 'Abandonar')).toBe(false);
+
+		const cancelled = home({ runs: [runIn('cancelled')] });
+		expect(cancelled).toContain('cancelled');
+		expect(cancelled).toContain('Ocioso');
+		expect(hasButton(cancelled, 'Abandonar')).toBe(false);
+		expect(hasButton(cancelled, 'Retomar')).toBe(false);
+		expect(hasButton(cancelled, 'Cancelar')).toBe(false);
+		expect(hasButton(cancelled, 'Shipar')).toBe(false);
 	});
 
 	test('a command in flight holds the commands that are offered', () => {
@@ -840,6 +853,7 @@ describe('screen derivations', () => {
 		for (const state of needsYou) expect(attentionOf(runIn(state), false)).toBe('Precisa de você');
 		for (const state of busy) expect(attentionOf(runIn(state), false)).toBe('Trabalhando');
 		expect(attentionOf(runIn('done'), false)).toBe('Ocioso');
+		expect(attentionOf(runIn('cancelled'), false)).toBe('Ocioso');
 		expect(attentionOf(null, false)).toBe('Ocioso');
 	});
 
@@ -854,6 +868,17 @@ describe('screen derivations', () => {
 	test('an interrupted run is resumable and a terminal one is not', () => {
 		expect(actionsFor(runIn('interrupted'), false).resume).toBe(true);
 		expect(actionsFor(runIn('failed'), true)).toMatchObject({ start: true, resume: false });
+	});
+
+	test('only an interrupted run can be abandoned, and an abandoned one blocks nothing', () => {
+		expect(actionsFor(runIn('interrupted'), true))
+			.toMatchObject({ abandon: true, resume: true, start: false, cancel: false });
+		for (const state of ['working', 'ready-to-ship', 'waiting-user', 'done', 'failed'] as const) {
+			expect(actionsFor(runIn(state), false).abandon).toBe(false);
+		}
+		// A cancelled run is settled: it offers nothing and holds nothing back.
+		expect(actionsFor(runIn('cancelled'), true))
+			.toEqual({ start: true, resume: false, abandon: false, cancel: false, ship: false });
 	});
 
 	test('a state transition and a created run make the snapshot stale', () => {
@@ -1105,12 +1130,14 @@ describe('same-origin transport', () => {
 	test('each command posts to its own run-scoped route', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
 			await commandRun('run-1', 'resume');
+			await commandRun('run-1', 'abandon');
 			await commandRun('run-1', 'cancel');
 			await commandRun('run-1', 'ship');
 		});
 
 		expect(calls.map((call) => call.url)).toEqual([
 			'/api/runs/run-1/resume',
+			'/api/runs/run-1/abandon',
 			'/api/runs/run-1/cancel',
 			'/api/runs/run-1/ship',
 		]);
