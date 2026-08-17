@@ -55,6 +55,13 @@ interface FakeRepo {
 	disarms: number;
 	disarmFails: boolean;
 	pushFails: boolean;
+	/** Times `gh pr merge --auto` reports HTTP 503 before succeeding (GSHIP-625). */
+	armUnavailableRemaining: number;
+	/** A decision failure `gh pr merge --auto` reports immediately, never retried. */
+	armDecisionFailure: string | null;
+	/** True while `gh pr view` keeps reporting HTTP 503 (GSHIP-625). */
+	viewUnavailableAlways: boolean;
+	armAttempts: number;
 }
 
 function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
@@ -74,6 +81,10 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		disarms: 0,
 		disarmFails: false,
 		pushFails: false,
+		armUnavailableRemaining: 0,
+		armDecisionFailure: null,
+		viewUnavailableAlways: false,
+		armAttempts: 0,
 		...overrides,
 	};
 }
@@ -122,14 +133,27 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 				return result(0, PR_URL);
 			}
 			if (args[1] === 'merge') {
-				if (!args.includes('--disable-auto')) return result(0);
-				repo.disarms += 1;
-				return repo.disarmFails
-					? result(1, '', 'failed to disable auto-merge: not enabled')
-					: result(0);
+				if (args.includes('--disable-auto')) {
+					repo.disarms += 1;
+					return repo.disarmFails
+						? result(1, '', 'failed to disable auto-merge: not enabled')
+						: result(0);
+				}
+				repo.armAttempts += 1;
+				if (repo.armDecisionFailure !== null) {
+					return result(1, '', repo.armDecisionFailure);
+				}
+				if (repo.armUnavailableRemaining > 0) {
+					repo.armUnavailableRemaining -= 1;
+					return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+				}
+				return result(0);
 			}
 			if (args[1] === 'view') {
 				repo.views += 1;
+				if (repo.viewUnavailableAlways) {
+					return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+				}
 				// A force-push from outside the service is durable too: the pull
 				// request carries the foreign head from this poll onwards.
 				if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
@@ -245,6 +269,85 @@ describe('the GitHub shipper', () => {
 			'ship.source-synced',
 			'ship.merged',
 		]);
+	});
+
+	test('GitHub reporting unavailable while arming auto-merge retries and still ships (GSHIP-625)', async () => {
+		const cwd = createWorkspace();
+		// Same shape as the GSHIP-624 evidence: `gh pr merge` answers HTTP 503
+		// twice before GitHub actually accepts the arming.
+		const repo = createRepo({ armUnavailableRemaining: 2 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.armAttempts).toBe(3);
+		expect(armCalls(calls)).toHaveLength(3);
+		expect(events.filter((kind) => kind === 'ship.github-unavailable')).toHaveLength(2);
+		expect(events.at(-1)).toBe('ship.merged');
+	});
+
+	test('GitHub staying unavailable while reading merge state ends the ship as unconfirmed, not failed (GSHIP-625)', async () => {
+		const cwd = createWorkspace();
+		// The evidence for GSHIP-624: `gh pr view` kept answering HTTP 503 right
+		// after auto-merge was armed, while GitHub actually merged the branch a
+		// second later. The ship must say it could not confirm the merge, never
+		// that the merge failed.
+		const repo = createRepo({ viewUnavailableAlways: true });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toMatchObject({ outcome: 'failed' });
+		const detail = (shipped as { detail: string }).detail;
+		expect(detail).toContain('could not be confirmed');
+		expect(detail).toContain('not a merge failure');
+		expect(detail).not.toContain('did not merge');
+		expect(detail).not.toContain('closed without merging');
+		// One initial attempt plus the three fixed retries, then it gives up.
+		expect(repo.views).toBe(4);
+		expect(events.filter((kind) => kind === 'ship.github-unavailable')).toHaveLength(3);
+		expect(events.at(-1)).toBe('ship.merge-unconfirmed');
+		// The ship just stopped trying to look: nothing is re-armed or disarmed.
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(armCalls(calls)).toHaveLength(1);
+	});
+
+	test('a GitHub decision refusing to arm auto-merge fails immediately, without retrying (GSHIP-625)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Resource not accessible by integration (mergePullRequest)',
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({
+			outcome: 'failed',
+			detail: 'gh pr merge failed: GraphQL: Resource not accessible by integration (mergePullRequest)',
+		});
+		// A decision is never retried: exactly one attempt, no backoff.
+		expect(repo.armAttempts).toBe(1);
+		expect(armCalls(calls)).toHaveLength(1);
+		expect(events).not.toContain('ship.github-unavailable');
 	});
 
 	test('a repeated ship reuses the commit and the pull request instead of duplicating them', async () => {
@@ -380,6 +483,9 @@ describe('the GitHub shipper', () => {
 		// The monitor stops on the poll that saw the foreign head.
 		expect(repo.views).toBe(2);
 		expect(events).not.toContain('ship.merged');
+		// GSHIP-625: a divergent head is a successful read, not a GitHub outage,
+		// so it still fails on the spot with no retry loop involved.
+		expect(events).not.toContain('ship.github-unavailable');
 		// GSHIP-616: the arming this ship left on the pull request is taken down
 		// before the failure is reported, so GitHub cannot land the refused head
 		// once nobody is watching any more.

@@ -256,6 +256,42 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	test('an unconfirmed merge after GitHub stayed unavailable is kept distinct from a merge failure in the run history', async () => {
+		// GSHIP-625: the operator confusion this fixes was seeing "failed" when
+		// GitHub had actually merged the pull request a second later. The
+		// shipper's own wording has to survive into both the run history and
+		// the payload the operator-facing message is built from, unchanged.
+		const runtime = createRuntime({
+			ship: async (input) => {
+				input.emit('ship.pushed', { branch: 'gship/cam-583' });
+				input.emit('ship.merge-unconfirmed', {
+					prNumber: 385,
+					headSha: 'aaaa',
+					detail: 'gh pr view still failing after 4 attempts: GitHub appears unavailable: HTTP 503',
+				});
+				return {
+					outcome: 'failed',
+					detail: 'pull request #385 merge could not be confirmed: GitHub appears unavailable ' +
+						'— this is not a merge failure, GitHub may already have merged it; check the ' +
+						'pull request directly before shipping again',
+				};
+			},
+		});
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
+
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
+		expect(eventKinds(runtime)).not.toContain('run.shipped');
+		const unconfirmed = runtime.listEvents().find((event) => event.kind === 'ship.merge-unconfirmed');
+		expect(unconfirmed?.payload).toMatchObject({ prNumber: 385, headSha: 'aaaa' });
+		const failurePayload = runtime.listEvents().at(-1)?.payload as { error: string };
+		expect(failurePayload.error).toContain('could not be confirmed');
+		expect(failurePayload.error).toContain('not a merge failure');
+		expect(failurePayload.error).not.toContain('closed without merging');
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a thrown ship is reported as a retryable failure, not a failed run', async () => {
 		const runtime = createRuntime({
 			ship: async () => {
