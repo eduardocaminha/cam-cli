@@ -19,6 +19,13 @@ export interface PrepareWorkspaceInput {
 
 export interface ReleaseWorkspaceInput extends PrepareWorkspaceInput {
 	workspacePath: string;
+	/**
+	 * Set by a caller releasing a `failed` run: the merged and cancelled paths
+	 * don't need it, but a failed run only releases once its branch also has no
+	 * commit missing from the base ref, so a commit made before the failure
+	 * stays available for the operator to inspect.
+	 */
+	requireUpstream?: boolean;
 }
 
 export type WorkspaceReleaseResult =
@@ -26,7 +33,11 @@ export type WorkspaceReleaseResult =
 	| { outcome: 'preserved'; branch: string; detail: string };
 
 export interface WorkspaceRunReference extends ReleaseWorkspaceInput {
-	/** `cancelled` is settled like `done`: only `failed` is kept for inspection. */
+	/**
+	 * `cancelled` is settled like `done`. `failed` releases too, but only when
+	 * its worktree is clean and its branch has no commit missing from the base
+	 * ref -- otherwise it is kept for inspection.
+	 */
 	state: 'active' | 'done' | 'failed' | 'cancelled';
 }
 
@@ -246,6 +257,19 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 				detail: `workspace path does not belong to run ${input.runId}`,
 			};
 		}
+		if (input.requireUpstream === true) {
+			const missing = this.#branchMissingFromBase(branch);
+			if (missing instanceof Error) {
+				return { outcome: 'preserved', branch, detail: missing.message };
+			}
+			if (missing) {
+				return {
+					outcome: 'preserved',
+					branch,
+					detail: `branch has a commit missing from ${this.#baseRef}`,
+				};
+			}
+		}
 
 		const steps: CleanupStepResult[] = [];
 		const workspace = this.#removeWorkspace(expectedPath, branch);
@@ -410,6 +434,20 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		return result.exitCode === 0
 			? result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
 			: [];
+	}
+
+	/** Whether `branch` carries a commit not reachable from the base ref. */
+	#branchMissingFromBase(branch: string): boolean | Error {
+		const hasRef = this.#hasRef(`refs/heads/${branch}`);
+		if (hasRef instanceof Error) return hasRef;
+		if (!hasRef) return false;
+		const result = this.#runGit(this.#projectRoot, [
+			'rev-list', '--count', `${this.#baseRef}..${branch}`,
+		]);
+		if (result.exitCode !== 0) {
+			return new Error(`cannot compare ${branch} to ${this.#baseRef}: ${failureDetail(result)}`);
+		}
+		return Number.parseInt(result.stdout.trim(), 10) > 0;
 	}
 
 	#hasRef(ref: string): boolean | Error {

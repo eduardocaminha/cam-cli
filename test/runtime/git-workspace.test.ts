@@ -166,6 +166,65 @@ describe('git workspace manager', () => {
 		});
 	});
 
+	// GSHIP-621: a failed run's release adds one more gate the merged path does
+	// not need -- the branch itself must carry no commit missing from the base
+	// ref, so a commit made just before the failure is not thrown away with it.
+	test('releases a failed run workspace whose branch has no commit missing from the base ref', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const input = { runId: 'run-12345678-ffff', issueId: 'CAM-578' };
+		const workspacePath = manager.prepare(input);
+		const branch = 'gship/cam-578-run-1234';
+
+		expect(manager.release({ ...input, workspacePath, requireUpstream: true })).toEqual({
+			outcome: 'released',
+			branch,
+		});
+		expect(existsSync(workspacePath)).toBe(false);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(1);
+	});
+
+	test('preserves a failed run workspace whose branch has a commit missing from the base ref', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const input = { runId: 'run-12345678-1111', issueId: 'CAM-578' };
+		const workspacePath = manager.prepare(input);
+		const branch = 'gship/cam-578-run-1234';
+		writeFileSync(join(workspacePath, 'attempt.txt'), 'partial work\n');
+		git(workspacePath, ['add', 'attempt.txt']);
+		git(workspacePath, ['commit', '-m', 'attempt before the failure']);
+
+		expect(manager.release({ ...input, workspacePath, requireUpstream: true })).toEqual({
+			outcome: 'preserved',
+			branch,
+			detail: 'branch has a commit missing from main',
+		});
+		expect(existsSync(workspacePath)).toBe(true);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(0);
+		expect(manager.inspect([{ ...input, workspacePath, state: 'failed' }])).toContainEqual({
+			kind: 'failed-run',
+			runId: input.runId,
+			workspacePath,
+			branch,
+			detail: 'failed run workspace was preserved for inspection',
+		});
+	});
+
+	test('preserves a dirty failed run workspace instead of releasing it', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const input = { runId: 'run-12345678-2222', issueId: 'CAM-578' };
+		const workspacePath = manager.prepare(input);
+		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
+
+		expect(manager.release({ ...input, workspacePath, requireUpstream: true })).toEqual({
+			outcome: 'preserved',
+			branch: 'gship/cam-578-run-1234',
+			detail: 'workspace has local changes',
+		});
+		expect(existsSync(workspacePath)).toBe(true);
+	});
+
 	test('preserves a dirty workspace and reports it for operator inspection', () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
