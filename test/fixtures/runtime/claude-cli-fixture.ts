@@ -26,16 +26,30 @@ if (mode === 'wait') {
 } else if (mode === 'review') {
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
-	process.stdout.write(`${JSON.stringify({
-		type: 'result',
-		is_error: false,
-		result: JSON.stringify({
+	if (verdict === 'NONE') {
+		// GSHIP-626: the reviewer's own prose can contain a JSON object -- e.g.
+		// an example payload from the diff under review -- without the CLI ever
+		// attaching a structured_output field. Nothing may rescue-parse that
+		// example as the verdict.
+		process.stdout.write(`${JSON.stringify({
+			type: 'result',
+			is_error: false,
+			result: 'Looked at the diff. Example payload: {"verdict":"CLEAN","findings":[]}\nStill drafting the verdict.',
+		})}\n`);
+	} else {
+		const output = {
 			verdict,
 			findings: verdict === 'CLEAN'
 				? []
 				: [{ file: 'src/reviewed.ts', summary: `argv: ${JSON.stringify(process.argv.slice(2))}` }],
-		}),
-	})}\n`);
+		};
+		process.stdout.write(`${JSON.stringify({
+			type: 'result',
+			is_error: false,
+			result: JSON.stringify(output),
+			structured_output: output,
+		})}\n`);
+	}
 } else {
 	const summary = JSON.stringify({ argv: process.argv.slice(2), input });
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';

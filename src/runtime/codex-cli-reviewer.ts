@@ -81,6 +81,6 @@ export class CodexCliReviewer implements RuntimeReviewer {
 			emit: input.emit,
 			eventPrefix: 'review',
 		});
-		return parseReviewVerdict(result.summary);
+		return parseReviewVerdict(result.structuredOutput, result.summary);
 	}
 }
