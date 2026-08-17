@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-613",
+  "title": "Etapa 4B: inbox de propostas derivadas com dismiss e promote",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-17T02:03:31.395Z",
+  "updatedAt": "2026-08-17T02:03:31.395Z",
+  "description": "Expor as propostas capturadas ao operador e permitir descartar ou promover cada uma, sem inventar ciclo de vida novo. Alargar ProposalStatus para pending | dismissed | promoted e fazer decodeProposal ler status e relationship da linha em vez de devolver constantes. Adicionar ao RunStore a coluna do issue promovido e as operacoes deterministas dismissProposal(id) e promoteProposal(id, issueId), ambas idempotentes por status: so uma proposta pending transiciona, e qualquer outra origem e recusada. Expor por API same-origin GET /api/proposals, POST /api/proposals/:id/dismiss e POST /api/proposals/:id/promote. Promote recebe titulo, scope e verificationCommand autorados pelo operador, chama o intake existente com approve: false, e so entao marca a proposta como promoted com o id da issue criada; se o intake falhar, a proposta permanece pending. Promover nunca aprova nem inicia run. Expor em /work um terceiro card com o mesmo padrao de disclosure dos drafts, listando propostas pending com titulo, evidencia, run e issue de origem, botao de descartar e formulario de promocao pre-preenchido com o titulo da proposta. Propostas dismissed e promoted saem da lista. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao. Fora de escopo: deduplicacao, ranking, embeddings, grafo, scheduler, promocao automatica, edicao de evidencia, desfazer descarte e notificacoes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Expor as propostas capturadas ao operador e permitir descartar ou promover cada uma, sem inventar ciclo de vida novo. Alargar ProposalStatus para pending | dismissed | promoted e fazer decodeProposal ler status e relationship da linha em vez de devolver constantes. Adicionar ao RunStore a coluna do issue promovido e as operacoes deterministas dismissProposal(id) e promoteProposal(id, issueId), ambas idempotentes por status: so uma proposta pending transiciona, e qualquer outra origem e recusada. Expor por API same-origin GET /api/proposals, POST /api/proposals/:id/dismiss e POST /api/proposals/:id/promote. Promote recebe titulo, scope e verificationCommand autorados pelo operador, chama o intake existente com approve: false, e so entao marca a proposta como promoted com o id da issue criada; se o intake falhar, a proposta permanece pending. Promover nunca aprova nem inicia run. Expor em /work um terceiro card com o mesmo padrao de disclosure dos drafts, listando propostas pending com titulo, evidencia, run e issue de origem, botao de descartar e formulario de promocao pre-preenchido com o titulo da proposta. Propostas dismissed e promoted saem da lista. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao. Fora de escopo: deduplicacao, ranking, embeddings, grafo, scheduler, promocao automatica, edicao de evidencia, desfazer descarte e notificacoes.",
+    "verify": [
+      "bun test test/runtime/run-store.test.ts test/web/issue-intake-api.test.ts test/web/ui-client.test.tsx && bun run typecheck"
+    ]
+  }
+}
