@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T13:04:07.924Z",
-  "updatedAt": "2026-08-17T13:04:07.924Z",
+  "updatedAt": "2026-08-17T13:12:15.943Z",
   "description": "Validar modelo e effort no momento de salvar, sondando o proprio CLI, em vez de manter catalogo. Ao salvar, sondar apenas os slots cujo model ou effort mudaram, para que salvar um campo nao dispare seis processos. Cada sonda dispara aquele provider em modo read-only com a combinacao escolhida e um prompt trivial, com timeout curto. No Claude reusar o argv read-only existente acrescentando --model e --effort. No Codex acrescentar --skip-git-repo-check junto ao --ignore-user-config que o adapter ja usa: sem isso a sonda falha antes de chegar na checagem de modelo, com Not inside a trusted directory, e passaria a recusar modelo valido. Um slot que o CLI recusar explicitamente nao e salvo, e a resposta devolve por slot a mensagem do proprio CLI, que ja distingue modelo inexistente de falta de acesso da conta. Quando a sonda for inconclusiva por timeout, processo morto ou erro de transporte, salvar o slot e reportar que a validacao nao concluiu: recusar em caso ambiguo trancaria o operador fora dos ajustes quando estiver offline. A UI mostra por slot o resultado, com a mensagem do CLI quando houver recusa. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir slot aceito, slot recusado nao sendo salvo, sonda inconclusiva salvando com aviso, apenas slots alterados sendo sondados, e o argv de cada provider carregando as flags certas. Fora de escopo: validar no preflight da run, catalogo de modelos, atualizacao agendada, deteccao de disponibilidade de assinatura, contabilidade de custo, retry da sonda e qualquer mudanca no formato de armazenamento.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/model-settings-api.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "f562705f35d73e67d716dc168e24c6c704c75e84120bae435d57de4851144067",
+    "approvedAt": "2026-08-17T13:12:15.943Z"
   }
 }
