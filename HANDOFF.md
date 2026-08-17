@@ -19,6 +19,10 @@ into a bounded specification and obtain explicit operator approval. If code and
 this file disagree, investigate the repository and update the checkpoint rather
 than silently assuming either is current.
 
+It records problems, decisions and evidence, not habits. A workaround that asks a
+human to remember something is a defect with no owner: state it as an unsolved
+problem so it can be fixed in the product, rather than as a rule to follow.
+
 ## Current stage
 
 **Stage 9 of 15 pulled forward and effectively done for this cycle — per-role
@@ -204,8 +208,8 @@ them.
 - Codex reached its subscription usage limit during the final Stage 3 pass and
   Claude was also temporarily unavailable. PR #438 was therefore an explicit
   local bootstrap repair: separate PR, full `bun run check:all`, CI, and browser
-  validation, but no provider review. Recheck provider availability instead of
-  assuming this temporary condition persists.
+  validation, but no provider review. Provider availability is a moving condition
+  that the checkpoint cannot record accurately.
 - Codex then exhausted its credit entirely and the operator continued on Claude
   Code from commit `9dbd8d55`. Nothing about the product direction, the stage or
   the approval discipline changed with the provider. If a Claude session goes
@@ -215,16 +219,16 @@ them.
   merge, in about thirteen minutes with no fix round. The provider swap is
   therefore validated on the real loop, not only in principle.
 - A stale `gship` binary in `~/.local/bin` served a UI seven hours older than
-  the repository and read as a product regression. While iterating, run the
-  service from the repository; reinstall the compiled binary only at the end of
-  a cycle, and re-sign it with `codesign` on arm64.
+  the repository and read as a product regression. GSHIP-618 later covered the
+  running service, but nothing covers the installed binary: it can be arbitrarily
+  older than the repository and says so nowhere, and on arm64 it also needs
+  re-signing with `codesign` after every build. Unsolved.
 - GSHIP-612 then shipped the same way in about eleven minutes with no fix round,
   making two consecutive unattended Claude runs. Both released their worktree and
   branch automatically after merge.
 - A schema added by a run does not exist in an already-running service. The
   `run_proposals` table only appeared after restarting the process, because the
-  store creates its schema at startup. Restart the service after a merge that
-  changes persistence.
+  store creates its schema at startup.
 - Branch and worktree hygiene is only automatic for runs that merge. Hand-made
   pull requests and runs that end `failed` leave their branch and worktree
   behind, and one such leftover was a superseded GSHIP-605 attempt whose diff
@@ -264,9 +268,10 @@ them.
   still believed the run had not shipped. `POST /api/runs/:runId/ship` reconciled
   it, since the shipper recognises an already-merged pull request.
 - That is the third distinct way one stale process bit in a single day: a missing
-  table, a missing route, and a safety fix silently absent. Restart the service
-  after every merge, and read the stale-service warning GSHIP-618 added rather
-  than remembering to.
+  table, a missing route, and a safety fix silently absent. GSHIP-618, GSHIP-622
+  and GSHIP-624 turned that into a warning the service raises itself, so the
+  operator no longer carries the rule. Restarting is still manual, and whether it
+  should stay manual is open.
 - A model or effort the operator mistypes is not caught by Gateship at all. Both
   CLIs refuse an unknown model with a message covering existence and account
   access, so validation belongs in a probe against the CLI rather than in any
