@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T13:11:16.378Z",
-  "updatedAt": "2026-08-17T13:11:16.378Z",
+  "updatedAt": "2026-08-17T13:12:50.383Z",
   "description": "Fazer o aviso de servico velho disparar apenas quando codigo mudou, nao a qualquer movimento do main. Evidencia: com o aviso recem shipado, o unico diff entre o sha de boot e o main corrente eram dois arquivos de issue recem arquivados, e o aviso pediu reinicio sem que nenhuma linha de codigo tivesse mudado. Arquivar, aprovar e fechar issue commitam no main continuamente, logo a condicao atual mantem o aviso aceso quase sempre, e aviso sempre aceso e ruido ignorado. Passar a comparar os dois shas pelos caminhos alterados e disparar somente quando o diff toca algo fora de .gateship/, que e o diretorio das issues e nao afeta o processo em execucao. Todo o resto continua disparando, incluindo webui/dist, que e servido pelo processo, e o manifesto de pacote. Preservar o que o GSHIP-618 estabeleceu: campo proprio no snapshot, os dois shas no detalhe, nunca bloquear operacao, e omitir o aviso quando qualquer um dos shas nao resolver. Quando a listagem de caminhos alterados falhar, nao inventar divergencia nem suprimir por engano: omitir o aviso, igual ao caso de sha que nao resolve. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir diff so em .gateship/ sem aviso, diff em codigo com aviso, diff misturando os dois com aviso, e falha da listagem sem aviso. Fora de escopo: reinicio automatico, recarga a quente, comparar versao de binario compilado, detectar mudanca de schema especificamente e qualquer bloqueio de operacao.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/idle-state.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "ade4a57506c2094ba6914154268408480de57bf729e7f9190c7ad92339de184d",
+    "approvedAt": "2026-08-17T13:12:50.383Z"
   }
 }
