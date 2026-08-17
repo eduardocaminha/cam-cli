@@ -10,6 +10,7 @@ import {
 	parseExecutionResult,
 } from '../../src/runtime/claude-cli-executor.ts';
 import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
+import type { ModelSlot } from '../../src/runtime/model-settings.ts';
 import { PROPOSAL_LIMITS } from '../../src/runtime/run-proposal.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -97,6 +98,85 @@ describe('Claude CLI runtime executor', () => {
 		expect(argv).toContain('--strict-mcp-config');
 		expect(argv).toContain('--safe-mode');
 		expect(argv).not.toContain('bypassPermissions');
+	});
+
+	// GSHIP-617: the operator's per-role choice, pushed as flags only when set.
+	test('pushes --model and --effort only when the slot is configured', () => {
+		const invocation = {
+			command: ['claude'],
+			sessionId: 'ABC-123',
+			resume: false,
+			permissionMode: 'bypassPermissions',
+		};
+		const bare = buildClaudeCliArgv(invocation);
+		expect(bare).not.toContain('--model');
+		expect(bare).not.toContain('--effort');
+
+		expect(buildClaudeCliArgv({ ...invocation, model: 'opus', effort: 'xhigh' }).slice(-4))
+			.toEqual(['--model', 'opus', '--effort', 'xhigh']);
+		// Either half stands alone: the unset one still passes no flag.
+		expect(buildClaudeCliArgv({ ...invocation, effort: 'low' }).slice(-2))
+			.toEqual(['--effort', 'low']);
+		// The read-only orchestrator turn takes the same pair.
+		expect(buildClaudeReadOnlyArgv({ ...invocation, model: 'sonnet' }).slice(-2))
+			.toEqual(['--model', 'sonnet']);
+	});
+
+	test('resolves the slot at every spawn and records the pair on the run', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		let slot: ModelSlot = { model: 'opus', effort: 'xhigh' };
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-24"}',
+			// Consulted per spawn, never at construction: this is what lets the
+			// operator change the setting without restarting the service.
+			resolveModel: () => slot,
+		});
+		const execute = () => executor.execute({
+			runId: 'run-24',
+			issueId: 'CAM-24',
+			sessionId: 'session-24',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-model-'),
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		const first = await execute();
+		expect(first.summary).toContain('"--model","opus"');
+		expect(first.summary).toContain('"--effort","xhigh"');
+		expect(events).toContainEqual({
+			kind: 'provider.model',
+			payload: { model: 'opus', effort: 'xhigh' },
+		});
+
+		slot = { effort: 'low' };
+		const second = await execute();
+		expect(second.summary).not.toContain('--model');
+		expect(second.summary).toContain('"--effort","low"');
+		expect(events).toContainEqual({ kind: 'provider.model', payload: { effort: 'low' } });
+	});
+
+	test('an unconfigured slot spawns and reads exactly as before the setting existed', async () => {
+		const events: Array<{ kind: string }> = [];
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-25"}',
+			resolveModel: () => ({}),
+		});
+		const result = await executor.execute({
+			runId: 'run-25',
+			issueId: 'CAM-25',
+			sessionId: 'session-25',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-default-model-'),
+			signal: new AbortController().signal,
+			emit: (kind) => events.push({ kind }),
+		});
+
+		expect(result.summary).not.toContain('--model');
+		expect(result.summary).not.toContain('--effort');
+		expect(events.map((event) => event.kind)).not.toContain('provider.model');
 	});
 
 	test('accepts only the two structured executor outcomes', () => {

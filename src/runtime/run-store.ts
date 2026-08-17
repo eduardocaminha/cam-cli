@@ -4,6 +4,12 @@ import { dirname } from 'node:path';
 
 import type { AgentProviderId } from './agent-session.ts';
 import {
+	emptyModelSettings,
+	MODEL_SETTINGS_KEY,
+	type ModelSettings,
+	normalizeModelSettings,
+} from './model-settings.ts';
+import {
 	isProposalRelationship,
 	isProposalStatus,
 	normalizeProposalDrafts,
@@ -602,6 +608,34 @@ export class RunStore {
 			INSERT INTO runtime_settings (key, value) VALUES ('provider', $providerId)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value
 		`).run({ providerId });
+	}
+
+	/**
+	 * The per-role model choice, kept as one JSON row beside the selected
+	 * provider. A missing or corrupt row reads as the empty choice, which is the
+	 * same as passing no model flag at all.
+	 */
+	getModelSettings(): ModelSettings {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: MODEL_SETTINGS_KEY }) as { value: string } | null;
+		if (row === null) return emptyModelSettings();
+		try {
+			return normalizeModelSettings(JSON.parse(row.value) as unknown);
+		} catch {
+			// A malformed row must never block the next spawn.
+			return emptyModelSettings();
+		}
+	}
+
+	setModelSettings(settings: ModelSettings): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({
+			key: MODEL_SETTINGS_KEY,
+			value: JSON.stringify(normalizeModelSettings(settings)),
+		});
 	}
 
 	getOrchestratorSession(providerId: AgentProviderId): string | null {

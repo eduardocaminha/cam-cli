@@ -26,12 +26,17 @@ import {
 	fetchRunEvents,
 	fetchRuns,
 	type ProjectBriefView,
+	MODEL_SETTINGS_PATH,
+	type ModelSettingsView,
 	promoteProposal,
 	PROPOSALS_PATH,
 	RUNS_PATH,
 	ISSUES_PATH,
 	PROVIDERS_PATH,
 	saveBrief,
+	fetchModelSettings,
+	saveModelSettings,
+	emptyModelSettings,
 	selectProvider,
 	sendChat,
 	SNAPSHOT_PATH,
@@ -89,6 +94,8 @@ function eventIn(fromState: RunState, toState: RunState, kind: string): RunEvent
 	};
 }
 
+const EMPTY_MODEL_SETTINGS: ModelSettingsView = emptyModelSettings();
+
 const EMPTY_BRIEF: ProjectBriefView = {
 	objective: '',
 	decisions: [],
@@ -106,6 +113,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			events={[]}
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
+			modelSettings={EMPTY_MODEL_SETTINGS}
 			notificationPermission="default"
 			onAbandon={() => {}}
 			onCancel={() => {}}
@@ -117,6 +125,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onPromoteProposal={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
+			onSaveModelSettings={() => {}}
 			onSelectIssue={() => {}}
 			onSelectProvider={() => {}}
 			onSendMessage={() => {}}
@@ -752,6 +761,57 @@ describe('settings surface', () => {
 		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar brief')).toBe(false);
 	});
 
+	// GSHIP-617: the three roles are configurable per provider, and the screen
+	// suggests known values without restricting them.
+	test('offers a model and an effort field for the three roles of each provider', () => {
+		const html = settingsPage({
+			modelSettings: {
+				claude: {
+					orchestrator: { model: 'sonnet', effort: '' },
+					executor: { model: 'opus', effort: 'xhigh' },
+					reviewer: { model: '', effort: 'high' },
+				},
+				codex: {
+					orchestrator: { model: '', effort: '' },
+					executor: { model: 'gpt-5-codex', effort: 'high' },
+					reviewer: { model: '', effort: '' },
+				},
+			},
+		});
+		const models = panel(html, 'Modelo e effort por papel');
+
+		for (const role of ['Orquestrador', 'Executor', 'Revisor']) {
+			expect(models).toContain(`${role} — modelo`);
+			expect(models).toContain(`${role} — effort`);
+		}
+		for (const provider of ['claude', 'codex']) {
+			for (const role of ['orchestrator', 'executor', 'reviewer']) {
+				expect(models).toContain(`name="${provider}-${role}-model"`);
+				expect(models).toContain(`name="${provider}-${role}-effort"`);
+			}
+		}
+
+		// The form opens filled with what the server holds; an unset slot shows the
+		// CLI default instead of inventing a value.
+		expect(models).toContain('value="opus"');
+		expect(models).toContain('value="xhigh"');
+		expect(models).toContain('value="gpt-5-codex"');
+		expect(models).toContain('padrão do CLI');
+		expect(models).toContain('Vazio mantém o padrão do CLI.');
+
+		// Known values are suggested by a datalist, so the field still accepts
+		// anything the CLI might learn about later.
+		expect(models).toContain('<datalist id="claude-model-options"');
+		expect(models).toContain('<datalist id="codex-effort-options"');
+		expect(models).toContain('list="claude-effort-options"');
+		expect(models).not.toContain('<select');
+		expect(buttonIsEnabled(html, 'Salvar modelos')).toBe(true);
+	});
+
+	test('the model save is held while a command is in flight, like every other', () => {
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar modelos')).toBe(false);
+	});
+
 	test('an empty brief and an empty handoff still render both panels', () => {
 		const html = settingsPage();
 
@@ -1123,6 +1183,49 @@ describe('same-origin transport', () => {
 				method: 'PUT',
 				body: JSON.stringify(brief),
 			}]);
+		});
+	});
+
+	test('the per-role model choice is read and written on one same-origin route', async () => {
+		expect(MODEL_SETTINGS_PATH).toBe('/api/model-settings');
+		const settings: ModelSettingsView = {
+			...EMPTY_MODEL_SETTINGS,
+			claude: {
+				orchestrator: { model: 'sonnet', effort: '' },
+				executor: { model: 'opus', effort: 'xhigh' },
+				reviewer: { model: '', effort: 'high' },
+			},
+		};
+
+		await withRecordedFetch({ settings: { claude: settings.claude } }, 200, async (calls) => {
+			// A payload missing a provider or a role reads as unconfigured, never as
+			// a hole: the screen shows the CLI default for it.
+			expect(await fetchModelSettings()).toEqual(settings);
+			expect(calls).toEqual([{ url: MODEL_SETTINGS_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchModelSettings()).toEqual(EMPTY_MODEL_SETTINGS);
+		});
+
+		await withRecordedFetch({ ok: true, settings: {} }, 200, async (calls) => {
+			expect(await saveModelSettings(settings)).toBe('Modelos por papel atualizados.');
+			expect(calls).toEqual([{
+				url: MODEL_SETTINGS_PATH,
+				method: 'PUT',
+				body: JSON.stringify(settings),
+			}]);
+		});
+		// A refusal surfaces the server's own validation message.
+		await withRecordedFetch({
+			ok: false,
+			code: 'invalid-request',
+			message: 'Modelo de claude/executor não pode conter espaço em branco.',
+		}, 400, async () => {
+			expect(await saveModelSettings(settings))
+				.toBe('Modelo de claude/executor não pode conter espaço em branco.');
+		});
+		await withRecordedFetch({}, 500, async () => {
+			await expect(fetchModelSettings()).rejects.toThrow('Modelos respondeu 500');
 		});
 	});
 

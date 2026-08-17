@@ -13,6 +13,13 @@ import {
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
 } from './claude-cli-executor.ts';
+import {
+	codexModelArgv,
+	emitModelSelection,
+	type ModelSlot,
+	type ModelSlotResolver,
+	resolveModelSlot,
+} from './model-settings.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeExecutionResult,
@@ -27,6 +34,9 @@ export interface CodexCliExecutorOptions {
 	session?: AgentSession;
 	command?: string[];
 	model?: string;
+	effort?: string;
+	/** Asked at every spawn, so the operator's choice needs no restart. */
+	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
@@ -38,6 +48,7 @@ interface CodexInvocation {
 	sessionId: string;
 	resume: boolean;
 	model?: string;
+	effort?: string;
 	outputSchemaPath?: string;
 	readOnly?: boolean;
 }
@@ -45,6 +56,7 @@ interface CodexInvocation {
 interface CodexReviewInvocation {
 	command: string[];
 	model?: string;
+	effort?: string;
 	outputSchemaPath?: string;
 }
 
@@ -64,7 +76,7 @@ export function buildCodexCliArgv(input: CodexInvocation): string[] {
 		// Bypasses approvals and sandbox, but still never inherits user config.
 		argv.push('--dangerously-bypass-approvals-and-sandbox', '--ignore-user-config');
 	}
-	if (input.model !== undefined) argv.push('--model', input.model);
+	argv.push(...codexModelArgv(input));
 	if (input.outputSchemaPath !== undefined) {
 		argv.push('--output-schema', input.outputSchemaPath);
 	}
@@ -110,12 +122,13 @@ interface CodexStreamState {
 function buildTurnArgv(
 	input: AgentSessionInput,
 	options: Omit<CodexCliExecutorOptions, 'loadIssue' | 'session'>,
+	slot: ModelSlot,
 	schemaPath: string | undefined,
 	review: boolean,
 ): string[] {
 	const shared = {
 		command: options.command ?? ['codex'],
-		...(options.model === undefined ? {} : { model: options.model }),
+		...slot,
 		...(schemaPath === undefined ? {} : { outputSchemaPath: schemaPath }),
 	};
 	if (review) return buildCodexReviewArgv(shared);
@@ -200,8 +213,10 @@ async function runCodexTurn(
 		summary: '',
 		structuredOutput: undefined,
 	};
+	const slot = resolveModelSlot(options);
+	emitModelSelection(input.emit, input.eventPrefix, slot);
 	const result = await runAgentProcess({
-		argv: buildTurnArgv(input, options, schemaPath, review),
+		argv: buildTurnArgv(input, options, slot, schemaPath, review),
 		cwd: input.cwd,
 		env: buildCodexEnv(options.sourceEnv ?? process.env),
 		stdin: input.prompt,

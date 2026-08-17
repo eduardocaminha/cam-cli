@@ -2,11 +2,13 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { emptyModelSettings } from '../../src/runtime/model-settings.ts';
 import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
 import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const EMPTY_BRIEF = { objective: '', decisions: [], constraints: [], openItems: [] };
+const EMPTY_MODEL_SETTINGS = emptyModelSettings();
 
 function storeWithRun(id: string, issueId: string): RunStore {
 	const store = new RunStore(':memory:');
@@ -343,6 +345,94 @@ describe('proposal decisions', () => {
 			.toMatchObject({ status: 'promoted', promotedIssueId: 'CAM-613' });
 		expect(migrated.listPendingProposals()).toEqual([]);
 		migrated.close();
+	});
+});
+
+// GSHIP-617: the per-role model choice is one JSON row in runtime_settings,
+// beside the selected provider, and never a new table or column.
+describe('per-role model settings', () => {
+	test('round-trips one slot per provider and role in a single settings row', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-models-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		expect(store.getModelSettings()).toEqual(EMPTY_MODEL_SETTINGS);
+
+		store.setModelSettings({
+			claude: {
+				orchestrator: { model: 'sonnet' },
+				executor: { model: 'opus', effort: 'xhigh' },
+				reviewer: { effort: 'high' },
+			},
+			codex: {
+				orchestrator: {},
+				executor: { model: 'gpt-5-codex' },
+				reviewer: {},
+			},
+		});
+		expect(store.getModelSettings()).toEqual({
+			claude: {
+				orchestrator: { model: 'sonnet' },
+				executor: { model: 'opus', effort: 'xhigh' },
+				reviewer: { effort: 'high' },
+			},
+			codex: { orchestrator: {}, executor: { model: 'gpt-5-codex' }, reviewer: {} },
+		});
+		// The provider selection is a sibling row, so neither write disturbs the other.
+		store.setSelectedProvider('codex');
+		expect(store.getSelectedProvider()).toBe('codex');
+		expect(store.getModelSettings().claude.executor).toEqual({ model: 'opus', effort: 'xhigh' });
+		store.close();
+
+		const rows = new Database(dbPath);
+		const stored = rows.query('SELECT key, value FROM runtime_settings ORDER BY key')
+			.all() as Array<{ key: string; value: string }>;
+		expect(stored.map((row) => row.key)).toEqual(['model-settings', 'provider']);
+		expect(JSON.parse(stored[0]?.value ?? 'null')).toMatchObject({
+			claude: { executor: { model: 'opus', effort: 'xhigh' } },
+		});
+		rows.close();
+	});
+
+	test('a corrupt or wrongly shaped row reads as no choice at all', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-models-corrupt-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.setModelSettings({
+			claude: { orchestrator: {}, executor: { model: 'opus' }, reviewer: {} },
+			codex: { orchestrator: {}, executor: {}, reviewer: {} },
+		});
+		store.close();
+
+		const corrupted = new Database(dbPath);
+		corrupted.exec("UPDATE runtime_settings SET value = '{not json' WHERE key = 'model-settings';");
+		corrupted.close();
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getModelSettings()).toEqual(EMPTY_MODEL_SETTINGS);
+		reopened.close();
+
+		const reshaped = new Database(dbPath);
+		reshaped.exec("UPDATE runtime_settings SET value = '[1,2]' WHERE key = 'model-settings';");
+		reshaped.close();
+		const rereopened = new RunStore(dbPath);
+		expect(rereopened.getModelSettings()).toEqual(EMPTY_MODEL_SETTINGS);
+		rereopened.close();
+	});
+
+	test('a value argv could not carry is dropped on read instead of stored', () => {
+		const store = new RunStore(':memory:');
+		store.setModelSettings({
+			claude: {
+				orchestrator: { model: '  sonnet  ' },
+				executor: { model: 'two words', effort: '   ' },
+				reviewer: {},
+			},
+			codex: { orchestrator: {}, executor: {}, reviewer: {} },
+		});
+
+		expect(store.getModelSettings().claude).toEqual({
+			orchestrator: { model: 'sonnet' },
+			executor: {},
+			reviewer: {},
+		});
+		store.close();
 	});
 });
 

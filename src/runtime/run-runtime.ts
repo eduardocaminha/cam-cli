@@ -5,6 +5,7 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
+import type { ModelSettings } from './model-settings.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
@@ -328,6 +329,18 @@ export class RunRuntime {
 
 	selectProvider(providerId: AgentProviderId): void {
 		this.#store.setSelectedProvider(providerId);
+	}
+
+	/**
+	 * The operator's per-role model choice. Read on demand -- every spawn asks
+	 * again -- so a change takes effect without restarting the service.
+	 */
+	getModelSettings(): ModelSettings {
+		return this.#store.getModelSettings();
+	}
+
+	setModelSettings(settings: ModelSettings): void {
+		this.#store.setModelSettings(settings);
 	}
 
 	getOrchestratorSession(providerId: AgentProviderId): string | null {

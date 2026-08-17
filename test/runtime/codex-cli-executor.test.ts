@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import {
 	buildCodexCliArgv,
 	buildCodexEnv,
+	buildCodexReviewArgv,
 	CodexAgentSession,
 	CodexCliExecutor,
 } from '../../src/runtime/codex-cli-executor.ts';
+import type { ModelSlot } from '../../src/runtime/model-settings.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -58,6 +60,66 @@ describe('Codex CLI runtime executor', () => {
 		expect(readOnly).toContain('--ignore-user-config');
 		expect(readOnly).toContain('sandbox_mode="read-only"');
 		expect(readOnly).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+	});
+
+	// GSHIP-617: Codex takes the same pair as `-m` and a reasoning-effort override.
+	test('pushes -m and the effort override only when the slot is configured', () => {
+		const invocation = { command: ['codex'], sessionId: 'provisional', resume: false };
+		expect(buildCodexCliArgv(invocation)).not.toContain('-m');
+		expect(JSON.stringify(buildCodexCliArgv(invocation))).not.toContain('model_reasoning_effort');
+
+		expect(buildCodexCliArgv({ ...invocation, model: 'gpt-5-codex', effort: 'high' })).toEqual([
+			'codex',
+			'exec',
+			'--json',
+			'--dangerously-bypass-approvals-and-sandbox',
+			'--ignore-user-config',
+			'-m',
+			'gpt-5-codex',
+			'-c',
+			'model_reasoning_effort="high"',
+			'-',
+		]);
+		// Either half stands alone, and a review turn takes the same pair.
+		expect(buildCodexCliArgv({ ...invocation, effort: 'minimal' })).toContain(
+			'model_reasoning_effort="minimal"',
+		);
+		expect(buildCodexReviewArgv({ command: ['codex'], model: 'gpt-5' })).toContain('-m');
+	});
+
+	test('resolves the slot at every spawn and records the pair on the run', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		let slot: ModelSlot = { model: 'gpt-5-codex', effort: 'high' };
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-24"}',
+			// Consulted per spawn, never at construction.
+			resolveModel: () => slot,
+		});
+		const execute = () => executor.execute({
+			runId: 'run-24',
+			issueId: 'CAM-24',
+			sessionId: 'provisional',
+			resume: false,
+			cwd: createTestTmpdir('gship-codex-model-'),
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		const first = await execute();
+		expect(first.summary).toContain('"-m","gpt-5-codex"');
+		expect(first.summary).toContain('model_reasoning_effort=\\"high\\"');
+		expect(events).toContainEqual({
+			kind: 'provider.model',
+			payload: { model: 'gpt-5-codex', effort: 'high' },
+		});
+
+		// An unconfigured slot spawns and reads exactly as it did before.
+		slot = {};
+		const second = await execute();
+		expect(second.summary).not.toContain('"-m"');
+		expect(second.summary).not.toContain('model_reasoning_effort');
+		expect(events.filter((event) => event.kind === 'provider.model')).toHaveLength(1);
 	});
 
 	test('allows only runtime paths and the operator Codex home', () => {

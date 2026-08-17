@@ -44,6 +44,12 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import { defaultRunGit, type GitCommandRunner } from './git-runtime.ts';
+import {
+	claudeModelArgv,
+	emitModelSelection,
+	type ModelSlotResolver,
+	resolveModelSlot,
+} from './model-settings.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
@@ -65,6 +71,9 @@ const DIFF_LIMIT = 60_000;
 export interface ClaudeCliReviewerOptions {
 	command?: string[];
 	model?: string;
+	effort?: string;
+	/** Asked at every review, so the operator's choice needs no restart. */
+	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
@@ -77,6 +86,7 @@ interface ReviewerInvocation {
 	command: string[];
 	sessionId: string;
 	model?: string;
+	effort?: string;
 }
 
 /** Argv for one review. Never carries `--resume`: each review is a new session. */
@@ -108,7 +118,7 @@ export function buildReviewerCliArgv(input: ReviewerInvocation): string[] {
 		'--session-id',
 		input.sessionId.toLowerCase(),
 	];
-	if (input.model !== undefined) argv.push('--model', input.model);
+	argv.push(...claudeModelArgv(input));
 	return argv;
 }
 
@@ -258,11 +268,13 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 	async review(input: RuntimeExecutionInput): Promise<RuntimeReviewResult> {
 		const issue = (this.#options.loadIssue ?? defaultLoadIssue)(input.cwd, input.issueId);
 		const change = collectChange(this.#options.runGit ?? defaultRunGit, input.cwd);
+		const slot = resolveModelSlot(this.#options);
 		const argv = buildReviewerCliArgv({
 			command: this.#options.command ?? ['claude'],
 			sessionId: (this.#options.newSessionId ?? randomUUID)(),
-			...(this.#options.model === undefined ? {} : { model: this.#options.model }),
+			...slot,
 		});
+		emitModelSelection(input.emit, 'review', slot);
 		const result = await runClaudeCli({
 			argv,
 			cwd: input.cwd,

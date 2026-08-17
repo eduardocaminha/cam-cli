@@ -14,6 +14,7 @@ import {
 	type CodexCliExecutorOptions,
 } from './codex-cli-executor.ts';
 import { defaultRunGit, type GitCommandRunner } from './git-runtime.ts';
+import type { ModelSlotResolver } from './model-settings.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
@@ -25,6 +26,9 @@ export interface CodexCliReviewerOptions {
 	session?: AgentSession;
 	command?: string[];
 	model?: string;
+	effort?: string;
+	/** Asked at every review, so the operator's choice needs no restart. */
+	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
@@ -45,6 +49,8 @@ function sessionOptions(options: CodexCliReviewerOptions): Omit<
 	return {
 		...(options.command === undefined ? {} : { command: options.command }),
 		...(options.model === undefined ? {} : { model: options.model }),
+		...(options.effort === undefined ? {} : { effort: options.effort }),
+		...(options.resolveModel === undefined ? {} : { resolveModel: options.resolveModel }),
 		...(options.sourceEnv === undefined ? {} : { sourceEnv: options.sourceEnv }),
 		...(options.terminationGraceMs === undefined
 			? {}

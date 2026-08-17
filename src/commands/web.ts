@@ -10,6 +10,7 @@ import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
+import type { AgentProviderId } from '../runtime/agent-session.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
@@ -35,6 +36,14 @@ import {
 	parseOperatorSpecInput,
 	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
+import {
+	emptyModelSettings,
+	isModelProvider,
+	isModelRole,
+	type ModelRole,
+	type ModelSettings,
+	type ModelSlotResolver,
+} from '../runtime/model-settings.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	RunRuntime,
@@ -150,6 +159,95 @@ export function parseProjectBriefInput(value: unknown): ProjectBrief {
 		constraints: briefList(input['constraints'], 'Restrições'),
 		openItems: briefList(input['openItems'], 'Itens em aberto'),
 	};
+}
+
+function jsonObjectInput(value: unknown, label: string): Record<string, unknown> {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', `${label} deve ser um objeto JSON.`, 400);
+	}
+	return value as Record<string, unknown>;
+}
+
+/**
+ * One configured argv element. An absent or blank value clears the slot, which
+ * is how the operator goes back to the CLI default. Anything else is checked for
+ * SHAPE only -- a single token with no whitespace -- because the list of valid
+ * models and efforts belongs to the CLI, not to Gateship.
+ */
+function parseModelToken(value: unknown, label: string): string | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== 'string') {
+		throw new IssueIntakeError('invalid-request', `${label} deve ser um texto.`, 400);
+	}
+	const trimmed = value.trim();
+	if (trimmed.length === 0) return undefined;
+	if (/\s/.test(trimmed)) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`${label} não pode conter espaço em branco.`,
+			400,
+		);
+	}
+	return trimmed;
+}
+
+function parseModelSlot(value: unknown, label: string): { model?: string; effort?: string } {
+	const slot = jsonObjectInput(value, label);
+	for (const field of Object.keys(slot)) {
+		if (field !== 'model' && field !== 'effort') {
+			throw new IssueIntakeError('invalid-request', `${label} tem campo desconhecido: ${field}.`, 400);
+		}
+	}
+	const model = parseModelToken(slot['model'], `Modelo de ${label}`);
+	const effort = parseModelToken(slot['effort'], `Effort de ${label}`);
+	return {
+		...(model === undefined ? {} : { model }),
+		...(effort === undefined ? {} : { effort }),
+	};
+}
+
+/**
+ * The whole per-role record is overwritten at once. An unknown provider or role
+ * is refused instead of dropped, so a typo never reads back as "not configured".
+ */
+export function parseModelSettingsInput(value: unknown): ModelSettings {
+	const input = jsonObjectInput(value, 'A configuração de modelos');
+	const settings = emptyModelSettings();
+	for (const [provider, roles] of Object.entries(input)) {
+		if (!isModelProvider(provider)) {
+			throw new IssueIntakeError('invalid-request', `Provider desconhecido: ${provider}.`, 400);
+		}
+		for (const [role, slot] of Object.entries(jsonObjectInput(roles, `O provider ${provider}`))) {
+			if (!isModelRole(role)) {
+				throw new IssueIntakeError('invalid-request', `Papel desconhecido: ${role}.`, 400);
+			}
+			settings[provider][role] = parseModelSlot(slot, `${provider}/${role}`);
+		}
+	}
+	return settings;
+}
+
+async function writeModelSettings(request: Request, runtime: RunRuntime): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		runtime.setModelSettings(parseModelSettingsInput(body));
+		return Response.json({ ok: true, settings: runtime.getModelSettings() });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
 }
 
 async function writeProjectBrief(
@@ -749,22 +847,38 @@ function readIdleSnapshotState(cwd: string): { backlog: BacklogJsonView } {
 }
 
 /**
+ * One adapter's slot, read at the moment it spawns a child. The adapter holds
+ * this function, never a value, so an Ajustes change reaches the next run
+ * without restarting the service.
+ */
+function modelResolver(
+	read: () => ModelSettings,
+	providerId: AgentProviderId,
+	role: ModelRole,
+): ModelSlotResolver {
+	return () => read()[providerId][role];
+}
+
+/**
  * Production composition of the durable runtime: the real implementer, the
  * real oracle verifier, the real independent reviewer and the real GitHub
  * shipper over one sqlite store.
  */
 export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
+	const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
+	const model = (providerId: AgentProviderId, role: ModelRole) =>
+		modelResolver(() => store.getModelSettings(), providerId, role);
 	return {
 		cwd,
-		store: new RunStore(join(cwd, '.gship', 'runtime.sqlite')),
+		store,
 		executor: new AgentExecutorRouter({
-			claude: new ClaudeCliExecutor(),
-			codex: new CodexCliExecutor(),
+			claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor') }),
+			codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
 		}),
 		verifier: new GitIssueVerifier(),
 		reviewer: new AgentReviewerRouter({
-			claude: new ClaudeCliReviewer(),
-			codex: new CodexCliReviewer(),
+			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer') }),
+			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
 		}),
 		shipper: new GithubShipper(),
 		preflight: createGitRuntimePreflight(cwd),
@@ -847,12 +961,14 @@ function createDefaultOrchestrator(
 	runtime: RunRuntime,
 	execute: (command: OrchestratorCommand) => Promise<string>,
 ): ConversationalOrchestrator {
+	const model = (providerId: AgentProviderId) =>
+		modelResolver(() => runtime.getModelSettings(), providerId, 'orchestrator');
 	return new ConversationalOrchestrator({
 		cwd,
 		persistence: runtime,
 		sessions: {
-			claude: new ClaudeAgentSession(),
-			codex: new CodexAgentSession(),
+			claude: new ClaudeAgentSession({ resolveModel: model('claude') }),
+			codex: new CodexAgentSession({ resolveModel: model('codex') }),
 		},
 		context: () => ({
 			provider: runtime.getSelectedProvider(),
@@ -943,6 +1059,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					handoff: runRuntime.getOrchestratorHandoff(),
 				}),
 				PUT: (request) => writeProjectBrief(request, projectBrief),
+			},
+			// The per-role model and effort choice. The read is unguarded like every
+			// other GET; the write is same-origin, and an empty slot means the CLI
+			// default keeps deciding.
+			'/api/model-settings': {
+				GET: () => Response.json({ settings: runRuntime.getModelSettings() }),
+				PUT: (request) => writeModelSettings(request, runRuntime),
 			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),

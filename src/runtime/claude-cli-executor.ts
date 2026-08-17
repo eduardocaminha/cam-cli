@@ -4,6 +4,12 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import type { AgentSession, AgentSessionInput, AgentSessionResult } from './agent-session.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
+import {
+	claudeModelArgv,
+	emitModelSelection,
+	type ModelSlotResolver,
+	resolveModelSlot,
+} from './model-settings.ts';
 import { normalizeProposalDrafts, PROPOSAL_LIMITS } from './run-proposal.ts';
 import type {
 	RuntimeExecutionInput,
@@ -16,6 +22,9 @@ export interface ClaudeCliExecutorOptions {
 	session?: AgentSession;
 	command?: string[];
 	model?: string;
+	effort?: string;
+	/** Asked at every spawn, so the operator's choice needs no restart. */
+	resolveModel?: ModelSlotResolver;
 	permissionMode?: string;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
@@ -29,6 +38,7 @@ interface ClaudeInvocation {
 	resume: boolean;
 	permissionMode: string;
 	model?: string;
+	effort?: string;
 	jsonSchema?: Record<string, unknown>;
 }
 
@@ -58,7 +68,7 @@ export function buildClaudeReadOnlyArgv(input: ClaudeInvocation): string[] {
 		'{"mcpServers":{}}',
 	];
 	argv.push(input.resume ? '--resume' : '--session-id', input.sessionId.toLowerCase());
-	if (input.model !== undefined) argv.push('--model', input.model);
+	argv.push(...claudeModelArgv(input));
 	if (input.jsonSchema !== undefined) argv.push('--json-schema', JSON.stringify(input.jsonSchema));
 	return argv;
 }
@@ -102,7 +112,7 @@ export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
 		input.permissionMode,
 	];
 	argv.push(input.resume ? '--resume' : '--session-id', input.sessionId.toLowerCase());
-	if (input.model !== undefined) argv.push('--model', input.model);
+	argv.push(...claudeModelArgv(input));
 	if (input.jsonSchema !== undefined) {
 		argv.push('--json-schema', JSON.stringify(input.jsonSchema));
 	}
@@ -189,17 +199,19 @@ export class ClaudeAgentSession implements AgentSession {
 	}
 
 	async run(input: AgentSessionInput): Promise<AgentSessionResult> {
+		const slot = resolveModelSlot(this.#options);
 		const invocation = {
 			command: this.#options.command ?? ['claude'],
 			sessionId: input.sessionId,
 			resume: input.resume,
 			permissionMode: this.#options.permissionMode ?? 'bypassPermissions',
-			...(this.#options.model === undefined ? {} : { model: this.#options.model }),
+			...slot,
 			...(input.outputSchema === undefined ? {} : { jsonSchema: input.outputSchema }),
 		};
 		const argv = input.access === 'read-only'
 			? buildClaudeReadOnlyArgv(invocation)
 			: buildClaudeCliArgv(invocation);
+		emitModelSelection(input.emit, input.eventPrefix, slot);
 		return runClaudeCli({
 			argv,
 			cwd: input.cwd,

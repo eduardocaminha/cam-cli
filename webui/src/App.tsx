@@ -30,15 +30,21 @@ import {
 import { Progress } from './components/ui/progress.tsx';
 import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
-import type {
-	ChatMessageView,
-	IssueReviewDraft,
-	OperatorIssueDraft,
-	OperatorSpecDraft,
-	ProjectBriefView,
-	ProposalView,
-	ProviderStatusView,
-	WorkspaceNoticeView,
+import {
+	type ChatMessageView,
+	emptyModelSettings,
+	type IssueReviewDraft,
+	MODEL_PROVIDER_IDS,
+	MODEL_ROLE_NAMES,
+	type ModelRoleName,
+	type ModelSettingsView,
+	type ModelSlotView,
+	type OperatorIssueDraft,
+	type OperatorSpecDraft,
+	type ProjectBriefView,
+	type ProposalView,
+	type ProviderStatusView,
+	type WorkspaceNoticeView,
 } from './client.ts';
 import { useLiveEdge } from './live-edge.ts';
 import {
@@ -92,6 +98,8 @@ export interface AppProps {
 	brief: ProjectBriefView;
 	/** What the orchestrator recorded about the session; read-only. */
 	handoff: ProjectBriefView;
+	/** Model and effort per (provider, role); empty text keeps the CLI default. */
+	modelSettings: ModelSettingsView;
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
 	/** Newest first, exactly as /api/runs returned it. */
@@ -120,6 +128,7 @@ export interface AppProps {
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
+	onSaveModelSettings: (settings: ModelSettingsView) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -531,6 +540,164 @@ function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
 					/>
 				))}
 			</ul>
+		</ContextPanel>
+	);
+}
+
+const MODEL_PROVIDER_LABELS: Readonly<Record<ProviderStatusView['id'], string>> = {
+	claude: 'Claude',
+	codex: 'Codex',
+};
+
+const MODEL_ROLE_LABELS: Readonly<Record<ModelRoleName, string>> = {
+	orchestrator: 'Orquestrador',
+	executor: 'Executor',
+	reviewer: 'Revisor',
+};
+
+/**
+ * Known values, offered as suggestions and never as a restriction: the field
+ * accepts any single token, and an unknown one is refused by the CLI itself with
+ * the CLI's own message. So this list is a convenience that can go stale
+ * without breaking the screen.
+ */
+const MODEL_SUGGESTIONS: Readonly<Record<ProviderStatusView['id'], {
+	models: readonly string[];
+	efforts: readonly string[];
+}>> = {
+	claude: {
+		models: ['opus', 'sonnet', 'haiku'],
+		efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+	},
+	codex: {
+		models: ['gpt-5-codex', 'gpt-5'],
+		efforts: ['minimal', 'low', 'medium', 'high'],
+	},
+};
+
+/** Reads all six slots out of the one form that was just submitted. */
+function readModelSettings(form: EventTarget): ModelSettingsView {
+	const value = fieldReader(form);
+	const settings = emptyModelSettings();
+	for (const providerId of MODEL_PROVIDER_IDS) {
+		for (const role of MODEL_ROLE_NAMES) {
+			settings[providerId][role] = {
+				model: value(`${providerId}-${role}-model`),
+				effort: value(`${providerId}-${role}-effort`),
+			};
+		}
+	}
+	return settings;
+}
+
+function ModelSlotFields({
+	providerId,
+	role,
+	slot,
+}: {
+	providerId: ProviderStatusView['id'];
+	role: ModelRoleName;
+	slot: ModelSlotView;
+}): React.ReactElement {
+	return (
+		<div className="flex flex-col gap-2 sm:flex-row">
+			<label
+				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
+				htmlFor={`${providerId}-${role}-model`}
+			>
+				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — modelo</span>
+				<input
+					className={cn(FIELD_CLASS, 'font-mono')}
+					defaultValue={slot.model}
+					id={`${providerId}-${role}-model`}
+					list={`${providerId}-model-options`}
+					name={`${providerId}-${role}-model`}
+					placeholder="padrão do CLI"
+				/>
+			</label>
+			<label
+				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
+				htmlFor={`${providerId}-${role}-effort`}
+			>
+				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — effort</span>
+				<input
+					className={cn(FIELD_CLASS, 'font-mono')}
+					defaultValue={slot.effort}
+					id={`${providerId}-${role}-effort`}
+					list={`${providerId}-effort-options`}
+					name={`${providerId}-${role}-effort`}
+					placeholder="padrão do CLI"
+				/>
+			</label>
+		</div>
+	);
+}
+
+function ModelProviderFields({
+	providerId,
+	modelSettings,
+}: Pick<AppProps, 'modelSettings'> & {
+	providerId: ProviderStatusView['id'];
+}): React.ReactElement {
+	const suggestions = MODEL_SUGGESTIONS[providerId];
+	return (
+		<fieldset className="flex flex-col gap-3">
+			<legend className="font-medium text-sm">{MODEL_PROVIDER_LABELS[providerId]}</legend>
+			<datalist id={`${providerId}-model-options`}>
+				{suggestions.models.map((model) => <option key={model} value={model} />)}
+			</datalist>
+			<datalist id={`${providerId}-effort-options`}>
+				{suggestions.efforts.map((effort) => <option key={effort} value={effort} />)}
+			</datalist>
+			{MODEL_ROLE_NAMES.map((role) => (
+				<ModelSlotFields
+					key={role}
+					providerId={providerId}
+					role={role}
+					slot={modelSettings[providerId][role]}
+				/>
+			))}
+		</fieldset>
+	);
+}
+
+/**
+ * The operator's own model choice, one slot per provider and role. Leaving a
+ * field empty passes no flag at all, so each CLI keeps deciding exactly as it
+ * did before this section existed.
+ */
+function ModelSettingsPanel({
+	modelSettings,
+	pending,
+	onSaveModelSettings,
+}: Pick<AppProps, 'modelSettings' | 'pending' | 'onSaveModelSettings'>): React.ReactElement {
+	return (
+		<ContextPanel
+			description="Vale para o próximo agente iniciado, sem reiniciar o serviço. Vazio mantém o padrão do CLI."
+			open
+			title="Modelo e effort por papel"
+		>
+			<form
+				className="flex flex-col gap-6"
+				// Re-synced with the server's answer after a save, the only thing that
+				// changes this record while the operator is looking at it.
+				key={JSON.stringify(modelSettings)}
+				onSubmit={(event) => {
+					event.preventDefault();
+					onSaveModelSettings(readModelSettings(event.currentTarget));
+				}}
+			>
+				{MODEL_PROVIDER_IDS.map((providerId) => (
+					<ModelProviderFields
+						key={providerId}
+						modelSettings={modelSettings}
+						providerId={providerId}
+					/>
+				))}
+				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					Salvar modelos
+				</button>
+			</form>
 		</ContextPanel>
 	);
 }
@@ -1395,6 +1562,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				pending={props.pending}
 				providers={props.providers}
 				selectedProvider={props.selectedProvider}
+			/>
+			<ModelSettingsPanel
+				modelSettings={props.modelSettings}
+				onSaveModelSettings={props.onSaveModelSettings}
+				pending={props.pending}
 			/>
 			<NotificationsPanel
 				notificationPermission={props.notificationPermission}
