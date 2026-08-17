@@ -881,14 +881,41 @@ function readSourceSha(cwd: string): string | null {
 }
 
 /**
+ * Directory the issue backlog lives in. A commit that only touches paths under
+ * it moves the ledger, not the process: archiving, approving and closing an
+ * issue all land commits here continuously, and none of them are code the
+ * running process loaded.
+ */
+const ISSUE_LEDGER_PREFIX = '.gateship/';
+
+/**
+ * Whether the two shas differ on any path outside `.gateship/` -- true if so,
+ * false if every changed path is under it, null when the listing itself
+ * failed. A caller that can't tell code from ledger must not guess: null is
+ * its own outcome, never coerced to true or false.
+ */
+function changedPathsTouchCode(cwd: string, bootSha: string, currentSha: string): boolean | null {
+	const result = defaultRunGit(cwd, ['diff', '--name-only', bootSha, currentSha]);
+	if (result.exitCode !== 0) return null;
+	return result.stdout
+		.split('\n')
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.some((path) => !path.startsWith(ISSUE_LEDGER_PREFIX));
+}
+
+/**
  * Compare the sha this process booted on with the current one. A sha that
- * cannot be resolved -- on either side -- is unknown, not divergent: the notice
- * is omitted rather than invented.
+ * cannot be resolved -- on either side -- is unknown, not divergent: the
+ * notice is omitted rather than invented. Same for the changed-path listing:
+ * a diff that only touches `.gateship/`, or one that can't be listed at all,
+ * omits the notice rather than firing on ledger churn or a guess.
  */
 function staleServiceNotice(cwd: string, bootSha: string | null): StaleServiceNotice | null {
 	if (bootSha === null) return null;
 	const currentSha = readSourceSha(cwd);
 	if (currentSha === null || currentSha === bootSha) return null;
+	if (changedPathsTouchCode(cwd, bootSha, currentSha) !== true) return null;
 	return {
 		bootSha,
 		currentSha,
