@@ -238,6 +238,70 @@ describe('Claude CLI runtime executor', () => {
 		})).toEqual({ outcome: 'waiting-user', summary: 'choose A or B' });
 	});
 
+	// GSHIP-623: the cost and usage the CLI already reports on the result event,
+	// attached to the model/effort pair GSHIP-617 resolved for the same spawn.
+	test('emits the reported cost and per-model usage on a completed invocation', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-cost=full'],
+			loadIssue: () => '{"id":"CAM-32"}',
+			resolveModel: () => ({ model: 'opus', effort: 'high' }),
+		});
+		await executor.execute({
+			runId: 'run-32',
+			issueId: 'CAM-32',
+			sessionId: 'session-32',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-usage-'),
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		expect(events).toContainEqual({
+			kind: 'provider.usage',
+			payload: {
+				model: 'opus',
+				effort: 'high',
+				totalCostUsd: 0.1234,
+				usage: {
+					inputTokens: 1000,
+					outputTokens: 200,
+					cacheCreationInputTokens: 50,
+					cacheReadInputTokens: 25,
+					thinkingTokens: 40,
+				},
+				modelUsage: [{
+					model: 'claude-opus-4-6',
+					inputTokens: 1000,
+					outputTokens: 200,
+					cacheReadInputTokens: 25,
+					cacheCreationInputTokens: 50,
+					costUsd: 0.1234,
+				}],
+			},
+		});
+	});
+
+	// The CLI's own silence on cost must never read as a free invocation.
+	test('omits the usage event entirely when the CLI reports no cost', async () => {
+		const events: Array<{ kind: string }> = [];
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-33"}',
+		});
+		await executor.execute({
+			runId: 'run-33',
+			issueId: 'CAM-33',
+			sessionId: 'session-33',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-no-usage-'),
+			signal: new AbortController().signal,
+			emit: (kind) => events.push({ kind }),
+		});
+
+		expect(events.map((event) => event.kind)).not.toContain('provider.usage');
+	});
+
 	test('consumes the provider result without a sentinel or report file', async () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const executor = new ClaudeCliExecutor({

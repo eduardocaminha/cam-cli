@@ -180,6 +180,37 @@ function isOperational(event: RunEventView): boolean {
 	return true;
 }
 
+/**
+ * The operator pays a subscription, not the API, so this is always presented
+ * as the expected cost an equivalent API call would have billed -- never as
+ * an amount charged (GSHIP-623).
+ */
+const COST_FORMAT = new Intl.NumberFormat('pt-BR', {
+	style: 'currency',
+	currency: 'USD',
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 4,
+});
+
+function formatCostUsd(value: number): string {
+	return COST_FORMAT.format(value);
+}
+
+const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], string> = {
+	executor: 'Executor',
+	reviewer: 'Revisor',
+};
+
+/** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
+function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string | null {
+	const parts: string[] = [];
+	if (entry.inputTokens !== undefined) parts.push(`${entry.inputTokens} entrada`);
+	if (entry.outputTokens !== undefined) parts.push(`${entry.outputTokens} saída`);
+	if (entry.cacheReadInputTokens !== undefined) parts.push(`${entry.cacheReadInputTokens} cache lida`);
+	if (entry.cacheCreationInputTokens !== undefined) parts.push(`${entry.cacheCreationInputTokens} cache criada`);
+	return parts.length === 0 ? null : parts.join(' · ');
+}
+
 const BUTTON_CLASS =
 	'inline-flex h-9 items-center justify-center rounded-md border px-3 font-medium text-sm ' +
 	'transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
@@ -376,6 +407,11 @@ function RunCard({
 			{run === null && footer === undefined ? null : (
 				<CardPanel className="flex flex-col gap-4">
 					{run === null ? null : <RunProgress run={run} />}
+					{run === null || run.cost.totalCostUsd === null ? null : (
+						<p className="text-muted-foreground text-sm">
+							Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+						</p>
+					)}
 					<RunCommands
 						onAbandon={onAbandon}
 						onCancel={onCancel}
@@ -416,6 +452,46 @@ function RunReport({ run }: { run: RunView }): React.ReactElement | null {
 				)}
 				<code className="break-all text-muted-foreground text-xs">{run.id}</code>
 			</div>
+		</ContextPanel>
+	);
+}
+
+/**
+ * The same total the card shows, broken down by which role and which model
+ * produced it (GSHIP-623). `total_cost_usd` is the sum across every model a
+ * provider invocation used, including auxiliary calls the operator's own
+ * model settings never name, so attributing the whole total to "the
+ * configured model" would misrepresent it -- the breakdown is shown instead.
+ * Always the expected cost an equivalent API call would have billed, never an
+ * amount charged: the operator pays a subscription.
+ */
+function RunCostPanel({ run }: { run: RunView }): React.ReactElement | null {
+	if (run.cost.breakdown.length === 0) return null;
+	return (
+		<ContextPanel
+			description="Custo esperado equivalente ao uso via API, por papel e por modelo. Nunca é o valor cobrado da assinatura."
+			title="Custo por papel e modelo"
+		>
+			<ul className="flex flex-col gap-3">
+				{run.cost.breakdown.map((entry) => {
+					const tokens = formatTokenCounts(entry);
+					return (
+						<li className="flex flex-col gap-1 text-sm" key={`${entry.role}-${entry.model}`}>
+							<div className="flex items-baseline justify-between gap-3">
+								<span className="min-w-0 break-all font-medium">
+									{COST_ROLE_LABEL[entry.role]} · {entry.model}
+								</span>
+								<span className="shrink-0 text-muted-foreground">
+									{formatCostUsd(entry.costUsd)}
+								</span>
+							</div>
+							{tokens === null ? null : (
+								<span className="text-muted-foreground text-xs">{tokens} tokens</span>
+							)}
+						</li>
+					);
+				})}
+			</ul>
 		</ContextPanel>
 	);
 }
@@ -1310,6 +1386,7 @@ function RunsSurface(props: AppProps): React.ReactElement {
 				title="Último run"
 			/>
 			{run === null ? null : <RunReport run={run} />}
+			{run === null ? null : <RunCostPanel run={run} />}
 			<RunActivity events={props.events} run={run} />
 			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
 			<PreviousRunsPanel runs={props.runs} />

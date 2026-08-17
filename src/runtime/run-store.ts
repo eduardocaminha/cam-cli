@@ -161,6 +161,98 @@ export interface RecordProposalsInput {
 	createdAt: string;
 }
 
+/** Which provider invocation reported the cost: GSHIP-617's two run roles. */
+export type RunCostRole = 'executor' | 'reviewer';
+
+/** One (role, model) pair's cost and token counts, summed across every invocation that reported it. */
+export interface RunCostBreakdownEntry {
+	role: RunCostRole;
+	model: string;
+	costUsd: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheCreationInputTokens?: number;
+	cacheReadInputTokens?: number;
+}
+
+/**
+ * A run's whole reported cost (GSHIP-623), derived from every `.usage` event
+ * the run has, never from a display-bounded read. `totalCostUsd` is `null`
+ * when the CLI never reported a cost for this run -- never `0`, which would
+ * read as free.
+ */
+export interface RunCostSummary {
+	totalCostUsd: number | null;
+	breakdown: RunCostBreakdownEntry[];
+}
+
+/** The two `.usage` event kinds `emitUsage` (claude-cli-process.ts) writes, keyed to their role. */
+const USAGE_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
+	'provider.usage': 'executor',
+	'review.usage': 'reviewer',
+};
+
+function decodeUsageNumber(value: unknown): number | undefined {
+	return typeof value === 'number' ? value : undefined;
+}
+
+function addTokenCount(existing: number | undefined, addition: number | undefined): number | undefined {
+	return addition === undefined ? existing : (existing ?? 0) + addition;
+}
+
+/** Folds one `modelUsage` entry into the running per-(role, model) breakdown. */
+function mergeModelUsageEntry(
+	breakdown: Map<string, RunCostBreakdownEntry>,
+	role: RunCostRole,
+	entry: unknown,
+): void {
+	if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return;
+	const record = entry as Record<string, unknown>;
+	const model = record['model'];
+	const costUsd = record['costUsd'];
+	if (typeof model !== 'string' || typeof costUsd !== 'number') return;
+	const inputTokens = decodeUsageNumber(record['inputTokens']);
+	const outputTokens = decodeUsageNumber(record['outputTokens']);
+	const cacheCreationInputTokens = decodeUsageNumber(record['cacheCreationInputTokens']);
+	const cacheReadInputTokens = decodeUsageNumber(record['cacheReadInputTokens']);
+	const key = `${role} ${model}`;
+	const existing = breakdown.get(key);
+	if (existing === undefined) {
+		breakdown.set(key, {
+			role,
+			model,
+			costUsd,
+			...(inputTokens === undefined ? {} : { inputTokens }),
+			...(outputTokens === undefined ? {} : { outputTokens }),
+			...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
+			...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+		});
+		return;
+	}
+	existing.costUsd += costUsd;
+	existing.inputTokens = addTokenCount(existing.inputTokens, inputTokens);
+	existing.outputTokens = addTokenCount(existing.outputTokens, outputTokens);
+	existing.cacheCreationInputTokens =
+		addTokenCount(existing.cacheCreationInputTokens, cacheCreationInputTokens);
+	existing.cacheReadInputTokens = addTokenCount(existing.cacheReadInputTokens, cacheReadInputTokens);
+}
+
+/** Folds one `.usage` event's payload into the running total and breakdown. */
+function accumulateUsageRow(
+	breakdown: Map<string, RunCostBreakdownEntry>,
+	totalCostUsd: number | null,
+	role: RunCostRole,
+	payload: Record<string, unknown>,
+): number | null {
+	const eventTotal = payload['totalCostUsd'];
+	const next = typeof eventTotal === 'number' ? (totalCostUsd ?? 0) + eventTotal : totalCostUsd;
+	const modelUsage = payload['modelUsage'];
+	if (Array.isArray(modelUsage)) {
+		for (const entry of modelUsage) mergeModelUsageEntry(breakdown, role, entry);
+	}
+	return next;
+}
+
 interface RunRow {
 	id: string;
 	issue_id: string;
@@ -770,6 +862,30 @@ export class RunStore {
 			) ORDER BY seq ASC
 		`).all({ runId, limit }) as EventRow[];
 		return rows.map(decodeEvent);
+	}
+
+	/**
+	 * A run's total reported cost and its breakdown by role and model
+	 * (GSHIP-623), derived by summing every `provider.usage`/`review.usage`
+	 * event the run has -- deliberately unbounded, unlike `listRunEvents`'s
+	 * display window, so a run with more events than that limit still reports
+	 * its true total instead of a silently truncated one.
+	 */
+	getRunCostSummary(runId: string): RunCostSummary {
+		const rows = this.#db.query(`
+			SELECT kind, payload_json FROM run_events
+			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage')
+			ORDER BY seq ASC
+		`).all({ runId }) as Array<{ kind: string; payload_json: string }>;
+
+		let totalCostUsd: number | null = null;
+		const breakdown = new Map<string, RunCostBreakdownEntry>();
+		for (const row of rows) {
+			const role = USAGE_EVENT_ROLES[row.kind];
+			if (role === undefined) continue;
+			totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, decodePayload(row.payload_json));
+		}
+		return { totalCostUsd, breakdown: [...breakdown.values()] };
 	}
 
 	/**
