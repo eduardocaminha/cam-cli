@@ -6,7 +6,7 @@
 // deriving issue state from working-tree files.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
@@ -44,6 +44,10 @@ function seedIdleRepo(): string {
 	git(cwd, ['init', '-q', '--initial-branch=main']);
 	git(cwd, ['config', 'user.email', 'gship-test@example.com']);
 	git(cwd, ['config', 'user.name', 'Gateship Test']);
+	// The server under test writes its durable run store to .gship/ inside cwd
+	// (RunRuntime's default path); ignore it like the real repo does so a
+	// broad `git add .` in these fixtures never sweeps up that live state.
+	writeFileSync(join(cwd, '.gitignore'), '.gship/\n');
 
 	const approvedSpec = { scope: 'test', verify: ['true'] };
 	const issues = [
@@ -120,6 +124,45 @@ function advanceRemoteMain(cwd: string): void {
 	git(cwd, ['commit', '-q', '-m', 'land after boot']);
 	git(cwd, ['push', '-q', 'origin', 'main']);
 	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+}
+
+/**
+ * Land one more commit on the remote's main that only touches `.gateship/`,
+ * the shape of an archive, an approve or a close, and refresh the tracking
+ * ref.
+ */
+function advanceRemoteMainLedgerOnly(cwd: string): void {
+	const issueDir = join(cwd, '.gateship', 'issues');
+	writeFileSync(join(issueDir, 'GSHIP-4.json'), JSON.stringify(issue({ id: 'GSHIP-4', title: 'archived' })));
+	git(cwd, ['add', '.']);
+	git(cwd, ['commit', '-q', '-m', 'archive an issue']);
+	git(cwd, ['push', '-q', 'origin', 'main']);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+}
+
+/**
+ * Land one more commit on the remote's main that touches both `.gateship/`
+ * and a path outside it in the same commit, and refresh the tracking ref.
+ */
+function advanceRemoteMainMixed(cwd: string): void {
+	const issueDir = join(cwd, '.gateship', 'issues');
+	writeFileSync(join(issueDir, 'GSHIP-4.json'), JSON.stringify(issue({ id: 'GSHIP-4', title: 'archived' })));
+	writeFileSync(join(cwd, 'later.txt'), 'landed after the service booted\n');
+	git(cwd, ['add', '.']);
+	git(cwd, ['commit', '-q', '-m', 'archive an issue and ship code']);
+	git(cwd, ['push', '-q', 'origin', 'main']);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+}
+
+/**
+ * Delete the loose object for `sha` from the repo's object database. Used to
+ * make a `git diff` between two otherwise-resolvable shas fail, without
+ * touching either ref: `rev-parse --verify` on a ref never reads the object
+ * a *different* sha points to, so this isolates the changed-path listing as
+ * the thing that fails.
+ */
+function deleteLooseObject(cwd: string, sha: string): void {
+	rmSync(join(cwd, '.git', 'objects', sha.slice(0, 2), sha.slice(2)));
 }
 
 describe('GET /api/snapshot idle state', () => {
@@ -216,6 +259,55 @@ describe('GET /api/snapshot service freshness', () => {
 			// The ref the boot sha was read from is gone, so the comparison has no
 			// current side: the read still answers, and it warns about nothing.
 			git(cwd, ['update-ref', '-d', 'refs/remotes/origin/main']);
+
+			const payload = await readSnapshot();
+			expect(payload['staleService']).toBeUndefined();
+			expect(payload['version']).toBe(GSHIP_VERSION);
+		});
+	});
+
+	test('a diff confined to .gateship/ says nothing -- archiving, approving and closing land there continuously', async () => {
+		const cwd = seedIdleRepo();
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			expect((await readSnapshot())['staleService']).toBeUndefined();
+
+			advanceRemoteMainLedgerOnly(cwd);
+
+			expect((await readSnapshot())['staleService']).toBeUndefined();
+		});
+	});
+
+	test('a diff mixing .gateship/ and code still reports the restart', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			advanceRemoteMainMixed(cwd);
+			const currentSha = sourceSha(cwd);
+
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+		});
+	});
+
+	test('a failed changed-path listing says nothing, same as an unresolved sha', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			advanceRemoteMain(cwd);
+			expect(sourceSha(cwd)).not.toBe(bootSha);
+
+			// Both shas still resolve as refs, but the object the boot sha names is
+			// gone, so `git diff` between the two can't run: the listing failed
+			// rather than agreeing on an empty diff, and the notice is omitted
+			// exactly as it is for an unresolved sha.
+			deleteLooseObject(cwd, bootSha);
 
 			const payload = await readSnapshot();
 			expect(payload['staleService']).toBeUndefined();
