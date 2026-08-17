@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T14:50:41.911Z",
-  "updatedAt": "2026-08-17T14:55:26.288Z",
+  "updatedAt": "2026-08-17T15:10:42.770Z",
   "description": "Parar de descartar o custo que o CLI ja reporta, para que a escolha de modelo por papel possa ser julgada. Evidencia: classifyHeadlessStreamLine ja extrai totalCostUsd do campo total_cost_usd do evento result, e nenhum consumidor no repositorio usa esse valor; o evento de sistema tambem e emitido com apenas o subtype, de modo que um evento gravado le {\"subtype\":\"thinking_tokens\"} sem numero algum. Passar a emitir, ao encerrar cada invocacao de provider dentro de uma run, um evento proprio com o custo reportado junto do par model e effort resolvido que o GSHIP-617 ja emite, distinguindo o papel executor do papel reviewer. Nao criar tabela nova: o log de eventos ja e duravel, e o total por run e derivado somando os eventos daquela run, incluindo a rodada de fix quando houver. Quando o CLI nao reportar custo, nao gravar zero nem inventar valor, porque zero se le como gratuito: omitir o evento. Mostrar no card da run o total derivado e, ao abrir o detalhe, a quebra por papel com o modelo que produziu cada parte. Fora de escopo: Codex, cujo stream nao tem nenhum parsing de uso hoje e cuja assinatura do operador esta sem credito, portanto sem consumidor; contagem de tokens separada do custo, orcamento, limite, alerta de gasto, atribuicao do orquestrador que nao pertence a nenhuma run, comparacao historica automatica e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/claude-stream.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/run-runtime.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "dd12c40a93a2c99e29cd118babc6ad52a2ae5d6644a1b185c09a05db52c169d0",
+    "approvedAt": "2026-08-17T15:10:42.770Z"
   }
 }
