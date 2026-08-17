@@ -12,7 +12,22 @@ export interface ProposalDraft {
 
 export type ProposalRelationship = 'derived-from';
 
-export type ProposalStatus = 'pending';
+/**
+ * Capture writes `pending`, and the operator moves it exactly once: either the
+ * idea is discarded, or it becomes a filed issue. There is no lifecycle beyond
+ * that -- no reopening, no undo, and no state a run can put a proposal in.
+ */
+export type ProposalStatus = 'pending' | 'dismissed' | 'promoted';
+
+const PROPOSAL_STATUSES: readonly string[] = ['pending', 'dismissed', 'promoted'];
+
+export function isProposalStatus(value: string): value is ProposalStatus {
+	return PROPOSAL_STATUSES.includes(value);
+}
+
+export function isProposalRelationship(value: string): value is ProposalRelationship {
+	return value === 'derived-from';
+}
 
 export interface RunProposal extends ProposalDraft {
 	id: string;
@@ -20,8 +35,27 @@ export interface RunProposal extends ProposalDraft {
 	status: ProposalStatus;
 	sourceRunId: string;
 	sourceIssueId: string;
+	/** The issue promotion filed; null in every other status. */
+	promotedIssueId: string | null;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export type ProposalTransitionErrorCode = 'proposal-not-found' | 'proposal-not-pending';
+
+/**
+ * Why a proposal refused to move. Only a pending proposal transitions, so a
+ * second dismiss or a second promotion is refused rather than reapplied.
+ */
+export class ProposalTransitionError extends Error {
+	constructor(
+		readonly code: ProposalTransitionErrorCode,
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+		this.name = 'ProposalTransitionError';
+	}
 }
 
 /** Enforced on the structured result and again on every write. */

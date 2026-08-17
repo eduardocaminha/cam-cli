@@ -3,7 +3,16 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { AgentProviderId } from './agent-session.ts';
-import { normalizeProposalDrafts, type ProposalDraft, type RunProposal } from './run-proposal.ts';
+import {
+	isProposalRelationship,
+	isProposalStatus,
+	normalizeProposalDrafts,
+	type ProposalDraft,
+	type ProposalRelationship,
+	type ProposalStatus,
+	ProposalTransitionError,
+	type RunProposal,
+} from './run-proposal.ts';
 import { isRunState, nextFixRounds, type RunState } from './run-state.ts';
 
 export interface RunRecord {
@@ -176,6 +185,7 @@ interface ProposalRow {
 	issue_id: string;
 	relationship: string;
 	status: string;
+	promoted_issue_id: string | null;
 	title: string;
 	evidence: string;
 	created_at: string;
@@ -237,16 +247,30 @@ function decodeEvent(row: EventRow): RunEvent {
 }
 
 /**
- * This slice only ever writes one relationship and one status, so a row that
- * carries anything else is a corrupt write rather than a newer meaning.
+ * The status is now the operator's decision, so it is read back from the row
+ * instead of assumed. A row carrying anything else is a corrupt write rather
+ * than a newer meaning, and is refused like an invalid run state.
  */
+function decodeProposalStatus(value: string): ProposalStatus {
+	if (!isProposalStatus(value)) throw new Error(`invalid persisted proposal status: ${value}`);
+	return value;
+}
+
+function decodeProposalRelationship(value: string): ProposalRelationship {
+	if (!isProposalRelationship(value)) {
+		throw new Error(`invalid persisted proposal relationship: ${value}`);
+	}
+	return value;
+}
+
 function decodeProposal(row: ProposalRow): RunProposal {
 	return {
 		id: row.id,
-		relationship: 'derived-from',
-		status: 'pending',
+		relationship: decodeProposalRelationship(row.relationship),
+		status: decodeProposalStatus(row.status),
 		sourceRunId: row.run_id,
 		sourceIssueId: row.issue_id,
+		promotedIssueId: row.promoted_issue_id,
 		title: row.title,
 		evidence: row.evidence,
 		createdAt: row.created_at,
@@ -306,6 +330,7 @@ export class RunStore {
 				issue_id TEXT NOT NULL,
 				relationship TEXT NOT NULL,
 				status TEXT NOT NULL,
+				promoted_issue_id TEXT,
 				title TEXT NOT NULL,
 				evidence TEXT NOT NULL,
 				created_at TEXT NOT NULL,
@@ -351,6 +376,14 @@ export class RunStore {
 		}
 		this.#db.exec('UPDATE runs SET session_id = id WHERE session_id IS NULL;');
 		this.#db.exec("UPDATE runs SET provider_id = 'claude' WHERE provider_id IS NULL;");
+		// A GSHIP-612 database already carries captured proposals, and its table
+		// predates the promoted issue: the column is added instead of recreated.
+		const proposalColumns = this.#db
+			.query('PRAGMA table_info(run_proposals)')
+			.all() as Array<{ name: string }>;
+		if (!proposalColumns.some((column) => column.name === 'promoted_issue_id')) {
+			this.#db.exec('ALTER TABLE run_proposals ADD COLUMN promoted_issue_id TEXT;');
+		}
 	}
 
 	createRun(input: CreateRunInput): { run: RunRecord; event: RunEvent } {
@@ -480,6 +513,70 @@ export class RunStore {
 			) ORDER BY seq ASC
 		`).all({ limit }) as ProposalRow[];
 		return rows.map(decodeProposal);
+	}
+
+	/**
+	 * The proposals still awaiting an operator decision. A dismissed or promoted
+	 * one is durable but settled, so it never competes for the same window.
+	 */
+	listPendingProposals(limit = 200): RunProposal[] {
+		const rows = this.#db.query(`
+			SELECT * FROM (
+				SELECT * FROM run_proposals WHERE status = 'pending' ORDER BY seq DESC LIMIT $limit
+			) ORDER BY seq ASC
+		`).all({ limit }) as ProposalRow[];
+		return rows.map(decodeProposal);
+	}
+
+	getProposal(id: string): RunProposal | null {
+		const row = this.#db.query(`
+			SELECT * FROM run_proposals WHERE id = $id
+		`).get({ id }) as ProposalRow | null;
+		return row === null ? null : decodeProposal(row);
+	}
+
+	/** The operator discarded the idea; nothing is filed and nothing is undone. */
+	dismissProposal(id: string, updatedAt: string): RunProposal {
+		return this.#settleProposal(id, 'dismissed', null, updatedAt);
+	}
+
+	/**
+	 * The idea became `issueId`. The caller files the issue first, so a proposal
+	 * only reaches this status once a real issue exists to point at.
+	 */
+	promoteProposal(id: string, issueId: string, updatedAt: string): RunProposal {
+		const promotedIssueId = issueId.trim();
+		if (promotedIssueId.length === 0) throw new Error('promoted issueId is required');
+		return this.#settleProposal(id, 'promoted', promotedIssueId, updatedAt);
+	}
+
+	/**
+	 * The single write that settles a proposal: guarded by `pending` inside the
+	 * statement, so a repeated decision is refused rather than reapplied even
+	 * when two of them race.
+	 */
+	#settleProposal(
+		id: string,
+		status: ProposalStatus,
+		promotedIssueId: string | null,
+		updatedAt: string,
+	): RunProposal {
+		const row = this.#db.query(`
+			UPDATE run_proposals
+			SET status = $status, promoted_issue_id = $promotedIssueId, updated_at = $updatedAt
+			WHERE id = $id AND status = 'pending'
+			RETURNING *
+		`).get({ id, status, promotedIssueId, updatedAt }) as ProposalRow | null;
+		if (row !== null) return decodeProposal(row);
+		const current = this.getProposal(id);
+		if (current === null) {
+			throw new ProposalTransitionError('proposal-not-found', `Proposta ${id} não existe.`, 404);
+		}
+		throw new ProposalTransitionError(
+			'proposal-not-pending',
+			`Proposta ${id} já está ${current.status}.`,
+			409,
+		);
 	}
 
 	setSessionId(runId: string, sessionId: string): RunRecord {

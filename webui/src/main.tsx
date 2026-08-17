@@ -16,17 +16,21 @@ import {
 	approveIssue,
 	commandRun,
 	createIssue,
+	dismissProposal,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChat,
+	fetchProposals,
 	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
+	promoteProposal,
 	type RunAction,
 	type ChatMessageView,
 	type IssueReviewDraft,
 	type ProjectBriefView,
+	type ProposalView,
 	type ProviderStatusView,
 	saveBrief,
 	sendChat,
@@ -62,6 +66,7 @@ function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
 	drafts: IssueReviewDraft[];
+	proposals: ProposalView[];
 	runs: RunView[];
 	events: RunEventView[];
 	workspaceNotices: WorkspaceNoticeView[];
@@ -80,6 +85,7 @@ function useOperationalRun(): {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
 	const [drafts, setDrafts] = useState<IssueReviewDraft[]>([]);
+	const [proposals, setProposals] = useState<ProposalView[]>([]);
 	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
@@ -96,14 +102,29 @@ function useOperationalRun(): {
 	const [version, setVersion] = useState('');
 
 	const refresh = useCallback(() => {
-		void Promise.all([fetchRuns(), fetchBacklog(), fetchProviders(), fetchChat(), fetchBrief()])
-			.then(async ([runSnapshot, backlogSnapshot, providerSnapshot, chatSnapshot, briefSnapshot]) => {
+		void Promise.all([
+			fetchRuns(),
+			fetchBacklog(),
+			fetchProviders(),
+			fetchChat(),
+			fetchBrief(),
+			fetchProposals(),
+		])
+			.then(async ([
+				runSnapshot,
+				backlogSnapshot,
+				providerSnapshot,
+				chatSnapshot,
+				briefSnapshot,
+				proposalSnapshot,
+			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
 				setDrafts(backlogSnapshot.drafts);
+				setProposals(proposalSnapshot);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
 				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
@@ -163,6 +184,7 @@ function useOperationalRun(): {
 		backlog,
 		ideas,
 		drafts,
+		proposals,
 		runs,
 		events,
 		workspaceNotices,
@@ -185,6 +207,7 @@ function Screen(): ReactElement {
 		backlog,
 		ideas,
 		drafts,
+		proposals,
 		runs,
 		events,
 		workspaceNotices,
@@ -224,6 +247,13 @@ function Screen(): ReactElement {
 					return `${created.id} criada e selecionada.`;
 				}));
 			}}
+			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId))}
+			onPromoteProposal={(proposalId, draft) => {
+				// The created issue is a draft to review, not the next run: it is
+				// filed unapproved, so it is not selected to start either.
+				send(() => promoteProposal(proposalId, draft).then((created) =>
+					`${created.id} criada a partir da proposta.`));
+			}}
 			onSendMessage={(message) => send(() => sendChat(message))}
 			onConnectCodex={() => {
 				const loginWindow = window.open('about:blank', 'gateship-codex-login');
@@ -255,6 +285,7 @@ function Screen(): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
 			pending={pending}
+			proposals={proposals}
 			providers={providers}
 			route={routeOf(window.location.pathname)}
 			runs={runs}
