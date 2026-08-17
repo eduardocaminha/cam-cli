@@ -78,15 +78,48 @@ function seedIdleRepo(): string {
 	return cwd;
 }
 
-async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
+/**
+ * Run `body` against one live server, giving it a snapshot reader it can call
+ * more than once: the boot sha is resolved when the process starts, so what the
+ * ref does afterwards is only observable through a second read of the same
+ * server.
+ */
+async function withSnapshotServer<T>(
+	cwd: string,
+	body: (readSnapshot: () => Promise<Record<string, unknown>>) => Promise<T>,
+): Promise<T> {
 	const handle = startWebServer({ port: 0, cwd });
 	try {
-		const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
-		expect(response.status).toBe(200);
-		return (await response.json()) as Record<string, unknown>;
+		return await body(async () => {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
+			expect(response.status).toBe(200);
+			return (await response.json()) as Record<string, unknown>;
+		});
 	} finally {
 		await handle.stop();
 	}
+}
+
+async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
+	return await withSnapshotServer(cwd, (readSnapshot) => readSnapshot());
+}
+
+function sourceSha(cwd: string): string {
+	const result = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'origin/main'], {
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stderr));
+	return new TextDecoder().decode(result.stdout).trim();
+}
+
+/** Land one more commit on the remote's main and refresh the tracking ref. */
+function advanceRemoteMain(cwd: string): void {
+	writeFileSync(join(cwd, 'later.txt'), 'landed after the service booted\n');
+	git(cwd, ['add', '.']);
+	git(cwd, ['commit', '-q', '-m', 'land after boot']);
+	git(cwd, ['push', '-q', 'origin', 'main']);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 }
 
 describe('GET /api/snapshot idle state', () => {
@@ -141,6 +174,52 @@ describe('GET /api/snapshot idle state', () => {
 				],
 				planned: [],
 			},
+		});
+	});
+});
+
+describe('GET /api/snapshot service freshness', () => {
+	test('a service on the sha it booted on says nothing', async () => {
+		const cwd = seedIdleRepo();
+		const payload = await getSnapshot(cwd);
+
+		expect(payload['staleService']).toBeUndefined();
+		expect(Object.keys(payload)).not.toContain('staleService');
+	});
+
+	test('a service older than origin/main reports the restart and both shas', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			expect((await readSnapshot())['staleService']).toBeUndefined();
+
+			advanceRemoteMain(cwd);
+			const currentSha = sourceSha(cwd);
+			expect(currentSha).not.toBe(bootSha);
+
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+			expect(notice['detail']).toContain(bootSha);
+			expect(notice['detail']).toContain(currentSha);
+		});
+	});
+
+	test('an unresolvable origin/main is unknown, never an invented divergence', async () => {
+		const cwd = seedIdleRepo();
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			// The ref the boot sha was read from is gone, so the comparison has no
+			// current side: the read still answers, and it warns about nothing.
+			git(cwd, ['update-ref', '-d', 'refs/remotes/origin/main']);
+
+			const payload = await readSnapshot();
+			expect(payload['staleService']).toBeUndefined();
+			expect(payload['version']).toBe(GSHIP_VERSION);
 		});
 	});
 });

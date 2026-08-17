@@ -44,6 +44,7 @@ import {
 	type ProjectBriefView,
 	type ProposalView,
 	type ProviderStatusView,
+	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
 import { useLiveEdge } from './live-edge.ts';
@@ -107,6 +108,11 @@ export interface AppProps {
 	selectedIssueId: string | null;
 	/** Binary serving this screen, read-only; empty renders nothing. */
 	version: string;
+	/**
+	 * The service is running code older than origin/main. Null is the ordinary
+	 * case; while it is set the shell says so, and no command is held back.
+	 */
+	staleService: StaleServiceView | null;
 	/** Last command outcome, or the last transport error. */
 	status: string | null;
 	/** A command is in flight; every button is held until it answers. */
@@ -1163,12 +1169,36 @@ function HandoffPanel({ handoff }: Pick<AppProps, 'handoff'>): React.ReactElemen
 	);
 }
 
+/**
+ * The service is older than the code it reads from, said where the shell
+ * already carries global state so it is on every surface and stays there until
+ * the restart clears it. It is a statement, not a decision: no button, no
+ * dismissal, nothing held back.
+ */
+function StaleServiceCallout({
+	staleService,
+}: Pick<AppProps, 'staleService'>): React.ReactElement | null {
+	if (staleService === null) return null;
+	return (
+		<section
+			aria-label="Serviço desatualizado"
+			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+		>
+			<span className="font-medium text-sm">Reinicie o serviço</span>
+			<p className="break-words text-xs">{staleService.detail}</p>
+			<code className="break-all text-xs">boot {staleService.bootSha}</code>
+			<code className="break-all text-xs">origin/main {staleService.currentSha}</code>
+		</section>
+	);
+}
+
 function ShellSidebar({
 	route,
 	run,
+	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'workspaceNotices'> & {
+}: Pick<AppProps, 'staleService' | 'workspaceNotices'> & {
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
@@ -1187,6 +1217,7 @@ function ShellSidebar({
 				</div>
 				<Badge variant={attentionToneOf(attention)}>{attention}</Badge>
 			</div>
+			<StaleServiceCallout staleService={staleService} />
 			<Separator />
 			<nav aria-label="Superfícies do operador">
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
@@ -1584,6 +1615,7 @@ export function App(props: AppProps): React.ReactElement {
 			<ShellSidebar
 				route={props.route}
 				run={run}
+				staleService={props.staleService}
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
 			/>

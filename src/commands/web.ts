@@ -23,7 +23,12 @@ import {
 	OrchestratorBusyError,
 	type OrchestratorTurnResult,
 } from '../runtime/conversational-orchestrator.ts';
-import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
+import {
+	createGitRuntimePreflight,
+	defaultRunGit,
+	GitIssueVerifier,
+	RuntimePreflightError,
+} from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
@@ -847,6 +852,53 @@ function readIdleSnapshotState(cwd: string): { backlog: BacklogJsonView } {
 }
 
 /**
+ * The running process is older than the code it reads from: what it loaded at
+ * boot no longer matches `origin/main`. It is the common cause behind a missing
+ * table, a missing route and a security fix that is silently off, so the
+ * snapshot says so instead of leaving the operator to infer it.
+ *
+ * It is informative only: nothing here refuses a run, an approval, a promotion
+ * or a ship, and a restart makes it disappear on its own.
+ */
+interface StaleServiceNotice {
+	/** `origin/main` at the moment this process started. */
+	bootSha: string;
+	/** `origin/main` right now. */
+	currentSha: string;
+	detail: string;
+}
+
+/**
+ * Resolve the runtime source ref, or null when it cannot be read. Like the
+ * backlog read above this is a pure ref read, never a fetch: refreshing the ref
+ * belongs to the start of a run and to the terminal of a ship.
+ */
+function readSourceSha(cwd: string): string | null {
+	const result = defaultRunGit(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
+	if (result.exitCode !== 0) return null;
+	const sha = result.stdout.trim();
+	return sha.length === 0 ? null : sha;
+}
+
+/**
+ * Compare the sha this process booted on with the current one. A sha that
+ * cannot be resolved -- on either side -- is unknown, not divergent: the notice
+ * is omitted rather than invented.
+ */
+function staleServiceNotice(cwd: string, bootSha: string | null): StaleServiceNotice | null {
+	if (bootSha === null) return null;
+	const currentSha = readSourceSha(cwd);
+	if (currentSha === null || currentSha === bootSha) return null;
+	return {
+		bootSha,
+		currentSha,
+		detail: `O serviço está rodando o código de ${RUNTIME_SOURCE_REF} no boot (${bootSha}),`
+			+ ` e ${RUNTIME_SOURCE_REF} já está em ${currentSha}.`
+			+ ' Reinicie o serviço para aplicar o que entrou depois do boot.',
+	};
+}
+
+/**
  * One adapter's slot, read at the moment it spawns a child. The adapter holds
  * this function, never a value, so an Ajustes change reaches the next run
  * without restarting the service.
@@ -1019,6 +1071,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const orchestrator = options.orchestrator?.(execute)
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
+	// Read once, at boot, and kept in memory: it is what this process loaded, so
+	// no later read of the ref can change it short of a restart.
+	const bootSourceSha = readSourceSha(options.cwd);
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
 		port: options.port,
@@ -1039,6 +1094,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				};
 				const workspaceNotices = runRuntime.listWorkspaceNotices();
 				if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;
+				// Its own field: `workspaceNotices` means a preserved local resource
+				// waiting for a decision, which this is not.
+				const staleService = staleServiceNotice(options.cwd, bootSourceSha);
+				if (staleService !== null) snapshot['staleService'] = staleService;
 				return Response.json(snapshot);
 			},
 			'/api/runs': {

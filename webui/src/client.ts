@@ -40,8 +40,21 @@ export interface BacklogSnapshot {
 	ideas: PlannableIssue[];
 	drafts: IssueReviewDraft[];
 	workspaceNotices: WorkspaceNoticeView[];
+	/** The service is older than origin/main; null while it is current. */
+	staleService: StaleServiceView | null;
 	/** Version of the binary serving the screen; empty when it did not say. */
 	version: string;
+}
+
+/**
+ * The service is running code older than origin/main and has to be restarted to
+ * pick up what landed after its boot. Informative only: it holds no command
+ * back, and it is absent from the snapshot as soon as the restart happens.
+ */
+export interface StaleServiceView {
+	bootSha: string;
+	currentSha: string;
+	detail: string;
 }
 
 export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
@@ -141,6 +154,7 @@ interface SnapshotPayload {
 		};
 	};
 	workspaceNotices?: WorkspaceNoticeView[];
+	staleService?: Partial<StaleServiceView>;
 	version?: string;
 }
 
@@ -188,6 +202,17 @@ async function readJson<T>(response: Response, what: string): Promise<T> {
 	return (await response.json()) as T;
 }
 
+/**
+ * The absent field is the ordinary case -- the service is current -- so a
+ * payload without it, or with an incomplete one, reads as no divergence.
+ */
+function staleServiceRecord(record: Partial<StaleServiceView> | undefined): StaleServiceView | null {
+	if (record === undefined) return null;
+	const { bootSha, currentSha, detail } = record;
+	if (typeof bootSha !== 'string' || typeof currentSha !== 'string') return null;
+	return { bootSha, currentSha, detail: detail ?? '' };
+}
+
 /** Read the executable queue and the ideas that can be specified while idle. */
 export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	const payload = await readJson<SnapshotPayload>(await fetch(SNAPSHOT_PATH), 'Snapshot');
@@ -196,6 +221,7 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
 		drafts: payload.idleState?.backlog?.drafts ?? [],
 		workspaceNotices: payload.workspaceNotices ?? [],
+		staleService: staleServiceRecord(payload.staleService),
 		version: payload.version ?? '',
 	};
 }
