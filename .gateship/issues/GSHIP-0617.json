@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T10:47:10.329Z",
-  "updatedAt": "2026-08-17T10:47:10.329Z",
+  "updatedAt": "2026-08-17T10:47:52.401Z",
   "description": "Dar ao Gateship uma configuracao propria de modelo e effort por papel, para que o operador escolha granularidade em Ajustes em vez de depender do default de cada CLI. Guardar em runtime_settings, sob uma chave unica com JSON, a escolha por par (provider, papel) para os tres papeis que chamam modelo: orchestrator, executor e reviewer. Cada slot tem model e effort opcionais; vazio significa nao passar a flag, preservando exatamente o comportamento atual. Nao hardcodar enum de modelos nem de efforts: validar apenas a forma (string nao vazia, sem espaco em branco) e passar adiante como elemento de argv, deixando o CLI recusar valor invalido com o erro dele; a tela sugere os valores conhecidos sem restringir. No Claude, empurrar --model e --effort quando configurados; no Codex, -m e -c model_reasoning_effort quando configurados. Os adapters passam a aceitar effort ao lado do model que ja aceitam, e recebem um resolver consultado a cada spawn, nao no boot, para que mudar o ajuste nao exija reiniciar o servico. Emitir o par model/effort resolvido no evento de spawn da run, para que o historico mostre qual modelo fez o que, sem coluna nova. Em /settings, uma secao com os tres papeis para cada provider, persistindo por API same-origin. Criar o arquivo de teste test/web/model-settings-api.test.ts para a superficie HTTP; os demais testes entram nos arquivos existentes nomeados no comando de verificacao. Fora de escopo: --fallback-model, override por issue, atribuicao de custo, rebaixamento automatico de modelo, fallback entre providers e qualquer etapa de planner.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/run-store.test.ts test/web/model-settings-api.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "11a76821332c3d0291d19fc82777c53ecfabc9674c9358d621b471305fb1e031",
+    "approvedAt": "2026-08-17T10:47:52.401Z"
   }
 }
