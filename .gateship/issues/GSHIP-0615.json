@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-615",
   "title": "Ship deve recusar merge de head que o servico nao empurrou",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T02:35:27.069Z",
-  "updatedAt": "2026-08-17T02:43:14.236Z",
+  "updatedAt": "2026-08-17T03:05:07.477Z",
   "description": "Fazer o shipper recusar um merge cujo head ele nao empurrou, em vez de confiar apenas no --match-head-commit passado ao armar o auto-merge. Evidencia real: o branch de uma run foi movido por fora do servico com force-push, o auto-merge permaneceu armado e o GitHub mergeou o head novo, embora o comentario do arquivo documente que nessa situacao o merge seria recusado. Guardar o sha empurrado no ship e, a cada passo do polling, ler tambem o headRefOid do pull request; quando ele divergir do sha empurrado, parar de esperar e encerrar o ship como falha com motivo explicito, sem mergear, sem re-armar e sem apagar o branch. Quando o GitHub reportar merged, so reportar merged se o headRefOid observado ainda for o sha empurrado; caso contrario reportar falha indicando que o merge landou um head nao verificado pelo servico. Emitir um evento proprio para essa deteccao, para que o caso apareca no historico da run. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir head divergente durante o polling, head divergente no momento do merge e o caminho normal em que o head nunca muda. Fora de escopo: rebase automatico, resolucao de conflito, re-armar auto-merge, mudar metodo de merge e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {

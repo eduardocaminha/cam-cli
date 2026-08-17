@@ -124,7 +124,13 @@ function createRunner(fixture: Fixture, hub: Hub): ShipCommandRunner {
 			}
 			return {
 				exitCode: 0,
-				stdout: JSON.stringify({ state: 'MERGED', mergeStateStatus: 'CLEAN' }),
+				stdout: JSON.stringify({
+					state: 'MERGED',
+					mergeStateStatus: 'CLEAN',
+					// The merged head is the one the ship pushed, so the head check
+					// the monitor runs on every poll (GSHIP-615) lets it through.
+					headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
+				}),
 				stderr: '',
 			};
 		}
