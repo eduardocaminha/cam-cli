@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T11:45:04.322Z",
-  "updatedAt": "2026-08-17T11:45:04.322Z",
+  "updatedAt": "2026-08-17T12:07:41.673Z",
   "description": "Avisar o operador quando o servico em execucao esta rodando codigo mais velho que o origin/main, que e a causa comum de tres falhas observadas: tabela ausente, rota ausente e um conserto de seguranca silenciosamente desligado. Ao iniciar, o servico resolve e guarda em memoria o sha de origin/main daquele momento, o sha de boot. A leitura de snapshot ja existente passa a comparar o sha de boot com o origin/main corrente e, quando diferirem, inclui um aviso proprio no snapshot informando que o servico precisa ser reiniciado para aplicar o que entrou depois do boot, com os dois shas. O aviso e informativo e nunca bloqueia: nao impede iniciar run, aprovar, promover nem shipar, e desaparece sozinho apos o reinicio. Nao reaproveitar workspaceNotices, que tem outro significado; usar campo proprio, ausente quando nao ha divergencia. A UI mostra o aviso de forma persistente enquanto durar, no mesmo lugar em que ja mostra estado global. Se a resolucao do sha corrente falhar, nao inventar divergencia: omitir o aviso. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir sha igual sem aviso, sha diferente com aviso e os dois shas, e falha de resolucao sem aviso. Fora de escopo: reinicio automatico, recarga a quente, migracao automatica de schema, fixar versao, comparar versao do binario compilado e qualquer bloqueio de operacao.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/idle-state.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "632d4309e5df45800bc7a54a8cb1a34935ca35faf19819f94fe4ea12daf5ae6c",
+    "approvedAt": "2026-08-17T12:07:41.673Z"
   }
 }
