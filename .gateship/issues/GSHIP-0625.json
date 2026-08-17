@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T18:05:53.991Z",
-  "updatedAt": "2026-08-17T18:05:53.991Z",
+  "updatedAt": "2026-08-17T19:55:05.333Z",
   "description": "Distinguir indisponibilidade do provedor de decisao do provedor no ship, para que um soluco do GitHub deixe de ser reportado como falha de merge. Evidencia real medida hoje: o ship do GSHIP-624 falhou em gh pr merge com HTTP 503 e, na tentativa seguinte, falhou em gh pr view com HTTP 503 logo apos armar o auto-merge; o GitHub mergeou o pull request um segundo depois da mensagem de falha, e o runtime seguiu acreditando que nao havia shipado ate uma nova chamada reconciliar. Hoje todo exit code nao zero vira o mesmo Error generico no ponto unico #checked de src/runtime/github-shipper.ts. Classificar ali: indisponibilidade e HTTP 5xx, timeout, e falha de rede ou de resolucao de nome reportada pelo gh; decisao e qualquer outra saida nao zero, incluindo conflito, permissao negada e recusa. Em indisponibilidade, repetir o comando com recuo, com numero de tentativas e janela total pequenos e fixos, antes de desistir; em decisao, falhar imediatamente sem repetir, preservando o comportamento atual. So repetir comandos que o proprio arquivo ja documenta como idempotentes, que e o caso de reaproveitar pull request, armar auto-merge e ler estado. Quando as tentativas se esgotarem sem conseguir ler o estado do pull request, encerrar o ship com motivo explicito de que o merge nao pode ser confirmado, distinto de falha de merge, e propagar essa distincao ao historico da run e a mensagem mostrada ao operador, porque a diferenca entre nao mergeou e nao consegui ver e exatamente o que confundiu o operador. A deteccao de head divergente do GSHIP-615 e o desarme do GSHIP-616 permanecem inalterados e continuam falhando na hora, sem repeticao. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir indisponibilidade que se resolve na repeticao, indisponibilidade que persiste e termina como nao confirmado, decisao falhando sem nenhuma repeticao, e head divergente continuando a falhar imediatamente. Fora de escopo: central de notificacoes, reclassificar erro por texto fora do ponto de origem, retry em qualquer outro subsistema, canal externo de notificacao, alterar o ciclo de vida da run e reconciliacao automatica de ship encalhado.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/github-shipper.test.ts test/runtime/run-ship.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "d22923c5f053bf2b3e9035cc3b4da0da66e672f296de61326e91830dac61f8d0",
+    "approvedAt": "2026-08-17T19:55:05.333Z"
   }
 }
