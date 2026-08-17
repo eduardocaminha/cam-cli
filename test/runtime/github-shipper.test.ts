@@ -51,6 +51,9 @@ interface FakeRepo {
 	mergedOnView: number;
 	/** The poll from which the branch carries a head the service never pushed. */
 	headMovedOnView: number;
+	/** Arming take-downs GitHub accepted or refused (GSHIP-616). */
+	disarms: number;
+	disarmFails: boolean;
 	pushFails: boolean;
 }
 
@@ -68,6 +71,8 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		views: 0,
 		mergedOnView: 1,
 		headMovedOnView: Number.MAX_SAFE_INTEGER,
+		disarms: 0,
+		disarmFails: false,
 		pushFails: false,
 		...overrides,
 	};
@@ -116,7 +121,13 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 				repo.prCreates += 1;
 				return result(0, PR_URL);
 			}
-			if (args[1] === 'merge') return result(0);
+			if (args[1] === 'merge') {
+				if (!args.includes('--disable-auto')) return result(0);
+				repo.disarms += 1;
+				return repo.disarmFails
+					? result(1, '', 'failed to disable auto-merge: not enabled')
+					: result(0);
+			}
 			if (args[1] === 'view') {
 				repo.views += 1;
 				// A force-push from outside the service is durable too: the pull
@@ -157,14 +168,24 @@ function readIssue(cwd: string): Record<string, unknown> {
 	) as Record<string, unknown>;
 }
 
-function createShipInput(cwd: string, events: string[], signal: AbortSignal): RuntimeShipInput {
+/**
+ * The shipper's own view of an event: `payloads` is only collected by the tests
+ * that read what an event carries, not just that it happened.
+ */
+function createShipInput(
+	cwd: string,
+	events: string[],
+	signal: AbortSignal,
+	payloads?: Map<string, Record<string, unknown> | undefined>,
+): RuntimeShipInput {
 	return {
 		runId: '2a6af4e6-1d68-4ba4-b99b-bc3bf905114f',
 		issueId: 'CAM-579',
 		cwd,
 		signal,
-		emit: (kind) => {
+		emit: (kind, payload) => {
 			events.push(kind);
+			payloads?.set(kind, payload);
 		},
 	};
 }
@@ -174,6 +195,17 @@ function findCall(calls: RecordedCall[], command: string, first: string, second?
 		call.command === command &&
 		call.args[0] === first &&
 		(second === undefined || call.args[1] === second));
+}
+
+/** `gh pr merge` arming the pull request, told apart from the take-down. */
+function armCalls(calls: RecordedCall[]): RecordedCall[] {
+	return findCall(calls, 'gh', 'pr', 'merge').filter((call) => call.args.includes('--auto'));
+}
+
+/** `gh pr merge --disable-auto`: the take-down of a previous arming. */
+function disarmCalls(calls: RecordedCall[]): RecordedCall[] {
+	return findCall(calls, 'gh', 'pr', 'merge').filter((call) =>
+		call.args.includes('--disable-auto'));
 }
 
 describe('the GitHub shipper', () => {
@@ -332,32 +364,81 @@ describe('the GitHub shipper', () => {
 		const repo = createRepo({ mergedOnView: Number.MAX_SAFE_INTEGER, headMovedOnView: 2 });
 		const calls: RecordedCall[] = [];
 		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
 		const shipper = new GithubShipper({
 			runCommand: createRunner(repo, calls),
 			pollIntervalMs: 0,
 		});
 
-		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
 
 		expect(failed).toMatchObject({ outcome: 'failed' });
 		expect((failed as { detail: string }).detail).toContain(FOREIGN_SHA);
 		expect((failed as { detail: string }).detail).toContain('moved outside the service');
 		// The monitor stops on the poll that saw the foreign head.
 		expect(repo.views).toBe(2);
-		expect(events.at(-1)).toBe('ship.head-diverged');
 		expect(events).not.toContain('ship.merged');
+		// GSHIP-616: the arming this ship left on the pull request is taken down
+		// before the failure is reported, so GitHub cannot land the refused head
+		// once nobody is watching any more.
+		expect(disarmCalls(calls)[0]?.args).toEqual(['pr', 'merge', '385', '--disable-auto']);
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.head-diverged']);
+		expect(payloads.get('ship.automerge-disarmed')).toEqual({ prNumber: 385, disarmed: true });
 		// Nothing is merged, nothing is re-armed, and origin/main is left alone.
-		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
+		expect(armCalls(calls)).toHaveLength(1);
+		expect(repo.fetches).toBe(0);
+	});
+
+	test('a disarm GitHub refuses still reports the divergence as the reason', async () => {
+		const cwd = createWorkspace();
+		// GSHIP-616: `--disable-auto` fails — nothing armed, a flaky API, an
+		// expired login. The ship reports the head it refused all the same: the
+		// take-down is a precaution, never the reason the ship failed.
+		const repo = createRepo({
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			headMovedOnView: 1,
+			disarmFails: true,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		expect((failed as { detail: string }).detail)
+			.toContain(`now carries ${FOREIGN_SHA}, not the head ${HEAD_SHA}`);
+		expect((failed as { detail: string }).detail).not.toContain('disable auto-merge');
+		expect(repo.disarms).toBe(1);
+		// The refused take-down is still recorded, so the run history says the
+		// arming may have survived the divergence.
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.head-diverged']);
+		expect(payloads.get('ship.automerge-disarmed')).toEqual({
+			prNumber: 385,
+			disarmed: false,
+			detail: 'failed to disable auto-merge: not enabled',
+		});
+		expect(armCalls(calls)).toHaveLength(1);
 		expect(repo.fetches).toBe(0);
 	});
 
 	test('a merge that landed a foreign head is reported as a failure, never as merged', async () => {
 		const cwd = createWorkspace();
-		// The force-push wins the race and GitHub merges the head it left.
+		// The force-push wins the race and GitHub merges the head it left, so the
+		// divergence surfaces on the same poll that reports MERGED.
 		const repo = createRepo({ mergedOnView: 1, headMovedOnView: 1 });
+		const calls: RecordedCall[] = [];
 		const events: string[] = [];
 		const shipper = new GithubShipper({
-			runCommand: createRunner(repo, []),
+			runCommand: createRunner(repo, calls),
 			pollIntervalMs: 0,
 		});
 
@@ -367,9 +448,14 @@ describe('the GitHub shipper', () => {
 		expect((failed as { detail: string }).detail)
 			.toContain(`merged ${FOREIGN_SHA}, not the head ${HEAD_SHA}`);
 		expect((failed as { detail: string }).detail).toContain('never verified');
-		expect(events.at(-1)).toBe('ship.head-diverged');
 		expect(events).not.toContain('ship.merged');
 		expect(events).not.toContain('ship.source-synced');
+		// GSHIP-616: the arming goes down here too. GitHub reporting the merge is
+		// a head behind the branch often enough that leaving it armed would keep
+		// the window open on whatever the force-push pushes next.
+		expect(repo.disarms).toBe(1);
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.head-diverged']);
+		expect(armCalls(calls)).toHaveLength(1);
 		expect(repo.fetches).toBe(0);
 	});
 
@@ -388,6 +474,11 @@ describe('the GitHub shipper', () => {
 		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
 		expect(events).not.toContain('ship.head-diverged');
 		expect(events.slice(-2)).toEqual(['ship.source-synced', 'ship.merged']);
+		// GSHIP-616: nothing is disarmed on the way to a merge of our own head —
+		// the arming is what lands it.
+		expect(events).not.toContain('ship.automerge-disarmed');
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(repo.disarms).toBe(0);
 		// Every poll reads the head, not only the merge state.
 		const views = findCall(calls, 'gh', 'pr', 'view');
 		expect(views).toHaveLength(3);

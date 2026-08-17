@@ -23,7 +23,10 @@
 // ship keeps the sha it pushed and re-checks it on every poll against the pull
 // request's own `headRefOid`. A head that is not the one we published ends the
 // ship as a failure — no merge, no re-arming, no branch deletion — and reports
-// merged only while the head GitHub merged is still the head we pushed.
+// merged only while the head GitHub merged is still the head we pushed. Ending
+// the ship is not enough on its own: the arming outlives this process, so a
+// refused head is disarmed with `--disable-auto` before the failure is
+// reported, or GitHub could still land it with nobody watching.
 //
 // Every `gh` command receives an allowlisted environment with no token
 // variables, so authentication always belongs to gh's own credential store.
@@ -261,7 +264,13 @@ export class GithubShipper implements RuntimeShipper {
 	): Promise<RuntimeShipResult | null> {
 		if (pullRequest.state === 'MERGED') {
 			if (pullRequest.headRefOid !== headSha) {
-				return this.#headDiverged(input, pullRequest.number, headSha, pullRequest.headRefOid, true);
+				return await this.#headDiverged(
+					input,
+					pullRequest.number,
+					headSha,
+					pullRequest.headRefOid,
+					true,
+				);
 			}
 			return await this.#merged(input, pullRequest.number);
 		}
@@ -276,22 +285,24 @@ export class GithubShipper implements RuntimeShipper {
 
 	/**
 	 * The pull request no longer carries the head this ship pushed: the branch
-	 * moved outside the service. The ship ends here as a failure — nothing is
-	 * merged, no auto-merge is re-armed and no branch is deleted — and the
-	 * detection is recorded so it shows up in the run's history.
+	 * moved outside the service. The armed auto-merge is taken down first, then
+	 * the ship ends here as a failure — nothing is merged, no auto-merge is
+	 * re-armed and no branch is deleted — and the detection is recorded so it
+	 * shows up in the run's history.
 	 *
 	 * `merged` distinguishes the two moments this is caught: a head that moved
 	 * while the monitor was still waiting, and a merge GitHub already performed
 	 * on a head this service never verified. An unreported head counts as a
 	 * divergence too: a head that cannot be read cannot be the one we published.
 	 */
-	#headDiverged(
+	async #headDiverged(
 		input: RuntimeShipInput,
 		prNumber: number,
 		headSha: string,
 		observedHead: string,
 		merged: boolean,
-	): RuntimeShipResult {
+	): Promise<RuntimeShipResult> {
+		await this.#disarmAutoMerge(input, prNumber);
 		const observed = observedHead.length === 0 ? 'an unreported head' : observedHead;
 		input.emit('ship.head-diverged', { prNumber, headSha, observedHead, merged });
 		return {
@@ -300,6 +311,35 @@ export class GithubShipper implements RuntimeShipper {
 				? `pull request #${prNumber} merged ${observed}, not the head ${headSha} this run published: the merge landed a head this service never verified`
 				: `pull request #${prNumber} now carries ${observed}, not the head ${headSha} this run pushed: the branch moved outside the service`,
 		};
+	}
+
+	/**
+	 * Take the arming off a pull request whose head this ship just refused, so
+	 * GitHub cannot land it later with nobody watching. `--disable-auto` is
+	 * idempotent: a pull request with nothing armed — never armed, already
+	 * disarmed, already merged — is exactly where we want it, so gh's refusal is
+	 * recorded and no more than that.
+	 *
+	 * The disarm never decides the ship's outcome: whether it worked or not, the
+	 * divergence stays the reported reason. Only cancellation still belongs to
+	 * the runtime, so it is the one error that keeps propagating.
+	 */
+	async #disarmAutoMerge(input: RuntimeShipInput, prNumber: number): Promise<void> {
+		let detail: string;
+		try {
+			const disarmed = await this.#run(input, 'gh', [
+				'pr', 'merge', String(prNumber), '--disable-auto',
+			]);
+			if (disarmed.exitCode === 0) {
+				input.emit('ship.automerge-disarmed', { prNumber, disarmed: true });
+				return;
+			}
+			detail = failureDetail(disarmed);
+		} catch (error) {
+			if (input.signal.aborted) throw error;
+			detail = errorMessage(error);
+		}
+		input.emit('ship.automerge-disarmed', { prNumber, disarmed: false, detail });
 	}
 
 	/**
@@ -416,7 +456,7 @@ export class GithubShipper implements RuntimeShipper {
 		if (view.state === 'MERGED') {
 			return view.headRefOid === headSha
 				? await this.#merged(input, prNumber)
-				: this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
+				: await this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
 		}
 		if (view.state === 'CLOSED') {
 			return {
@@ -425,7 +465,7 @@ export class GithubShipper implements RuntimeShipper {
 			};
 		}
 		if (view.headRefOid !== headSha) {
-			return this.#headDiverged(input, prNumber, headSha, view.headRefOid, false);
+			return await this.#headDiverged(input, prNumber, headSha, view.headRefOid, false);
 		}
 		return null;
 	}

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-616",
   "title": "Desarmar o auto-merge quando o ship recusa um head divergente",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T03:06:51.490Z",
-  "updatedAt": "2026-08-17T10:20:32.282Z",
+  "updatedAt": "2026-08-17T10:29:09.517Z",
   "description": "Fechar a janela em que um head estranho ainda pode ser mergeado depois que o ship ja recusou. Evidencia da propria proposta derivada: quando #headDiverged encerra o ship, nada desarma o auto-merge armado antes por gh pr merge --squash --auto --match-head-commit, entao o GitHub pode landar sozinho, sem ninguem olhando, exatamente o head que o servico acabou de recusar. Ao detectar divergencia, desarmar o auto-merge do pull request antes de encerrar o ship como falha, e so entao emitir a falha; o desarme deve ser idempotente e sua propria falha nao pode mascarar o motivo original da divergencia, que continua sendo o motivo reportado. Emitir evento proprio para o desarme, para que apareca no historico da run. Manter tudo o que o GSHIP-615 estabeleceu: sem mergear, sem re-armar, sem apagar branch. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir desarme apos divergencia no polling, desarme apos divergencia no momento do merge, falha do proprio desarme preservando o motivo original, e o caminho normal sem divergencia em que nada e desarmado. Fora de escopo: rebase automatico, resolucao de conflito, forcar push no retry, mudar metodo de merge e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {

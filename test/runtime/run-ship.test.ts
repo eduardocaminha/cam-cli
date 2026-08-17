@@ -210,6 +210,52 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	test('a refused head keeps the arming take-down in the run history too', async () => {
+		// GSHIP-616: the shipper takes the armed auto-merge down before it reports
+		// the divergence, and a take-down GitHub refused is recorded just as
+		// plainly — the operator reading the history has to know whether the
+		// arming may still be sitting on the pull request.
+		const runtime = createRuntime({
+			ship: async (input) => {
+				input.emit('ship.pushed', { branch: 'gship/cam-583' });
+				input.emit('ship.automerge-disarmed', {
+					prNumber: 385,
+					disarmed: false,
+					detail: 'failed to disable auto-merge: not enabled',
+				});
+				input.emit('ship.head-diverged', {
+					prNumber: 385,
+					headSha: 'aaaa',
+					observedHead: 'bbbb',
+					merged: false,
+				});
+				return { outcome: 'failed', detail: 'pull request #385 now carries bbbb' };
+			},
+		});
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
+
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
+		// The take-down is recorded before the divergence it protects against.
+		expect(eventKinds(runtime).slice(-3)).toEqual([
+			'ship.automerge-disarmed',
+			'ship.head-diverged',
+			'run.ship-failed',
+		]);
+		expect(runtime.listEvents().find((event) => event.kind === 'ship.automerge-disarmed')?.payload)
+			.toEqual({
+				prNumber: 385,
+				disarmed: false,
+				detail: 'failed to disable auto-merge: not enabled',
+			});
+		// A refused take-down never becomes the reported reason.
+		expect(runtime.listEvents().at(-1)?.payload).toEqual({
+			error: 'pull request #385 now carries bbbb',
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a thrown ship is reported as a retryable failure, not a failed run', async () => {
 		const runtime = createRuntime({
 			ship: async () => {
