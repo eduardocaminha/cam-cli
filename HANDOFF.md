@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `5a4df0a1` (GSHIP-613 shipped through PR #444)
+> Product baseline: `main` at `1ae9bec8` (GSHIP-615 shipped through PR #447)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -22,9 +22,9 @@ than silently assuming either is current.
 ## Current stage
 
 **Stage 5 of 15 — serial autonomous scheduler (next; no specification yet).
-Stage 4 is complete: GSHIP-612 shipped the capture backend and GSHIP-613 shipped
-the operator-facing inbox. Two repair drafts, GSHIP-614 and GSHIP-615, are filed
-and unapproved.**
+Stage 4 is complete and both repairs it exposed shipped as GSHIP-614 and
+GSHIP-615. One draft, GSHIP-616, is filed and unapproved; it was promoted out of
+the inbox rather than written by hand.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -99,21 +99,31 @@ because it executed with the schema GSHIP-612 had already shipped: a snapshot
 that does not refresh on capture, a promoted proposal whose issue is stored but
 never shown, and duplicated refusal responses across the web handlers.
 
+Both repairs shipped. GSHIP-614 made the issue file's ownership explicit:
+`RunRuntime.findActiveRunForIssue` answers whether a run still owns an issue, the
+revise and approve routes and the typed specify, approve and abandon commands
+refuse with 409 `issue-run-active` before any git work, approving a fingerprint
+that already matches returns the published entry without committing, and `/work`
+explains itself instead of offering those controls during a run. The abandon
+route named in the specification does not exist in this tree, so the guard was
+placed on the writer where it is actually reachable.
+
+GSHIP-615 made the ship refuse a merge whose head the service did not push. It
+stores the pushed sha, re-reads the pull request's `headRefOid` on every poll,
+ends the ship explicitly on divergence without merging, re-arming or deleting the
+branch, and reports merged only while the observed head is still the pushed one.
+An unreported head counts as divergence. The file comment that claimed
+`--match-head-commit` alone would refuse such a merge now documents the re-check.
+
 ### Proposed next bounded slice
 
-Two repair drafts are filed and waiting for operator review. They come before
-Stage 5, because a scheduler that starts work unattended makes both defects
-worse rather than rarer.
+GSHIP-616 is filed and unapproved. It came out of the inbox: the GSHIP-615 run
+reported that its own fix leaves the auto-merge armed after refusing a divergent
+head, so GitHub can still land that head later, unwatched. The draft disarms the
+auto-merge before ending the ship as a failure, idempotently, without letting the
+disarm's own failure mask the original divergence reason.
 
-- GSHIP-614 makes the issue file's ownership explicit. While a run for an issue
-  is not terminal, the revise, approve and abandon routes refuse with 409 instead
-  of writing `main`, and approving a fingerprint that already matches becomes a
-  no-op with no commit. `/work` stops offering those controls during a run.
-- GSHIP-615 makes the ship refuse a merge whose head the service did not push,
-  by comparing the pull request's head against the pushed sha while polling and
-  again when GitHub reports merged.
-
-After those, Stage 5 queues already-approved issues for serial execution, with
+After that, Stage 5 queues already-approved issues for serial execution, with
 just-in-time revalidation against current `origin/main` before each start and an
 honest pause when revalidation fails. Present the exact spec and verification
 command to the operator before implementing any of them.
@@ -163,6 +173,15 @@ command to the operator before implementing any of them.
   `--match-head-commit` did not refuse the moved head as the shipper's own
   comment says it would. The merged code was verified locally before the push,
   but by discipline rather than by the mechanism. GSHIP-615 records that repair.
+- Four consecutive Claude runs shipped unattended with no fix round: GSHIP-612,
+  613, 614 and 615. Every one released its worktree and branch after merge.
+- The inbox paid for itself on its first day. Seven proposals were captured from
+  four runs, and the sharpest one came from the run that had just shipped the
+  fix it criticised: GSHIP-615's own divergence failure leaves the auto-merge
+  armed. That became GSHIP-616 through promotion rather than by hand.
+- A hand-made pull request goes `BEHIND` whenever `main` advances while it waits
+  for CI, and needs `gh pr update-branch`. Runs never hit this, because the
+  runtime pushes and merges within one window.
 
 ## Product objective
 
@@ -330,7 +349,7 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete. GSHIP-614 and GSHIP-615 are
-> filed, specified and unapproved: do not start, implement, expand or implicitly
-> approve either. Report the current state, including the pending proposals in
-> the inbox, and wait for the operator's explicit approval.
+> bounded slice. Stages 1 through 4 are complete. GSHIP-616 is filed, specified
+> and unapproved: do not start, implement, expand or implicitly approve it.
+> Report the current state, including the pending proposals in the inbox, and
+> wait for the operator's explicit approval.
