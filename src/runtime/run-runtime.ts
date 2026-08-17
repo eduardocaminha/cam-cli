@@ -456,9 +456,10 @@ export class RunRuntime {
 			}
 			const current = this.#store.getRun(run.id);
 			if (current !== null && canTransition(current.state, 'failed')) {
-				this.#transition(run.id, 'failed', 'run.failed', {
+				const failedRun = this.#transition(run.id, 'failed', 'run.failed', {
 					error: errorMessage(error),
-				});
+				}).run;
+				this.#releaseFinishedWorkspace(failedRun, false);
 			}
 		}
 	}
@@ -488,10 +489,10 @@ export class RunRuntime {
 				return;
 			}
 			if (result.outcome === 'merged') {
-				this.#transition(run.id, 'done', 'run.shipped', {
+				const doneRun = this.#transition(run.id, 'done', 'run.shipped', {
 					payload: { prNumber: result.prNumber },
-				});
-				this.#releaseFinishedWorkspace(run, false);
+				}).run;
+				this.#releaseFinishedWorkspace(doneRun, false);
 				return;
 			}
 			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
@@ -539,9 +540,10 @@ export class RunRuntime {
 			return false;
 		}
 		if (verification.ok) return true;
-		this.#transition(run.id, 'failed', 'run.verification-failed', {
+		const failedRun = this.#transition(run.id, 'failed', 'run.verification-failed', {
 			error: verification.detail ?? 'Verification failed.',
-		});
+		}).run;
+		this.#releaseFinishedWorkspace(failedRun, false);
 		return false;
 	}
 
@@ -683,20 +685,22 @@ export class RunRuntime {
 		for (const listener of this.#listeners) listener(event);
 	}
 
-	/** Retry cleanup of runs a merge or an abandon already settled durably. */
+	/** Retry cleanup of runs a merge, an abandon or a failure already settled durably. */
 	#reconcileFinishedWorkspaces(): void {
 		if (this.#workspace?.release === undefined) return;
 		for (const run of this.#store.listRuns(10_000)) {
-			if (run.state === 'done' || run.state === 'cancelled') {
+			if (run.state === 'done' || run.state === 'cancelled' || run.state === 'failed') {
 				this.#releaseFinishedWorkspace(run, true, false);
 			}
 		}
 	}
 
 	/**
-	 * Cleanup is deliberately outside the run state machine: a merged run stays
-	 * done even when local resource release needs operator attention or a later
-	 * startup retry.
+	 * Cleanup is deliberately outside the run state machine: a merged, cancelled
+	 * or failed run keeps its terminal state even when local resource release
+	 * needs operator attention or a later startup retry. `failed` additionally
+	 * only releases once its branch has no commit missing from the base ref, so
+	 * a commit made before the failure is preserved next to the notice.
 	 */
 	#releaseFinishedWorkspace(run: RunRecord, reconciled: boolean, refresh = true): void {
 		if (this.#workspace?.release === undefined || run.workspacePath.length === 0) return;
@@ -706,6 +710,7 @@ export class RunRuntime {
 				runId: run.id,
 				issueId: run.issueId,
 				workspacePath: run.workspacePath,
+				...(run.state === 'failed' ? { requireUpstream: true } : {}),
 			});
 		} catch (error) {
 			this.#emitWorkspaceCleanupWarning(run.id, errorMessage(error));

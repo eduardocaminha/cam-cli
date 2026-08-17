@@ -552,3 +552,131 @@ describe('abandoning an interrupted run', () => {
 		runtime.close();
 	});
 });
+
+// GSHIP-621: a run that ends in failed releases its own clean workspace and
+// branch too, with one more gate the merged path does not need -- the branch
+// must also carry no commit missing from the base ref, so a commit made just
+// before the failure stays available for the operator to inspect. failed
+// itself stays terminal: release never reopens it.
+describe('releasing a failed run workspace', () => {
+	test('releases a clean workspace whose branch has no commit missing from the base ref', async () => {
+		const releaseCalls: Array<{ runId: string; requireUpstream?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-failed-clean',
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: ({ runId, requireUpstream }) => {
+					releaseCalls.push({ runId, requireUpstream });
+					return { outcome: 'released', branch: 'gship/cam-30-run-failed-clean' };
+				},
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: false, detail: 'lint failed' }) },
+		});
+		const run = runtime.startRun('CAM-30');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(releaseCalls).toEqual([{ runId: 'run-failed-clean', requireUpstream: true }]);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.verification-failed',
+			'workspace.released',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('preserves and signals a failed run workspace whose branch is ahead of the base ref', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-failed-ahead',
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: () => ({
+					outcome: 'preserved',
+					branch: 'gship/cam-31-run-failed-ahead',
+					detail: 'branch has a commit missing from origin/main',
+				}),
+				inspect: (runs) => runs.map((reference) => ({
+					kind: 'failed-run',
+					runId: reference.runId,
+					workspacePath: reference.workspacePath,
+					branch: null,
+					detail: `state ${reference.state}`,
+				})),
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: false, detail: 'tests failed' }) },
+		});
+		const run = runtime.startRun('CAM-31');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(runtime.listRunEvents(run.id).at(-1)).toMatchObject({
+			kind: 'workspace.cleanup-warning',
+			payload: { detail: 'branch has a commit missing from origin/main' },
+		});
+		expect(runtime.listWorkspaceNotices()).toEqual([{
+			kind: 'failed-run',
+			runId: 'run-failed-ahead',
+			workspacePath: '/workspaces/run-failed-ahead',
+			branch: null,
+			detail: 'state failed',
+		}]);
+		// The preserved leftover never reopens the run: failed stays terminal.
+		expect(runtime.getRun(run.id)?.state).toBe('failed');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('retries releasing a failed run left behind by a previous session', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-failed-reconcile',
+			issueId: 'CAM-32',
+			sessionId: 'session-reconcile',
+			workspacePath: '/workspaces/run-failed-reconcile',
+			createdAt: '2026-08-17T10:00:00Z',
+		});
+		store.transition({
+			runId: 'run-failed-reconcile',
+			toState: 'working',
+			kind: 'run.started',
+			createdAt: '2026-08-17T10:00:01Z',
+		});
+		store.transition({
+			runId: 'run-failed-reconcile',
+			toState: 'failed',
+			kind: 'run.failed',
+			createdAt: '2026-08-17T10:00:02Z',
+		});
+
+		const releaseCalls: Array<{ runId: string; requireUpstream?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			now: () => '2026-08-17T10:01:00Z',
+			workspace: {
+				prepare: () => '/unused',
+				release: ({ runId, requireUpstream }) => {
+					releaseCalls.push({ runId, requireUpstream });
+					return { outcome: 'released', branch: 'gship/cam-32-run-failed-reconcile' };
+				},
+			},
+		});
+
+		expect(releaseCalls).toEqual([{ runId: 'run-failed-reconcile', requireUpstream: true }]);
+		expect(runtime.listRunEvents('run-failed-reconcile').at(-1)).toMatchObject({
+			kind: 'workspace.released',
+			payload: { reconciled: true },
+		});
+		// No lifecycle change: reconciliation only retries release, failed does
+		// not admit any action.
+		expect(runtime.getRun('run-failed-reconcile')?.state).toBe('failed');
+		runtime.close();
+	});
+});

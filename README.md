@@ -177,8 +177,12 @@ run becomes `interrupted`; the operator can resume it instead of losing the
 workspace or silently starting a duplicate run.
 
 After a confirmed merge, Gateship removes the clean managed worktree, its local
-branch, and its stale remote-tracking ref. Cleanup is retried on startup. Dirty,
-failed, or unowned leftovers are preserved and shown in the web UI.
+branch, and its stale remote-tracking ref. A run that ends `failed` releases the
+same way, with one added condition: its branch must also carry no commit missing
+from `origin/main`, so a commit made just before the failure is preserved instead
+of being discarded with the workspace. Cleanup is retried on startup. Dirty
+worktrees, unowned leftovers, and failed branches with such a commit are
+preserved and shown in the web UI.
 
 The runtime source is `refs/remotes/origin/main`. Gateship fetches that ref
 before admitting a run and after a merge. It intentionally does not update or
