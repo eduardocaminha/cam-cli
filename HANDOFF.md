@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `391824c8` (GSHIP-624 shipped through PR #459)
+> Product baseline: `main` at `2daa22c1` (GSHIP-625 shipped through PR #463)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -25,13 +25,13 @@ problem so it can be fixed in the product, rather than as a rule to follow.
 
 ## Current stage
 
-**Stage 9 of 15 pulled forward and effectively done for this cycle — per-role
-model and effort configuration is live, validated against the CLI at save, and
-the operator has chosen: Opus 5 at `high` for the orchestrator and the reviewer,
-Sonnet 5 at `xhigh` for the executor. Eight slices shipped for it: GSHIP-617
-through GSHIP-624. Only token accounting is missing before Stage 5's scheduler,
-because an unattended queue with unmeasured spend is the problem that started
-this.**
+**Stage 5 of 15 — the serial autonomous scheduler is next and unspecified. Stage 9
+came forward and closed: per-role model and effort is live and validated against
+the CLI, the operator chose Opus 5 at `high` for the orchestrator and the reviewer
+and Sonnet 5 at `xhigh` for the executor, and GSHIP-623 now records what each role
+costs. Eleven slices shipped for it, GSHIP-617 through GSHIP-626. No draft is
+open, and no cost has been measured yet: every run so far predates the recording,
+so the first numbers arrive with the next run.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -170,33 +170,46 @@ No catalog, no scheduled refresh, no network of Gateship's own.
 
 ### Proposed next bounded slice
 
-GSHIP-623 is approved and captures the usage the CLI already reports and the
-runtime discards. Measured on the real stream, the `result` event carries
-`input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
-`cache_read_input_tokens` and `output_tokens_details.thinking_tokens`, plus a
-`modelUsage` breakdown with a `costUSD` per model. The dollar figure is always
-presented as the expected cost of the same usage through the API, never as an
-amount charged, because the operator pays a subscription; and the total includes
-auxiliary model calls the operator's configuration does not name, so the
-breakdown is shown per model rather than attributed to the configured one.
+GSHIP-626 made the Claude reviewer's verdict a mechanism instead of a request.
+`REVIEW_RESULT_SCHEMA` existed but only the Codex reviewer passed it; the Claude
+reviewer asked for JSON in prose and a salvage parser scanned the reply for any
+object that parsed. On a review whose subject was JSON payloads, the reviewer
+ended without the verdict object, the parser promoted an inline example, and the
+run failed after the work was already implemented and verified. The schema now
+rides the argv like the executor's, and the prose scan is gone.
 
-GSHIP-625 is filed and unapproved. It separates provider unavailability from
-provider decision in the ship, so a transient `HTTP 503` is retried with backoff
-instead of ending the ship, and an unconfirmed merge is reported as unconfirmed
-rather than failed.
+GSHIP-623 then records what each role costs. Measured on the real stream, the
+`result` event carries `input_tokens`, `output_tokens`,
+`cache_creation_input_tokens`, `cache_read_input_tokens` and
+`output_tokens_details.thinking_tokens`, plus a `modelUsage` breakdown with a
+`costUSD` per model. Three rules hold. The dollar figure is always the expected
+cost of the same usage through the API, never an amount charged, because the
+operator pays a subscription. The total includes auxiliary model calls the
+configuration does not name, so the breakdown is per model rather than attributed
+to the configured one. And the total is aggregated server-side from the complete
+event history: the first attempt summed it in the browser, where two independent
+caps of 200 events would have under-reported a long run without saying so.
 
-Two further slices are identified but not filed: classifying provider errors at
-their source in each adapter, following whatever shape GSHIP-625 settles, and
-wiring the Claude CLI's own `--fallback-model` as an optional per-role slot, empty
-by default, with the model actually used visible in the run event. Polling vendor
-status pages was considered and rejected.
+GSHIP-625 separates provider unavailability from provider decision in the ship. A
+transient `HTTP 503` is retried with backoff instead of ending the ship, and a
+merge that cannot be observed is reported as unconfirmed rather than failed, while
+a divergent head still fails immediately.
 
-Stage 5's serial scheduler comes after that, because queueing unattended work
-multiplies whatever the model policy costs and, without token accounting, spends
-it unmeasured. It queues already-approved issues, revalidates just in time against
-current `origin/main`, and pauses honestly when revalidation fails. Present the
-exact spec and verification command to the operator before implementing any of
-them.
+### Proposed next bounded slice
+
+Stage 5's serial scheduler, now that the meter exists. It queues already-approved
+issues, revalidates just in time against current `origin/main`, and pauses
+honestly when revalidation fails. Revalidation is the part that needs design
+attention rather than transcription: a specification goes stale when the code it
+describes moves, and its approval fingerprint still matches, so checking the
+fingerprint alone would let the queue run work whose assumptions no longer hold.
+
+Two smaller slices are identified and unfiled: classifying provider errors at
+their source in each adapter, following the shape GSHIP-625 settled, and wiring
+the Claude CLI's own `--fallback-model` as an optional per-role slot, empty by
+default, with the model actually used visible in the run event. Polling vendor
+status pages was considered and rejected, because a status page lagged reality in
+both directions during the outage this cycle.
 
 ### Recent process evidence
 
@@ -311,6 +324,18 @@ them.
 - A provider status page is not the authoritative signal. GitHub's page still
   reported a partial outage while pushes from this repository were already
   succeeding, so the call the runtime just made is a better source than the page.
+- Three of the four agent paths enforced their structured result with a schema
+  flag and the Claude reviewer did not, which is how a finished, verified run
+  died at its verdict. The asymmetry survived because the salvage parser hid it:
+  it worked on every review until one whose subject was JSON.
+- A run whose merge happens outside the shipper leaves its remote branch behind.
+  The release path deletes the local remote-tracking ref with `update-ref -d` and
+  never pushes a delete, so the leftover is invisible until the next
+  `fetch --prune`. Both branches found this way came from ships reconciled by
+  hand after the outage.
+- Eleven issues shipped in this cycle, GSHIP-614 through GSHIP-626, nine of them
+  with no fix round. The two fix rounds and the one failed run were all found by
+  the reviewer or by the mechanism, never by the operator reading code.
 
 ## Product objective
 
@@ -423,12 +448,11 @@ loop over recreating the former harness in the browser.
 8. **Project and operator configuration.** Name, timezone, repository identity,
    notification preferences, and other minimal durable settings.
 9. **Provider, model, and effort policy — pulled forward, shipped.** Per-role
-   choice and its validation against the CLI landed as GSHIP-617 through
-   GSHIP-622, because the executor does not need the strongest model and the cost
-   was already being paid. Subscription availability detection, graceful fallback
-   and usage attribution stay in this stage for later; usage attribution now
-   blocks Stage 5 rather than waiting, because the choice cannot be judged
-   without it.
+   choice, its validation against the CLI, and the per-role cost record landed as
+   GSHIP-617 through GSHIP-626, because the executor does not need the strongest
+   model and the cost was already being paid. Subscription availability detection
+   and graceful fallback stay in this stage for later; the Claude CLI's own
+   `--fallback-model` covers the overloaded case with one flag when it is wired.
 10. **Telemetry.** A coherent event model for latency, attention, retries,
     failures, provider/model/effort, test cost, and shipped outcomes, with
     privacy-conscious defaults.
@@ -510,7 +534,6 @@ For a fresh Claude Code or Codex session:
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
 > bounded slice. Stages 1 through 4 are complete, and Stage 9 shipped ahead of
-> Stage 5 as GSHIP-617 through GSHIP-624. GSHIP-623 is approved and GSHIP-625 is
-> filed and unapproved. Report the current state, including the pending proposals
-> in the inbox, and wait for the operator's explicit approval before starting
-> anything.
+> Stage 5 as GSHIP-617 through GSHIP-626. No draft is open and Stage 5 is next.
+> Report the current state, including the pending proposals in the inbox, and wait
+> for the operator's explicit approval before starting anything.
