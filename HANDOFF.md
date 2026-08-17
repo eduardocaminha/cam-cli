@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `2136346a` (GSHIP-616 shipped through PR #449)
+> Product baseline: `main` at `429ca7e2` (GSHIP-618 shipped through PR #453)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -21,11 +21,11 @@ than silently assuming either is current.
 
 ## Current stage
 
-**Stage 9 of 15 pulled forward — per-role model and effort configuration, filed
-as GSHIP-617 and unapproved. Stage 4 is complete and the three repairs it exposed
-all shipped: GSHIP-614, GSHIP-615 and GSHIP-616. Stage 5's scheduler waits behind
-this one because unattended queued work multiplies whatever the model policy
-costs.**
+**Stage 9 of 15 pulled forward and its first slice shipped — per-role model and
+effort configuration is live as GSHIP-617, with GSHIP-619 correcting its own
+suggestion lists and GSHIP-618 adding the stale-service warning. Every slot is
+still empty, so no model is chosen yet. Stage 5's scheduler waits behind this
+one because unattended queued work multiplies whatever the model policy costs.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -124,15 +124,31 @@ promoted issue executed and merged. The ship now disarms the auto-merge before
 ending as a failure on a divergent head, so GitHub can no longer land that head
 later, unwatched.
 
-GSHIP-617 is filed and unapproved, and it pulls Stage 9 ahead of Stage 5. It
-gives Gateship its own model and effort configuration, per provider and per role,
-stored in `runtime_settings` and edited in `/settings`. An unset value passes no
-flag, so today's behavior is preserved until the operator chooses. Neither the
-model list nor the effort list is hardcoded: only the string's shape is validated
-and the CLI rejects an invalid value with its own error, because a hardcoded
-enumeration rots with every provider release. The resolver is consulted at each
-spawn rather than at boot, and the resolved pair is emitted in the run's spawn
-event so the history records which model did what.
+GSHIP-617 shipped Stage 9's first slice through PR #451. Gateship now owns model
+and effort per provider and per role, stored in `runtime_settings` and edited in
+`/settings`, consulted at each spawn rather than at boot, with the resolved pair
+emitted in the run's spawn event. An unset slot passes no flag, and every slot is
+still unset, so behavior is unchanged until the operator chooses.
+
+GSHIP-619 then deleted the suggestion lists GSHIP-617 had shipped, because they
+were already wrong on the day they landed: the Claude list omitted `fable` and the
+Codex list omitted the very effort level the operator's own configuration uses.
+Each provider now links its official model documentation instead, and the fields
+stay free text. Gateship cannot track vendor releases, and a suggestion that lies
+is worse than none.
+
+GSHIP-618 shipped the stale-service warning through PR #453. The service records
+the `origin/main` sha it booted from, compares it to the current one on every
+snapshot read, and reports the divergence with both shas. It never blocks an
+operation and never invents a divergence when either sha fails to resolve.
+
+The open question is how to validate a model and effort the operator types. Both
+CLIs already answer it authoritatively and locally: an unknown model is refused
+with a message about existence *and* access, before any inference on Claude and
+with a 400 on Codex. A catalog, however it were maintained, would answer whether
+a model exists rather than whether this subscription may use it, so the intended
+shape is a probe at save plus the same check in run preflight, before a worktree
+is cut. Not yet specified or approved.
 
 Stage 5's serial scheduler comes after, because queueing unattended work
 multiplies whatever the model policy costs. It queues already-approved issues,
@@ -192,8 +208,9 @@ operator before implementing any of them.
   fix it criticised: GSHIP-615's own divergence failure leaves the auto-merge
   armed. That became GSHIP-616 through promotion rather than by hand.
 - A hand-made pull request goes `BEHIND` whenever `main` advances while it waits
-  for CI, and needs `gh pr update-branch`. Runs never hit this, because the
-  runtime pushes and merges within one window.
+  for CI, and needs `gh pr update-branch`. A run hits this too, whenever anything
+  merges during its window: a checkpoint pull request landed while GSHIP-617 was
+  working and left the run's own pull request behind.
 - Killing the service does not lose a run, but it does strand one. GSHIP-616's
   run survived the restart in `ready-to-ship` with verification and review
   already recorded, and finished from `POST /api/runs/:runId/ship` without
@@ -202,6 +219,20 @@ operator before implementing any of them.
   reasoning effort, and Gateship never used it, because the Codex adapter passes
   `--ignore-user-config`. Reading a personal configuration file is not evidence
   about what the runtime spent.
+- Fixing that `BEHIND` from outside the service proved GSHIP-615 on its first
+  real occurrence: moving the head emitted `ship.head-diverged` and ended the
+  ship without merging. GSHIP-616's disarm did not run, because the service
+  process predated it, so the armed auto-merge landed the head while the runtime
+  still believed the run had not shipped. `POST /api/runs/:runId/ship` reconciled
+  it, since the shipper recognises an already-merged pull request.
+- That is the third distinct way one stale process bit in a single day: a missing
+  table, a missing route, and a safety fix silently absent. Restart the service
+  after every merge, and read the stale-service warning GSHIP-618 added rather
+  than remembering to.
+- A model or effort the operator mistypes is not caught by Gateship at all. Both
+  CLIs refuse an unknown model with a message covering existence and account
+  access, so validation belongs in a probe against the CLI rather than in any
+  catalog Gateship would maintain.
 
 ## Product objective
 
@@ -308,11 +339,11 @@ loop over recreating the former harness in the browser.
    proposed setup.
 8. **Project and operator configuration.** Name, timezone, repository identity,
    notification preferences, and other minimal durable settings.
-9. **Provider, model, and effort policy — pulled forward, in progress.** Per-role
-   choices land first as GSHIP-617 because the executor does not need the
-   strongest model and the cost is already being paid. Subscription availability
-   detection, graceful fallback and usage attribution stay in this stage for
-   later.
+9. **Provider, model, and effort policy — pulled forward, partly shipped.**
+   Per-role choice landed first as GSHIP-617, because the executor does not need
+   the strongest model and the cost is already being paid. Validating a typed
+   model against the CLI, subscription availability detection, graceful fallback
+   and usage attribution all stay in this stage for later.
 10. **Telemetry.** A coherent event model for latency, attention, retries,
     failures, provider/model/effort, test cost, and shipped outcomes, with
     privacy-conscious defaults.
@@ -393,7 +424,8 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete. Stage 9 was pulled ahead of
-> Stage 5 as GSHIP-617, per-role model and effort configuration. Report the
-> current state, including the pending proposals in the inbox, and wait for the
-> operator's explicit approval before starting anything.
+> bounded slice. Stages 1 through 4 are complete, and Stage 9's per-role model
+> and effort choice shipped ahead of Stage 5 as GSHIP-617, GSHIP-618 and
+> GSHIP-619. No draft is open. Report the current state, including the pending
+> proposals in the inbox, and wait for the operator's explicit approval before
+> starting anything.
