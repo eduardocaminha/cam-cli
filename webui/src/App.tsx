@@ -43,6 +43,7 @@ import type {
 import { useLiveEdge } from './live-edge.ts';
 import {
 	actionsFor,
+	activeRunIssueId,
 	attentionOf,
 	attentionToneOf,
 	type PlannableIssue,
@@ -1135,30 +1136,75 @@ function draftChanged(draft: IssueReviewDraft, scope: string, command: string): 
 	return scope !== draft.scope || command !== draft.verificationCommand;
 }
 
-function IssueReviewPanel({
-	drafts,
+/** The editable contract of one draft: its revision, and its approval. */
+function IssueReviewForm({
+	draft,
 	pending,
 	onReviewIssue,
 	onApproveIssue,
-}: Pick<AppProps, 'drafts' | 'pending' | 'onReviewIssue' | 'onApproveIssue'>): React.ReactElement {
-	const [selectedId, setSelectedId] = useState<string | null>(drafts[0]?.id ?? null);
-	const selected = drafts.find((draft) => draft.id === selectedId) ?? null;
-	const [scope, setScope] = useState(drafts[0]?.scope ?? '');
-	const [verificationCommand, setVerificationCommand] = useState(drafts[0]?.verificationCommand ?? '');
+}: Pick<AppProps, 'pending' | 'onReviewIssue' | 'onApproveIssue'> & {
+	draft: IssueReviewDraft;
+}): React.ReactElement {
+	const [scope, setScope] = useState(draft.scope);
+	const [verificationCommand, setVerificationCommand] = useState(draft.verificationCommand);
 	const [confirmed, setConfirmed] = useState(false);
 
 	useEffect(() => {
-		if (selected === null) return;
-		setScope(selected.scope);
-		setVerificationCommand(selected.verificationCommand);
+		setScope(draft.scope);
+		setVerificationCommand(draft.verificationCommand);
 		setConfirmed(false);
-	}, [selected?.id, selected?.scope, selected?.verificationCommand]);
+	}, [draft.id, draft.scope, draft.verificationCommand]);
 
-	const dirty = selected !== null && draftChanged(selected, scope, verificationCommand);
-	const choose = (id: string) => {
-		setSelectedId(id || null);
-		setConfirmed(false);
-	};
+	const dirty = draftChanged(draft, scope, verificationCommand);
+
+	return (
+		<form
+			className="flex flex-col gap-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				setConfirmed(false);
+				onReviewIssue(draft.id, { scope: scope.trim(), verificationCommand: verificationCommand.trim() });
+			}}
+		>
+			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[draft.state]}</Badge></div>
+			<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
+				<span className="font-medium">Escopo e resultado esperado</span>
+				<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
+			</label>
+			<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
+				<span className="font-medium">Comando de verificação</span>
+				<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
+			</label>
+			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Salvar revisão</button>
+			<label className="flex items-start gap-2 text-sm">
+				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
+				<span>Confirmo o scope e o verificationCommand persistidos.</span>
+			</label>
+			<button
+				className={PRIMARY_BUTTON_CLASS}
+				disabled={pending || dirty || !confirmed}
+				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
+				type="button"
+			>Aprovar</button>
+		</form>
+	);
+}
+
+function IssueReviewPanel({
+	drafts,
+	pending,
+	runs,
+	onReviewIssue,
+	onApproveIssue,
+}: Pick<
+	AppProps,
+	'drafts' | 'pending' | 'runs' | 'onReviewIssue' | 'onApproveIssue'
+>): React.ReactElement {
+	const [selectedId, setSelectedId] = useState<string | null>(drafts[0]?.id ?? null);
+	const selected = drafts.find((draft) => draft.id === selectedId) ?? null;
+	// The run owns the issue file while it is in flight: revising, approving or
+	// abandoning it would write on main what the ship closes on the run's branch.
+	const ownedByRun = selected !== null && activeRunIssueId(runs) === selected.id;
 
 	return (
 		<CardDisclosure className="group">
@@ -1173,7 +1219,8 @@ function IssueReviewPanel({
 					<select
 						className={FIELD_CLASS}
 						id="review-issue"
-						onChange={(event) => choose((event.currentTarget as unknown as { value: string }).value)}
+						onChange={(event) =>
+							setSelectedId((event.currentTarget as unknown as { value: string }).value || null)}
 						value={selectedId ?? ''}
 					>
 						<option value="">Selecione um draft</option>
@@ -1182,36 +1229,19 @@ function IssueReviewPanel({
 						))}
 					</select>
 				</label>
-				{selected === null ? null : (
-					<form
-						className="flex flex-col gap-4"
-						onSubmit={(event) => {
-							event.preventDefault();
-							setConfirmed(false);
-							onReviewIssue(selected.id, { scope: scope.trim(), verificationCommand: verificationCommand.trim() });
-						}}
-					>
-						<div><Badge variant={selected.state === 'approved' ? 'success' : selected.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[selected.state]}</Badge></div>
-						<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
-							<span className="font-medium">Escopo e resultado esperado</span>
-							<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
-						</label>
-						<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
-							<span className="font-medium">Comando de verificação</span>
-							<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
-						</label>
-						<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Salvar revisão</button>
-						<label className="flex items-start gap-2 text-sm">
-							<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
-							<span>Confirmo o scope e o verificationCommand persistidos.</span>
-						</label>
-						<button
-							className={PRIMARY_BUTTON_CLASS}
-							disabled={pending || dirty || !confirmed}
-							onClick={() => { setConfirmed(false); onApproveIssue(selected.id); }}
-							type="button"
-						>Aprovar</button>
-					</form>
+				{selected === null || !ownedByRun ? null : (
+					<p className="text-muted-foreground text-sm">
+						{selected.id} está sendo executada por uma run. O arquivo da issue pertence a ela
+						até a run terminar, então revisar, aprovar e abandonar só voltam depois disso.
+					</p>
+				)}
+				{selected === null || ownedByRun ? null : (
+					<IssueReviewForm
+						draft={selected}
+						onApproveIssue={onApproveIssue}
+						onReviewIssue={onReviewIssue}
+						pending={pending}
+					/>
 				)}
 			</CardPanel>
 		</CardDisclosure>
@@ -1339,7 +1369,7 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
 			/>
-			<IssueReviewPanel drafts={props.drafts} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} />
+			<IssueReviewPanel drafts={props.drafts} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
 			<ProposalsPanel
 				onDismissProposal={props.onDismissProposal}
 				onPromoteProposal={props.onPromoteProposal}

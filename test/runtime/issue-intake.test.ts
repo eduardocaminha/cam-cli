@@ -200,6 +200,35 @@ describe('remote-main operator issue intake', () => {
 		});
 	});
 
+	// GSHIP-614: the second approval of the same published contract is the same
+	// decision, so it must not publish a commit that a run in flight would then
+	// have to merge around.
+	test('approving the published contract again publishes nothing and keeps approvedAt', () => {
+		const fixture = seedFixture();
+		specifyOperatorIssue(
+			fixture.local,
+			'CAM-1',
+			{ scope: 'Contrato aprovado.', verificationCommand: 'bun test focused' },
+			() => '2026-08-16T07:00:00.000Z',
+		);
+		const first = approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:01:00.000Z');
+		const publishedAfterApproval = git(fixture.remote, ['rev-parse', 'main']);
+
+		const again = approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:02:00.000Z');
+
+		expect(again).toMatchObject({ id: 'CAM-1', title: 'fixture 1' });
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedAfterApproval);
+		expect(again.sha).toBe(first.sha);
+		const issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(issue['approval']).toEqual({
+			fingerprint: fingerprintSpec(issue['spec'] as Parameters<typeof fingerprintSpec>[0]),
+			approvedAt: '2026-08-16T07:01:00.000Z',
+		});
+		expect(issue['updatedAt']).toBe('2026-08-16T07:01:00.000Z');
+	});
+
 	test('abandons an open issue keeping every other field as published', () => {
 		const fixture = seedFixture();
 		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);

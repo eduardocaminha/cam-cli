@@ -549,6 +549,36 @@ describe('work surface', () => {
 		expect(card).not.toContain('fingerprint');
 	});
 
+	// GSHIP-614: while a run owns the issue file, the screen explains that
+	// instead of offering a control whose write would break the ship.
+	test('a draft executed by a run offers no revision, approval or abandon', () => {
+		const draft = {
+			id: 'CAM-900',
+			title: 'Draft em execução',
+			scope: 'Escopo persistido',
+			verificationCommand: 'bun test focused',
+			state: 'approved' as const,
+		};
+		const owned = panel(workPage({ drafts: [draft], runs: [runIn('working')] }), 'Revisar e aprovar');
+
+		expect(owned).toContain('CAM-900 — Draft em execução');
+		expect(owned).toContain('CAM-900 está sendo executada por uma run.');
+		expect(hasButton(owned, 'Salvar revisão')).toBe(false);
+		expect(hasButton(owned, 'Aprovar')).toBe(false);
+		expect(owned).not.toContain('type="checkbox"');
+
+		// Another draft is untouched by that run, and a settled run returns the
+		// controls to the issue it was executing.
+		const other = panel(
+			workPage({ drafts: [{ ...draft, id: 'CAM-901' }], runs: [runIn('working')] }),
+			'Revisar e aprovar',
+		);
+		expect(hasButton(other, 'Aprovar')).toBe(true);
+		const settled = panel(workPage({ drafts: [draft], runs: [runIn('done')] }), 'Revisar e aprovar');
+		expect(hasButton(settled, 'Aprovar')).toBe(true);
+		expect(settled).not.toContain('está sendo executada por uma run');
+	});
+
 	test('offers the plannable backlog and holds start until an issue is chosen', () => {
 		const html = workPage();
 

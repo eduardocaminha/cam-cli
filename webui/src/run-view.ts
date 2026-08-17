@@ -153,6 +153,16 @@ const CANCELLABLE: readonly RunState[] = [
 /** Mirrors isTerminalRunState in src/runtime/run-state.ts. */
 const TERMINAL: readonly RunState[] = ['done', 'failed', 'cancelled'];
 
+/**
+ * The issue whose file a run owns right now, or null. Mirrors
+ * findActiveRunForIssue in src/runtime/run-runtime.ts: while a run is not
+ * terminal its issue is closed on that run's branch, so the screen offers no
+ * control that would write the same file on main and break the ship.
+ */
+export function activeRunIssueId(runs: readonly RunView[]): string | null {
+	return runs.find((run) => !TERMINAL.includes(run.state))?.issueId ?? null;
+}
+
 export interface RunActions {
 	start: boolean;
 	resume: boolean;

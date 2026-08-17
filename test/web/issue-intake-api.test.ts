@@ -303,6 +303,89 @@ describe('operator issue intake API', () => {
 		}
 	});
 
+	// GSHIP-614: the issue file belongs to the run while it is in flight, so the
+	// routes that rewrite it on main refuse instead of guaranteeing a conflict
+	// when the run ships.
+	test('refuses to revise or approve an issue a non-terminal run owns', async () => {
+		const specified: string[] = [];
+		const approved: string[] = [];
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		store.createRun({
+			id: 'run-1',
+			issueId: 'CAM-42',
+			sessionId: 'session-1',
+			workspacePath: '/workspaces/run-1',
+			createdAt: '2026-08-16T22:00:00.000Z',
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-issue-owned-'),
+			runRuntime: runtime,
+			issueSpecifier: (id) => {
+				specified.push(id);
+				return { id, title: 'Draft', sha: 'specified-sha' };
+			},
+			issueApprover: (id) => {
+				approved.push(id);
+				return { id, title: 'Draft', sha: 'approved-sha' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const spec = { scope: 'Escopo revisado.', verificationCommand: 'bun test' };
+		try {
+			const revise = await fetch(`${origin}/api/issues/CAM-42/spec`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify(spec),
+			});
+			expect(revise.status).toBe(409);
+			expect(await revise.json()).toMatchObject({ ok: false, code: 'issue-run-active' });
+
+			const approve = await fetch(`${origin}/api/issues/CAM-42/approve`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(approve.status).toBe(409);
+			expect(await approve.json()).toMatchObject({ ok: false, code: 'issue-run-active' });
+
+			// Nothing reached git, and another issue is untouched by this run.
+			expect(specified).toEqual([]);
+			expect(approved).toEqual([]);
+			const other = await fetch(`${origin}/api/issues/CAM-43/approve`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(other.status).toBe(200);
+			expect(approved).toEqual(['CAM-43']);
+
+			// A settled run owns nothing, so the same issue is writable again.
+			store.transition({
+				runId: 'run-1',
+				toState: 'interrupted',
+				kind: 'run.cancelled',
+				createdAt: '2026-08-16T22:10:00.000Z',
+			});
+			const stillOwned = await fetch(`${origin}/api/issues/CAM-42/approve`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(stillOwned.status).toBe(409);
+
+			store.transition({
+				runId: 'run-1',
+				toState: 'cancelled',
+				kind: 'run.abandoned',
+				createdAt: '2026-08-16T22:20:00.000Z',
+			});
+			const released = await fetch(`${origin}/api/issues/CAM-42/approve`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(released.status).toBe(200);
+			expect(approved).toEqual(['CAM-43', 'CAM-42']);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('approves only through the trusted same-origin endpoint', async () => {
 		const received: string[] = [];
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });

@@ -275,6 +275,21 @@ export class RunRuntime {
 		return this.#store.listRuns(limit);
 	}
 
+	/**
+	 * The run that owns this issue's file right now, or null. The issue is closed
+	 * on the run's own branch and never on main, so while this answers a run every
+	 * write of that file to main is a conflict the ship would have to resolve.
+	 * Ownership is exactly non-terminality: a done, failed or cancelled run owns
+	 * nothing.
+	 */
+	findActiveRunForIssue(issueId: string): RunRecord | null {
+		const normalized = issueId.trim();
+		if (normalized.length === 0) return null;
+		return this.#store.listRuns(10_000)
+			.find((run) => run.issueId === normalized && !isTerminalRunState(run.state))
+			?? null;
+	}
+
 	listEvents(afterSeq?: number): RunEvent[] {
 		return this.#store.listEvents(afterSeq);
 	}

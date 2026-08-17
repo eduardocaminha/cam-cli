@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-614",
   "title": "Posse do arquivo da issue enquanto existe run em voo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T02:35:10.467Z",
-  "updatedAt": "2026-08-17T02:43:08.683Z",
+  "updatedAt": "2026-08-17T02:56:31.918Z",
   "description": "Impedir que uma escrita no main corrompa o ship de uma run em voo, tornando explicita a posse do arquivo da issue. O shipper ja declara que a issue e fechada no branch e nunca no main, mas approve, specify e abandon gravam o mesmo arquivo no main sem perguntar se existe run ativa, o que garante conflito no ship. Adicionar ao RunRuntime uma consulta deterministica findActiveRunForIssue(issueId) que devolve a run nao-terminal daquela issue ou null, reusando isTerminalRunState em vez de criar estado novo. Fazer as rotas POST /api/issues/:issueId/spec, /approve e /abandon consultarem essa funcao antes de escrever e responderem 409 com codigo issue-run-active quando houver run em voo, sem tocar no git. Tornar approveOperatorIssue idempotente: quando a issue ja tem approval cujo fingerprint bate com a spec atual, retornar a entrada existente sem gerar approvedAt novo e sem publicar commit. Na UI de /work, nao oferecer os controles de revisar, aprovar e abandonar para issue com run ativa, e explicar o motivo no lugar do controle. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao. Fora de escopo: recuperacao automatica de conflito no shipper, rebase automatico, mudar onde o stage shipped e gravado, fila, scheduler e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
