@@ -4,6 +4,7 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import type { AgentSession, AgentSessionInput, AgentSessionResult } from './agent-session.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
+import { normalizeProposalDrafts, PROPOSAL_LIMITS } from './run-proposal.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeExecutionResult,
@@ -67,8 +68,23 @@ export const EXECUTION_RESULT_SCHEMA = {
 	properties: {
 		status: { type: 'string', enum: ['completed', 'waiting-user'] },
 		summary: { type: 'string', minLength: 1 },
+		// Always present so the executor answers the question every time, even
+		// when the honest answer is that nothing outside the issue came up.
+		proposals: {
+			type: 'array',
+			maxItems: PROPOSAL_LIMITS.maxItems,
+			items: {
+				type: 'object',
+				properties: {
+					title: { type: 'string', minLength: 1, maxLength: PROPOSAL_LIMITS.title },
+					evidence: { type: 'string', minLength: 1, maxLength: PROPOSAL_LIMITS.evidence },
+				},
+				required: ['title', 'evidence'],
+				additionalProperties: false,
+			},
+		},
 	},
-	required: ['status', 'summary'],
+	required: ['status', 'summary', 'proposals'],
 	additionalProperties: false,
 } as const;
 
@@ -130,6 +146,8 @@ export function buildWorkPrompt(
 		'Run focused tests for the changed surface. The service will perform independent verification afterward.',
 		'Return status completed when the issue work is ready for verification.',
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
+		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
+		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
 		...guidanceSection,
 		...reviewSection,
 		'',
@@ -152,7 +170,14 @@ export function parseExecutionResult(
 		|| summary.trim().length === 0) {
 		throw new Error('executor returned an invalid structured run status');
 	}
-	return { outcome: status, summary: summary.trim() };
+	// A paused turn reports a question, not a finding: only a completed result
+	// carries ideas worth keeping.
+	if (status === 'waiting-user') return { outcome: status, summary: summary.trim() };
+	return {
+		outcome: status,
+		summary: summary.trim(),
+		proposals: normalizeProposalDrafts(result['proposals']),
+	};
 }
 
 export class ClaudeAgentSession implements AgentSession {

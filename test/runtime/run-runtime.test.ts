@@ -280,6 +280,125 @@ describe('durable run runtime', () => {
 	});
 });
 
+// GSHIP-612: work discovered outside the issue is kept as evidence, and keeps
+// the run it came from exactly as it would have been without it.
+describe('capturing proposals derived from a run', () => {
+	test('persists an accepted completed result without touching the run', async () => {
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-proposals',
+			newSessionId: () => 'session-proposals',
+			now: () => '2026-08-16T23:00:00.000Z',
+			executor: {
+				execute: async () => ({
+					outcome: 'completed',
+					summary: 'Fechou o escopo do issue.',
+					proposals: [
+						{ title: 'Extrair o parser de eventos', evidence: 'Duplicado em dois adaptadores.' },
+						{ title: 'Cobrir o retry do shipper', evidence: 'Sem teste para a segunda tentativa.' },
+					],
+				}),
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-40');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(store.listProposals()).toEqual([
+			{
+				id: 'run-proposals-proposal-1',
+				relationship: 'derived-from',
+				status: 'pending',
+				sourceRunId: 'run-proposals',
+				sourceIssueId: 'CAM-40',
+				title: 'Extrair o parser de eventos',
+				evidence: 'Duplicado em dois adaptadores.',
+				createdAt: '2026-08-16T23:00:00.000Z',
+				updatedAt: '2026-08-16T23:00:00.000Z',
+			},
+			{
+				id: 'run-proposals-proposal-2',
+				relationship: 'derived-from',
+				status: 'pending',
+				sourceRunId: 'run-proposals',
+				sourceIssueId: 'CAM-40',
+				title: 'Cobrir o retry do shipper',
+				evidence: 'Sem teste para a segunda tentativa.',
+				createdAt: '2026-08-16T23:00:00.000Z',
+				updatedAt: '2026-08-16T23:00:00.000Z',
+			},
+		]);
+		// The capture is recorded next to the work, and moves nothing.
+		expect(runtime.getRun(run.id)).toMatchObject({
+			state: 'ready-to-ship',
+			fixRounds: 0,
+			summary: 'Fechou o escopo do issue.',
+		});
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.proposals-captured',
+			'run.verified',
+		]);
+		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({
+			proposalIds: ['run-proposals-proposal-1', 'run-proposals-proposal-2'],
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('records a failed capture and still ships the verified work', async () => {
+		const store = new RunStore(':memory:');
+		store.recordProposals = () => {
+			throw new Error('proposal store unavailable');
+		};
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-capture-failed',
+			executor: {
+				execute: async () => ({
+					outcome: 'completed',
+					proposals: [{ title: 'Ideia perdida', evidence: 'Evidência.' }],
+				}),
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-41');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(runtime.listRunEvents(run.id).at(-2)).toMatchObject({
+			kind: 'run.proposals-failed',
+			payload: { error: 'proposal store unavailable' },
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a run that reports no idea writes nothing and emits no capture', async () => {
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-no-proposals',
+			executor: { execute: async () => ({ outcome: 'completed', proposals: [] }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-42');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(store.listProposals()).toEqual([]);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).not.toContain(
+			'run.proposals-captured',
+		);
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
 // GSHIP-611: an interrupted run the operator does not want to resume is ended
 // here instead of being carried by the provider session forever.
 describe('abandoning an interrupted run', () => {

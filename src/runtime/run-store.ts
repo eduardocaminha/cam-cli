@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { AgentProviderId } from './agent-session.ts';
+import { normalizeProposalDrafts, type ProposalDraft, type RunProposal } from './run-proposal.ts';
 import { isRunState, nextFixRounds, type RunState } from './run-state.ts';
 
 export interface RunRecord {
@@ -138,6 +139,13 @@ export interface AppendRunEventInput {
 	payload?: Record<string, unknown>;
 }
 
+export interface RecordProposalsInput {
+	runId: string;
+	issueId: string;
+	proposals: readonly ProposalDraft[];
+	createdAt: string;
+}
+
 interface RunRow {
 	id: string;
 	issue_id: string;
@@ -160,6 +168,18 @@ interface EventRow {
 	to_state: string;
 	payload_json: string;
 	created_at: string;
+}
+
+interface ProposalRow {
+	id: string;
+	run_id: string;
+	issue_id: string;
+	relationship: string;
+	status: string;
+	title: string;
+	evidence: string;
+	created_at: string;
+	updated_at: string;
 }
 
 interface OrchestratorMessageRow {
@@ -216,6 +236,24 @@ function decodeEvent(row: EventRow): RunEvent {
 	};
 }
 
+/**
+ * This slice only ever writes one relationship and one status, so a row that
+ * carries anything else is a corrupt write rather than a newer meaning.
+ */
+function decodeProposal(row: ProposalRow): RunProposal {
+	return {
+		id: row.id,
+		relationship: 'derived-from',
+		status: 'pending',
+		sourceRunId: row.run_id,
+		sourceIssueId: row.issue_id,
+		title: row.title,
+		evidence: row.evidence,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
 function decodeOrchestratorMessage(row: OrchestratorMessageRow): OrchestratorMessage {
 	const role = row.role === 'orchestrator' || row.role === 'system'
 		? row.role
@@ -261,6 +299,19 @@ export class RunStore {
 				created_at TEXT NOT NULL
 			);
 			CREATE INDEX IF NOT EXISTS run_events_run_seq ON run_events(run_id, seq);
+			CREATE TABLE IF NOT EXISTS run_proposals (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				id TEXT NOT NULL UNIQUE,
+				run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+				issue_id TEXT NOT NULL,
+				relationship TEXT NOT NULL,
+				status TEXT NOT NULL,
+				title TEXT NOT NULL,
+				evidence TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS run_proposals_run_seq ON run_proposals(run_id, seq);
 			CREATE TABLE IF NOT EXISTS runtime_settings (
 				key TEXT PRIMARY KEY,
 				value TEXT NOT NULL
@@ -387,6 +438,48 @@ export class RunStore {
 			createdAt: input.createdAt,
 		}) as EventRow;
 		return decodeEvent(row);
+	}
+
+	/**
+	 * Persist the out-of-scope ideas one accepted result reported. Each id is
+	 * derived from its run and its position in the run's capture sequence, so a
+	 * stored proposal is always readable under the same id, and a later capture
+	 * on the same run continues the sequence instead of overwriting it.
+	 */
+	recordProposals(input: RecordProposalsInput): RunProposal[] {
+		const drafts = normalizeProposalDrafts(input.proposals);
+		if (drafts.length === 0) return [];
+		const insert = this.#db.transaction(() => {
+			const recorded = this.#db.query(`
+				SELECT COUNT(*) AS total FROM run_proposals WHERE run_id = $runId
+			`).get({ runId: input.runId }) as { total: number };
+			return drafts.map((draft, index) => this.#db.query(`
+				INSERT INTO run_proposals (
+					id, run_id, issue_id, relationship, status, title, evidence, created_at, updated_at
+				) VALUES (
+					$id, $runId, $issueId, 'derived-from', 'pending', $title, $evidence, $createdAt, $createdAt
+				)
+				RETURNING *
+			`).get({
+				id: `${input.runId}-proposal-${recorded.total + index + 1}`,
+				runId: input.runId,
+				issueId: input.issueId,
+				title: draft.title,
+				evidence: draft.evidence,
+				createdAt: input.createdAt,
+			}) as ProposalRow);
+		});
+		return insert().map(decodeProposal);
+	}
+
+	/** Newest bounded window of captured proposals, in capture order. */
+	listProposals(limit = 200): RunProposal[] {
+		const rows = this.#db.query(`
+			SELECT * FROM (
+				SELECT * FROM run_proposals ORDER BY seq DESC LIMIT $limit
+			) ORDER BY seq ASC
+		`).all({ limit }) as ProposalRow[];
+		return rows.map(decodeProposal);
 	}
 
 	setSessionId(runId: string, sessionId: string): RunRecord {

@@ -5,6 +5,7 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
+import type { ProposalDraft } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
 	type OrchestratorHandoff,
@@ -38,7 +39,8 @@ export interface RuntimeExecutionInput {
 }
 
 export type RuntimeExecutionResult =
-	| { outcome: 'completed'; summary?: string }
+	/** `proposals` are ideas found outside the issue, never work done for it. */
+	| { outcome: 'completed'; summary?: string; proposals?: readonly ProposalDraft[] }
 	| { outcome: 'waiting-user'; summary: string };
 
 export interface RuntimeExecutor {
@@ -482,6 +484,7 @@ export class RunRuntime {
 			return false;
 		}
 		this.#transition(run.id, 'verify', 'run.work-completed', { summary: execution.summary });
+		this.#captureProposals(run, execution.proposals);
 		const verification = await verifier.verify(executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
@@ -529,6 +532,30 @@ export class RunRuntime {
 			payload: { findings: review.detail },
 		});
 		return { resume: true, reviewFeedback: review.detail };
+	}
+
+	/**
+	 * Durable capture of the ideas an accepted result reported outside the issue
+	 * it implemented. Deliberately outside the state machine: capturing an idea
+	 * never moves the run, and a capture that fails is recorded and left behind
+	 * instead of turning verified work into a failure.
+	 */
+	#captureProposals(run: RunRecord, proposals: readonly ProposalDraft[] | undefined): void {
+		if (proposals === undefined || proposals.length === 0) return;
+		try {
+			const captured = this.#store.recordProposals({
+				runId: run.id,
+				issueId: run.issueId,
+				proposals,
+				createdAt: this.#now(),
+			});
+			if (captured.length === 0) return;
+			this.#emit(run.id, 'run.proposals-captured', {
+				proposalIds: captured.map((proposal) => proposal.id),
+			});
+		} catch (error) {
+			this.#emit(run.id, 'run.proposals-failed', { error: errorMessage(error) });
+		}
 	}
 
 	#executionInput(

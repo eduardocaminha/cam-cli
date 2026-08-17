@@ -36,10 +36,17 @@ if (mode === 'wait') {
 			],
 		},
 	})}\n`);
+	const proposal = fixtureArgument('proposal');
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,
 		result: summary,
-		structured_output: { status, summary },
+		structured_output: {
+			status,
+			summary,
+			proposals: proposal === undefined
+				? []
+				: [{ title: proposal, evidence: 'fixture evidence' }],
+		},
 	})}\n`);
 }

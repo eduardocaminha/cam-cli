@@ -118,6 +118,41 @@ describe('Codex CLI runtime executor', () => {
 		expect(JSON.stringify(events)).not.toContain('/not-persisted');
 	});
 
+	// GSHIP-612: both providers answer the same structured contract, so a Codex
+	// result reaches the same durable proposal record.
+	test('captures a proposal from the shared structured result', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-proposal=Cobrir o caminho de erro do shipper'],
+			loadIssue: () => '{"id":"CAM-30"}',
+		});
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-codex-proposals-'),
+			store,
+			newId: () => 'run-codex-proposal',
+			newSessionId: () => 'provisional',
+			executor,
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.startRun('CAM-30');
+		await waitFor(() => runtime.getRun('run-codex-proposal')?.state === 'ready-to-ship');
+
+		expect(store.listProposals()).toMatchObject([{
+			id: 'run-codex-proposal-proposal-1',
+			relationship: 'derived-from',
+			status: 'pending',
+			sourceRunId: 'run-codex-proposal',
+			sourceIssueId: 'CAM-30',
+			title: 'Cobrir o caminho de erro do shipper',
+			evidence: 'fixture evidence',
+		}]);
+		expect(runtime.listRunEvents('run-codex-proposal').map((event) => event.kind)).toContain(
+			'run.proposals-captured',
+		);
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('persists a provider-assigned thread id before verification', async () => {
 		const store = new RunStore(':memory:');
 		const runtime = new RunRuntime({
