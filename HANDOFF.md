@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `429ca7e2` (GSHIP-618 shipped through PR #453)
+> Product baseline: `main` at `287d536d` (GSHIP-620 shipped through PR #457)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -21,11 +21,13 @@ than silently assuming either is current.
 
 ## Current stage
 
-**Stage 9 of 15 pulled forward and its first slice shipped — per-role model and
-effort configuration is live as GSHIP-617, with GSHIP-619 correcting its own
-suggestion lists and GSHIP-618 adding the stale-service warning. Every slot is
-still empty, so no model is chosen yet. Stage 5's scheduler waits behind this
-one because unattended queued work multiplies whatever the model policy costs.**
+**Stage 9 of 15 pulled forward and effectively done for this cycle — per-role
+model and effort configuration is live, validated against the CLI at save, and
+the operator has chosen: Opus 5 at `high` for the orchestrator and the reviewer,
+Sonnet 5 at `xhigh` for the executor. Six slices shipped for it: GSHIP-617
+through GSHIP-622. Only token accounting is missing before Stage 5's scheduler,
+because an unattended queue with unmeasured spend is the problem that started
+this.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -142,19 +144,42 @@ the `origin/main` sha it booted from, compares it to the current one on every
 snapshot read, and reports the divergence with both shas. It never blocks an
 operation and never invents a divergence when either sha fails to resolve.
 
-The open question is how to validate a model and effort the operator types. Both
-CLIs already answer it authoritatively and locally: an unknown model is refused
-with a message about existence *and* access, before any inference on Claude and
-with a 400 on Codex. A catalog, however it were maintained, would answer whether
-a model exists rather than whether this subscription may use it, so the intended
-shape is a probe at save plus the same check in run preflight, before a worktree
-is cut. Not yet specified or approved.
+GSHIP-622 then corrected GSHIP-618 the same day: comparing any movement of `main`
+kept the warning permanently lit, because filing, approving and closing an issue
+all commit to `main` continuously. It now fires only when the diff between the two
+shas touches something outside `.gateship/`.
 
-Stage 5's serial scheduler comes after, because queueing unattended work
-multiplies whatever the model policy costs. It queues already-approved issues,
-revalidates just in time against current `origin/main`, and pauses honestly when
-revalidation fails. Present the exact spec and verification command to the
-operator before implementing any of them.
+GSHIP-621 released the worktree and branch of a run that ends `failed`, which
+until then were left behind, with one condition the merged path does not need: it
+releases only when the worktree is clean *and* the branch holds no commit missing
+from the base ref. A failed run often fails after committing, and that commit may
+be the thing worth inspecting. This also closes the factor GSHIP-611 flagged and
+deliberately left out.
+
+GSHIP-620 validates a typed model and effort by probing the CLI itself at save,
+for changed slots only. A slot the CLI refuses is not stored; an inconclusive
+probe stores the slot and warns, because refusing on ambiguity would lock the
+operator out of settings while offline. The Codex probe carries
+`--skip-git-repo-check` beside `--ignore-user-config`: without it the probe fails
+on directory trust before reaching the model check and would refuse a valid model.
+No catalog, no scheduled refresh, no network of Gateship's own.
+
+### Proposed next bounded slice
+
+Capture token usage per run, then Stage 5. The CLI already reports usage in its
+stream and the runtime discards it: `claude-cli-process.ts` emits only the event's
+subtype, so a stored event reads `{"subtype":"thinking_tokens"}` with no number in
+it. The operator can now choose a model but cannot see what the choice cost, and
+the two runs that followed the choice are the first of the session to need a fix
+round. Keeping the numbers the runtime already receives is the smallest slice of
+Stage 10 and the one that makes Stage 9's choice evaluable.
+
+Stage 5's serial scheduler comes after that, because queueing unattended work
+multiplies whatever the model policy costs and, without token accounting, spends
+it unmeasured. It queues already-approved issues, revalidates just in time against
+current `origin/main`, and pauses honestly when revalidation fails. Present the
+exact spec and verification command to the operator before implementing any of
+them.
 
 ### Recent process evidence
 
@@ -233,6 +258,25 @@ operator before implementing any of them.
   CLIs refuse an unknown model with a message covering existence and account
   access, so validation belongs in a probe against the CLI rather than in any
   catalog Gateship would maintain.
+- The per-role split is confirmed in use, not only in argv: run events now carry
+  `provider.model` as Sonnet 5 at `xhigh` and `review.model` as Opus 5 at `high`.
+- Those were also the session's first two fix rounds, after six consecutive runs
+  with none on the previous defaults, and both were the design working rather than
+  failing. The Opus reviewer caught a real defect the Sonnet executor had shipped,
+  naming file and line: a dead Codex process would have been reported as a refused
+  model and silently reverted the operator's choice, the exact lockout that issue
+  forbade. The other round caught `README.md` still documenting the old cleanup
+  contract. Both were fixed inside the run, with no operator involvement.
+- Whether the cheaper executor is actually cheaper is unknown and unmeasurable
+  today. Sonnet 5 costs roughly two and a half times less per token than Opus 5,
+  while `xhigh` is documented for long-horizon work with far larger token budgets,
+  and Gateship keeps no token accounting. Two extra fix rounds are a cost the
+  price-per-token comparison does not include.
+- Specifying a signal from reasoning without checking it against the repository's
+  real traffic has now misfired three times in one day: the model suggestion lists,
+  the always-lit stale warning, and the refusal classification GSHIP-620 needed a
+  fix round to correct. Each was cheap to repair and each was found by something
+  other than the specification.
 
 ## Product objective
 
@@ -339,11 +383,13 @@ loop over recreating the former harness in the browser.
    proposed setup.
 8. **Project and operator configuration.** Name, timezone, repository identity,
    notification preferences, and other minimal durable settings.
-9. **Provider, model, and effort policy — pulled forward, partly shipped.**
-   Per-role choice landed first as GSHIP-617, because the executor does not need
-   the strongest model and the cost is already being paid. Validating a typed
-   model against the CLI, subscription availability detection, graceful fallback
-   and usage attribution all stay in this stage for later.
+9. **Provider, model, and effort policy — pulled forward, shipped.** Per-role
+   choice and its validation against the CLI landed as GSHIP-617 through
+   GSHIP-622, because the executor does not need the strongest model and the cost
+   was already being paid. Subscription availability detection, graceful fallback
+   and usage attribution stay in this stage for later; usage attribution now
+   blocks Stage 5 rather than waiting, because the choice cannot be judged
+   without it.
 10. **Telemetry.** A coherent event model for latency, attention, retries,
     failures, provider/model/effort, test cost, and shipped outcomes, with
     privacy-conscious defaults.
@@ -424,8 +470,9 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete, and Stage 9's per-role model
-> and effort choice shipped ahead of Stage 5 as GSHIP-617, GSHIP-618 and
-> GSHIP-619. No draft is open. Report the current state, including the pending
-> proposals in the inbox, and wait for the operator's explicit approval before
-> starting anything.
+> bounded slice. Stages 1 through 4 are complete, and Stage 9 shipped ahead of
+> Stage 5 as GSHIP-617 through GSHIP-622. No draft is open. The next slice is
+> token accounting, then Stage 5. Do not file drafts in batches: every run
+> returns proposals, and a draft written ahead is invalidated by what the previous
+> run discovers. Report the current state, including the pending proposals in the
+> inbox, and wait for the operator's explicit approval before starting anything.
