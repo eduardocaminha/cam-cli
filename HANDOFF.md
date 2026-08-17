@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `2785a5c5` (GSHIP-612 shipped through PR #442)
+> Product baseline: `main` at `5a4df0a1` (GSHIP-613 shipped through PR #444)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -22,8 +22,9 @@ than silently assuming either is current.
 ## Current stage
 
 **Stage 5 of 15 — serial autonomous scheduler (next; no specification yet).
-Stage 4's backend slice shipped as GSHIP-612 and its operator-facing surface is
-still unbuilt.**
+Stage 4 is complete: GSHIP-612 shipped the capture backend and GSHIP-613 shipped
+the operator-facing inbox. Two repair drafts, GSHIP-614 and GSHIP-615, are filed
+and unapproved.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -83,25 +84,39 @@ persists them right after the accepted work-completed transition, emitting
 `run.proposals-captured` or `run.proposals-failed` so a capture failure can never
 change run state.
 
-No proposal has been captured yet: the capability landed in the same run that
-built it, so the first real evidence will come from the next executed issue.
+GSHIP-613 then shipped Stage 4's operator surface through PR #444. Proposal
+status widened to `pending | dismissed | promoted`, a proposal now carries the
+issue it became, and `decodeProposal` reads status and relationship from the row
+instead of returning constants. `/api/proposals` lists pending proposals and the
+dismiss and promote routes settle one with a status-guarded update. Promotion
+takes an operator-authored title, scope and verification command, calls the
+existing intake with approval withheld, and only then marks the proposal
+promoted; a failing intake leaves it pending. `/work` shows the inbox as a third
+disclosure card beside plannable work and reviewable drafts.
+
+The inbox did not open empty. The GSHIP-613 run itself captured three proposals,
+because it executed with the schema GSHIP-612 had already shipped: a snapshot
+that does not refresh on capture, a promoted proposal whose issue is stored but
+never shown, and duplicated refusal responses across the web handlers.
 
 ### Proposed next bounded slice
 
-Stage 4's captured proposals are still invisible to the operator, and Stage 5
-needs a queue worth scheduling. Decide which comes first before specifying
-anything:
+Two repair drafts are filed and waiting for operator review. They come before
+Stage 5, because a scheduler that starts work unattended makes both defects
+worse rather than rarer.
 
-- Finish Stage 4 by exposing proposals read-only, letting a human dismiss one or
-  promote it into the existing specified-draft lifecycle. Promotion must neither
-  approve nor start it. Still no deduplication, ranking, embeddings or graph.
-- Start Stage 5 by queueing already-approved issues for serial execution, with
-  just-in-time revalidation against current `origin/main` before each start and
-  an honest pause when revalidation fails.
+- GSHIP-614 makes the issue file's ownership explicit. While a run for an issue
+  is not terminal, the revise, approve and abandon routes refuse with 409 instead
+  of writing `main`, and approving a fingerprint that already matches becomes a
+  no-op with no commit. `/work` stops offering those controls during a run.
+- GSHIP-615 makes the ship refuse a merge whose head the service did not push,
+  by comparing the pull request's head against the pushed sha while polling and
+  again when GitHub reports merged.
 
-Exposing the inbox first is the smaller slice and produces the evidence that
-would show whether the queue is worth automating. Present the exact spec and
-verification command to the operator before implementation either way.
+After those, Stage 5 queues already-approved issues for serial execution, with
+just-in-time revalidation against current `origin/main` before each start and an
+honest pause when revalidation fails. Present the exact spec and verification
+command to the operator before implementing any of them.
 
 ### Recent process evidence
 
@@ -138,6 +153,16 @@ verification command to the operator before implementation either way.
   pull requests and runs that end `failed` leave their branch and worktree
   behind, and one such leftover was a superseded GSHIP-605 attempt whose diff
   against `main` was an earlier shape of an already-shipped feature.
+- Approving GSHIP-613 a second time while its run was in flight wrote `main` on
+  the same file the branch would commit, and the ship stalled on a conflicting
+  pull request. The fingerprint was identical, so the second approval carried no
+  new decision at all. The branch was rebased by hand, keeping the branch's
+  shipped stage and the newer approval, and the run then completed. GSHIP-614
+  records the durable repair.
+- That hand repair force-pushed the run's branch, and the auto-merge armed with
+  `--match-head-commit` did not refuse the moved head as the shipper's own
+  comment says it would. The merged code was verified locally before the push,
+  but by discipline rather than by the mechanism. GSHIP-615 records that repair.
 
 ## Product objective
 
@@ -208,9 +233,9 @@ loop over recreating the former harness in the browser.
 3. **Specification lifecycle — complete.** Draft, revision, approval
    invalidation, explicit reapproval, fail-closed start, and web confirmation
    share one approval-fingerprint contract.
-4. **Derived-idea inbox — backend complete.** Implementation discoveries are
-   captured as proposals with provenance and never auto-promoted into scope. The
-   operator-facing inbox that dismisses or promotes them is not built yet.
+4. **Derived-idea inbox — complete.** Implementation discoveries are captured as
+   proposals with provenance, shown to the operator, and dismissed or promoted by
+   hand. Promotion never approves or starts the issue it creates.
 5. **Serial autonomous scheduler — next.** Queue approved work, revalidate just in time,
    handle dependencies/conflicts, pause honestly, and resume without replanning
    everything.
@@ -305,8 +330,7 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 3 are complete, GSHIP-611 and GSHIP-612 both
-> shipped, and no draft is currently open. The next action is to help the
-> operator choose between finishing Stage 4's operator-facing inbox and starting
-> Stage 5's serial scheduler, then turn only that choice into an exact
-> specification and verification command. Do not implement it in the same cycle.
+> bounded slice. Stages 1 through 4 are complete. GSHIP-614 and GSHIP-615 are
+> filed, specified and unapproved: do not start, implement, expand or implicitly
+> approve either. Report the current state, including the pending proposals in
+> the inbox, and wait for the operator's explicit approval.
