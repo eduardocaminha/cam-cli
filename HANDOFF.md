@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `f3a58546` (GSHIP-611 shipped through PR #441)
+> Product baseline: `main` at `2785a5c5` (GSHIP-612 shipped through PR #442)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -21,9 +21,9 @@ than silently assuming either is current.
 
 ## Current stage
 
-**Stage 4 of 15 — derived-idea inbox (specified as GSHIP-612; awaiting operator
-approval, no implementation started). GSHIP-611 shipped in the meantime and
-closed the interrupted-run lifecycle gap.**
+**Stage 5 of 15 — serial autonomous scheduler (next; no specification yet).
+Stage 4's backend slice shipped as GSHIP-612 and its operator-facing surface is
+still unbuilt.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -70,26 +70,38 @@ holds unmerged commits loses that branch. Uncommitted work makes the worktree
 dirty and is therefore preserved. No new gate was added because destructive
 cleanup was out of that slice's scope.
 
-GSHIP-612 is the Stage 4 slice already specified and also still an **unapproved
-draft**. It extends the shared Claude/Codex structured result with a required
-`proposals` array, empty by default and capped at 3 items, each carrying a
-non-empty `title` and `evidence`. On an accepted `completed` result the
-`RunRuntime` persists every item in the `RunStore` as a `pending` proposal with a
-stable id, `derived-from` relationship, `sourceRunId` and `sourceIssueId`.
-Proposals change no run state, issue, spec, approval, backlog or execution order.
-Out of scope in this slice: HTTP API, UI, dismiss, promotion to draft,
-deduplication, ranking, embeddings, graph, scheduler and reviewer changes.
+GSHIP-612 shipped Stage 4's backend through PR #442. `run-proposal.ts` defines
+the proposal shape, its limits of at most three items with bounded `title` and
+`evidence`, and the normalizer that trims, clamps and drops unusable items. The
+shared Claude and Codex execution schema now requires a `proposals` array, and
+the work prompt tells the executor to keep the current issue closed to its scope
+and use proposals only for future work discovered while implementing. Proposals
+are parsed for a `completed` result only; `waiting-user` drops them and a missing
+or malformed array degrades to empty. `RunStore` gained a `run_proposals` table
+with stable ids, `derived-from` provenance and deterministic reads. `RunRuntime`
+persists them right after the accepted work-completed transition, emitting
+`run.proposals-captured` or `run.proposals-failed` so a capture failure can never
+change run state.
 
-### Proposed next bounded action
+No proposal has been captured yet: the capability landed in the same run that
+built it, so the first real evidence will come from the next executed issue.
 
-No implementation slice is pending specification. The next action belongs to the
-operator: review GSHIP-612 on `/work` and approve or revise it. Only after an
-explicit approval may an agent start the corresponding run. Verification command
-already recorded in GSHIP-612:
+### Proposed next bounded slice
 
-```
-bun test test/runtime/run-store.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/run-runtime.test.ts && bun run typecheck
-```
+Stage 4's captured proposals are still invisible to the operator, and Stage 5
+needs a queue worth scheduling. Decide which comes first before specifying
+anything:
+
+- Finish Stage 4 by exposing proposals read-only, letting a human dismiss one or
+  promote it into the existing specified-draft lifecycle. Promotion must neither
+  approve nor start it. Still no deduplication, ranking, embeddings or graph.
+- Start Stage 5 by queueing already-approved issues for serial execution, with
+  just-in-time revalidation against current `origin/main` before each start and
+  an honest pause when revalidation fails.
+
+Exposing the inbox first is the smaller slice and produces the evidence that
+would show whether the queue is worth automating. Present the exact spec and
+verification command to the operator before implementation either way.
 
 ### Recent process evidence
 
@@ -115,6 +127,17 @@ bun test test/runtime/run-store.test.ts test/runtime/claude-cli-executor.test.ts
   the repository and read as a product regression. While iterating, run the
   service from the repository; reinstall the compiled binary only at the end of
   a cycle, and re-sign it with `codesign` on arm64.
+- GSHIP-612 then shipped the same way in about eleven minutes with no fix round,
+  making two consecutive unattended Claude runs. Both released their worktree and
+  branch automatically after merge.
+- A schema added by a run does not exist in an already-running service. The
+  `run_proposals` table only appeared after restarting the process, because the
+  store creates its schema at startup. Restart the service after a merge that
+  changes persistence.
+- Branch and worktree hygiene is only automatic for runs that merge. Hand-made
+  pull requests and runs that end `failed` leave their branch and worktree
+  behind, and one such leftover was a superseded GSHIP-605 attempt whose diff
+  against `main` was an earlier shape of an already-shipped feature.
 
 ## Product objective
 
@@ -185,10 +208,10 @@ loop over recreating the former harness in the browser.
 3. **Specification lifecycle — complete.** Draft, revision, approval
    invalidation, explicit reapproval, fail-closed start, and web confirmation
    share one approval-fingerprint contract.
-4. **Derived-idea inbox — next.** Capture implementation discoveries as
-   proposals with provenance and relationships; never auto-promote them into
-   scope.
-5. **Serial autonomous scheduler.** Queue approved work, revalidate just in time,
+4. **Derived-idea inbox — backend complete.** Implementation discoveries are
+   captured as proposals with provenance and never auto-promoted into scope. The
+   operator-facing inbox that dismisses or promotes them is not built yet.
+5. **Serial autonomous scheduler — next.** Queue approved work, revalidate just in time,
    handle dependencies/conflicts, pause honestly, and resume without replanning
    everything.
 6. **Robust sandbox.** Tighten filesystem, process, network, secret, cancellation,
@@ -282,7 +305,8 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stage 3 is complete and the Stage 4 backend slice is already
-> specified as GSHIP-612. GSHIP-611 already shipped, and GSHIP-612 is still an
-> unapproved draft, so do not start, implement, expand or implicitly approve it.
-> Report the current state and wait for the operator's explicit approval.
+> bounded slice. Stages 1 through 3 are complete, GSHIP-611 and GSHIP-612 both
+> shipped, and no draft is currently open. The next action is to help the
+> operator choose between finishing Stage 4's operator-facing inbox and starting
+> Stage 5's serial scheduler, then turn only that choice into an exact
+> specification and verification command. Do not implement it in the same cycle.
