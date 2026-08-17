@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import {
 	buildClaudeCliArgv,
 	buildClaudeReadOnlyArgv,
+	buildWorkPrompt,
 	ClaudeCliExecutor,
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
 } from '../../src/runtime/claude-cli-executor.ts';
 import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
+import { PROPOSAL_LIMITS } from '../../src/runtime/run-proposal.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -98,9 +100,10 @@ describe('Claude CLI runtime executor', () => {
 	});
 
 	test('accepts only the two structured executor outcomes', () => {
-		expect(parseExecutionResult({ status: 'completed', summary: 'done' })).toEqual({
+		expect(parseExecutionResult({ status: 'completed', summary: 'done', proposals: [] })).toEqual({
 			outcome: 'completed',
 			summary: 'done',
+			proposals: [],
 		});
 		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B' })).toEqual({
 			outcome: 'waiting-user',
@@ -109,6 +112,49 @@ describe('Claude CLI runtime executor', () => {
 		expect(() => parseExecutionResult({ status: 'unknown', summary: 'no' })).toThrow(
 			'invalid structured run status',
 		);
+	});
+
+	// GSHIP-612: the executor reports out-of-scope ideas instead of building them.
+	test('asks for bounded proposals and keeps them out of a paused turn', () => {
+		expect(EXECUTION_RESULT_SCHEMA.required).toContain('proposals');
+		expect(EXECUTION_RESULT_SCHEMA.properties.proposals.maxItems)
+			.toBe(PROPOSAL_LIMITS.maxItems);
+
+		const prompt = buildWorkPrompt('CAM-30', '{"id":"CAM-30"}', false, undefined, undefined);
+		expect(prompt).toContain('Keep this issue closed to its scope');
+		expect(prompt).toContain('Report such work in proposals instead');
+
+		expect(parseExecutionResult({
+			status: 'completed',
+			summary: 'done',
+			proposals: [
+				{ title: '  Extrair o parser  ', evidence: '  Duplicado em dois adaptadores.  ' },
+				{ title: '', evidence: 'sem título' },
+				{ title: 'Ideia 2', evidence: 'Evidência 2.' },
+				{ title: 'Ideia 3', evidence: 'Evidência 3.' },
+				{ title: 'Ideia 4', evidence: 'Evidência 4.' },
+			],
+		})).toEqual({
+			outcome: 'completed',
+			summary: 'done',
+			proposals: [
+				{ title: 'Extrair o parser', evidence: 'Duplicado em dois adaptadores.' },
+				{ title: 'Ideia 2', evidence: 'Evidência 2.' },
+				{ title: 'Ideia 3', evidence: 'Evidência 3.' },
+			],
+		});
+		// A missing or malformed array never fails an otherwise valid result.
+		expect(parseExecutionResult({ status: 'completed', summary: 'done' })).toEqual({
+			outcome: 'completed',
+			summary: 'done',
+			proposals: [],
+		});
+		// This slice captures nothing from a paused turn.
+		expect(parseExecutionResult({
+			status: 'waiting-user',
+			summary: 'choose A or B',
+			proposals: [{ title: 'Ideia', evidence: 'Evidência.' }],
+		})).toEqual({ outcome: 'waiting-user', summary: 'choose A or B' });
 	});
 
 	test('consumes the provider result without a sentinel or report file', async () => {
@@ -154,6 +200,35 @@ describe('Claude CLI runtime executor', () => {
 
 		expect(result.outcome).toBe('waiting-user');
 		expect(result.summary).toContain('Use the smaller migration.');
+	});
+
+	test('carries a proposal from the provider result into the run store', async () => {
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-claude-proposals-'),
+			store,
+			newId: () => 'run-claude-proposal',
+			newSessionId: () => 'session-claude-proposal',
+			executor: new ClaudeCliExecutor({
+				command: ['bun', FIXTURE, '--fixture-proposal=Extrair o parser de eventos'],
+				loadIssue: () => '{"id":"CAM-31"}',
+			}),
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.startRun('CAM-31');
+		await waitFor(() => runtime.getRun('run-claude-proposal')?.state === 'ready-to-ship');
+
+		expect(store.listProposals()).toMatchObject([{
+			id: 'run-claude-proposal-proposal-1',
+			relationship: 'derived-from',
+			status: 'pending',
+			sourceRunId: 'run-claude-proposal',
+			sourceIssueId: 'CAM-31',
+			title: 'Extrair o parser de eventos',
+			evidence: 'fixture evidence',
+		}]);
+		await runtime.stop();
+		runtime.close();
 	});
 
 	test('kills and awaits the real child process group on cancellation', async () => {

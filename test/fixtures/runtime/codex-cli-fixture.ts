@@ -23,6 +23,7 @@ if (mode === 'wait') {
 	})}\n`);
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
+	const proposal = fixtureArgument('proposal');
 	const output = mode === 'review'
 		? {
 			verdict,
@@ -33,6 +34,9 @@ if (mode === 'wait') {
 		: {
 			status,
 			summary: JSON.stringify({ argv: process.argv.slice(2), input }),
+			proposals: proposal === undefined
+				? []
+				: [{ title: proposal, evidence: 'fixture evidence' }],
 		};
 	process.stdout.write(`${JSON.stringify({
 		type: 'item.completed',
