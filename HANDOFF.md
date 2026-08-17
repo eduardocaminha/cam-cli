@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `287d536d` (GSHIP-620 shipped through PR #457)
+> Product baseline: `main` at `391824c8` (GSHIP-624 shipped through PR #459)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -24,8 +24,8 @@ than silently assuming either is current.
 **Stage 9 of 15 pulled forward and effectively done for this cycle — per-role
 model and effort configuration is live, validated against the CLI at save, and
 the operator has chosen: Opus 5 at `high` for the orchestrator and the reviewer,
-Sonnet 5 at `xhigh` for the executor. Six slices shipped for it: GSHIP-617
-through GSHIP-622. Only token accounting is missing before Stage 5's scheduler,
+Sonnet 5 at `xhigh` for the executor. Eight slices shipped for it: GSHIP-617
+through GSHIP-624. Only token accounting is missing before Stage 5's scheduler,
 because an unattended queue with unmeasured spend is the problem that started
 this.**
 
@@ -166,13 +166,26 @@ No catalog, no scheduled refresh, no network of Gateship's own.
 
 ### Proposed next bounded slice
 
-Capture token usage per run, then Stage 5. The CLI already reports usage in its
-stream and the runtime discards it: `claude-cli-process.ts` emits only the event's
-subtype, so a stored event reads `{"subtype":"thinking_tokens"}` with no number in
-it. The operator can now choose a model but cannot see what the choice cost, and
-the two runs that followed the choice are the first of the session to need a fix
-round. Keeping the numbers the runtime already receives is the smallest slice of
-Stage 10 and the one that makes Stage 9's choice evaluable.
+GSHIP-623 is approved and captures the usage the CLI already reports and the
+runtime discards. Measured on the real stream, the `result` event carries
+`input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
+`cache_read_input_tokens` and `output_tokens_details.thinking_tokens`, plus a
+`modelUsage` breakdown with a `costUSD` per model. The dollar figure is always
+presented as the expected cost of the same usage through the API, never as an
+amount charged, because the operator pays a subscription; and the total includes
+auxiliary model calls the operator's configuration does not name, so the
+breakdown is shown per model rather than attributed to the configured one.
+
+GSHIP-625 is filed and unapproved. It separates provider unavailability from
+provider decision in the ship, so a transient `HTTP 503` is retried with backoff
+instead of ending the ship, and an unconfirmed merge is reported as unconfirmed
+rather than failed.
+
+Two further slices are identified but not filed: classifying provider errors at
+their source in each adapter, following whatever shape GSHIP-625 settles, and
+wiring the Claude CLI's own `--fallback-model` as an optional per-role slot, empty
+by default, with the model actually used visible in the run event. Polling vendor
+status pages was considered and rejected.
 
 Stage 5's serial scheduler comes after that, because queueing unattended work
 multiplies whatever the model policy costs and, without token accounting, spends
@@ -277,6 +290,22 @@ them.
   the always-lit stale warning, and the refusal classification GSHIP-620 needed a
   fix round to correct. Each was cheap to repair and each was found by something
   other than the specification.
+- A draft written before the previous run finishes goes stale, and the approval
+  fingerprint does not notice, because the specification's text is unchanged while
+  the code it describes moved. GSHIP-619 could not have been written before
+  GSHIP-617 shipped a wrong suggestion list, and GSHIP-622 could not have been
+  written before GSHIP-618's warning stayed permanently lit. Working one slice at
+  a time avoids this by hand and is not a rule worth keeping: it is a workaround
+  for revalidation that only checks the fingerprint, and Stage 5 is where that
+  gets fixed.
+- Three attempts to ship GSHIP-624 during a GitHub partial outage produced two
+  `HTTP 503` failures at different steps, and the second one armed the auto-merge
+  that landed the pull request one second after reporting failure. The service was
+  right to refuse to claim a merge it could not observe, and wrong to call an
+  unavailable provider a failed merge. GSHIP-625 records that repair.
+- A provider status page is not the authoritative signal. GitHub's page still
+  reported a partial outage while pushes from this repository were already
+  succeeding, so the call the runtime just made is a better source than the page.
 
 ## Product objective
 
@@ -374,7 +403,12 @@ loop over recreating the former harness in the browser.
    hand. Promotion never approves or starts the issue it creates.
 5. **Serial autonomous scheduler — next.** Queue approved work, revalidate just in time,
    handle dependencies/conflicts, pause honestly, and resume without replanning
-   everything.
+   everything. Revalidation must cover a specification's assumptions, not only
+   its approval fingerprint: a draft written before the previous run goes stale
+   because that run changed the code it described, and the fingerprint still
+   matches. This is the capability that makes a queue of pre-written work safe,
+   and until it exists, writing several drafts ahead is guesswork rather than a
+   plan.
 6. **Robust sandbox.** Tighten filesystem, process, network, secret, cancellation,
    and cleanup boundaries around provider work without restoring container-era
    orchestration complexity.
@@ -471,8 +505,7 @@ For a fresh Claude Code or Codex session:
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
 > bounded slice. Stages 1 through 4 are complete, and Stage 9 shipped ahead of
-> Stage 5 as GSHIP-617 through GSHIP-622. No draft is open. The next slice is
-> token accounting, then Stage 5. Do not file drafts in batches: every run
-> returns proposals, and a draft written ahead is invalidated by what the previous
-> run discovers. Report the current state, including the pending proposals in the
-> inbox, and wait for the operator's explicit approval before starting anything.
+> Stage 5 as GSHIP-617 through GSHIP-624. GSHIP-623 is approved and GSHIP-625 is
+> filed and unapproved. Report the current state, including the pending proposals
+> in the inbox, and wait for the operator's explicit approval before starting
+> anything.
