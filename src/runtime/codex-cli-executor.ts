@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,7 +7,12 @@ import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { runAgentProcess } from './agent-process.ts';
-import type { AgentSession, AgentSessionInput, AgentSessionResult } from './agent-session.ts';
+import {
+	ProviderRefusalError,
+	type AgentSession,
+	type AgentSessionInput,
+	type AgentSessionResult,
+} from './agent-session.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
 import {
 	buildWorkPrompt,
@@ -16,6 +22,9 @@ import {
 import {
 	codexModelArgv,
 	emitModelSelection,
+	MODEL_PROBE_PROMPT,
+	MODEL_PROBE_TIMEOUT_MS,
+	type ModelProbeResult,
 	type ModelSlot,
 	type ModelSlotResolver,
 	resolveModelSlot,
@@ -67,6 +76,11 @@ export function buildCodexCliArgv(input: CodexInvocation): string[] {
 	if (input.readOnly) {
 		argv.push(
 			'--ignore-user-config',
+			// Without this, a read-only turn started outside a directory Codex
+			// already trusts fails before it ever reaches the model check, with
+			// "Not inside a trusted directory" -- which would then read as a
+			// refused model even for a valid one.
+			'--skip-git-repo-check',
 			'-c',
 			'sandbox_mode="read-only"',
 			'-c',
@@ -114,7 +128,10 @@ function errorText(value: unknown): string | undefined {
 
 interface CodexStreamState {
 	terminal: boolean;
-	failed: string | undefined;
+	/** A clean protocol-reported turn failure -- e.g. the model was refused. */
+	turnFailed: string | undefined;
+	/** A generic transport-style error event, not a clean application refusal. */
+	transportFailed: string | undefined;
 	summary: string;
 	structuredOutput: unknown;
 }
@@ -187,11 +204,11 @@ function consumeCodexEvent(
 		return;
 	}
 	if (type === 'turn.failed') {
-		state.failed = errorText(event['error']) ?? 'Codex turn failed.';
+		state.turnFailed = errorText(event['error']) ?? 'Codex turn failed.';
 		return;
 	}
 	if (type === 'error') {
-		state.failed = errorText(event['message']) ?? errorText(event['error']) ?? 'Codex error.';
+		state.transportFailed = errorText(event['message']) ?? errorText(event['error']) ?? 'Codex error.';
 		return;
 	}
 	if (type === 'turn.completed') {
@@ -209,7 +226,8 @@ async function runCodexTurn(
 ): Promise<AgentSessionResult> {
 	const state: CodexStreamState = {
 		terminal: false,
-		failed: undefined,
+		turnFailed: undefined,
+		transportFailed: undefined,
 		summary: '',
 		structuredOutput: undefined,
 	};
@@ -225,7 +243,11 @@ async function runCodexTurn(
 		onLine: (line) => consumeCodexEvent(line, input, state),
 		...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
 	});
-	if (state.failed !== undefined) throw new Error(state.failed);
+	// Only a clean turn.failed is a protocol-reported refusal; a generic error
+	// event reads the same whether the model was rejected or the process just
+	// died mid-stream, so it is never mistaken for a clean CLI refusal.
+	if (state.turnFailed !== undefined) throw new ProviderRefusalError(state.turnFailed);
+	if (state.transportFailed !== undefined) throw new Error(state.transportFailed);
 	if (result.exitCode !== 0) {
 		throw new Error(`Codex CLI exited with ${result.exitCode}: ${result.stderr.trim().slice(-1_000)}`);
 	}
@@ -282,6 +304,57 @@ export class CodexReviewSession implements AgentSession {
 			input.outputSchema,
 			(schemaPath) => runCodexTurn(input, this.#options, schemaPath, true),
 		);
+	}
+}
+
+export interface CodexModelProbeOptions {
+	command?: string[];
+	sourceEnv?: Record<string, string | undefined>;
+	timeoutMs?: number;
+}
+
+/**
+ * Spawns Codex read-only with the chosen model and effort and a trivial
+ * prompt, so an invalid choice is caught at save time instead of at the next
+ * real run. Reuses the same read-only argv the orchestrator's own inspection
+ * turns use, with the model and effort added when the slot carries them.
+ */
+export async function probeCodexModel(
+	slot: ModelSlot,
+	cwd: string,
+	options: CodexModelProbeOptions = {},
+): Promise<ModelProbeResult> {
+	const session = new CodexAgentSession({
+		command: options.command,
+		model: slot.model,
+		effort: slot.effort,
+		sourceEnv: options.sourceEnv,
+	});
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(),
+		options.timeoutMs ?? MODEL_PROBE_TIMEOUT_MS,
+	);
+	try {
+		await session.run({
+			sessionId: randomUUID(),
+			resume: false,
+			cwd,
+			prompt: MODEL_PROBE_PROMPT,
+			access: 'read-only',
+			signal: controller.signal,
+			emit: () => {},
+			eventPrefix: 'model-probe',
+		});
+		return { outcome: 'accepted' };
+	} catch (error) {
+		if (error instanceof ProviderRefusalError) return { outcome: 'refused', message: error.message };
+		return {
+			outcome: 'inconclusive',
+			message: error instanceof Error ? error.message : String(error),
+		};
+	} finally {
+		clearTimeout(timer);
 	}
 }
 

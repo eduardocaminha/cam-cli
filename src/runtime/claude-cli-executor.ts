@@ -1,12 +1,22 @@
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
-import type { AgentSession, AgentSessionInput, AgentSessionResult } from './agent-session.ts';
+import {
+	ProviderRefusalError,
+	type AgentSession,
+	type AgentSessionInput,
+	type AgentSessionResult,
+} from './agent-session.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import {
 	claudeModelArgv,
 	emitModelSelection,
+	MODEL_PROBE_PROMPT,
+	MODEL_PROBE_TIMEOUT_MS,
+	type ModelProbeResult,
+	type ModelSlot,
 	type ModelSlotResolver,
 	resolveModelSlot,
 } from './model-settings.ts';
@@ -225,6 +235,57 @@ export class ClaudeAgentSession implements AgentSession {
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
+	}
+}
+
+export interface ClaudeModelProbeOptions {
+	command?: string[];
+	sourceEnv?: Record<string, string | undefined>;
+	timeoutMs?: number;
+}
+
+/**
+ * Spawns Claude read-only with the chosen model and effort and a trivial
+ * prompt, so an invalid choice is caught at save time instead of at the next
+ * real run. Reuses the same read-only argv the orchestrator's own inspection
+ * turns use, with --model/--effort added when the slot carries them.
+ */
+export async function probeClaudeModel(
+	slot: ModelSlot,
+	cwd: string,
+	options: ClaudeModelProbeOptions = {},
+): Promise<ModelProbeResult> {
+	const session = new ClaudeAgentSession({
+		command: options.command,
+		model: slot.model,
+		effort: slot.effort,
+		sourceEnv: options.sourceEnv,
+	});
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(),
+		options.timeoutMs ?? MODEL_PROBE_TIMEOUT_MS,
+	);
+	try {
+		await session.run({
+			sessionId: randomUUID(),
+			resume: false,
+			cwd,
+			prompt: MODEL_PROBE_PROMPT,
+			access: 'read-only',
+			signal: controller.signal,
+			emit: () => {},
+			eventPrefix: 'model-probe',
+		});
+		return { outcome: 'accepted' };
+	} catch (error) {
+		if (error instanceof ProviderRefusalError) return { outcome: 'refused', message: error.message };
+		return {
+			outcome: 'inconclusive',
+			message: error instanceof Error ? error.message : String(error),
+		};
+	} finally {
+		clearTimeout(timer);
 	}
 }
 

@@ -13,6 +13,16 @@ if (mode === 'wait') {
 	await new Promise(() => {});
 } else if (mode === 'failed') {
 	process.stdout.write(`${JSON.stringify({ type: 'turn.failed', error: { message: 'fixture failed' } })}\n`);
+} else if (mode === 'error') {
+	// Echoes the probed model/effort back in a turn.failed event, so a test can
+	// confirm the probe's argv actually carried the chosen slot.
+	const modelIndex = process.argv.indexOf('-m');
+	const model = modelIndex >= 0 ? process.argv[modelIndex + 1] : undefined;
+	const effortArg = process.argv.find((argument) => argument.startsWith('model_reasoning_effort='));
+	process.stdout.write(`${JSON.stringify({
+		type: 'turn.failed',
+		error: { message: `model "${model}" effort ${effortArg ?? '(none)'} not found` },
+	})}\n`);
 } else if (mode === 'structured-error-exit') {
 	process.stdout.write(`${JSON.stringify({ type: 'error', message: 'structured fixture diagnostic' })}\n`);
 	process.exitCode = 7;

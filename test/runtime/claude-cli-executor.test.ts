@@ -8,6 +8,7 @@ import {
 	ClaudeCliExecutor,
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
+	probeClaudeModel,
 } from '../../src/runtime/claude-cli-executor.ts';
 import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
@@ -337,5 +338,40 @@ describe('Claude CLI runtime executor', () => {
 		expect(isProcessAlive(childPid)).toBe(false);
 		await runtime.stop();
 		runtime.close();
+	});
+
+	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.
+	describe('probeClaudeModel', () => {
+		test('accepts a clean read-only turn for the probed model and effort', async () => {
+			const result = await probeClaudeModel(
+				{ model: 'opus', effort: 'xhigh' },
+				createTestTmpdir('gship-claude-probe-accept-'),
+				{ command: ['bun', FIXTURE] },
+			);
+			expect(result).toEqual({ outcome: 'accepted' });
+		});
+
+		test('reports an explicit CLI refusal with the CLI\'s own message, carrying the probed flags', async () => {
+			const result = await probeClaudeModel(
+				{ model: 'ghost-model', effort: 'xhigh' },
+				createTestTmpdir('gship-claude-probe-refuse-'),
+				{ command: ['bun', FIXTURE, '--fixture-mode=error'] },
+			);
+			expect(result.outcome).toBe('refused');
+			// The refusal text is echoed by the fixture from the actual argv, so this
+			// also proves the probe's read-only argv carried --model and --effort.
+			expect(result.message).toContain('ghost-model');
+			expect(result.message).toContain('xhigh');
+		});
+
+		test('reports an inconclusive probe on timeout, never a refusal', async () => {
+			const result = await probeClaudeModel(
+				{ model: 'opus' },
+				createTestTmpdir('gship-claude-probe-timeout-'),
+				{ command: ['bun', FIXTURE, '--fixture-mode=wait'], timeoutMs: 50 },
+			);
+			expect(result.outcome).toBe('inconclusive');
+			expect(result.message).toBeDefined();
+		});
 	});
 });

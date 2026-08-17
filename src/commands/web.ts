@@ -13,9 +13,9 @@ import { printError } from '../logging/color.ts';
 import type { AgentProviderId } from '../runtime/agent-session.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
-import { ClaudeAgentSession, ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
+import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
-import { CodexAgentSession, CodexCliExecutor } from '../runtime/codex-cli-executor.ts';
+import { CodexAgentSession, CodexCliExecutor, probeCodexModel } from '../runtime/codex-cli-executor.ts';
 import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
 import {
 	ConversationalOrchestrator,
@@ -42,11 +42,14 @@ import {
 	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
 import {
+	changedModelSlots,
 	emptyModelSettings,
 	isModelProvider,
 	isModelRole,
+	type ModelProbeResult,
 	type ModelRole,
 	type ModelSettings,
+	type ModelSlot,
 	type ModelSlotResolver,
 } from '../runtime/model-settings.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
@@ -86,6 +89,8 @@ export interface WebServerOptions {
 	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for credential-blind provider status and managed Codex login. */
 	providerAuth?: ProviderAuth;
+	/** Test seam for probing a chosen model/effort against the provider's own CLI. */
+	modelProber?: ModelProber;
 	/** Test seam for the operator-maintained project brief. */
 	projectBrief?: ProjectBriefAccess;
 	/**
@@ -232,7 +237,62 @@ export function parseModelSettingsInput(value: unknown): ModelSettings {
 	return settings;
 }
 
-async function writeModelSettings(request: Request, runtime: RunRuntime): Promise<Response> {
+/**
+ * GSHIP-620: validates a chosen model/effort by asking the provider's own CLI,
+ * instead of Gateship keeping a catalog of valid names. A test seam stands in
+ * for the real child-process probe below.
+ */
+export interface ModelProber {
+	probe(
+		providerId: AgentProviderId,
+		role: ModelRole,
+		slot: ModelSlot,
+		cwd: string,
+	): Promise<ModelProbeResult>;
+}
+
+/** Routes to the real read-only probe each provider adapter already owns. */
+export class NativeModelProber implements ModelProber {
+	probe(providerId: AgentProviderId, _role: ModelRole, slot: ModelSlot, cwd: string): Promise<ModelProbeResult> {
+		return providerId === 'codex' ? probeCodexModel(slot, cwd) : probeClaudeModel(slot, cwd);
+	}
+}
+
+export type ModelProbeReport = Partial<Record<AgentProviderId, Partial<Record<ModelRole, ModelProbeResult>>>>;
+
+/**
+ * Probes only the slots whose model or effort changed, in parallel, so saving
+ * one field never spawns six processes. A slot the CLI explicitly refuses
+ * keeps its previously stored value; an inconclusive probe still saves the new
+ * one, since refusing on an ambiguous result would lock the operator out of
+ * Ajustes while offline.
+ */
+async function resolveModelSettingsWrite(
+	previous: ModelSettings,
+	next: ModelSettings,
+	prober: ModelProber,
+	cwd: string,
+): Promise<{ settings: ModelSettings; probes: ModelProbeReport }> {
+	const toProbe = changedModelSlots(previous, next).filter(({ provider, role }) => {
+		const slot = next[provider][role];
+		return slot.model !== undefined || slot.effort !== undefined;
+	});
+	const settings = next;
+	const probes: ModelProbeReport = {};
+	await Promise.all(toProbe.map(async ({ provider, role }) => {
+		const result = await prober.probe(provider, role, next[provider][role], cwd);
+		(probes[provider] ??= {})[role] = result;
+		if (result.outcome === 'refused') settings[provider][role] = previous[provider][role];
+	}));
+	return { settings, probes };
+}
+
+async function writeModelSettings(
+	request: Request,
+	runtime: RunRuntime,
+	prober: ModelProber,
+	cwd: string,
+): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
 	try {
@@ -244,8 +304,11 @@ async function writeModelSettings(request: Request, runtime: RunRuntime): Promis
 		);
 	}
 	try {
-		runtime.setModelSettings(parseModelSettingsInput(body));
-		return Response.json({ ok: true, settings: runtime.getModelSettings() });
+		const next = parseModelSettingsInput(body);
+		const previous = runtime.getModelSettings();
+		const { settings, probes } = await resolveModelSettingsWrite(previous, next, prober, cwd);
+		runtime.setModelSettings(settings);
+		return Response.json({ ok: true, settings: runtime.getModelSettings(), probes });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -1087,6 +1150,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } = resolveIssueWriters(options);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
+	const modelProber = options.modelProber ?? new NativeModelProber();
 	const projectBrief = options.projectBrief ?? {
 		get: () => runRuntime.getProjectBrief(),
 		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
@@ -1151,7 +1215,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// default keeps deciding.
 			'/api/model-settings': {
 				GET: () => Response.json({ settings: runRuntime.getModelSettings() }),
-				PUT: (request) => writeModelSettings(request, runRuntime),
+				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, options.cwd),
 			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),

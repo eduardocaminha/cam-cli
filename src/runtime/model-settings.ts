@@ -152,3 +152,46 @@ export function emitModelSelection(
 		...(slot.effort === undefined ? {} : { effort: slot.effort }),
 	});
 }
+
+/**
+ * GSHIP-620: at save time, one short read-only turn asks the provider's own
+ * CLI whether it accepts the chosen model and effort, instead of Gateship
+ * keeping a catalog of valid names.
+ */
+export type ModelProbeOutcome = 'accepted' | 'refused' | 'inconclusive';
+
+export interface ModelProbeResult {
+	outcome: ModelProbeOutcome;
+	/** The CLI's own refusal text, or why the probe could not conclude. Absent when accepted. */
+	message?: string;
+}
+
+/** Trivial: only the chosen model/effort combination is under test, not reasoning. */
+export const MODEL_PROBE_PROMPT = 'Responda apenas "ok".';
+
+/** Short enough that a save never feels stuck; long enough for a real turn to answer. */
+export const MODEL_PROBE_TIMEOUT_MS = 15_000;
+
+export interface ModelSlotKey {
+	provider: AgentProviderId;
+	role: ModelRole;
+}
+
+/**
+ * Only the slots whose model or effort actually differ between what is stored
+ * and what is being written. Saving one field must not probe the other five:
+ * each probe spawns a whole CLI process just to validate one choice.
+ */
+export function changedModelSlots(previous: ModelSettings, next: ModelSettings): ModelSlotKey[] {
+	const changed: ModelSlotKey[] = [];
+	for (const provider of MODEL_PROVIDERS) {
+		for (const role of MODEL_ROLES) {
+			const before = previous[provider][role];
+			const after = next[provider][role];
+			if (before.model !== after.model || before.effort !== after.effort) {
+				changed.push({ provider, role });
+			}
+		}
+	}
+	return changed;
+}

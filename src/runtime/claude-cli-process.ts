@@ -7,6 +7,7 @@
 // whole process group to the service on cancellation. Keeping one lifecycle
 // here is what lets the reviewer be a second role instead of a second engine.
 
+import { ProviderRefusalError } from './agent-session.ts';
 import { classifyHeadlessStreamLine } from './claude-stream.ts';
 import { runAgentProcess } from './agent-process.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
@@ -109,7 +110,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		);
 	}
 	if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
-	if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
+	if (resultIsError) throw new ProviderRefusalError(summary || 'Claude CLI returned an error result.');
 	return {
 		summary,
 		...(structuredOutput === undefined ? {} : { structuredOutput }),
