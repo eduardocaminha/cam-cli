@@ -36,6 +36,7 @@ import type {
 	OperatorIssueDraft,
 	OperatorSpecDraft,
 	ProjectBriefView,
+	ProposalView,
 	ProviderStatusView,
 	WorkspaceNoticeView,
 } from './client.ts';
@@ -80,6 +81,8 @@ export interface AppProps {
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
 	drafts: readonly IssueReviewDraft[];
+	/** Ideas captured by executed runs, still awaiting an operator decision. */
+	proposals: readonly ProposalView[];
 	events: readonly RunEventView[];
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
@@ -104,6 +107,8 @@ export interface AppProps {
 	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onReviewIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onApproveIssue: (issueId: string) => void;
+	onDismissProposal: (proposalId: string) => void;
+	onPromoteProposal: (proposalId: string, input: OperatorIssueDraft) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
 	onAbandon: () => void;
@@ -1213,6 +1218,116 @@ function IssueReviewPanel({
 	);
 }
 
+/**
+ * The inbox of ideas the runs found outside their issue: the evidence exactly
+ * as it was captured, and the two decisions it admits. Discarding writes
+ * nothing else; promoting files a new task with the contract the operator
+ * authors here, pre-filled with the proposal's own title and never approved or
+ * started by this screen. A settled proposal leaves the list.
+ */
+function ProposalsPanel({
+	proposals,
+	pending,
+	onDismissProposal,
+	onPromoteProposal,
+}: Pick<
+	AppProps,
+	'proposals' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
+>): React.ReactElement {
+	return (
+		<CardDisclosure className="group">
+			<CardSummary>
+				<CardTitle>Propostas derivadas</CardTitle>
+				<CardDescription>{proposals.length} proposta(s) pendente(s).</CardDescription>
+				<CardAction><Badge variant="secondary">{proposals.length}</Badge></CardAction>
+			</CardSummary>
+			<CardPanel className="flex flex-col gap-4">
+				{proposals.length === 0 ? (
+					<p className="text-muted-foreground text-sm">
+						Nenhuma proposta pendente. Um run registra aqui o que encontrou fora do escopo.
+					</p>
+				) : (
+					<ul className="flex flex-col gap-6">
+						{proposals.map((proposal) => (
+							<li className="flex min-w-0 flex-col gap-3 text-sm" key={proposal.id}>
+								<div className="flex flex-col gap-1">
+									<span className="break-words font-medium">{proposal.title}</span>
+									<p className="whitespace-pre-wrap break-words text-muted-foreground">
+										{proposal.evidence}
+									</p>
+									<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+										<Badge variant="outline">{proposal.sourceIssueId}</Badge>
+										<code className="break-all text-xs">{proposal.sourceRunId}</code>
+									</div>
+								</div>
+								<ActionButton
+									enabled={!pending}
+									label="Descartar"
+									onClick={() => onDismissProposal(proposal.id)}
+								/>
+								<form
+									className="flex flex-col gap-3"
+									onSubmit={(event) => {
+										event.preventDefault();
+										const value = fieldReader(event.currentTarget);
+										onPromoteProposal(proposal.id, {
+											title: value('proposalTitle'),
+											scope: value('proposalScope'),
+											verificationCommand: value('proposalVerificationCommand'),
+										});
+									}}
+								>
+									<label
+										className="flex flex-col gap-1"
+										htmlFor={`proposal-title-${proposal.id}`}
+									>
+										<span className="font-medium">Título</span>
+										<input
+											className={FIELD_CLASS}
+											defaultValue={proposal.title}
+											id={`proposal-title-${proposal.id}`}
+											name="proposalTitle"
+											required
+										/>
+									</label>
+									<label
+										className="flex flex-col gap-1"
+										htmlFor={`proposal-scope-${proposal.id}`}
+									>
+										<span className="font-medium">Escopo e resultado esperado</span>
+										<textarea
+											className={cn(FIELD_CLASS, 'min-h-24')}
+											id={`proposal-scope-${proposal.id}`}
+											name="proposalScope"
+											required
+										/>
+									</label>
+									<label
+										className="flex flex-col gap-1"
+										htmlFor={`proposal-command-${proposal.id}`}
+									>
+										<span className="font-medium">Comando de verificação</span>
+										<input
+											className={cn(FIELD_CLASS, 'font-mono')}
+											id={`proposal-command-${proposal.id}`}
+											name="proposalVerificationCommand"
+											placeholder="bun test"
+											required
+										/>
+									</label>
+									<button className={BUTTON_CLASS} disabled={pending} type="submit">
+										Promover
+									</button>
+								</form>
+							</li>
+						))}
+					</ul>
+				)}
+			</CardPanel>
+		</CardDisclosure>
+	);
+}
+
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	return (
@@ -1225,6 +1340,12 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				selectedIssueId={props.selectedIssueId}
 			/>
 			<IssueReviewPanel drafts={props.drafts} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} />
+			<ProposalsPanel
+				onDismissProposal={props.onDismissProposal}
+				onPromoteProposal={props.onPromoteProposal}
+				pending={props.pending}
+				proposals={props.proposals}
+			/>
 			<IssueSpecifyPanel
 				ideas={props.ideas}
 				onSpecifyIssue={props.onSpecifyIssue}

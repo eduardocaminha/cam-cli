@@ -16,14 +16,18 @@ import {
 	commandRun,
 	createIssue,
 	CHAT_PATH,
+	dismissProposal,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChat,
+	fetchProposals,
 	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
 	type ProjectBriefView,
+	promoteProposal,
+	PROPOSALS_PATH,
 	RUNS_PATH,
 	ISSUES_PATH,
 	PROVIDERS_PATH,
@@ -108,7 +112,9 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
 			onApproveIssue={() => {}}
+			onDismissProposal={() => {}}
 			onEnableNotifications={() => {}}
+			onPromoteProposal={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
 			onSelectIssue={() => {}}
@@ -119,6 +125,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onReviewIssue={() => {}}
 			onStart={() => {}}
 			pending={false}
+			proposals={[]}
 			providers={[]}
 			route={route}
 			runs={[]}
@@ -572,6 +579,58 @@ describe('work surface', () => {
 		expect(buttonIsEnabled(workPage({ pending: true }), 'Criar tarefa')).toBe(false);
 	});
 
+	// GSHIP-613: the third card of /work, disclosed like the drafts one.
+	test('pending proposals are read as evidence and decided, never edited', () => {
+		const html = workPage({ proposals: [{
+			id: 'run-1-proposal-1',
+			title: 'Cobrir o retry do shipper',
+			evidence: 'Sem teste no caminho de erro.',
+			sourceRunId: 'run-1',
+			sourceIssueId: 'CAM-50',
+		}] });
+		const card = panel(html, 'Propostas derivadas');
+
+		expect(card).not.toContain('open=""');
+		expect(card).toContain('1 proposta(s) pendente(s).');
+		expect(card).toContain('Cobrir o retry do shipper');
+		// The evidence and its provenance are printed, and no field can change them.
+		expect(card).toContain('Sem teste no caminho de erro.');
+		expect(card).toContain('CAM-50');
+		expect(card).toContain('run-1');
+		expect(card).not.toContain('name="evidence"');
+		// Promotion is the operator's own contract, pre-filled with the title only.
+		expect(card).toContain('value="Cobrir o retry do shipper"');
+		expect(card).toContain('name="proposalScope"');
+		expect(card).toContain('name="proposalVerificationCommand"');
+		expect(buttonIsEnabled(card, 'Descartar')).toBe(true);
+		expect(buttonIsEnabled(card, 'Promover')).toBe(true);
+		// Promoting files a draft: this card never approves and never starts a run.
+		expect(hasButton(card, 'Aprovar')).toBe(false);
+		expect(hasButton(card, 'Iniciar run')).toBe(false);
+	});
+
+	test('an empty inbox still renders the card, and a command in flight holds both decisions', () => {
+		const empty = panel(workPage(), 'Propostas derivadas');
+		expect(empty).toContain('0 proposta(s) pendente(s).');
+		expect(empty).toContain('Nenhuma proposta pendente.');
+
+		const held = panel(
+			workPage({
+				pending: true,
+				proposals: [{
+					id: 'run-1-proposal-1',
+					title: 'Proposta pendente',
+					evidence: 'Evidência capturada.',
+					sourceRunId: 'run-1',
+					sourceIssueId: 'CAM-50',
+				}],
+			}),
+			'Propostas derivadas',
+		);
+		expect(buttonIsEnabled(held, 'Descartar')).toBe(false);
+		expect(buttonIsEnabled(held, 'Promover')).toBe(false);
+	});
+
 	test('ideas are specified directly, without a planner, and only when there are any', () => {
 		const html = workPage({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
 
@@ -934,6 +993,68 @@ describe('same-origin transport', () => {
 		expect(PROVIDERS_PATH).toBe('/api/providers');
 		expect(CHAT_PATH).toBe('/api/chat');
 		expect(BRIEF_PATH).toBe('/api/brief');
+		expect(PROPOSALS_PATH).toBe('/api/proposals');
+	});
+
+	test('the inbox is read and decided on the proposal-scoped routes', async () => {
+		const proposals = [{
+			id: 'run-1-proposal-1',
+			title: 'Cobrir o retry do shipper',
+			evidence: 'Sem teste no caminho de erro.',
+			sourceRunId: 'run-1',
+			sourceIssueId: 'CAM-50',
+		}];
+		await withRecordedFetch({ proposals }, 200, async (calls) => {
+			expect(await fetchProposals()).toEqual(proposals);
+			expect(calls).toEqual([{ url: PROPOSALS_PATH, method: 'GET', body: null }]);
+		});
+		// A payload without the key reads as an empty inbox, never as a hole.
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchProposals()).toEqual([]);
+		});
+		await withRecordedFetch({ ok: true, proposal: { id: 'run-1-proposal-1' } }, 200, async (calls) => {
+			expect(await dismissProposal('run-1-proposal-1')).toBe('Proposta descartada.');
+			expect(calls).toEqual([{
+				url: '/api/proposals/run-1-proposal-1/dismiss',
+				method: 'POST',
+				body: null,
+			}]);
+		});
+		// Promotion posts the operator's contract and answers with the filed issue.
+		const draft = {
+			title: 'Cobrir o retry do shipper',
+			scope: 'Adicionar o teste que falta.',
+			verificationCommand: 'bun test',
+		};
+		await withRecordedFetch(
+			{ ok: true, issue: { id: 'CAM-950', title: draft.title } },
+			200,
+			async (calls) => {
+				expect(await promoteProposal('run-1-proposal-1', draft))
+					.toEqual({ id: 'CAM-950', title: draft.title });
+				expect(calls).toEqual([{
+					url: '/api/proposals/run-1-proposal-1/promote',
+					method: 'POST',
+					body: JSON.stringify(draft),
+				}]);
+			},
+		);
+	});
+
+	test('a refused decision surfaces the server message instead of a generic failure', async () => {
+		await withRecordedFetch(
+			{ ok: false, code: 'proposal-not-pending', message: 'Proposta run-1-proposal-1 já está promoted.' },
+			409,
+			async () => {
+				expect(await dismissProposal('run-1-proposal-1'))
+					.toBe('Proposta run-1-proposal-1 já está promoted.');
+				await expect(promoteProposal('run-1-proposal-1', {
+					title: 'Título',
+					scope: 'Escopo.',
+					verificationCommand: 'bun test',
+				})).rejects.toThrow('Proposta run-1-proposal-1 já está promoted.');
+			},
+		);
 	});
 
 	test('the brief and the handoff arrive on one read, and only the brief is written', async () => {

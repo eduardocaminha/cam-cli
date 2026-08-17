@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { PROPOSAL_LIMITS } from '../../src/runtime/run-proposal.ts';
+import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
 import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -100,6 +100,7 @@ describe('derived proposals', () => {
 				id: 'run-proposals-proposal-1',
 				relationship: 'derived-from',
 				status: 'pending',
+				promotedIssueId: null,
 				sourceRunId: 'run-proposals',
 				sourceIssueId: 'CAM-40',
 				title: 'Extrair o parser de eventos',
@@ -111,6 +112,7 @@ describe('derived proposals', () => {
 				id: 'run-proposals-proposal-2',
 				relationship: 'derived-from',
 				status: 'pending',
+				promotedIssueId: null,
 				sourceRunId: 'run-proposals',
 				sourceIssueId: 'CAM-40',
 				title: 'Cobrir o caminho de erro do shipper',
@@ -180,6 +182,167 @@ describe('derived proposals', () => {
 			createdAt: '2026-08-16T22:31:00.000Z',
 		})).toEqual([]);
 		store.close();
+	});
+});
+
+// GSHIP-613: the operator settles each captured proposal exactly once, and
+// neither decision reaches the run, the issue or the approval.
+describe('proposal decisions', () => {
+	function storeWithProposals(): RunStore {
+		const store = storeWithRun('run-inbox', 'CAM-50');
+		store.recordProposals({
+			runId: 'run-inbox',
+			issueId: 'CAM-50',
+			proposals: [
+				{ title: 'Descartável', evidence: 'Já resolvido em outro lugar.' },
+				{ title: 'Promovível', evidence: 'Sem cobertura no caminho de erro.' },
+			],
+			createdAt: '2026-08-16T22:10:00.000Z',
+		});
+		return store;
+	}
+
+	test('a dismissed proposal leaves the inbox and refuses a second decision', () => {
+		const store = storeWithProposals();
+
+		const dismissed = store.dismissProposal('run-inbox-proposal-1', '2026-08-16T23:00:00.000Z');
+		expect(dismissed).toMatchObject({
+			id: 'run-inbox-proposal-1',
+			status: 'dismissed',
+			promotedIssueId: null,
+			updatedAt: '2026-08-16T23:00:00.000Z',
+		});
+		// Durable, but settled: the record stays readable and leaves the inbox.
+		expect(store.getProposal('run-inbox-proposal-1')).toEqual(dismissed);
+		expect(store.listPendingProposals().map((proposal) => proposal.id))
+			.toEqual(['run-inbox-proposal-2']);
+		expect(store.listProposals()).toHaveLength(2);
+
+		for (const second of [
+			() => store.dismissProposal('run-inbox-proposal-1', '2026-08-16T23:05:00.000Z'),
+			() => store.promoteProposal('run-inbox-proposal-1', 'CAM-90', '2026-08-16T23:05:00.000Z'),
+		]) {
+			expect(second).toThrow(ProposalTransitionError);
+			try {
+				second();
+			} catch (error) {
+				expect((error as ProposalTransitionError).code).toBe('proposal-not-pending');
+				expect((error as ProposalTransitionError).status).toBe(409);
+			}
+		}
+		// The refused decisions changed nothing.
+		expect(store.getProposal('run-inbox-proposal-1')).toEqual(dismissed);
+		// The run that produced the proposals is untouched by either decision.
+		expect(store.getRun('run-inbox')).toMatchObject({ state: 'queued', fixRounds: 0 });
+		expect(store.listRunEvents('run-inbox').map((event) => event.kind)).toEqual(['run.created']);
+		store.close();
+	});
+
+	test('a promoted proposal keeps the issue it became and refuses to move again', () => {
+		const store = storeWithProposals();
+
+		const promoted = store.promoteProposal(
+			'run-inbox-proposal-2',
+			'CAM-91',
+			'2026-08-16T23:10:00.000Z',
+		);
+		expect(promoted).toMatchObject({
+			id: 'run-inbox-proposal-2',
+			status: 'promoted',
+			promotedIssueId: 'CAM-91',
+			title: 'Promovível',
+			evidence: 'Sem cobertura no caminho de erro.',
+			updatedAt: '2026-08-16T23:10:00.000Z',
+		});
+		expect(store.listPendingProposals().map((proposal) => proposal.id))
+			.toEqual(['run-inbox-proposal-1']);
+
+		expect(() => store.promoteProposal('run-inbox-proposal-2', 'CAM-92', '2026-08-16T23:11:00.000Z'))
+			.toThrow(ProposalTransitionError);
+		expect(store.getProposal('run-inbox-proposal-2')?.promotedIssueId).toBe('CAM-91');
+		// A promotion without a filed issue is a programming error, not a status.
+		expect(() => store.promoteProposal('run-inbox-proposal-1', '  ', '2026-08-16T23:12:00.000Z'))
+			.toThrow('promoted issueId is required');
+		expect(store.getProposal('run-inbox-proposal-1')?.status).toBe('pending');
+		store.close();
+	});
+
+	test('an unknown proposal is refused as missing, not as settled', () => {
+		const store = storeWithProposals();
+		for (const decide of [
+			() => store.dismissProposal('run-inbox-proposal-9', '2026-08-16T23:20:00.000Z'),
+			() => store.promoteProposal('run-inbox-proposal-9', 'CAM-93', '2026-08-16T23:20:00.000Z'),
+		]) {
+			try {
+				decide();
+				throw new Error('unreachable');
+			} catch (error) {
+				expect(error).toBeInstanceOf(ProposalTransitionError);
+				expect((error as ProposalTransitionError).code).toBe('proposal-not-found');
+				expect((error as ProposalTransitionError).status).toBe(404);
+			}
+		}
+		expect(store.getProposal('run-inbox-proposal-9')).toBeNull();
+		store.close();
+	});
+
+	test('a GSHIP-612 database gains the promoted column without losing its proposals', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-proposals-'), 'runtime.sqlite');
+		const legacy = new Database(dbPath, { create: true });
+		legacy.exec(`
+			CREATE TABLE runs (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				session_id TEXT,
+				provider_id TEXT,
+				workspace_path TEXT,
+				state TEXT NOT NULL,
+				fix_rounds INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				summary TEXT,
+				error TEXT
+			);
+			CREATE TABLE run_proposals (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				id TEXT NOT NULL UNIQUE,
+				run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+				issue_id TEXT NOT NULL,
+				relationship TEXT NOT NULL,
+				status TEXT NOT NULL,
+				title TEXT NOT NULL,
+				evidence TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			INSERT INTO runs (
+				id, issue_id, session_id, state, fix_rounds, created_at, updated_at
+			) VALUES (
+				'legacy-run', 'CAM-612', 'legacy-session', 'done', 0,
+				'2026-08-16T10:00:00Z', '2026-08-16T10:01:00Z'
+			);
+			INSERT INTO run_proposals (
+				id, run_id, issue_id, relationship, status, title, evidence, created_at, updated_at
+			) VALUES (
+				'legacy-run-proposal-1', 'legacy-run', 'CAM-612', 'derived-from', 'pending',
+				'Ideia capturada antes da caixa de entrada', 'Vista na implementação da etapa 4A.',
+				'2026-08-16T10:01:00Z', '2026-08-16T10:01:00Z'
+			);
+		`);
+		legacy.close();
+
+		const migrated = new RunStore(dbPath);
+		expect(migrated.getProposal('legacy-run-proposal-1')).toMatchObject({
+			status: 'pending',
+			relationship: 'derived-from',
+			promotedIssueId: null,
+			sourceRunId: 'legacy-run',
+			sourceIssueId: 'CAM-612',
+		});
+		expect(migrated.promoteProposal('legacy-run-proposal-1', 'CAM-613', '2026-08-17T02:00:00Z'))
+			.toMatchObject({ status: 'promoted', promotedIssueId: 'CAM-613' });
+		expect(migrated.listPendingProposals()).toEqual([]);
+		migrated.close();
 	});
 });
 

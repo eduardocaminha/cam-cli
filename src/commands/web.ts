@@ -35,6 +35,7 @@ import {
 	parseOperatorSpecInput,
 	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
+import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	RunRuntime,
 	type RunRuntimeOptions,
@@ -348,6 +349,88 @@ async function approveIssueFromOperator(
 			{ ok: false, code: error.code, message: error.message },
 			{ status: error.status },
 		);
+	}
+}
+
+/** Both operator refusals already carry the code, message and status to answer. */
+function refusalResponse(error: IssueIntakeError | ProposalTransitionError): Response {
+	return Response.json(
+		{ ok: false, code: error.code, message: error.message },
+		{ status: error.status },
+	);
+}
+
+/**
+ * Discard one captured idea. The proposal is the only record that changes: no
+ * issue is written, no run is touched, and a proposal already settled refuses
+ * instead of being discarded twice.
+ */
+function dismissProposalFromOperator(
+	request: Request,
+	runtime: RunRuntime,
+	proposalId: string,
+): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({ ok: true, proposal: runtime.dismissProposal(proposalId) });
+	} catch (error) {
+		if (!(error instanceof ProposalTransitionError)) throw error;
+		return refusalResponse(error);
+	}
+}
+
+/**
+ * Turn one captured idea into a filed issue, with the title, scope and command
+ * the operator authored here -- never the captured evidence. The order is what
+ * makes it safe: the proposal is checked pending first so a settled one never
+ * files anything, the existing intake writes the issue without approving it,
+ * and only a published issue marks the proposal promoted. A failing intake
+ * therefore leaves the proposal pending and retryable.
+ */
+async function promoteProposalFromOperator(
+	request: Request,
+	runtime: RunRuntime,
+	proposalId: string,
+	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const input = parseOperatorIssueInput(body);
+		const proposal = runtime.getProposal(proposalId);
+		if (proposal === null) {
+			throw new ProposalTransitionError(
+				'proposal-not-found',
+				`Proposta ${proposalId} não existe.`,
+				404,
+			);
+		}
+		if (proposal.status !== 'pending') {
+			throw new ProposalTransitionError(
+				'proposal-not-pending',
+				`Proposta ${proposalId} já está ${proposal.status}.`,
+				409,
+			);
+		}
+		const issue = issueIntake(input, { approve: false });
+		return Response.json({
+			ok: true,
+			issue,
+			proposal: runtime.promoteProposal(proposalId, issue.id),
+		});
+	} catch (error) {
+		if (error instanceof IssueIntakeError || error instanceof ProposalTransitionError) {
+			return refusalResponse(error);
+		}
+		throw error;
 	}
 }
 
@@ -865,6 +948,26 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request,
 					request.params.issueId,
 					issueApprover,
+				),
+			},
+			// The inbox is the pending proposals alone: a settled one stays durable
+			// in the store and leaves the list the operator is deciding on.
+			'/api/proposals': {
+				GET: () => Response.json({ proposals: runRuntime.listPendingProposals() }),
+			},
+			'/api/proposals/:proposalId/dismiss': {
+				POST: (request) => dismissProposalFromOperator(
+					request,
+					runRuntime,
+					request.params.proposalId,
+				),
+			},
+			'/api/proposals/:proposalId/promote': {
+				POST: (request) => promoteProposalFromOperator(
+					request,
+					runRuntime,
+					request.params.proposalId,
+					issueIntake,
 				),
 			},
 			'/api/runs/:runId/cancel': {

@@ -14,6 +14,7 @@ export const ISSUES_PATH = '/api/issues';
 export const PROVIDERS_PATH = '/api/providers';
 export const CHAT_PATH = '/api/chat';
 export const BRIEF_PATH = '/api/brief';
+export const PROPOSALS_PATH = '/api/proposals';
 
 export interface OperatorIssueDraft {
 	title: string;
@@ -45,6 +46,19 @@ export interface BacklogSnapshot {
 export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
 	state: 'draft' | 'approved' | 'stale';
 	approvedAt?: string;
+}
+
+/**
+ * One idea an executed run found outside its issue, still awaiting a decision.
+ * The evidence is read-only here: the operator discards it or authors a new
+ * contract for it, and never edits what the run reported.
+ */
+export interface ProposalView {
+	id: string;
+	title: string;
+	evidence: string;
+	sourceRunId: string;
+	sourceIssueId: string;
 }
 
 export interface WorkspaceNoticeView {
@@ -117,6 +131,10 @@ interface CommandPayload {
 
 interface CreateIssuePayload extends CommandPayload {
 	issue?: CreatedIssue;
+}
+
+interface ProposalsPayload {
+	proposals?: ProposalView[];
 }
 
 interface ProvidersPayload {
@@ -286,6 +304,44 @@ export async function specifyIssue(id: string, input: OperatorSpecDraft): Promis
 	}
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
 		throw new Error('O servidor não devolveu a ideia especificada.');
+	}
+	return payload.issue;
+}
+
+/** The inbox the server already filtered: only proposals still pending. */
+export async function fetchProposals(): Promise<ProposalView[]> {
+	const payload = await readJson<ProposalsPayload>(await fetch(PROPOSALS_PATH), 'Propostas');
+	return payload.proposals ?? [];
+}
+
+export async function dismissProposal(id: string): Promise<string> {
+	const response = await fetch(`${PROPOSALS_PATH}/${encodeURIComponent(id)}/dismiss`, {
+		method: 'POST',
+	});
+	const payload = (await response.json()) as CommandPayload;
+	if (response.ok) return 'Proposta descartada.';
+	return payload.message ?? `Descarte recusado (${response.status}).`;
+}
+
+/**
+ * The operator's own contract for the idea, filed through the same intake as a
+ * new task. The proposal is only settled by the server once the issue exists.
+ */
+export async function promoteProposal(
+	id: string,
+	input: OperatorIssueDraft,
+): Promise<CreatedIssue> {
+	const response = await fetch(`${PROPOSALS_PATH}/${encodeURIComponent(id)}/promote`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input),
+	});
+	const payload = (await response.json()) as CreateIssuePayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Promoção recusada (${response.status}).`);
+	}
+	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
+		throw new Error('O servidor não devolveu a tarefa criada.');
 	}
 	return payload.issue;
 }

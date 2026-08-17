@@ -5,7 +5,7 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
-import type { ProposalDraft } from './run-proposal.ts';
+import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
 	type OrchestratorHandoff,
@@ -285,6 +285,26 @@ export class RunRuntime {
 
 	listWorkspaceNotices(): WorkspaceNotice[] {
 		return [...this.#workspaceNotices];
+	}
+
+	/**
+	 * The proposal inbox and the two decisions it admits. None of them touches a
+	 * run, an issue or an approval: a proposal is evidence the operator settles.
+	 */
+	listPendingProposals(limit?: number): RunProposal[] {
+		return this.#store.listPendingProposals(limit);
+	}
+
+	getProposal(id: string): RunProposal | null {
+		return this.#store.getProposal(id);
+	}
+
+	dismissProposal(id: string): RunProposal {
+		return this.#store.dismissProposal(id, this.#now());
+	}
+
+	promoteProposal(id: string, issueId: string): RunProposal {
+		return this.#store.promoteProposal(id, issueId, this.#now());
 	}
 
 	getSelectedProvider(): AgentProviderId {
