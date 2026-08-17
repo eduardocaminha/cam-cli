@@ -308,9 +308,26 @@ async function converse(
 	}
 }
 
+/**
+ * The issue file belongs to the run while one is in flight. The shipper closes
+ * the issue on the run's branch and never on main, so a write here during a run
+ * is a guaranteed conflict at ship time: refuse before any git work happens.
+ */
+function assertIssueFileIsFree(runtime: RunRuntime, issueId: string): void {
+	const active = runtime.findActiveRunForIssue(issueId);
+	if (active === null) return;
+	throw new IssueIntakeError(
+		'issue-run-active',
+		`${issueId} está sendo executada pela run ${active.id} (${active.state});`
+		+ ' o arquivo da issue pertence a ela até a run terminar.',
+		409,
+	);
+}
+
 async function specifyIssueFromOperator(
 	request: Request,
 	id: string,
+	runtime: RunRuntime,
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
@@ -325,6 +342,7 @@ async function specifyIssueFromOperator(
 	}
 	try {
 		const input = parseOperatorSpecInput(body);
+		assertIssueFileIsFree(runtime, id);
 		return Response.json({ ok: true, issue: issueSpecifier(id, input) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
@@ -338,10 +356,12 @@ async function specifyIssueFromOperator(
 async function approveIssueFromOperator(
 	request: Request,
 	id: string,
+	runtime: RunRuntime,
 	issueApprover: (id: string) => CreatedOperatorIssue,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	try {
+		assertIssueFileIsFree(runtime, id);
 		return Response.json({ ok: true, issue: issueApprover(id) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
@@ -780,15 +800,21 @@ async function executeOrchestratorCommand(
 					+ ` Use start_run com ${issue.id} quando quiser iniciá-la.`;
 			}
 		}
+		// The three typed commands that rewrite an existing issue file ask the same
+		// ownership question the operator routes ask, so a conversation cannot do
+		// on main what the screen refuses while a run is in flight.
 		case 'specify_issue': {
+			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueSpecifier(command.issueId, command);
 			return `${issue.id} especificada no backlog.`;
 		}
 		case 'approve_issue': {
+			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueApprover(command.issueId);
 			return `${issue.id} aprovada no backlog.`;
 		}
 		case 'abandon_issue': {
+			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueAbandoner(command.issueId, command);
 			return `${issue.id} abandonada no backlog.`;
 		}
@@ -940,6 +966,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => specifyIssueFromOperator(
 					request,
 					request.params.issueId,
+					runRuntime,
 					issueSpecifier,
 				),
 			},
@@ -947,6 +974,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => approveIssueFromOperator(
 					request,
 					request.params.issueId,
+					runRuntime,
 					issueApprover,
 				),
 			},

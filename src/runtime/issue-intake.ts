@@ -34,6 +34,8 @@ export type IssueIntakeErrorCode =
 	| 'invalid-request'
 	| 'issue-not-found'
 	| 'issue-not-eligible'
+	/** A non-terminal run owns the issue file; main must not be written now. */
+	| 'issue-run-active'
 	| 'source-unavailable'
 	| 'publish-conflict';
 
@@ -312,10 +314,17 @@ export function approveOperatorIssue(
 				409,
 			);
 		}
+		const fingerprint = fingerprintSpec(entry.spec!);
+		// Approving the published contract again is the same decision, not a new
+		// one: keep the recorded approvedAt and write nothing, so a repeated
+		// approval never publishes a commit over an issue that is being executed.
+		if (entry.approval?.fingerprint === fingerprint) {
+			return { id: entry.id, title: entry.title, sha: sourceSha };
+		}
 		const approved: IssueEntry = {
 			...entry,
 			updatedAt: approvedAt,
-			approval: { fingerprint: fingerprintSpec(entry.spec!), approvedAt },
+			approval: { fingerprint, approvedAt },
 		};
 		const result = publishEntryAttempt(cwd, sourceSha, approved, `chore(gship): approve ${issueId}`);
 		if (result.kind === 'published') {
