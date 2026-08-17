@@ -556,23 +556,13 @@ const MODEL_ROLE_LABELS: Readonly<Record<ModelRoleName, string>> = {
 };
 
 /**
- * Known values, offered as suggestions and never as a restriction: the field
- * accepts any single token, and an unknown one is refused by the CLI itself with
- * the CLI's own message. So this list is a convenience that can go stale
- * without breaking the screen.
+ * Each vendor's own model page. Gateship cannot track vendor releases, so it
+ * points at the source of truth instead of embedding a list that goes stale:
+ * the field stays free text and an unknown value is refused by the CLI itself.
  */
-const MODEL_SUGGESTIONS: Readonly<Record<ProviderStatusView['id'], {
-	models: readonly string[];
-	efforts: readonly string[];
-}>> = {
-	claude: {
-		models: ['opus', 'sonnet', 'haiku'],
-		efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-	},
-	codex: {
-		models: ['gpt-5-codex', 'gpt-5'],
-		efforts: ['minimal', 'low', 'medium', 'high'],
-	},
+const MODEL_DOC_URLS: Readonly<Record<ProviderStatusView['id'], string>> = {
+	claude: 'https://platform.claude.com/docs/en/about-claude/models/overview',
+	codex: 'https://learn.chatgpt.com/docs/models',
 };
 
 /** Reads all six slots out of the one form that was just submitted. */
@@ -610,7 +600,6 @@ function ModelSlotFields({
 					className={cn(FIELD_CLASS, 'font-mono')}
 					defaultValue={slot.model}
 					id={`${providerId}-${role}-model`}
-					list={`${providerId}-model-options`}
 					name={`${providerId}-${role}-model`}
 					placeholder="padrão do CLI"
 				/>
@@ -624,7 +613,6 @@ function ModelSlotFields({
 					className={cn(FIELD_CLASS, 'font-mono')}
 					defaultValue={slot.effort}
 					id={`${providerId}-${role}-effort`}
-					list={`${providerId}-effort-options`}
 					name={`${providerId}-${role}-effort`}
 					placeholder="padrão do CLI"
 				/>
@@ -639,16 +627,17 @@ function ModelProviderFields({
 }: Pick<AppProps, 'modelSettings'> & {
 	providerId: ProviderStatusView['id'];
 }): React.ReactElement {
-	const suggestions = MODEL_SUGGESTIONS[providerId];
 	return (
 		<fieldset className="flex flex-col gap-3">
 			<legend className="font-medium text-sm">{MODEL_PROVIDER_LABELS[providerId]}</legend>
-			<datalist id={`${providerId}-model-options`}>
-				{suggestions.models.map((model) => <option key={model} value={model} />)}
-			</datalist>
-			<datalist id={`${providerId}-effort-options`}>
-				{suggestions.efforts.map((effort) => <option key={effort} value={effort} />)}
-			</datalist>
+			<a
+				className={TEXT_LINK_CLASS}
+				href={MODEL_DOC_URLS[providerId]}
+				rel="noreferrer noopener"
+				target="_blank"
+			>
+				Modelos de {MODEL_PROVIDER_LABELS[providerId]} na documentação oficial
+			</a>
 			{MODEL_ROLE_NAMES.map((role) => (
 				<ModelSlotFields
 					key={role}
@@ -673,7 +662,11 @@ function ModelSettingsPanel({
 }: Pick<AppProps, 'modelSettings' | 'pending' | 'onSaveModelSettings'>): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Vale para o próximo agente iniciado, sem reiniciar o serviço. Vazio mantém o padrão do CLI."
+			description={
+				'Vale para o próximo agente iniciado, sem reiniciar o serviço. ' +
+				'Vazio mantém o padrão do CLI. O campo é livre: um valor inválido é recusado ' +
+				'pelo próprio CLI, com o erro dele, e não pelo Gateship.'
+			}
 			open
 			title="Modelo e effort por papel"
 		>

@@ -761,8 +761,7 @@ describe('settings surface', () => {
 		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar brief')).toBe(false);
 	});
 
-	// GSHIP-617: the three roles are configurable per provider, and the screen
-	// suggests known values without restricting them.
+	// GSHIP-617: the three roles are configurable per provider.
 	test('offers a model and an effort field for the three roles of each provider', () => {
 		const html = settingsPage({
 			modelSettings: {
@@ -799,13 +798,52 @@ describe('settings surface', () => {
 		expect(models).toContain('padrão do CLI');
 		expect(models).toContain('Vazio mantém o padrão do CLI.');
 
-		// Known values are suggested by a datalist, so the field still accepts
-		// anything the CLI might learn about later.
-		expect(models).toContain('<datalist id="claude-model-options"');
-		expect(models).toContain('<datalist id="codex-effort-options"');
-		expect(models).toContain('list="claude-effort-options"');
 		expect(models).not.toContain('<select');
 		expect(buttonIsEnabled(html, 'Salvar modelos')).toBe(true);
+	});
+
+	// GSHIP-619: Gateship cannot track vendor releases, so it stopped shipping a
+	// list of its own and points at each vendor's page instead.
+	test('every model field is free text, with no embedded suggestion list', () => {
+		const models = panel(settingsPage(), 'Modelo e effort por papel');
+
+		// No datalist survives, and nothing points at one.
+		expect(models).not.toContain('<datalist');
+		expect(models).not.toContain('list="');
+		for (const provider of ['claude', 'codex']) {
+			for (const role of ['orchestrator', 'executor', 'reviewer']) {
+				for (const field of ['model', 'effort']) {
+					const input = openingTags(models).find((tag) =>
+						tag.includes(`name="${provider}-${role}-${field}"`),
+					);
+					expect(input).toBeDefined();
+					expect(input).toContain('<input');
+					expect(input).not.toContain('list=');
+					expect(input).not.toContain('pattern=');
+				}
+			}
+		}
+
+		// The screen says who refuses an unknown value, so nobody blames Gateship.
+		expect(models).toContain('recusado pelo próprio CLI');
+	});
+
+	test('each provider links to its own model documentation, in a new tab', () => {
+		const models = panel(settingsPage(), 'Modelo e effort por papel');
+		const docs: Readonly<Record<string, string>> = {
+			Claude: 'https://platform.claude.com/docs/en/about-claude/models/overview',
+			Codex: 'https://learn.chatgpt.com/docs/models',
+		};
+
+		for (const [label, href] of Object.entries(docs)) {
+			const link = openingTags(models).find((tag) => tag.includes(`href="${href}"`));
+
+			expect(link).toBeDefined();
+			expect(link).toContain('<a');
+			expect(link).toContain('target="_blank"');
+			expect(link).toContain('rel="noreferrer noopener"');
+			expect(models).toContain(`Modelos de ${label} na documentação oficial`);
+		}
 	});
 
 	test('the model save is held while a command is in flight, like every other', () => {
