@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T22:46:27.061Z",
-  "updatedAt": "2026-08-16T22:46:27.061Z",
+  "updatedAt": "2026-08-17T01:16:14.079Z",
   "description": "Adicionar um estado terminal cancelled e uma ação tipada abandon_run, elegível apenas para run interrupted.\nA ação encerra sem retomar a sessão do provider, libera somente workspace e branch próprios e limpos, preserva e sinaliza qualquer workspace sujo, e deixa de bloquear o início de outra issue.\nExpor a ação pela API same-origin e pelos controles existentes somente quando elegível; done, failed e cancelled permanecem terminais e não admitem a ação.\nNão alterar o cancelamento de uma run ativa, que continua produzindo interrupted e resumível.\nFora de escopo: scheduler, batch, autoabandono, timeout e limpeza destrutiva.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/run-state.test.ts test/runtime/run-runtime.test.ts test/web/run-api.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "61087bc07a462c336fc1a44a17464ce11e1132de7043a501ed17bdab66d9998d",
+    "approvedAt": "2026-08-17T01:16:14.079Z"
   }
 }
