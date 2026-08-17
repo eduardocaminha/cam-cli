@@ -30,6 +30,18 @@
 //
 // Every `gh` command receives an allowlisted environment with no token
 // variables, so authentication always belongs to gh's own credential store.
+//
+// Every `gh` failure passes through the single #checked classification point:
+// GitHub being unavailable (HTTP 5xx, a timeout, or a network or name
+// resolution failure gh itself reports) from GitHub deciding the answer is no
+// (a conflict, a denied permission, a refusal). Only the three commands this
+// file already documents as idempotent — reusing the pull request, arming
+// auto-merge, and reading its state — retry an unavailable answer, with a
+// small fixed number of attempts and total window, before giving up. A
+// decision fails on the spot, exactly as before. When the retries reading the
+// pull request's state run out, the ship ends as unconfirmed rather than
+// failed: GitHub may already have merged the commit and simply could not be
+// asked, which is not the same thing as it refusing to (GSHIP-625).
 
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -45,6 +57,32 @@ import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
 /** Ceiling on one monitor. A slow or wedged CI ends as a retryable failure. */
 const DEFAULT_MERGE_TIMEOUT_MS = 60 * 60 * 1_000;
+/**
+ * Backoff before retrying an idempotent `gh` command GitHub reported
+ * unavailable. Small and fixed on purpose: this smooths over the kind of blip
+ * the evidence for GSHIP-625 recorded (a 503 immediately followed by GitHub
+ * finishing the merge on its own), not an extended outage — the big picture
+ * ship already retries as a whole on the next attempt.
+ */
+const DEFAULT_UNAVAILABLE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
+const HTTP_5XX_PATTERN = /\bHTTP\/?\s*5\d{2}\b/i;
+const TIMEOUT_PATTERN = /\b(timed?\s?-?out|timeout|deadline exceeded)\b/i;
+const NETWORK_PATTERN =
+	/\b(dial tcp|no such host|could not resolve host|connection refused|connection reset|network is unreachable|temporary failure in name resolution|TLS handshake timeout)\b/i;
+
+/**
+ * GitHub being unavailable — HTTP 5xx, a timeout, or a network or name
+ * resolution failure gh itself reports — as opposed to GitHub deciding the
+ * answer is no (a conflict, a denied permission, a refusal), which is every
+ * other non-zero exit and is never retried.
+ */
+function isGithubUnavailable(detail: string): boolean {
+	return HTTP_5XX_PATTERN.test(detail) || TIMEOUT_PATTERN.test(detail) || NETWORK_PATTERN.test(detail);
+}
+
+/** Thrown only once an idempotent `gh` command exhausts its retry budget while GitHub stays unavailable. */
+class GithubUnavailableError extends Error {}
 
 export interface ShipCommandInput {
 	cwd: string;
@@ -59,6 +97,8 @@ export interface GithubShipperOptions {
 	runCommand?: ShipCommandRunner;
 	pollIntervalMs?: number;
 	mergeTimeoutMs?: number;
+	/** Backoff schedule for retrying an idempotent `gh` command GitHub reports unavailable. */
+	unavailableRetryDelaysMs?: number[];
 }
 
 interface WorkspaceIssue {
@@ -195,11 +235,14 @@ export class GithubShipper implements RuntimeShipper {
 	readonly #runCommand: ShipCommandRunner;
 	readonly #pollIntervalMs: number;
 	readonly #mergeTimeoutMs: number;
+	readonly #unavailableRetryDelaysMs: number[];
 
 	constructor(options: GithubShipperOptions = {}) {
 		this.#runCommand = options.runCommand ?? defaultShipCommand;
 		this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 		this.#mergeTimeoutMs = options.mergeTimeoutMs ?? DEFAULT_MERGE_TIMEOUT_MS;
+		this.#unavailableRetryDelaysMs =
+			options.unavailableRetryDelaysMs ?? DEFAULT_UNAVAILABLE_RETRY_DELAYS_MS;
 	}
 
 	async ship(input: RuntimeShipInput): Promise<RuntimeShipResult> {
@@ -245,6 +288,7 @@ export class GithubShipper implements RuntimeShipper {
 			input,
 			'gh',
 			['pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', headSha],
+			{ retryIdempotent: true },
 		);
 		input.emit('ship.automerge-armed', { prNumber, headSha });
 
@@ -368,6 +412,31 @@ export class GithubShipper implements RuntimeShipper {
 	}
 
 	/**
+	 * The retries reading the pull request's state ran out while GitHub stayed
+	 * unavailable. This is deliberately not the same failure as a real merge
+	 * failure: the merge may already have landed and this ship simply could not
+	 * ask, which is exactly the confusion GSHIP-625 recorded — a 503 on `gh pr
+	 * view` a second before GitHub finished the merge, reported to the operator
+	 * as though the merge itself had failed. Nothing here re-arms or disarms
+	 * auto-merge or touches the branch; the ship just stops trying to look.
+	 */
+	async #unconfirmed(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		error: GithubUnavailableError,
+	): Promise<RuntimeShipResult> {
+		input.emit('ship.merge-unconfirmed', { prNumber, headSha, detail: error.message });
+		return {
+			outcome: 'failed',
+			detail:
+				`pull request #${prNumber} merge could not be confirmed: ${error.message} ` +
+				'— this is not a merge failure, GitHub may already have merged it; check the ' +
+				'pull request directly before shipping again',
+		};
+	}
+
+	/**
 	 * Reuse the branch's most recent pull request whatever state it is in, or
 	 * open the first one. Listing only open pull requests would miss the one
 	 * auto-merge already landed and duplicate it.
@@ -384,7 +453,7 @@ export class GithubShipper implements RuntimeShipper {
 			'--state', 'all',
 			'--json', 'number,state,headRefOid',
 			'--limit', '1',
-		]);
+		], { retryIdempotent: true });
 		const existing = parseExistingPullRequest(listed);
 		if (existing !== null) {
 			input.emit('ship.pr-reused', { prNumber: existing.number, branch, state: existing.state });
@@ -422,9 +491,17 @@ export class GithubShipper implements RuntimeShipper {
 		const deadline = Date.now() + this.#mergeTimeoutMs;
 		let lastStatus = '';
 		for (;;) {
-			const view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
-			]));
+			let view: PullRequestView;
+			try {
+				view = parsePullRequestView(await this.#checked(input, 'gh', [
+					'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
+				], { retryIdempotent: true }));
+			} catch (error) {
+				if (error instanceof GithubUnavailableError) {
+					return this.#unconfirmed(input, prNumber, headSha, error);
+				}
+				throw error;
+			}
 			const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 			if (verdict !== null) return verdict;
 			if (view.mergeStateStatus !== lastStatus) {
@@ -485,17 +562,42 @@ export class GithubShipper implements RuntimeShipper {
 		return result;
 	}
 
+	/**
+	 * The single point every `gh` (and git) failure passes through. `retryIdempotent`
+	 * is set only at the three call sites this file already documents as
+	 * idempotent — reusing the pull request, arming auto-merge, reading its
+	 * state — and only then does an unavailable answer get retried; a decision
+	 * still fails on the spot, here or anywhere else `#checked` is called.
+	 */
 	async #checked(
 		input: RuntimeShipInput,
 		command: string,
 		args: string[],
+		options: { retryIdempotent?: boolean } = {},
 	): Promise<string> {
-		const result = await this.#run(input, command, args);
-		if (result.exitCode !== 0) {
-			throw new Error(
-				`${command} ${args.slice(0, 2).join(' ')} failed: ${failureDetail(result)}`,
-			);
+		const retryIdempotent = options.retryIdempotent ?? false;
+		const label = args.slice(0, 2).join(' ');
+		for (let attempt = 0; ; attempt++) {
+			const result = await this.#run(input, command, args);
+			if (result.exitCode === 0) return result.stdout.trim();
+			const detail = failureDetail(result);
+			if (!retryIdempotent || command !== 'gh' || !isGithubUnavailable(detail)) {
+				throw new Error(`${command} ${label} failed: ${detail}`);
+			}
+			if (attempt >= this.#unavailableRetryDelaysMs.length) {
+				throw new GithubUnavailableError(
+					`${command} ${label} still failing after ${attempt + 1} attempts: ` +
+						`GitHub appears unavailable: ${detail}`,
+				);
+			}
+			input.emit('ship.github-unavailable', {
+				command,
+				args: args.slice(0, 2),
+				attempt: attempt + 1,
+				detail,
+			});
+			await sleep(this.#unavailableRetryDelaysMs[attempt] ?? 0, input.signal);
+			if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
 		}
-		return result.stdout.trim();
 	}
 }
