@@ -63,6 +63,7 @@ if (mode === 'wait') {
 		},
 	})}\n`);
 	const proposal = fixtureArgument('proposal');
+	const cost = fixtureArgument('cost');
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,
@@ -74,5 +75,24 @@ if (mode === 'wait') {
 				? []
 				: [{ title: proposal, evidence: 'fixture evidence' }],
 		},
+		...(cost === 'full' ? {
+			total_cost_usd: 0.1234,
+			usage: {
+				input_tokens: 1000,
+				output_tokens: 200,
+				cache_creation_input_tokens: 50,
+				cache_read_input_tokens: 25,
+				output_tokens_details: { thinking_tokens: 40 },
+			},
+			modelUsage: {
+				'claude-opus-4-6': {
+					inputTokens: 1000,
+					outputTokens: 200,
+					cacheReadInputTokens: 25,
+					cacheCreationInputTokens: 50,
+					costUSD: 0.1234,
+				},
+			},
+		} : {}),
 	})}\n`);
 }

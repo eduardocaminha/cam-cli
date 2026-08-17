@@ -833,6 +833,17 @@ function abandonDurableRun(
 	}
 }
 
+/**
+ * The run list with each run's total cost attached (GSHIP-623), derived from
+ * the complete event log rather than any display-bounded read, so the number
+ * the card shows can never be shrunk by a read limit. The breakdown by role
+ * and model rides along on the same read: the run the operator is looking at
+ * is always `runs[0]`, so there is no separate route to keep in sync with it.
+ */
+function listRunsWithCost(runtime: RunRuntime): unknown[] {
+	return runtime.listRuns().map((run) => ({ ...run, cost: runtime.getRunCost(run.id) }));
+}
+
 function readRunEvents(runtime: RunRuntime, runId: string): Response {
 	if (runtime.getRun(runId) === null) {
 		return Response.json(
@@ -1205,7 +1216,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(snapshot);
 			},
 			'/api/runs': {
-				GET: () => Response.json({ runs: runRuntime.listRuns() }),
+				GET: () => Response.json({ runs: listRunsWithCost(runRuntime) }),
 				POST: (request) => startDurableRun(request, runRuntime),
 			},
 			'/api/providers': () => listProviders(providerAuth, runRuntime),

@@ -8,9 +8,14 @@
 // here is what lets the reviewer be a second role instead of a second engine.
 
 import { ProviderRefusalError } from './agent-session.ts';
-import { classifyHeadlessStreamLine } from './claude-stream.ts';
+import {
+	type ClaudeModelUsage,
+	type ClaudeResultUsage,
+	classifyHeadlessStreamLine,
+} from './claude-stream.ts';
 import { runAgentProcess } from './agent-process.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
+import type { ModelSlot } from './model-settings.ts';
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const MAX_ACTIVITY_TEXT = 2_000;
@@ -24,6 +29,12 @@ export interface ClaudeCliRunInput {
 	emit: (kind: string, payload?: Record<string, unknown>) => void;
 	/** Event namespace, so a reviewer child is distinguishable from the implementer. */
 	eventPrefix: string;
+	/**
+	 * The pair GSHIP-617 already resolved for this spawn, so the usage event
+	 * below (GSHIP-623) can carry it without a second lookup. Pass the empty
+	 * slot, not an absent field, when neither is configured.
+	 */
+	slot: ModelSlot;
 	terminationGraceMs?: number;
 	onSpawn?: (pid: number) => void;
 }
@@ -65,6 +76,43 @@ export function projectAssistantActivity(raw: Record<string, unknown>): Record<s
 	};
 }
 
+function compact(record: object): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(record).filter(([, value]) => value !== undefined),
+	);
+}
+
+/**
+ * One durable event per provider invocation carrying what the CLI reported
+ * for it (GSHIP-623): the resolved model/effort pair beside the cost and
+ * token counts, so a run's total is derivable by summing this event's kind
+ * alone. Omitted entirely when the CLI reported nothing measurable -- never
+ * emitted with a fabricated zero, which would read as "this call was free".
+ */
+function emitUsage(
+	emit: (kind: string, payload?: Record<string, unknown>) => void,
+	eventPrefix: string,
+	slot: ModelSlot,
+	result: {
+		totalCostUsd: number | undefined;
+		usage: ClaudeResultUsage | undefined;
+		modelUsage: ClaudeModelUsage[] | undefined;
+	},
+): void {
+	if (result.totalCostUsd === undefined && result.usage === undefined && result.modelUsage === undefined) {
+		return;
+	}
+	emit(`${eventPrefix}.usage`, {
+		...(slot.model === undefined ? {} : { model: slot.model }),
+		...(slot.effort === undefined ? {} : { effort: slot.effort }),
+		...(result.totalCostUsd === undefined ? {} : { totalCostUsd: result.totalCostUsd }),
+		...(result.usage === undefined ? {} : { usage: compact(result.usage) }),
+		...(result.modelUsage === undefined
+			? {}
+			: { modelUsage: result.modelUsage.map((entry) => compact(entry)) }),
+	});
+}
+
 /**
  * Run one headless Claude CLI turn and return its final result text. Throws on
  * a non-zero exit, a missing result event, an error result, or cancellation --
@@ -101,6 +149,11 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 			if (typeof event.raw.result === 'string') summary = event.raw.result;
 			structuredOutput = event.raw['structured_output'];
 			input.emit(`${input.eventPrefix}.result`);
+			emitUsage(input.emit, input.eventPrefix, input.slot, {
+				totalCostUsd: event.totalCostUsd,
+				usage: event.usage,
+				modelUsage: event.modelUsage,
+			});
 		}
 		},
 	});

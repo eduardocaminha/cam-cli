@@ -513,3 +513,111 @@ describe('project brief', () => {
 		store.close();
 	});
 });
+
+// GSHIP-623: the run's total cost is derived server-side from every usage
+// event it has, so no display limit can ever shrink the number shown.
+describe('run cost summary', () => {
+	function appendUsage(
+		store: RunStore,
+		runId: string,
+		kind: 'provider.usage' | 'review.usage',
+		payload: Record<string, unknown>,
+	): void {
+		store.appendEvent({ runId, kind, createdAt: '2026-08-17T10:00:00.000Z', payload });
+	}
+
+	test('sums the total and the per-role, per-model breakdown across every invocation', () => {
+		const store = storeWithRun('run-cost', 'CAM-60');
+		// First pass: executor on opus.
+		appendUsage(store, 'run-cost', 'provider.usage', {
+			model: 'opus',
+			effort: 'high',
+			totalCostUsd: 0.12,
+			usage: { inputTokens: 900, outputTokens: 150 },
+			modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 900, outputTokens: 150, costUsd: 0.12 }],
+		});
+		// Independent reviewer, its own model.
+		appendUsage(store, 'run-cost', 'review.usage', {
+			model: 'sonnet',
+			totalCostUsd: 0.03,
+			modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 300, outputTokens: 40, costUsd: 0.03 }],
+		});
+		// The single automatic fix round: a second executor invocation, same
+		// model, whose cost must add to the first instead of replacing it.
+		appendUsage(store, 'run-cost', 'provider.usage', {
+			model: 'opus',
+			effort: 'high',
+			totalCostUsd: 0.04,
+			modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 200, outputTokens: 60, costUsd: 0.04 }],
+		});
+
+		expect(store.getRunCostSummary('run-cost')).toEqual({
+			totalCostUsd: 0.19,
+			breakdown: [
+				{
+					role: 'executor',
+					model: 'claude-opus-4-6',
+					costUsd: 0.16,
+					inputTokens: 1100,
+					outputTokens: 210,
+				},
+				{
+					role: 'reviewer',
+					model: 'claude-sonnet-4-6',
+					costUsd: 0.03,
+					inputTokens: 300,
+					outputTokens: 40,
+				},
+			],
+		});
+		store.close();
+	});
+
+	test('reads as null, never zero, when the run has no usage event at all', () => {
+		const store = storeWithRun('run-cost-none', 'CAM-61');
+		expect(store.getRunCostSummary('run-cost-none')).toEqual({ totalCostUsd: null, breakdown: [] });
+		store.close();
+	});
+
+	test('a run with more events than listRunEvents\' read limit still reports its true total', () => {
+		const store = storeWithRun('run-cost-many', 'CAM-62');
+		const invocations = 210;
+		for (let index = 0; index < invocations; index += 1) {
+			appendUsage(store, 'run-cost-many', 'provider.usage', {
+				model: 'opus',
+				totalCostUsd: 0.01,
+				modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 10, outputTokens: 2, costUsd: 0.01 }],
+			});
+		}
+		// The display read is capped well under what was written...
+		expect(store.listRunEvents('run-cost-many').length).toBeLessThan(invocations);
+		// ...but the cost aggregate is not: it reads the complete, unbounded log.
+		const summary = store.getRunCostSummary('run-cost-many');
+		expect(summary.totalCostUsd).toBeCloseTo(invocations * 0.01, 6);
+		expect(summary.breakdown).toEqual([{
+			role: 'executor',
+			model: 'claude-opus-4-6',
+			costUsd: expect.closeTo(invocations * 0.01, 6),
+			inputTokens: invocations * 10,
+			outputTokens: invocations * 2,
+		}]);
+		store.close();
+	});
+
+	test('ignores an event whose model or cost is unusable instead of throwing', () => {
+		const store = storeWithRun('run-cost-noisy', 'CAM-63');
+		appendUsage(store, 'run-cost-noisy', 'provider.usage', {
+			totalCostUsd: 0.05,
+			modelUsage: [
+				{ model: 'claude-opus-4-6', costUsd: 'not-a-number' },
+				{ costUsd: 0.05 },
+				{ model: 'claude-opus-4-6', costUsd: 0.05 },
+			],
+		});
+		expect(store.getRunCostSummary('run-cost-noisy')).toEqual({
+			totalCostUsd: 0.05,
+			breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.05 }],
+		});
+		store.close();
+	});
+});

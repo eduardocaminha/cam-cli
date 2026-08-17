@@ -679,4 +679,60 @@ describe('releasing a failed run workspace', () => {
 		expect(runtime.getRun('run-failed-reconcile')?.state).toBe('failed');
 		runtime.close();
 	});
+
+	// GSHIP-623: the run's total is every `.usage` event summed, including the
+	// executor's fix round and the reviewer's own second pass over it.
+	test('sums cost across the fix round and the reviewer, exposed by getRunCost', async () => {
+		const store = new RunStore(':memory:');
+		let attempt = 0;
+		let reviewCall = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-cost',
+			newSessionId: () => 'session-cost',
+			executor: {
+				execute: async ({ emit }) => {
+					attempt += 1;
+					emit('provider.usage', {
+						model: 'opus',
+						totalCostUsd: attempt === 1 ? 0.1 : 0.02,
+						modelUsage: [{
+							model: 'claude-opus-4-6',
+							costUsd: attempt === 1 ? 0.1 : 0.02,
+						}],
+					});
+					return { outcome: 'completed', summary: `pass ${attempt}` };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async ({ emit }) => {
+					reviewCall += 1;
+					emit('review.usage', {
+						model: 'sonnet',
+						totalCostUsd: 0.01,
+						modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+					});
+					return reviewCall === 1
+						? { verdict: 'findings', detail: '1. src/a.ts: fix this' }
+						: { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = runtime.startRun('CAM-70');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(runtime.getRun(run.id)).toMatchObject({ fixRounds: 1 });
+		expect(runtime.getRunCost(run.id)).toEqual({
+			totalCostUsd: expect.closeTo(0.14, 6),
+			breakdown: [
+				{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.12, 6) },
+				{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.02, 6) },
+			],
+		});
+		await runtime.stop();
+		runtime.close();
+	});
 });

@@ -19,6 +19,37 @@ export type RunState =
 	| 'interrupted'
 	| 'cancelled';
 
+/** Mirrors RunCostRole in src/runtime/run-store.ts. */
+export type RunCostRole = 'executor' | 'reviewer';
+
+/**
+ * One (role, model) pair's reported cost and token counts, summed across every
+ * invocation that reported it -- the total_cost_usd on a `result` event is the
+ * sum of every model used, including auxiliary calls the operator's own model
+ * settings never name, so the breakdown is shown per model instead of
+ * attributing the whole total to the configured one (GSHIP-623).
+ */
+export interface RunCostBreakdownEntry {
+	role: RunCostRole;
+	model: string;
+	costUsd: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheCreationInputTokens?: number;
+	cacheReadInputTokens?: number;
+}
+
+/**
+ * A run's whole reported cost, already summed on the server from the complete
+ * event log (GSHIP-623): no display limit here can ever shrink the number the
+ * card shows. `totalCostUsd` is `null`, never `0`, when the CLI reported no
+ * cost for this run -- `0` would read as free.
+ */
+export interface RunCostView {
+	totalCostUsd: number | null;
+	breakdown: readonly RunCostBreakdownEntry[];
+}
+
 export interface RunView {
 	id: string;
 	issueId: string;
@@ -26,6 +57,7 @@ export interface RunView {
 	summary: string | null;
 	error: string | null;
 	updatedAt: string;
+	cost: RunCostView;
 }
 
 export interface RunEventView {

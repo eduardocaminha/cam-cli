@@ -261,6 +261,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			signal: input.signal,
 			emit: input.emit,
 			eventPrefix: 'review',
+			slot,
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),

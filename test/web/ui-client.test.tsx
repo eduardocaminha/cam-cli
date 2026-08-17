@@ -50,6 +50,7 @@ import {
 	attentionOf,
 	invalidatesSnapshot,
 	progressOf,
+	type RunCostView,
 	type RunEventView,
 	type RunState,
 	type RunView,
@@ -70,6 +71,8 @@ const NOTICES: AppProps['workspaceNotices'] = [{
 	detail: 'workspace is not owned by a persisted run',
 }];
 
+const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, breakdown: [] };
+
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	return {
 		id: 'run-1',
@@ -78,6 +81,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		summary: null,
 		error: null,
 		updatedAt: '2026-08-16T00:00:00.000Z',
+		cost: EMPTY_RUN_COST,
 		...overrides,
 	};
 }
@@ -385,6 +389,62 @@ describe('runs surface', () => {
 
 		// Nothing to report: no empty disclosure.
 		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Resumo e diagnóstico');
+	});
+
+	// GSHIP-623: the card shows the total the server already derived, always
+	// labeled as the expected cost -- the operator pays a subscription, not the
+	// API -- and never as zero when the CLI simply never reported one.
+	test('the card shows the derived total, labeled as expected cost, only once it exists', () => {
+		const withCost = runsPage({
+			runs: [runIn('done', {
+				cost: {
+					totalCostUsd: 0.1534,
+					breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.1534 }],
+				},
+			})],
+		});
+		expect(withCost).toContain('Custo esperado');
+		expect(withCost).toContain('US$');
+
+		// No usage event ever reported a cost for this run: the card says nothing
+		// about cost rather than showing a fabricated zero.
+		const withoutCost = runsPage({ runs: [runIn('done')] });
+		expect(withoutCost).not.toContain('Custo esperado');
+	});
+
+	test('the detail breaks the total down by role and model, with the token counts each reported', () => {
+		const html = runsPage({
+			runs: [runIn('done', {
+				cost: {
+					totalCostUsd: 0.19,
+					breakdown: [
+						{
+							role: 'executor',
+							model: 'claude-opus-4-6',
+							costUsd: 0.16,
+							inputTokens: 1100,
+							outputTokens: 210,
+						},
+						{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: 0.03 },
+					],
+				},
+			})],
+		});
+
+		const breakdown = panel(html, 'Custo por papel e modelo');
+		expect(breakdown).toContain('Executor');
+		expect(breakdown).toContain('claude-opus-4-6');
+		expect(breakdown).toContain('1100 entrada');
+		expect(breakdown).toContain('210 saída');
+		expect(breakdown).toContain('Revisor');
+		expect(breakdown).toContain('claude-sonnet-4-6');
+		// Honesty requirement: shown as an equivalent, and explicit that it is
+		// never the amount the subscription actually charged.
+		expect(breakdown).toContain('Custo esperado equivalente ao uso via API');
+		expect(breakdown).toContain('Nunca é o valor cobrado da assinatura');
+
+		// No breakdown at all: no empty disclosure, same pattern as the report.
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Custo por papel e modelo');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {

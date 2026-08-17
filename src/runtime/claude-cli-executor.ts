@@ -230,6 +230,7 @@ export class ClaudeAgentSession implements AgentSession {
 			signal: input.signal,
 			emit: input.emit,
 			eventPrefix: input.eventPrefix,
+			slot,
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
