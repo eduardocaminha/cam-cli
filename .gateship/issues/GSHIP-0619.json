@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-619",
+  "title": "Trocar sugestoes de modelo embutidas por link para a documentacao",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-17T11:46:59.173Z",
+  "updatedAt": "2026-08-17T11:46:59.173Z",
+  "description": "Trocar as sugestoes embutidas de modelo e effort por links para a documentacao oficial de cada provider. Evidencia: as listas hardcoded em MODEL_SUGGESTIONS nasceram desatualizadas no mesmo dia em que foram shipadas. A do Claude omite fable, e a do Codex omite xhigh, max e ultra, justamente o nivel que o operador usa. O Gateship nao tem como acompanhar release de fornecedor, e uma sugestao que mente e pior que nenhuma. Remover a constante MODEL_SUGGESTIONS e os dois datalist de webui/src/App.tsx, junto com o atributo list dos campos. Em cada fieldset de provider, incluir um link para a documentacao oficial de modelos daquele provider, abrindo em nova aba com rel seguro: para claude, https://platform.claude.com/docs/en/about-claude/models/overview, e para codex, https://learn.chatgpt.com/docs/models. Manter o campo de texto livre, manter vazio significando nao passar flag, e deixar explicito no texto da secao que um valor invalido e recusado pelo proprio CLI com o erro dele, nao pelo Gateship. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir que os campos continuam livres, que os datalist deixaram de existir e que cada provider expoe seu link. Fora de escopo: buscar lista de modelos em tempo de execucao, validar contra API de fornecedor, cachear lista remota, detectar disponibilidade de assinatura e qualquer mudanca no formato de armazenamento.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Trocar as sugestoes embutidas de modelo e effort por links para a documentacao oficial de cada provider. Evidencia: as listas hardcoded em MODEL_SUGGESTIONS nasceram desatualizadas no mesmo dia em que foram shipadas. A do Claude omite fable, e a do Codex omite xhigh, max e ultra, justamente o nivel que o operador usa. O Gateship nao tem como acompanhar release de fornecedor, e uma sugestao que mente e pior que nenhuma. Remover a constante MODEL_SUGGESTIONS e os dois datalist de webui/src/App.tsx, junto com o atributo list dos campos. Em cada fieldset de provider, incluir um link para a documentacao oficial de modelos daquele provider, abrindo em nova aba com rel seguro: para claude, https://platform.claude.com/docs/en/about-claude/models/overview, e para codex, https://learn.chatgpt.com/docs/models. Manter o campo de texto livre, manter vazio significando nao passar flag, e deixar explicito no texto da secao que um valor invalido e recusado pelo proprio CLI com o erro dele, nao pelo Gateship. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir que os campos continuam livres, que os datalist deixaram de existir e que cada provider expoe seu link. Fora de escopo: buscar lista de modelos em tempo de execucao, validar contra API de fornecedor, cachear lista remota, detectar disponibilidade de assinatura e qualquer mudanca no formato de armazenamento.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx && bun run typecheck && bunx --bun knip"
+    ]
+  }
+}
