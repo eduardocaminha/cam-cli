@@ -15,6 +15,7 @@ export const PROVIDERS_PATH = '/api/providers';
 export const CHAT_PATH = '/api/chat';
 export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
+export const MODEL_SETTINGS_PATH = '/api/model-settings';
 
 export interface OperatorIssueDraft {
 	title: string;
@@ -94,6 +95,33 @@ export interface BriefSnapshot {
 	brief: ProjectBriefView;
 	/** Session state written by orchestrator turns; read-only here. */
 	handoff: ProjectBriefView;
+}
+
+export const MODEL_PROVIDER_IDS = ['claude', 'codex'] as const;
+
+/** The three roles that call a model, in the order the screen shows them. */
+export const MODEL_ROLE_NAMES = ['orchestrator', 'executor', 'reviewer'] as const;
+
+export type ModelRoleName = (typeof MODEL_ROLE_NAMES)[number];
+
+/** Empty text is "not configured": the CLI default decides, as it always has. */
+export interface ModelSlotView {
+	model: string;
+	effort: string;
+}
+
+export type ModelSettingsView = Record<
+	ProviderStatusView['id'],
+	Record<ModelRoleName, ModelSlotView>
+>;
+
+export function emptyModelSettings(): ModelSettingsView {
+	const roles = (): Record<ModelRoleName, ModelSlotView> => ({
+		orchestrator: { model: '', effort: '' },
+		executor: { model: '', effort: '' },
+		reviewer: { model: '', effort: '' },
+	});
+	return { claude: roles(), codex: roles() };
 }
 
 export interface ChatMessageView {
@@ -236,6 +264,55 @@ export async function saveBrief(brief: ProjectBriefView): Promise<string> {
 	const payload = (await response.json()) as BriefPayload;
 	if (response.ok) return 'Project brief atualizado.';
 	return payload.message ?? `Brief recusado (${response.status}).`;
+}
+
+interface ModelSettingsPayload extends CommandPayload {
+	settings?: unknown;
+}
+
+function modelSlotRecord(value: unknown): ModelSlotView {
+	const slot = value !== null && typeof value === 'object' ? value as Record<string, unknown> : {};
+	return {
+		model: typeof slot['model'] === 'string' ? slot['model'] : '',
+		effort: typeof slot['effort'] === 'string' ? slot['effort'] : '',
+	};
+}
+
+/** A payload missing a provider or a role reads as unconfigured, not as a hole. */
+function modelSettingsRecord(value: unknown): ModelSettingsView {
+	const record = value !== null && typeof value === 'object'
+		? value as Record<string, unknown>
+		: {};
+	const settings = emptyModelSettings();
+	for (const provider of MODEL_PROVIDER_IDS) {
+		const roles = record[provider] !== null && typeof record[provider] === 'object'
+			? record[provider] as Record<string, unknown>
+			: {};
+		for (const role of MODEL_ROLE_NAMES) {
+			settings[provider][role] = modelSlotRecord(roles[role]);
+		}
+	}
+	return settings;
+}
+
+export async function fetchModelSettings(): Promise<ModelSettingsView> {
+	const payload = await readJson<ModelSettingsPayload>(
+		await fetch(MODEL_SETTINGS_PATH),
+		'Modelos',
+	);
+	return modelSettingsRecord(payload.settings);
+}
+
+/** The whole record is overwritten at once; a refusal surfaces the server's message. */
+export async function saveModelSettings(settings: ModelSettingsView): Promise<string> {
+	const response = await fetch(MODEL_SETTINGS_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(settings),
+	});
+	const payload = (await response.json()) as ModelSettingsPayload;
+	if (response.ok) return 'Modelos por papel atualizados.';
+	return payload.message ?? `Configuração recusada (${response.status}).`;
 }
 
 export async function startCodexLogin(): Promise<string> {

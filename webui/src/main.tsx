@@ -21,6 +21,7 @@ import {
 	fetchBacklog,
 	fetchBrief,
 	fetchChat,
+	fetchModelSettings,
 	fetchProposals,
 	fetchProviders,
 	fetchRunEvents,
@@ -29,10 +30,13 @@ import {
 	type RunAction,
 	type ChatMessageView,
 	type IssueReviewDraft,
+	emptyModelSettings,
+	type ModelSettingsView,
 	type ProjectBriefView,
 	type ProposalView,
 	type ProviderStatusView,
 	saveBrief,
+	saveModelSettings,
 	sendChat,
 	selectProvider,
 	specifyIssue,
@@ -76,6 +80,7 @@ function useOperationalRun(): {
 	notificationPermission: BrowserNotificationPermission;
 	brief: ProjectBriefView;
 	handoff: ProjectBriefView;
+	modelSettings: ModelSettingsView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -97,6 +102,7 @@ function useOperationalRun(): {
 	);
 	const [brief, setBrief] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
+	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -109,6 +115,7 @@ function useOperationalRun(): {
 			fetchChat(),
 			fetchBrief(),
 			fetchProposals(),
+			fetchModelSettings(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -117,6 +124,7 @@ function useOperationalRun(): {
 				chatSnapshot,
 				briefSnapshot,
 				proposalSnapshot,
+				modelSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -132,6 +140,7 @@ function useOperationalRun(): {
 				setChatMessages(chatSnapshot);
 				setBrief(briefSnapshot.brief);
 				setHandoff(briefSnapshot.handoff);
+				setModelSettings(modelSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -194,6 +203,7 @@ function useOperationalRun(): {
 		notificationPermission,
 		brief,
 		handoff,
+		modelSettings,
 		version,
 		status,
 		pending,
@@ -217,6 +227,7 @@ function Screen(): ReactElement {
 		notificationPermission,
 		brief,
 		handoff,
+		modelSettings,
 		version,
 		status,
 		pending,
@@ -268,6 +279,7 @@ function Screen(): ReactElement {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}
 			onSaveBrief={(draft) => send(() => saveBrief(draft))}
+			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSelectIssue={setSelectedIssueId}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}
@@ -284,6 +296,7 @@ function Screen(): ReactElement {
 			onStart={() => {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
+			modelSettings={modelSettings}
 			pending={pending}
 			proposals={proposals}
 			providers={providers}

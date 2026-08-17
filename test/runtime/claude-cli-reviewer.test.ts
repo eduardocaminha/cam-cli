@@ -165,6 +165,33 @@ describe('independent Claude CLI reviewer', () => {
 		expect(sessions).not.toContain('session-implementer');
 	});
 
+	// GSHIP-617: the reviewer is its own role, so it takes its own slot.
+	test('a real reviewer child receives the slot resolved for that review', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		let slot = { model: 'sonnet', effort: 'high' };
+		const reviewer = fixtureReviewer('FINDINGS', { resolveModel: () => slot });
+		const review = () => reviewer.review(reviewInput({
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		}));
+
+		const first = argvFromReview(await review());
+		expect(flagValue(first, '--model')).toBe('sonnet');
+		expect(flagValue(first, '--effort')).toBe('high');
+		expect(events).toContainEqual({
+			kind: 'review.model',
+			payload: { model: 'sonnet', effort: 'high' },
+		});
+
+		// Resolved per review, so the next one already carries the new choice.
+		slot = { model: 'opus', effort: 'max' };
+		expect(flagValue(argvFromReview(await review()), '--model')).toBe('opus');
+
+		// An unset slot passes no flag and records nothing, exactly as before.
+		const bare = argvFromReview(await fixtureReviewer('FINDINGS').review(reviewInput()));
+		expect(bare).not.toContain('--model');
+		expect(bare).not.toContain('--effort');
+	});
+
 	test('reads a structured verdict out of the child result', async () => {
 		const result = await fixtureReviewer('CLEAN').review(reviewInput());
 		expect(result).toEqual({ verdict: 'clean' });
