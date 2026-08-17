@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `1ae9bec8` (GSHIP-615 shipped through PR #447)
+> Product baseline: `main` at `2136346a` (GSHIP-616 shipped through PR #449)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -21,10 +21,11 @@ than silently assuming either is current.
 
 ## Current stage
 
-**Stage 5 of 15 — serial autonomous scheduler (next; no specification yet).
-Stage 4 is complete and both repairs it exposed shipped as GSHIP-614 and
-GSHIP-615. One draft, GSHIP-616, is filed and unapproved; it was promoted out of
-the inbox rather than written by hand.**
+**Stage 9 of 15 pulled forward — per-role model and effort configuration, filed
+as GSHIP-617 and unapproved. Stage 4 is complete and the three repairs it exposed
+all shipped: GSHIP-614, GSHIP-615 and GSHIP-616. Stage 5's scheduler waits behind
+this one because unattended queued work multiplies whatever the model policy
+costs.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -117,16 +118,27 @@ An unreported head counts as divergence. The file comment that claimed
 
 ### Proposed next bounded slice
 
-GSHIP-616 is filed and unapproved. It came out of the inbox: the GSHIP-615 run
-reported that its own fix leaves the auto-merge armed after refusing a divergent
-head, so GitHub can still land that head later, unwatched. The draft disarms the
-auto-merge before ending the ship as a failure, idempotently, without letting the
-disarm's own failure mask the original divergence reason.
+GSHIP-616 shipped through PR #449, completing the inbox's first full circuit: a
+run captured a proposal about its own fix, the operator promoted it, and the
+promoted issue executed and merged. The ship now disarms the auto-merge before
+ending as a failure on a divergent head, so GitHub can no longer land that head
+later, unwatched.
 
-After that, Stage 5 queues already-approved issues for serial execution, with
-just-in-time revalidation against current `origin/main` before each start and an
-honest pause when revalidation fails. Present the exact spec and verification
-command to the operator before implementing any of them.
+GSHIP-617 is filed and unapproved, and it pulls Stage 9 ahead of Stage 5. It
+gives Gateship its own model and effort configuration, per provider and per role,
+stored in `runtime_settings` and edited in `/settings`. An unset value passes no
+flag, so today's behavior is preserved until the operator chooses. Neither the
+model list nor the effort list is hardcoded: only the string's shape is validated
+and the CLI rejects an invalid value with its own error, because a hardcoded
+enumeration rots with every provider release. The resolver is consulted at each
+spawn rather than at boot, and the resolved pair is emitted in the run's spawn
+event so the history records which model did what.
+
+Stage 5's serial scheduler comes after, because queueing unattended work
+multiplies whatever the model policy costs. It queues already-approved issues,
+revalidates just in time against current `origin/main`, and pauses honestly when
+revalidation fails. Present the exact spec and verification command to the
+operator before implementing any of them.
 
 ### Recent process evidence
 
@@ -182,6 +194,14 @@ command to the operator before implementing any of them.
 - A hand-made pull request goes `BEHIND` whenever `main` advances while it waits
   for CI, and needs `gh pr update-branch`. Runs never hit this, because the
   runtime pushes and merges within one window.
+- Killing the service does not lose a run, but it does strand one. GSHIP-616's
+  run survived the restart in `ready-to-ship` with verification and review
+  already recorded, and finished from `POST /api/runs/:runId/ship` without
+  repeating any provider work. Nothing resumes a stranded ship on its own.
+- The operator's own Codex configuration selects an expensive model at a high
+  reasoning effort, and Gateship never used it, because the Codex adapter passes
+  `--ignore-user-config`. Reading a personal configuration file is not evidence
+  about what the runtime spent.
 
 ## Product objective
 
@@ -207,6 +227,28 @@ loop over recreating the former harness in the browser.
 - A provider adapter is the portability seam. Model and reasoning-effort choice
   should eventually be configurable and measured. A local-model adapter is a
   later option only if real demand justifies it.
+- Gateship owns its own model and effort configuration and keeps ignoring the
+  operator's personal provider configuration. Inheriting it would let personal
+  MCP servers, instructions and sandbox policy govern an unattended executor
+  that already runs with approvals and sandbox bypassed, and would make a run's
+  behavior change because an interactive preference changed between two days.
+  The defect worth fixing is not the separation: it is that Gateship discards
+  the operator's configuration without yet having one of its own, so nobody
+  chooses. Choice belongs in `/settings`, per provider and per role, and an
+  unset value means the flag is not passed at all.
+- Both providers must be told the model explicitly once it is configured. Today
+  they disagree about what a default is: `--ignore-user-config` cuts the whole
+  inheritance on Codex, while `--safe-mode` on Claude disables customizations
+  but not the model preference. Any comparison between providers is meaningless
+  until both are explicit.
+- No planner stage inside a run. The plan is the operator-approved specification,
+  produced by the orchestrator investigating with the operator and closed by the
+  approval; that is what lets the executor run a weaker model on closed scope.
+  A planner inside the run would re-derive what the specification already fixed,
+  and anything it decided beyond that would be scope expansion without approval.
+  Revisit only if measurement shows fix rounds rise because specifications were
+  underspecified, which is a different cause from a weak executor and needs the
+  telemetry stage to tell the two apart.
 - The conversational orchestrator may investigate the repository, clarify
   intent, and invoke typed commands. The deterministic runtime owns state,
   worktrees, verification, cancellation, and shipping.
@@ -266,9 +308,11 @@ loop over recreating the former harness in the browser.
    proposed setup.
 8. **Project and operator configuration.** Name, timezone, repository identity,
    notification preferences, and other minimal durable settings.
-9. **Provider, model, and effort policy.** Per-role choices with sensible
-   defaults, subscription availability detection, graceful fallback, and usage
-   attribution.
+9. **Provider, model, and effort policy — pulled forward, in progress.** Per-role
+   choices land first as GSHIP-617 because the executor does not need the
+   strongest model and the cost is already being paid. Subscription availability
+   detection, graceful fallback and usage attribution stay in this stage for
+   later.
 10. **Telemetry.** A coherent event model for latency, attention, retries,
     failures, provider/model/effort, test cost, and shipped outcomes, with
     privacy-conscious defaults.
@@ -349,7 +393,7 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete. GSHIP-616 is filed, specified
-> and unapproved: do not start, implement, expand or implicitly approve it.
-> Report the current state, including the pending proposals in the inbox, and
-> wait for the operator's explicit approval.
+> bounded slice. Stages 1 through 4 are complete. Stage 9 was pulled ahead of
+> Stage 5 as GSHIP-617, per-role model and effort configuration. Report the
+> current state, including the pending proposals in the inbox, and wait for the
+> operator's explicit approval before starting anything.
