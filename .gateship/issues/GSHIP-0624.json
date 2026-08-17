@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-17T15:09:59.263Z",
-  "updatedAt": "2026-08-17T15:09:59.263Z",
+  "updatedAt": "2026-08-17T15:10:36.682Z",
   "description": "Trocar o filtro do aviso de servico velho de denylist para allowlist, disparando somente quando o diff entre o sha de boot e o main corrente toca um caminho que o processo em execucao realmente carrega. Evidencia: com o denylist de .gateship/ shipado pelo GSHIP-622, o aviso voltou a acender por uma mudanca em HANDOFF.md, que o processo nao carrega. Os arquivos de instrucao sao lidos pelos agentes a partir do worktree da run, cortado de origin/main fresco, portanto mudanca de documentacao nunca exige reiniciar. O conjunto que importa e derivavel do grafo de imports: index.ts, src/, webui/dist/, package.json e bun.lock, sendo webui/dist resolvido no boot por import estatico with type file em src/commands/web-assets.ts. Disparar apenas para esses caminhos e nao disparar para nenhum outro, incluindo qualquer arquivo markdown, test/, .github/ e scripts/. A razao de inverter e que o conjunto carregado e pequeno e muda raramente, enquanto o conjunto ignorado e aberto e cresce a cada doc ou configuracao adicionada, o que faria o denylist exigir manutencao indefinida. Preservar tudo o que o GSHIP-618 e o GSHIP-622 estabeleceram: campo proprio no snapshot, os dois shas no detalhe, nunca bloquear operacao, e omitir o aviso quando um sha nao resolve ou quando a listagem de caminhos falha. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir diff so em documentacao sem aviso, diff em src com aviso, diff em webui/dist com aviso, diff em manifesto de dependencia com aviso, diff misturando documentacao e codigo com aviso, e falha da listagem sem aviso. Fora de escopo: botao de reiniciar, reinicio automatico, recarga a quente, supervisor de processo, comparar versao de binario compilado e qualquer bloqueio de operacao.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/idle-state.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "22a92594e5afd8d89dbdb998380ec2d043f0e43d7e80c6915c49f55ebc7f984c",
+    "approvedAt": "2026-08-17T15:10:36.682Z"
   }
 }
