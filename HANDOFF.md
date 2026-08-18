@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `0e5a4e90` (GSHIP-633 shipped through PR #474)
+> Product baseline: `main` at `e13855f8` (GSHIP-638 shipped through PR #480)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -25,16 +25,18 @@ problem so it can be fixed in the product, rather than as a rule to follow.
 
 ## Current stage
 
-**Stage 5 of 15 — the serial autonomous scheduler is next, and GSHIP-629 handed it
-the mechanism its revalidation needed: re-running a specification's recorded
-evidence and comparing. Stage 9 closed with per-role
-model and effort live and validated against the CLI, the operator running Opus 5
-at `high` for the orchestrator and the reviewer and Sonnet 5 at `xhigh` for the
-executor, and the cost of the executor and the reviewer now recorded. Eighteen
-slices shipped in this cycle, GSHIP-614 through GSHIP-633, seven of them measured:
-the cheapest cost about five expected dollars and the most expensive about
-forty-seven, and the difference is rounds rather than model. No draft is open and
-the backlog holds only GSHIP issues.**
+**Stage 5 of 15 — started. GSHIP-638 chains approved runs in series behind a
+switch that is off by default, and two of the four capabilities the roadmap
+listed for this stage turned out to already exist: `isPlannable` refuses an issue
+blocked by an unshipped dependency, and GSHIP-629 revalidates each specification's
+premise at run start. Stage 9 closed before it, with per-role model and effort
+live and validated against the CLI, the operator running Opus 5 at `high` for the
+orchestrator and the reviewer and Sonnet 5 at `xhigh` for the executor, and cost
+recorded for every role including the orchestrator's own turns. Twenty-five slices
+shipped in this cycle, GSHIP-614 through GSHIP-638, twelve of them measured: from
+about two expected dollars to about forty-seven, and the difference is rounds
+rather than model. No draft is open, the backlog holds only GSHIP issues, and
+seven triaged proposals wait in the inbox.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -243,12 +245,35 @@ verification command. The CAM-era backlog was retired in full beforehand, first
 the 80 open issues and then the 10 abandoned ones, so no file carried a shape the
 code was about to stop understanding.
 
+GSHIP-634 records what each orchestrator turn costs, on the message row that turn
+already writes, closing the last invisible spend: a conversation belongs to no
+run, so its usage had nowhere to go and was discarded.
+
+GSHIP-635 puts the pending proposals in the orchestrator's context, bounded and
+labelled as awaiting an operator decision rather than as work to do, and adds no
+typed command, so the orchestrator can discuss the inbox it previously could only
+invent.
+
+GSHIP-636 makes the verification gate rebuild the UI and fail when the tree
+changes. The committed bundle matched its source by executor habit rather than by
+mechanism, and a stale bundle looks like a product regression, which is how this
+cycle began.
+
+GSHIP-637 carries the run's accumulated operator decisions into the executor
+prompt, the same gap GSHIP-630 closed for the reviewer. The executor had seen only
+the latest reply, so a decision already settled could be reintroduced as new.
+
+GSHIP-638 started Stage 5. Approved runs chain in series behind a switch that is
+off by default, only a run ending `done` continues the queue, and every pause is
+recorded with its own reason. It adds no authority: it starts only what the
+operator already approved.
+
 ### Proposed next bounded slice
 
-Stage 5's serial scheduler. GSHIP-629 already answers the part that needed design:
-revalidating a queued issue is re-running its recorded evidence and comparing, so
-the queue pauses honestly when the premise moved rather than trusting a
-fingerprint that only sees the specification's own text.
+Stage 5's next capabilities, once the chain has been exercised on real work: what
+the operator wants to see while a queue runs unattended, and whether a failed run
+should offer anything beyond stopping. Neither is worth specifying before the
+switch has been on for a night.
 
 Two smaller slices remain identified and unfiled: classifying provider errors at
 their source in each adapter, following the shape GSHIP-625 settled, and wiring
@@ -256,12 +281,14 @@ the Claude CLI's own `--fallback-model` as an optional per-role slot. Polling
 vendor status pages was considered and rejected, because a status page lagged
 reality in both directions during the outage this cycle.
 
-Two gaps are recorded without a slice. The orchestrator's own spend is invisible:
-its emit is a no-op, deliberately, because a conversation belongs to no run, so a
-long conversation on Opus 5 can cost more than a run and leave no record. And the
-proposal inbox never reaches the orchestrator's context, which reads the backlog
-only, so it cannot see the fifteen pending proposals and would invent them if
-asked.
+The inbox holds seven triaged proposals, in the order the operator confirmed:
+per-run cost in the previous-runs panel, lint covering `test/`, a pull request
+closed without merging keeping its arming, run terminality mirrored by hand in the
+web client, a promoted proposal's issue never shown, no abandon route or control
+for an issue, and the snapshot not refreshing on capture. Seven others were
+dismissed, three of them because a slice this cycle had already fixed them. They
+stay as proposals rather than becoming drafts, because a draft written before its
+turn goes stale while its fingerprint still matches.
 
 ### Recent process evidence
 
@@ -421,6 +448,19 @@ asked.
 - Revising GSHIP-633 was itself the staleness case GSHIP-629 exists for: its
   premise named ten files that a merge had just deleted, the text was untouched
   and the fingerprint still matched, so only a human noticing kept it honest.
+- Twelve runs are measured, from about two expected dollars to about forty-seven.
+  The three most expensive are the three that needed operator decisions, which is
+  the same finding at a larger sample: rounds dominate, not the model.
+- Two of Stage 5's four listed capabilities were already built. `isPlannable`
+  already refused an issue blocked by an unshipped dependency, and GSHIP-629
+  already revalidated a specification's premise at run start, so the scheduler
+  reduced to a switch and a chain on the terminal transition. Reading the code
+  before specifying the stage removed most of the stage.
+- A build from a dirty tree nearly shipped: `git pull` aborted on locally rebuilt
+  `webui/dist` artifacts and the release was compiled four commits behind. The
+  stale-service warning would have caught it after the fact; nothing caught it
+  before. GSHIP-636 closes the bundle half of that, and the installed binary's own
+  age is still unsolved.
 
 ## Product objective
 
@@ -619,7 +659,7 @@ For a fresh Claude Code or Codex session:
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
 > bounded slice. Stages 1 through 4 are complete, Stage 9 shipped ahead of Stage 5
-> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-633 followed. No
-> draft is open and Stage 5 is next.
+> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-638 followed. No
+> draft is open, Stage 5 has started, and the chain switch is off by default.
 > Report the current state, including the pending proposals in the inbox, and wait
 > for the operator's explicit approval before starting anything.
