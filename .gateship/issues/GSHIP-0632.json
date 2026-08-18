@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T11:09:14.965Z",
-  "updatedAt": "2026-08-18T11:09:14.965Z",
+  "updatedAt": "2026-08-18T11:18:43.542Z",
   "description": "Fazer o ship recuperar sozinho um pull request que ficou BEHIND, em vez de esperar o timeout de uma hora e exigir cinco passos manuais do operador. Evidencia: aconteceu tres vezes hoje, com tres causas diferentes, e a ultima foi simplesmente arquivar um draft durante uma run. Arquivar, aprovar e promover commitam no main pelo proprio intake, entao usar o produto durante uma run deixa o pull request daquela run para tras e o repositorio exige branch atualizada para mergear. Hoje o monitor em github-shipper.ts observa mergeStateStatus, emite ship.merge-pending quando ele muda, e trata BEHIND como espera: nada o resolve e o auto-merge armado tambem nao, porque o GitHub nao mergeia branch desatualizada. Passar a tratar BEHIND como terceira categoria, ao lado de indisponibilidade e de decisao que o GSHIP-625 ja separou: ao observar BEHIND, o proprio servico atualiza o branch do pull request, registra o head resultante como o head que ele publicou, e segue monitorando. Registrar o novo head e o ponto critico: sem isso a checagem do GSHIP-615 leria a atualizacao como head movido por fora e encerraria o ship, e ela deve continuar recusando head movido por fora, porque a diferenca entre o servico ter movido e outra pessoa ter movido e exatamente o que aquela guarda protege. Emitir evento proprio para a atualizacao, com o head anterior e o novo, para que a recuperacao apareca no historico da run. Limitar o numero de atualizacoes por ship a um valor pequeno e fixo, e ao esgotar encerrar o ship com motivo explicito, para que um main que avanca sem parar nao vire laco infinito. Preservar tudo o mais do contrato atual: divergencia por head movido por fora continua falhando na hora com desarme, indisponibilidade continua repetindo com recuo, merge nao observado continua sendo reportado como nao confirmado, e nada disso altera o ciclo de vida da run. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir BEHIND resolvido por uma atualizacao seguida de merge, head atualizado pelo servico nao sendo lido como divergencia, head movido por fora continuando a falhar com desarme, e limite de atualizacoes esgotado encerrando com motivo. Fora de escopo: evitar que o intake commite no main, fila, scheduler, rebase de conflito real, resolucao de conflito, alterar o metodo de merge e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/github-shipper.test.ts test/runtime/run-ship.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "5522c1bbfbaea562e73460a36bf6b01f00e91a9b20c31d215ec68b25871473e3",
+    "approvedAt": "2026-08-18T11:18:43.542Z"
   }
 }
