@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T22:32:05.361Z",
-  "updatedAt": "2026-08-18T22:32:05.361Z",
+  "updatedAt": "2026-08-18T22:33:25.324Z",
   "description": "Fechar visualmente o circuito da proposta promovida. O identificador da issue criada ja e persistido e ja sai do store, mas a listagem devolve apenas propostas pendentes e o card descarta as ja resolvidas, entao o operador nunca ve em que uma proposta virou. Expor as propostas ja resolvidas em leitura, distinguindo descartada de promovida, e para a promovida mostrar a issue resultante. Manter a listagem de pendentes como esta hoje, para nao misturar decisao pendente com registro historico, e manter a superficie somente de leitura, sem permitir desfazer descarte nem repromover. Limitar a quantidade de resolvidas exibidas e informar quando houver mais, em vez de omitir em silencio. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir proposta promovida mostrando a issue, proposta descartada aparecendo como descartada, e a listagem de pendentes inalterada. Fora de escopo: desfazer decisao, repromover, editar proposta, deduplicar, ranquear e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "3"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "5a04718a2f41f46c28df6d062ea6cc9173fbeb50c7f24da9215d74cfd7253f69",
+    "approvedAt": "2026-08-18T22:33:25.324Z"
   }
 }
