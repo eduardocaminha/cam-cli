@@ -60,6 +60,18 @@ export interface RuntimeVerifier {
 	verify: (input: RuntimeExecutionInput) => Promise<RuntimeVerificationResult>;
 }
 
+/**
+ * The spec's executable premise (GSHIP-629), checked against the run's own
+ * freshly prepared workspace and before the executor is ever invoked. Skipped
+ * once it has already passed for this run -- tracked by a durable decision
+ * event, not by whether the current pass is a resume, so an interruption
+ * mid-check is re-checked on resume instead of releasing the run on a premise
+ * nothing ever verified.
+ */
+export interface RuntimeEvidenceCheck {
+	check: (input: RuntimeExecutionInput) => Promise<RuntimeVerificationResult>;
+}
+
 /** Verdict of one independent review of the change produced by a run. */
 export type RuntimeReviewResult =
 	| { verdict: 'clean' }
@@ -101,6 +113,7 @@ export interface RunRuntimeOptions {
 	newId?: () => string;
 	newSessionId?: () => string;
 	preflight?: (issueId: string) => void;
+	evidenceCheck?: RuntimeEvidenceCheck;
 	workspace?: RuntimeWorkspace;
 }
 
@@ -147,6 +160,7 @@ export class RunRuntime {
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
 	readonly #preflight: ((issueId: string) => void) | undefined;
+	readonly #evidenceCheck: RuntimeEvidenceCheck | undefined;
 	readonly #workspace: RuntimeWorkspace | undefined;
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
@@ -163,6 +177,7 @@ export class RunRuntime {
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
 		this.#preflight = options.preflight;
+		this.#evidenceCheck = options.evidenceCheck;
 		this.#workspace = options.workspace;
 		this.#store.recoverUnownedRuns(this.#now());
 		this.#reconcileFinishedWorkspaces();
@@ -452,23 +467,8 @@ export class RunRuntime {
 		this.#transition(run.id, 'working', 'run.started');
 
 		try {
-			// One pass per implementation attempt. A findings verdict starts the
-			// second and last pass; the fix-round ceiling lives in run-state.ts.
-			let attempt = firstAttempt;
-			for (;;) {
-				const executionInput = this.#executionInput(run, signal, attempt);
-				const verified = await this.#work(executor, verifier, run, signal, executionInput);
-				if (!verified) return;
-				const next = await this.#review(run, signal, executionInput);
-				if (next === null) break;
-				attempt = next;
-			}
-			// A run that got here verified and reviewed clean ships under the same
-			// ownership: the operator asked for the change, not for a button.
-			const shipper = this.#shipper;
-			if (shipper === undefined) return;
-			if (this.#store.getRun(run.id)?.state !== 'ready-to-ship') return;
-			await this.#driveShip(shipper, run, signal);
+			if (await this.#checkEvidence(run, signal, firstAttempt)) return;
+			await this.#driveImplementation(executor, verifier, run, signal, firstAttempt);
 		} catch (error) {
 			if (signal.aborted) {
 				this.#interrupt(run.id);
@@ -482,6 +482,36 @@ export class RunRuntime {
 				this.#releaseFinishedWorkspace(failedRun, false);
 			}
 		}
+	}
+
+	/**
+	 * One pass per implementation attempt through work and review, and --
+	 * once verified and reviewed clean -- the ship attempt. A findings verdict
+	 * starts the second and last pass; the fix-round ceiling lives in
+	 * run-state.ts.
+	 */
+	async #driveImplementation(
+		executor: RuntimeExecutor,
+		verifier: RuntimeVerifier,
+		run: RunRecord,
+		signal: AbortSignal,
+		firstAttempt: RunAttempt,
+	): Promise<void> {
+		let attempt = firstAttempt;
+		for (;;) {
+			const executionInput = this.#executionInput(run, signal, attempt);
+			const verified = await this.#work(executor, verifier, run, signal, executionInput);
+			if (!verified) return;
+			const next = await this.#review(run, signal, executionInput);
+			if (next === null) break;
+			attempt = next;
+		}
+		// A run that got here verified and reviewed clean ships under the same
+		// ownership: the operator asked for the change, not for a button.
+		const shipper = this.#shipper;
+		if (shipper === undefined) return;
+		if (this.#store.getRun(run.id)?.state !== 'ready-to-ship') return;
+		await this.#driveShip(shipper, run, signal);
 	}
 
 	/**
@@ -527,6 +557,49 @@ export class RunRuntime {
 				payload: { error: errorMessage(error) },
 			});
 		}
+	}
+
+	/**
+	 * The spec's executable premise, checked against the workspace
+	 * `workspace.prepare` already cut for this run -- before the executor is
+	 * ever invoked (GSHIP-629). Gated on a durable `run.evidence-checked`
+	 * decision event for this run, never on whether this pass is a resume: a
+	 * resume is only *evidence* that the check ran before, and the two come
+	 * apart exactly when the process died mid-check -- an interruption while
+	 * the check itself was running leaves no such event, so resuming checks
+	 * again instead of releasing the run on a premise nothing ever verified.
+	 * `listRunDecisionEvents` reads the durable class GSHIP-627 established,
+	 * unbounded by `listRunEvents`' display window. Returns true only when the
+	 * check ended the run (diverged, or the signal was already aborted), so
+	 * `#drive` knows to return without starting the executor.
+	 */
+	async #checkEvidence(
+		run: RunRecord,
+		signal: AbortSignal,
+		attempt: RunAttempt,
+	): Promise<boolean> {
+		const evidenceCheck = this.#evidenceCheck;
+		if (evidenceCheck === undefined || this.#evidenceAlreadyChecked(run.id)) return false;
+		const evidence = await evidenceCheck.check(this.#executionInput(run, signal, attempt));
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return true;
+		}
+		if (!evidence.ok) {
+			const failedRun = this.#transition(run.id, 'failed', 'run.evidence-diverged', {
+				error: evidence.detail
+					?? "The run ended because the spec's evidence diverged from the repository.",
+			}).run;
+			this.#releaseFinishedWorkspace(failedRun, false);
+			return true;
+		}
+		this.#emit(run.id, 'run.evidence-checked');
+		return false;
+	}
+
+	#evidenceAlreadyChecked(runId: string): boolean {
+		return this.#store.listRunDecisionEvents(runId)
+			.some((event) => event.kind === 'run.evidence-checked');
 	}
 
 	/**

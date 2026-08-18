@@ -1,13 +1,20 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
+import { issueFilePath } from '../issues/backlog.ts';
 import { parseOracleDirective } from '../issues/oracle-directive.ts';
-import { fingerprintSpec, type Spec } from '../issues/spec.ts';
+import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts';
 import { terminateProcessGroup } from './process-group.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
-import type { RuntimeVerificationResult, RuntimeVerifier } from './run-runtime.ts';
+import type {
+	RuntimeEvidenceCheck,
+	RuntimeExecutionInput,
+	RuntimeVerificationResult,
+	RuntimeVerifier,
+} from './run-runtime.ts';
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const DIAGNOSTIC_TAIL_LENGTH = 2_000;
@@ -34,6 +41,8 @@ export interface GitRuntimeOptions {
 	runGit?: GitCommandRunner;
 	issueExists?: (cwd: string, issueId: string) => boolean;
 	loadIssue?: (cwd: string, issueId: string) => string;
+	/** Reads the issue record from the run's own checked-out workspace, not from `origin/main`. */
+	loadIssueFromWorkspace?: (cwd: string, issueId: string) => string;
 	runCommand?: VerificationCommandRunner;
 	terminationGraceMs?: number;
 }
@@ -62,6 +71,16 @@ function defaultLoadIssue(cwd: string, issueId: string): string {
 	const issue = getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF);
 	if (!issue.ok) throw new Error(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
 	return issue.content;
+}
+
+/**
+ * Read the issue record straight from the run's own checkout instead of via
+ * git: by the time the evidence check runs, `workspace.prepare` has already
+ * cut this exact worktree from the same `origin/main` sha the preflight
+ * validated, so the file on disk is the approved record.
+ */
+function defaultLoadIssueFromWorkspace(cwd: string, issueId: string): string {
+	return readFileSync(join(cwd, issueFilePath(issueId)), 'utf8');
 }
 
 function shellCommand(): string {
@@ -198,6 +217,34 @@ function commandFailure(label: string, result: CommandResult): RuntimePreflightE
 	return new RuntimePreflightError(`${label}: ${detail}`);
 }
 
+function evidenceOutputText(result: CommandResult): string {
+	return `${result.stdout}\n${result.stderr}`.trim();
+}
+
+/**
+ * The optional evidence items on an issue's spec, or an empty array when the
+ * spec has none. Unlike `verificationCommands`, a missing or malformed
+ * `evidence` field is not an error -- the field is optional, and every issue
+ * filed before GSHIP-629 lacks it entirely.
+ */
+function evidenceFromIssue(issueContent: string): EvidenceItem[] {
+	let issue: unknown;
+	try {
+		issue = JSON.parse(issueContent);
+	} catch {
+		throw new Error('issue record is not valid JSON');
+	}
+	if (issue === null || typeof issue !== 'object' || Array.isArray(issue)) {
+		throw new Error('issue record is not an object');
+	}
+	const spec = (issue as Record<string, unknown>).spec;
+	if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
+		return [];
+	}
+	const evidence = (spec as Record<string, unknown>).evidence;
+	return Array.isArray(evidence) ? (evidence as EvidenceItem[]) : [];
+}
+
 /**
  * Gate on a fresh source ref before a run is accepted.
  *
@@ -206,6 +253,13 @@ function commandFailure(label: string, result: CommandResult): RuntimePreflightE
  * from a base commit the remote has already moved past. Only
  * `refs/remotes/origin/main` is written -- the local `main` never moves, so a
  * checked-out and dirty `main` in another worktree is unaffected.
+ *
+ * This does not check the spec's evidence: at this point `RunRuntime.startRun`
+ * has not yet called `workspace.prepare`, so there is no run workspace to run
+ * evidence commands against, and cutting one here just for this check would be
+ * the additional worktree the issue's scope explicitly excluded. Evidence is
+ * instead checked by `GitEvidenceChecker`, against the run's own workspace,
+ * after it exists and before the executor runs (GSHIP-629).
  */
 export function createGitRuntimePreflight(
 	cwd: string,
@@ -241,6 +295,65 @@ export function createGitRuntimePreflight(
 			);
 		}
 	};
+}
+
+/**
+ * The spec's executable premise, checked in the run's own workspace: after
+ * `workspace.prepare` has cut its worktree and installed its dependencies
+ * (`GitWorkspaceManager.prepare`, git-workspace.ts), and before the executor
+ * is ever invoked (`RunRuntime.#drive`/`#checkEvidence`, run-runtime.ts, which
+ * also owns whether a given pass runs this check at all). No worktree of its
+ * own is cut here -- there is nothing to clean up and nothing that can leak an
+ * orphaned `.git/worktrees` entry if the process dies mid-check. Each command
+ * runs through the same cancellable, timeout-bound path `GitIssueVerifier`
+ * already uses for verify commands, so a command that hangs is terminated by
+ * the run's own abort instead of blocking the service.
+ */
+export class GitEvidenceChecker implements RuntimeEvidenceCheck {
+	readonly #loadIssue: (cwd: string, issueId: string) => string;
+	readonly #runCommand: VerificationCommandRunner;
+
+	constructor(options: GitRuntimeOptions = {}) {
+		this.#loadIssue = options.loadIssueFromWorkspace ?? defaultLoadIssueFromWorkspace;
+		this.#runCommand = options.runCommand ?? ((input) =>
+			defaultRunCommand(input, options.terminationGraceMs));
+	}
+
+	async check(input: RuntimeExecutionInput): Promise<RuntimeVerificationResult> {
+		let evidence: EvidenceItem[];
+		try {
+			evidence = evidenceFromIssue(this.#loadIssue(input.cwd, input.issueId));
+		} catch (error) {
+			return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+		}
+
+		for (const item of evidence) {
+			const result = await this.#runCommand({
+				cwd: input.cwd,
+				command: item.command,
+				signal: input.signal,
+			});
+			const observed = evidenceOutputText(result);
+			const recorded = item.output.trim();
+			if (result.exitCode !== 0 || observed !== recorded) {
+				// Leads with "the spec's evidence diverged" in full, not just
+				// "evidence diverged": this text becomes `run.error` verbatim, with
+				// no separate label distinguishing it from an implementation bug, so
+				// it has to say on its own that the *spec's premise* stopped holding.
+				// `recorded` is already bounded by EVIDENCE_LIMITS.output at intake;
+				// `observed` is whatever the current command just printed, so it gets
+				// the same tail cap `outputTail` already gives the verify diagnostic.
+				return {
+					ok: false,
+					detail: `the run ended because the spec's evidence diverged from the repository:`
+						+ ` command \`${item.command}\` recorded \`${recorded}\` but the current`
+						+ ` repository observed \`${outputTail(result)}\``
+						+ (result.exitCode === 0 ? '' : ` (command exited ${result.exitCode})`),
+				};
+			}
+		}
+		return { ok: true };
+	}
 }
 
 export class GitIssueVerifier implements RuntimeVerifier {

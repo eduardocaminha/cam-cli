@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -275,6 +276,261 @@ describe('durable run runtime', () => {
 			'run.verified',
 		]);
 		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({ text: 'Use the smaller seam.' });
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
+// GSHIP-629: the spec's executable premise, checked against the run's own
+// workspace and before the executor is ever invoked. Skipped once a durable
+// `run.evidence-checked` decision event already exists for the run -- never
+// decided by whether the current pass is a resume, so an interruption while
+// the check itself was running is re-checked on resume instead of releasing
+// the run on a premise nothing ever verified.
+describe('evidence check gates the executor', () => {
+	test('matching evidence lets the run proceed to the executor and records a durable decision event', async () => {
+		const store = new RunStore(':memory:');
+		let executorCalled = false;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-evidence-ok',
+			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			evidenceCheck: { check: async () => ({ ok: true }) },
+			executor: {
+				execute: async () => {
+					executorCalled = true;
+					return { outcome: 'completed' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-40');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(executorCalled).toBe(true);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.evidence-checked',
+			'run.work-completed',
+			'run.verified',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('diverging evidence ends the run before the executor is ever invoked', async () => {
+		const store = new RunStore(':memory:');
+		let executorCalled = false;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-evidence-diverged',
+			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			evidenceCheck: {
+				check: async () => ({
+					ok: false,
+					detail: 'evidence diverged for `wc -l file`: recorded `3 file` but observed `5 file`',
+				}),
+			},
+			executor: {
+				execute: async () => {
+					executorCalled = true;
+					return { outcome: 'completed' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-41');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(executorCalled).toBe(false);
+		expect(runtime.getRun(run.id)).toMatchObject({
+			state: 'failed',
+			error: 'evidence diverged for `wc -l file`: recorded `3 file` but observed `5 file`',
+		});
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.evidence-diverged',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-621: a run that fails releases its own workspace and branch once
+	// the branch carries no commit missing from the base ref. Divergence fails
+	// the run before the executor ever touches the workspace, so the branch is
+	// exactly what `workspace.prepare` cut it as -- clean, with no commit of
+	// its own -- and the same release rule that already applies to every other
+	// failed run must apply here too, so a repeated divergent attempt never
+	// accumulates a leftover worktree or branch.
+	test('a run failed by evidence divergence releases its clean workspace and branch (GSHIP-621)', async () => {
+		const releaseCalls: Array<{ runId: string; requireUpstream?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-evidence-diverged-clean',
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: ({ runId, requireUpstream }) => {
+					releaseCalls.push({ runId, requireUpstream });
+					return { outcome: 'released', branch: 'gship/cam-44-run-evidence-diverged-clean' };
+				},
+			},
+			evidenceCheck: {
+				check: async () => ({
+					ok: false,
+					detail: "the run ended because the spec's evidence diverged from the repository:"
+						+ ' command `wc -l file` recorded `3 file` but the current repository observed `5 file`',
+				}),
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-44');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(releaseCalls).toEqual([{ runId: 'run-evidence-diverged-clean', requireUpstream: true }]);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.evidence-diverged',
+			'workspace.released',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// The reason is what the operator reads: with no separate label
+	// distinguishing an evidence mismatch from an implementation bug, the text
+	// itself has to say, in full words, that the run ended because the spec's
+	// evidence diverged -- and still carry the command, the recorded output
+	// and the current output, exactly like the ephemeral-worktree design did
+	// before it moved into the run's own workspace.
+	test('the reported reason names the spec evidence divergence explicitly, with command and both outputs', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-evidence-reason',
+			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			evidenceCheck: new GitEvidenceChecker({
+				loadIssueFromWorkspace: () => JSON.stringify({
+					spec: {
+						scope: 'Outcome backed by evidence.',
+						verify: ['bun test'],
+						evidence: [{ command: 'wc -l file.txt', output: '3 file.txt' }],
+					},
+				}),
+				runCommand: async () => ({ exitCode: 0, stdout: '5 file.txt\n', stderr: '' }),
+			}),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-45');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		const reason = runtime.getRun(run.id)?.error ?? '';
+		expect(reason).toContain("the run ended because the spec's evidence diverged");
+		expect(reason).toContain('wc -l file.txt');
+		expect(reason).toContain('3 file.txt');
+		expect(reason).toContain('5 file.txt');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// The check already succeeded once (`run.evidence-checked` is on the
+	// event log by the time the run reaches waiting-user), so resuming must
+	// not repeat it.
+	test('a resumed run does not re-check evidence once the durable event exists', async () => {
+		const store = new RunStore(':memory:');
+		let checkCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-evidence-resume',
+			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			evidenceCheck: {
+				check: async () => {
+					checkCalls += 1;
+					return { ok: true };
+				},
+			},
+			executor: {
+				execute: async (input) => input.resume
+					? { outcome: 'completed', summary: 'decision applied' }
+					: { outcome: 'waiting-user', summary: 'Pick a seam.' },
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-42');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(checkCalls).toBe(1);
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.evidence-checked'))
+			.toHaveLength(1);
+
+		runtime.resumeRun(run.id, 'Use the smaller seam.');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(checkCalls).toBe(1);
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// An interruption while the check itself is running never reaches the
+	// point where it would emit `run.evidence-checked`, so the event the skip
+	// is gated on does not exist -- resuming must check again rather than
+	// trust a premise nothing ever actually verified.
+	test('an interruption during the check itself is re-checked on resume', async () => {
+		const store = new RunStore(':memory:');
+		let checkCalls = 0;
+		let markCheckStarted = (): void => {};
+		const checkStarted = new Promise<void>((resolve) => {
+			markCheckStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-evidence-interrupted',
+			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			evidenceCheck: {
+				check: (input) => {
+					checkCalls += 1;
+					if (checkCalls === 1) {
+						return new Promise((_resolve, reject) => {
+							markCheckStarted();
+							input.signal.addEventListener(
+								'abort',
+								() => reject(new DOMException('cancelled', 'AbortError')),
+								{ once: true },
+							);
+						});
+					}
+					return Promise.resolve({ ok: true });
+				},
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('CAM-43');
+		await checkStarted;
+		const cancelled = await runtime.cancelRun(run.id);
+		expect(cancelled?.state).toBe('interrupted');
+		expect(checkCalls).toBe(1);
+		expect(runtime.listRunEvents(run.id).some((event) => event.kind === 'run.evidence-checked'))
+			.toBe(false);
+
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(checkCalls).toBe(2);
+
 		await runtime.stop();
 		runtime.close();
 	});

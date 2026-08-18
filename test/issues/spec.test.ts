@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fingerprintSpec, hasVerification, validateSpec } from '../../src/issues/spec.ts';
+import { EVIDENCE_LIMITS, fingerprintSpec, hasVerification, validateSpec } from '../../src/issues/spec.ts';
 
 describe('direct issue spec', () => {
 	test('fingerprints the normalized executable contract deterministically', () => {
@@ -52,5 +52,75 @@ describe('direct issue spec', () => {
 		expect(hasVerification({ scope: 'old', acceptanceCriteria: ['AC'] })).toBe(true);
 		expect(hasVerification({ scope: 'missing' })).toBe(false);
 		expect(hasVerification(undefined)).toBe(false);
+	});
+
+	// GSHIP-629: the spec's executable premise, symmetric to verify.
+	describe('evidence', () => {
+		test('accepts a spec whose evidence commands and outputs are both non-empty', () => {
+			expect(validateSpec({
+				scope: 'A spec backed by measurement.',
+				verify: ['bun test'],
+				evidence: [
+					{ command: 'ls src/domain-models | wc -l', output: '3' },
+					{ command: 'git log --oneline -1', output: 'abc1234 seed' },
+				],
+			})).toEqual({ ok: true, errors: [] });
+		});
+
+		test('a spec with no evidence field is unaffected -- every already-filed issue lacks it', () => {
+			expect(validateSpec({
+				scope: 'A spec with no evidence at all.',
+				verify: ['bun test'],
+			})).toEqual({ ok: true, errors: [] });
+		});
+
+		test('rejects more than the maximum number of evidence items', () => {
+			const tooMany = Array.from(
+				{ length: EVIDENCE_LIMITS.maxItems + 1 },
+				(_unused, index) => ({ command: `cmd ${index}`, output: `out ${index}` }),
+			);
+			const result = validateSpec({ scope: 'Outcome.', verify: ['bun test'], evidence: tooMany });
+			expect(result.ok).toBe(false);
+			expect(result.errors).toContain(
+				`evidence accepts at most ${EVIDENCE_LIMITS.maxItems} items`,
+			);
+		});
+
+		test('rejects an evidence item with an empty command or output', () => {
+			expect(validateSpec({
+				scope: 'Outcome.',
+				verify: ['bun test'],
+				evidence: [{ command: '  ', output: 'observed' }],
+			})).toMatchObject({ ok: false });
+			expect(validateSpec({
+				scope: 'Outcome.',
+				verify: ['bun test'],
+				evidence: [{ command: 'ls', output: '  ' }],
+			})).toMatchObject({ ok: false });
+		});
+
+		test('rejects a command or output past the size limit', () => {
+			const longCommand = 'x'.repeat(EVIDENCE_LIMITS.command + 1);
+			const longOutput = 'y'.repeat(EVIDENCE_LIMITS.output + 1);
+			expect(validateSpec({
+				scope: 'Outcome.',
+				verify: ['bun test'],
+				evidence: [{ command: longCommand, output: 'fine' }],
+			})).toMatchObject({ ok: false });
+			expect(validateSpec({
+				scope: 'Outcome.',
+				verify: ['bun test'],
+				evidence: [{ command: 'fine', output: longOutput }],
+			})).toMatchObject({ ok: false });
+		});
+
+		test('does not affect the approval fingerprint, only scope and verify do', () => {
+			const base = { scope: 'Outcome.', verify: ['bun test'] };
+			const withEvidence = {
+				...base,
+				evidence: [{ command: 'ls', output: 'a\nb' }],
+			};
+			expect(fingerprintSpec(withEvidence)).toBe(fingerprintSpec(base));
+		});
 	});
 });
