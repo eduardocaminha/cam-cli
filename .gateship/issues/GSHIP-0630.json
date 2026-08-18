@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T10:18:34.664Z",
-  "updatedAt": "2026-08-18T10:18:34.664Z",
+  "updatedAt": "2026-08-18T10:19:26.075Z",
   "description": "Levar as decisoes ja tomadas pelo operador ate o prompt da revisao, para que uma ratificacao pare de ser re-litigada a cada rodada. Evidencia real do GSHIP-629: o operador ratificou um desvio, a revisao seguinte reportou o mesmo ponto como pendencia, o operador ratificou de novo e cada repeticao custou uma passada de executor mais uma de reviewer; aquela run somou cinco intervencoes e custou cerca de sete vezes uma run limpa. A causa esta no que o reviewer recebe: buildReviewPrompt em src/runtime/claude-cli-reviewer.ts leva apenas issueId, o texto da issue e o diff, e cada revisao e sessao nova sem resume, entao nao existe memoria de nada que o operador tenha decidido. As decisoes ja sao duraveis no log como eventos run.operator-guidance. Passar essas decisoes, apenas as da propria run e em ordem cronologica, para buildReviewPrompt, que e compartilhado pelos reviewers de Claude e Codex, de modo que a mudanca cubra os dois providers de uma vez e nao repita a assimetria que o GSHIP-626 teve de consertar. Ler os eventos pela classe duravel que o GSHIP-627 estabeleceu, sem o limite da leitura ao vivo, para que uma decisao antiga numa run longa nao caia fora da janela. Limitar a quantidade de decisoes e o tamanho de cada uma, seguindo a forma de PROPOSAL_LIMITS, descartando o excesso mais antigo em vez de truncar o texto no meio. Apresentar o bloco rotulado com clareza como decisoes que o operador ja tomou para esta run, instruindo que o reviewer pode discordar de uma delas, e nesse caso deve reportar explicitamente que discorda de uma decisao ja tomada, em vez de reportar como defeito pendente. Quando a run ainda nao tiver nenhuma decisao, que e o caso de toda primeira revisao, o prompt fica exatamente como e hoje. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir prompt sem decisoes identico ao atual, prompt com uma decisao, ordem cronologica preservada, descarte do excesso mais antigo ao passar do limite, e os dois reviewers recebendo o mesmo bloco. Fora de escopo: mudar o schema do veredito, passar o transcript da conversa, passar propostas, alterar o contrato de uma unica rodada automatica de fix, permitir que o reviewer escreva ou execute qualquer coisa, e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/run-runtime.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "dddd885624413834a860e695b5358d7d0e4e7f122e57c2cee2e2a5d0ef49098c",
+    "approvedAt": "2026-08-18T10:19:26.075Z"
   }
 }
