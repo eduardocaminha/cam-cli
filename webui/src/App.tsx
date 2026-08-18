@@ -32,6 +32,7 @@ import { Progress } from './components/ui/progress.tsx';
 import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import {
+	aggregateChatTurnCosts,
 	type ChatMessageView,
 	emptyModelSettings,
 	type IssueReviewDraft,
@@ -913,6 +914,26 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 }
 
 /**
+ * The expected cost across every orchestrator turn the transcript carries a
+ * usage event for (GSHIP-634) -- the same label the run cards use, since the
+ * operator pays one subscription for both. A turn that never reported usage
+ * contributes nothing and is not counted in the turns it covers; hidden
+ * entirely when no turn ever reported one, the same absence-over-zero rule
+ * the run cost summary already follows.
+ */
+function ChatCostSummary({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactElement | null {
+	const aggregate = aggregateChatTurnCosts(chatMessages);
+	if (aggregate.totalCostUsd === null) return null;
+	return (
+		<p className="text-muted-foreground text-sm">
+			Custo esperado acumulado de {aggregate.turnCount} turno(s) do orquestrador:{' '}
+			{formatCostUsd(aggregate.totalCostUsd)}. Equivalente ao uso via API, nunca o valor cobrado da
+			assinatura.
+		</p>
+	);
+}
+
+/**
  * The run's own question, asked where the operator is already answering. It
  * only exists while the runtime is holding for a decision, and resuming is the
  * one run command that belongs on the conversation surface.
@@ -995,6 +1016,7 @@ function ConversationColumn({
 				</CardHeader>
 				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
 					<ChatLog chatMessages={chatMessages} />
+					<ChatCostSummary chatMessages={chatMessages} />
 					<OperatorAnswer onResume={onResume} pending={pending} run={run} />
 					<StatusOutput status={status} />
 					<form

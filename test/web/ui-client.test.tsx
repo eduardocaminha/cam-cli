@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
 import {
+	aggregateChatTurnCosts,
 	approveIssue,
 	BRIEF_PATH,
 	commandRun,
@@ -328,6 +329,76 @@ describe('conversation surface', () => {
 		expect(html).toContain('Retomei o contexto e encontrei o loop.');
 		expect(html).toContain('codex');
 		expect(html).toContain('claude');
+	});
+
+	// GSHIP-634: the orchestrator's own turns were invisible next to the
+	// executor and reviewer, which already show an expected-cost total (GSHIP-
+	// 623/628) -- this is the same label and honesty rules, applied to the
+	// conversation surface, and it covers exactly the turns that reported usage.
+	test('shows the accumulated expected cost of the orchestrator turns that reported usage, with the turn count', () => {
+		const chatMessages: AppProps['chatMessages'] = [
+			{
+				seq: 1,
+				providerId: 'claude',
+				role: 'operator',
+				text: 'Qual é o objetivo desta fatia?',
+				createdAt: '2026-08-18T03:00:00.000Z',
+			},
+			{
+				seq: 2,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: 'Investiguei o core.',
+				createdAt: '2026-08-18T03:00:05.000Z',
+				usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.08 },
+			},
+			{
+				seq: 3,
+				providerId: 'claude',
+				role: 'operator',
+				text: 'E agora?',
+				createdAt: '2026-08-18T03:01:00.000Z',
+			},
+			{
+				seq: 4,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: 'Segui em frente.',
+				createdAt: '2026-08-18T03:01:05.000Z',
+				usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.05 },
+			},
+		];
+		const aggregate = aggregateChatTurnCosts(chatMessages);
+		expect(aggregate.totalCostUsd).toBeCloseTo(0.13, 6);
+		expect(aggregate.turnCount).toBe(2);
+
+		const html = home({ chatMessages });
+		expect(html).toContain('Custo esperado acumulado');
+		expect(html).toContain('2 turno(s)');
+		expect(html).toContain('US$');
+	});
+
+	// A turn that never reported usage stays entirely out of the total and the
+	// count -- never a fabricated zero, the same rule GSHIP-623 established.
+	test('shows no accumulated turn cost when no orchestrator turn ever reported usage', () => {
+		const chatMessages: AppProps['chatMessages'] = [
+			{
+				seq: 1,
+				providerId: 'claude',
+				role: 'operator',
+				text: 'Investigue o core.',
+				createdAt: '2026-08-18T03:00:00.000Z',
+			},
+			{
+				seq: 2,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: 'Sem custo reportado pelo CLI.',
+				createdAt: '2026-08-18T03:00:05.000Z',
+			},
+		];
+		expect(aggregateChatTurnCosts(chatMessages)).toEqual({ totalCostUsd: null, turnCount: 0 });
+		expect(home({ chatMessages })).not.toContain('Custo esperado acumulado');
 	});
 
 	test('the run asks for its decision on the conversation surface, once', () => {

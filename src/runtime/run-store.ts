@@ -58,6 +58,24 @@ export interface RunEvent {
 
 export type OrchestratorMessageRole = 'operator' | 'orchestrator' | 'system';
 
+/**
+ * One orchestrator turn's own reported usage (GSHIP-634), captured from the
+ * CLI's `.usage` event during that turn's call and stored beside the message
+ * the turn produced -- never on the operator's or the system's own message. A
+ * field the CLI never reported stays absent, never a fabricated zero, the
+ * same honesty rule GSHIP-623 established for a run's cost.
+ */
+export interface OrchestratorMessageUsage {
+	model?: string;
+	effort?: string;
+	totalCostUsd?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheCreationInputTokens?: number;
+	cacheReadInputTokens?: number;
+	thinkingTokens?: number;
+}
+
 /** Durable public transcript shared across orchestrator provider sessions. */
 export interface OrchestratorMessage {
 	seq: number;
@@ -65,6 +83,8 @@ export interface OrchestratorMessage {
 	role: OrchestratorMessageRole;
 	text: string;
 	createdAt: string;
+	/** Present only on the orchestrator's own message, and only when the turn reported usage. */
+	usage?: OrchestratorMessageUsage;
 }
 
 /**
@@ -294,6 +314,53 @@ function decodeThinkingTokens(payload: Record<string, unknown>): number | undefi
 	return decodeUsageNumber((usage as Record<string, unknown>)['thinkingTokens']);
 }
 
+/** `payload.model`, the slot `emitUsage` (claude-cli-process.ts) passed for the whole invocation. */
+function decodeUsageModel(payload: Record<string, unknown>): string | undefined {
+	const value = payload['model'];
+	return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** One field out of `payload.usage`, the invocation-level object `ClaudeResultUsage` reports. */
+function decodeUsageObjectField(payload: Record<string, unknown>, field: string): number | undefined {
+	const usage = payload['usage'];
+	if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
+	return decodeUsageNumber((usage as Record<string, unknown>)[field]);
+}
+
+/**
+ * Decodes one orchestrator turn's raw `orchestrator.usage` emit payload
+ * (GSHIP-634) into the single-invocation shape `appendOrchestratorMessage`
+ * persists: the model/effort pair the turn's call was made with, the total
+ * cost it reported, and the five token counts `ClaudeResultUsage` extracts
+ * (GSHIP-623). A field the CLI never reported stays absent -- never a
+ * fabricated zero -- and the whole result is `undefined` when the turn
+ * reported nothing measurable at all.
+ */
+export function decodeOrchestratorTurnUsage(
+	payload: Record<string, unknown>,
+): OrchestratorMessageUsage | undefined {
+	const model = decodeUsageModel(payload);
+	const effort = decodeEffort(payload);
+	const eventTotalCostUsd = payload['totalCostUsd'];
+	const totalCostUsd = typeof eventTotalCostUsd === 'number' ? eventTotalCostUsd : undefined;
+	const inputTokens = decodeUsageObjectField(payload, 'inputTokens');
+	const outputTokens = decodeUsageObjectField(payload, 'outputTokens');
+	const cacheCreationInputTokens = decodeUsageObjectField(payload, 'cacheCreationInputTokens');
+	const cacheReadInputTokens = decodeUsageObjectField(payload, 'cacheReadInputTokens');
+	const thinkingTokens = decodeThinkingTokens(payload);
+	const usage: OrchestratorMessageUsage = {
+		...(model === undefined ? {} : { model }),
+		...(effort === undefined ? {} : { effort }),
+		...(totalCostUsd === undefined ? {} : { totalCostUsd }),
+		...(inputTokens === undefined ? {} : { inputTokens }),
+		...(outputTokens === undefined ? {} : { outputTokens }),
+		...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
+		...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+		...(thinkingTokens === undefined ? {} : { thinkingTokens }),
+	};
+	return Object.keys(usage).length === 0 ? undefined : usage;
+}
+
 interface RoleUsageAccumulator {
 	thinkingTokens: number | undefined;
 	effort: string | undefined;
@@ -381,6 +448,14 @@ interface OrchestratorMessageRow {
 	role: string;
 	text: string;
 	created_at: string;
+	model: string | null;
+	effort: string | null;
+	total_cost_usd: number | null;
+	input_tokens: number | null;
+	output_tokens: number | null;
+	cache_creation_input_tokens: number | null;
+	cache_read_input_tokens: number | null;
+	thinking_tokens: number | null;
 }
 
 function decodeState(value: string): RunState {
@@ -467,16 +542,35 @@ function decodeProposal(row: ProposalRow): RunProposal {
 	};
 }
 
+/** Absence over a fabricated zero: a column the row never had reads as no usage at all, never as a free turn. */
+function decodeOrchestratorMessageUsage(row: OrchestratorMessageRow): OrchestratorMessageUsage | undefined {
+	const usage: OrchestratorMessageUsage = {
+		...(row.model === null ? {} : { model: row.model }),
+		...(row.effort === null ? {} : { effort: row.effort }),
+		...(row.total_cost_usd === null ? {} : { totalCostUsd: row.total_cost_usd }),
+		...(row.input_tokens === null ? {} : { inputTokens: row.input_tokens }),
+		...(row.output_tokens === null ? {} : { outputTokens: row.output_tokens }),
+		...(row.cache_creation_input_tokens === null
+			? {}
+			: { cacheCreationInputTokens: row.cache_creation_input_tokens }),
+		...(row.cache_read_input_tokens === null ? {} : { cacheReadInputTokens: row.cache_read_input_tokens }),
+		...(row.thinking_tokens === null ? {} : { thinkingTokens: row.thinking_tokens }),
+	};
+	return Object.keys(usage).length === 0 ? undefined : usage;
+}
+
 function decodeOrchestratorMessage(row: OrchestratorMessageRow): OrchestratorMessage {
 	const role = row.role === 'orchestrator' || row.role === 'system'
 		? row.role
 		: 'operator';
+	const usage = decodeOrchestratorMessageUsage(row);
 	return {
 		seq: row.seq,
 		providerId: row.provider_id === 'codex' ? 'codex' : 'claude',
 		role,
 		text: row.text,
 		createdAt: row.created_at,
+		...(usage === undefined ? {} : { usage }),
 	};
 }
 
@@ -551,7 +645,15 @@ export class RunStore {
 				provider_id TEXT NOT NULL,
 				role TEXT NOT NULL,
 				text TEXT NOT NULL,
-				created_at TEXT NOT NULL
+				created_at TEXT NOT NULL,
+				model TEXT,
+				effort TEXT,
+				total_cost_usd REAL,
+				input_tokens INTEGER,
+				output_tokens INTEGER,
+				cache_creation_input_tokens INTEGER,
+				cache_read_input_tokens INTEGER,
+				thinking_tokens INTEGER
 			);
 		`);
 		const columns = this.#db.query('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
@@ -585,6 +687,23 @@ export class RunStore {
 			this.#db.exec(`
 				UPDATE run_events SET event_class = 'activity'
 				WHERE kind LIKE '%.system' OR kind LIKE '%.activity';
+			`);
+		}
+		// A pre-GSHIP-634 database has no usage columns at all: every existing row
+		// reads back with no usage, the same as a turn that never reported one.
+		const orchestratorMessageColumns = this.#db
+			.query('PRAGMA table_info(orchestrator_messages)')
+			.all() as Array<{ name: string }>;
+		if (!orchestratorMessageColumns.some((column) => column.name === 'model')) {
+			this.#db.exec(`
+				ALTER TABLE orchestrator_messages ADD COLUMN model TEXT;
+				ALTER TABLE orchestrator_messages ADD COLUMN effort TEXT;
+				ALTER TABLE orchestrator_messages ADD COLUMN total_cost_usd REAL;
+				ALTER TABLE orchestrator_messages ADD COLUMN input_tokens INTEGER;
+				ALTER TABLE orchestrator_messages ADD COLUMN output_tokens INTEGER;
+				ALTER TABLE orchestrator_messages ADD COLUMN cache_creation_input_tokens INTEGER;
+				ALTER TABLE orchestrator_messages ADD COLUMN cache_read_input_tokens INTEGER;
+				ALTER TABLE orchestrator_messages ADD COLUMN thinking_tokens INTEGER;
 			`);
 		}
 	}
@@ -914,14 +1033,38 @@ export class RunStore {
 		role: OrchestratorMessageRole;
 		text: string;
 		createdAt: string;
+		/** Captured only for the orchestrator's own message (GSHIP-634); absent for every other role. */
+		usage?: OrchestratorMessageUsage;
 	}): OrchestratorMessage {
 		const text = input.text.trim();
 		if (text.length === 0) throw new Error('orchestrator message text is required');
+		const usage = input.usage;
 		const row = this.#db.query(`
-			INSERT INTO orchestrator_messages (provider_id, role, text, created_at)
-			VALUES ($providerId, $role, $text, $createdAt)
+			INSERT INTO orchestrator_messages (
+				provider_id, role, text, created_at,
+				model, effort, total_cost_usd, input_tokens, output_tokens,
+				cache_creation_input_tokens, cache_read_input_tokens, thinking_tokens
+			)
+			VALUES (
+				$providerId, $role, $text, $createdAt,
+				$model, $effort, $totalCostUsd, $inputTokens, $outputTokens,
+				$cacheCreationInputTokens, $cacheReadInputTokens, $thinkingTokens
+			)
 			RETURNING *
-		`).get({ ...input, text }) as OrchestratorMessageRow;
+		`).get({
+			providerId: input.providerId,
+			role: input.role,
+			text,
+			createdAt: input.createdAt,
+			model: usage?.model ?? null,
+			effort: usage?.effort ?? null,
+			totalCostUsd: usage?.totalCostUsd ?? null,
+			inputTokens: usage?.inputTokens ?? null,
+			outputTokens: usage?.outputTokens ?? null,
+			cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? null,
+			cacheReadInputTokens: usage?.cacheReadInputTokens ?? null,
+			thinkingTokens: usage?.thinkingTokens ?? null,
+		}) as OrchestratorMessageRow;
 		return decodeOrchestratorMessage(row);
 	}
 

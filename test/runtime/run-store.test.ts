@@ -847,3 +847,44 @@ describe('run cost summary', () => {
 		store.close();
 	});
 });
+
+// GSHIP-634: orchestrator_messages already wrote exactly one row per turn, so
+// its usage columns are added to that table instead of a new one, migrated by
+// PRAGMA the same way promoted_issue_id was.
+describe('orchestrator message usage migration', () => {
+	test('a pre-GSHIP-634 database gains the usage columns without losing its messages', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-orchestrator-usage-'), 'runtime.sqlite');
+		const legacy = new Database(dbPath, { create: true });
+		legacy.exec(`
+			CREATE TABLE orchestrator_messages (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				provider_id TEXT NOT NULL,
+				role TEXT NOT NULL,
+				text TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			);
+			INSERT INTO orchestrator_messages (provider_id, role, text, created_at) VALUES
+				('claude', 'operator', 'Qual é o objetivo desta fatia?', '2026-08-18T10:00:00Z'),
+				('claude', 'orchestrator', 'Vou investigar o core.', '2026-08-18T10:00:05Z');
+		`);
+		legacy.close();
+
+		const migrated = new RunStore(dbPath);
+		const messages = migrated.listOrchestratorMessages();
+		expect(messages).toHaveLength(2);
+		// A row written before the columns existed reads back with no usage at
+		// all -- never a fabricated free turn.
+		for (const message of messages) expect(message.usage).toBeUndefined();
+
+		// The migrated table still accepts a usage-carrying write going forward.
+		const withUsage = migrated.appendOrchestratorMessage({
+			providerId: 'claude',
+			role: 'orchestrator',
+			text: 'Contexto recuperado.',
+			createdAt: '2026-08-18T10:00:10Z',
+			usage: { model: 'opus', effort: 'high', totalCostUsd: 0.08, inputTokens: 500 },
+		});
+		expect(withUsage.usage).toEqual({ model: 'opus', effort: 'high', totalCostUsd: 0.08, inputTokens: 500 });
+		migrated.close();
+	});
+});
