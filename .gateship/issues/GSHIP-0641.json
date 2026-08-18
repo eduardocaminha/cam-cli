@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-641",
+  "title": "Desarmar o auto-merge quando o PR e fechado sem merge",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-18T22:31:27.466Z",
+  "updatedAt": "2026-08-18T22:31:27.466Z",
+  "description": "Desarmar o auto-merge tambem quando o ship termina porque o pull request foi fechado sem merge, que hoje e a unica saida que deixa um armamento anterior intacto. O GSHIP-616 passou a desarmar na divergencia de head, mas as duas saidas de pull request fechado sem merge retornam direto, entao se o pull request for reaberto depois o armamento antigo continua valendo e o GitHub pode mergear sem ninguem olhando, que e exatamente a janela que o GSHIP-616 existe para fechar. Reusar o mesmo desarme do GSHIP-616, idempotente, e sem deixar que a falha do proprio desarme mascare o motivo original do encerramento, que continua sendo o motivo reportado. Emitir o mesmo evento de desarme que ja existe, para que a acao apareca no historico da run. Preservar todo o resto do contrato: sem mergear, sem re-armar, sem apagar branch, e sem alteracao no ciclo de vida da run. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir as duas saidas de pull request fechado sem merge desarmando, e a falha do desarme preservando o motivo original.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Desarmar o auto-merge tambem quando o ship termina porque o pull request foi fechado sem merge, que hoje e a unica saida que deixa um armamento anterior intacto. O GSHIP-616 passou a desarmar na divergencia de head, mas as duas saidas de pull request fechado sem merge retornam direto, entao se o pull request for reaberto depois o armamento antigo continua valendo e o GitHub pode mergear sem ninguem olhando, que e exatamente a janela que o GSHIP-616 existe para fechar. Reusar o mesmo desarme do GSHIP-616, idempotente, e sem deixar que a falha do proprio desarme mascare o motivo original do encerramento, que continua sendo o motivo reportado. Emitir o mesmo evento de desarme que ja existe, para que a acao apareca no historico da run. Preservar todo o resto do contrato: sem mergear, sem re-armar, sem apagar branch, e sem alteracao no ciclo de vida da run. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir as duas saidas de pull request fechado sem merge desarmando, e a falha do desarme preservando o motivo original.",
+    "verify": [
+      "bun test test/runtime/github-shipper.test.ts test/runtime/run-ship.test.ts && bun run typecheck"
+    ],
+    "evidence": [
+      {
+        "command": "grep -c 'was closed without merging' src/runtime/github-shipper.ts",
+        "output": "2"
+      }
+    ]
+  }
+}
