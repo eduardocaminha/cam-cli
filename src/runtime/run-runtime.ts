@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentProviderId } from './agent-session.ts';
+import { isPlannable } from '../issues/plannable.ts';
+import type { IssueEntry } from '../issues/types.ts';
 import type {
 	RuntimeWorkspace,
 	WorkspaceNotice,
@@ -125,6 +127,13 @@ export interface RunRuntimeOptions {
 	preflight?: (issueId: string) => void;
 	evidenceCheck?: RuntimeEvidenceCheck;
 	workspace?: RuntimeWorkspace;
+	/**
+	 * Fresh backlog snapshot for chain selection (GSHIP-638), read from the same
+	 * source ref a new run is admitted against. Absent reads as an empty
+	 * backlog, so chaining pauses on "no admissible issue" instead of guessing
+	 * at one.
+	 */
+	listBacklog?: () => IssueEntry[];
 }
 
 export class RuntimeUnavailableError extends Error {
@@ -139,6 +148,32 @@ export class RuntimeConflictError extends Error {
 		super(message);
 		this.name = 'RuntimeConflictError';
 	}
+}
+
+/**
+ * Why the queue did not advance on its own at a terminal transition
+ * (GSHIP-638). The first four are the ones the spec names explicitly;
+ * `chain-start-failed` is the catch-all for a chaining attempt that itself
+ * broke -- a bad backlog read, a stale preflight -- so that failure is always
+ * explicit too, never a silent stop.
+ */
+export const CHAIN_PAUSE_REASONS = {
+	disabled: 'chain-disabled',
+	notDone: 'previous-run-not-done',
+	noAdmissibleIssue: 'no-admissible-issue',
+	runActive: 'run-active',
+	startFailed: 'chain-start-failed',
+} as const;
+
+export type ChainPauseReason = (typeof CHAIN_PAUSE_REASONS)[keyof typeof CHAIN_PAUSE_REASONS];
+
+export interface ChainPauseView {
+	reason: ChainPauseReason;
+	createdAt: string;
+}
+
+function isChainPauseReason(value: unknown): value is ChainPauseReason {
+	return typeof value === 'string' && (Object.values(CHAIN_PAUSE_REASONS) as string[]).includes(value);
 }
 
 type EventListener = (event: RunEvent) => void;
@@ -172,6 +207,7 @@ export class RunRuntime {
 	readonly #preflight: ((issueId: string) => void) | undefined;
 	readonly #evidenceCheck: RuntimeEvidenceCheck | undefined;
 	readonly #workspace: RuntimeWorkspace | undefined;
+	readonly #listBacklog: (() => IssueEntry[]) | undefined;
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
 	#workspaceNotices: WorkspaceNotice[] = [];
@@ -189,6 +225,7 @@ export class RunRuntime {
 		this.#preflight = options.preflight;
 		this.#evidenceCheck = options.evidenceCheck;
 		this.#workspace = options.workspace;
+		this.#listBacklog = options.listBacklog;
 		this.#store.recoverUnownedRuns(this.#now());
 		this.#reconcileFinishedWorkspaces();
 		this.#refreshWorkspaceNotices();
@@ -386,6 +423,33 @@ export class RunRuntime {
 
 	setModelSettings(settings: ModelSettings): void {
 		this.#store.setModelSettings(settings);
+	}
+
+	/**
+	 * The operator's chain switch (GSHIP-638), stored beside the provider and
+	 * the model slots. Off by default: autonomy never turns itself on.
+	 */
+	getChainRuns(): boolean {
+		return this.#store.getChainRunsEnabled();
+	}
+
+	setChainRuns(enabled: boolean): void {
+		this.#store.setChainRunsEnabled(enabled);
+	}
+
+	/**
+	 * Why the queue is not advancing on its own right now, or null while it is
+	 * not stopped -- i.e. a run is actively in flight. Reflects only the most
+	 * recent terminal run: a run started since, chained or manual, always
+	 * supersedes an earlier pause.
+	 */
+	getChainPause(): ChainPauseView | null {
+		const latest = this.#store.listRuns(1)[0];
+		if (latest !== undefined && !isTerminalRunState(latest.state)) return null;
+		const event = this.#store.getLastChainPauseEvent();
+		if (event === null) return null;
+		const reason = event.payload['reason'];
+		return isChainPauseReason(reason) ? { reason, createdAt: event.createdAt } : null;
 	}
 
 	getOrchestratorSession(providerId: AgentProviderId): string | null {
@@ -785,11 +849,73 @@ export class RunRuntime {
 			...(values.payload === undefined ? {} : { payload: values.payload }),
 		});
 		this.#publish(transitioned.event);
+		// The terminal transition IS the trigger (GSHIP-638): no loop, no timer,
+		// no process of its own chases it separately.
+		if (isTerminalRunState(toState)) this.#maybeChain(transitioned.run);
 		return transitioned;
 	}
 
 	#publish(event: RunEvent): void {
 		for (const listener of this.#listeners) listener(event);
+	}
+
+	/**
+	 * Evaluate chaining at the terminal transition that already exists
+	 * (GSHIP-638). Wrapped end-to-end so a chaining failure -- a bad backlog
+	 * read, a stale preflight -- is recorded and never unwinds into the
+	 * transition that triggered it.
+	 */
+	#maybeChain(run: RunRecord): void {
+		try {
+			this.#attemptChain(run);
+		} catch (error) {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.startFailed, { error: errorMessage(error) });
+		}
+	}
+
+	/**
+	 * The chain switch creates no new authority: it only starts what is already
+	 * admissible (approved, with a matching fingerprint, and not blocked --
+	 * `isPlannable`, src/issues/plannable.ts), and only a run that settled as
+	 * `done` advances it. Every other outcome -- including the switch being off
+	 * -- is an explicit, reasoned pause, recorded in the same durable event log.
+	 */
+	#attemptChain(run: RunRecord): void {
+		if (!this.#store.getChainRunsEnabled()) {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.disabled);
+			return;
+		}
+		if (run.state !== 'done') {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.notDone);
+			return;
+		}
+		const nextIssueId = this.#nextAdmissibleIssueId();
+		if (nextIssueId === null) {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.noAdmissibleIssue);
+			return;
+		}
+		try {
+			this.startRun(nextIssueId);
+		} catch (error) {
+			const reason = error instanceof RuntimeConflictError
+				? CHAIN_PAUSE_REASONS.runActive
+				: CHAIN_PAUSE_REASONS.startFailed;
+			this.#emitChainPause(run.id, reason, { issueId: nextIssueId, error: errorMessage(error) });
+		}
+	}
+
+	/**
+	 * Deterministic by id order (GSHIP-638), never a priority field: the first
+	 * plannable entry in the backlog's own order, which `listBacklog` (e.g.
+	 * `readBacklogFromMain`) already returns sorted ascending by numeric id.
+	 */
+	#nextAdmissibleIssueId(): string | null {
+		const backlog = this.#listBacklog?.() ?? [];
+		return backlog.find((entry) => isPlannable(entry, backlog))?.id ?? null;
+	}
+
+	#emitChainPause(runId: string, reason: ChainPauseReason, extra?: Record<string, unknown>): void {
+		this.#emit(runId, 'run.chain-paused', { reason, ...extra });
 	}
 
 	/** Retry cleanup of runs a merge, an abandon or a failure already settled durably. */

@@ -55,6 +55,7 @@ import {
 } from '../runtime/model-settings.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
+	type ChainPauseView,
 	RunRuntime,
 	type RunRuntimeOptions,
 	RuntimeConflictError,
@@ -317,6 +318,35 @@ async function writeModelSettings(
 			{ status: error.status },
 		);
 	}
+}
+
+/** The switch plus, when the queue is stopped, why (GSHIP-638). */
+function chainRunsSnapshot(runtime: RunRuntime): { enabled: boolean; pause: ChainPauseView | null } {
+	return { enabled: runtime.getChainRuns(), pause: runtime.getChainPause() };
+}
+
+async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	const enabled = body !== null && typeof body === 'object'
+		? (body as { enabled?: unknown }).enabled
+		: undefined;
+	if (typeof enabled !== 'boolean') {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: '"enabled" deve ser um booleano.' },
+			{ status: 400 },
+		);
+	}
+	runtime.setChainRuns(enabled);
+	return Response.json({ ok: true, ...chainRunsSnapshot(runtime) });
 }
 
 async function writeProjectBrief(
@@ -1051,6 +1081,9 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 		preflight: createGitRuntimePreflight(cwd),
 		evidenceCheck: new GitEvidenceChecker(),
 		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
+		// Chain selection (GSHIP-638) reads the same source ref a new run is
+		// admitted against, so a just-shipped issue is never re-offered.
+		listBacklog: () => readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF),
 	};
 }
 
@@ -1302,6 +1335,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/model-settings': {
 				GET: () => Response.json({ settings: runRuntime.getModelSettings() }),
 				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, options.cwd),
+			},
+			// The chain switch (GSHIP-638), stored beside the provider and the model
+			// slots. The read is unguarded like every other GET; the write is
+			// same-origin, and it starts nothing itself -- it only flips the switch
+			// the next terminal transition reads.
+			'/api/chain-runs': {
+				GET: () => Response.json(chainRunsSnapshot(runRuntime)),
+				PUT: (request) => writeChainRuns(request, runRuntime),
 			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),

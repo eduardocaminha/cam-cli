@@ -14,12 +14,14 @@ import { createRoot } from 'react-dom/client';
 import { App, routeOf } from './App.tsx';
 import {
 	approveIssue,
+	type ChainRunsView,
 	commandRun,
 	createIssue,
 	dismissProposal,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
+	fetchChainRuns,
 	fetchChat,
 	fetchModelSettings,
 	fetchProposals,
@@ -36,6 +38,7 @@ import {
 	type ProposalView,
 	type ProviderStatusView,
 	saveBrief,
+	saveChainRuns,
 	saveModelSettings,
 	sendChat,
 	selectProvider,
@@ -67,6 +70,9 @@ const EMPTY_BRIEF: ProjectBriefView = {
 	openItems: [],
 };
 
+/** Off by default, same as a fresh install that never toggled it (GSHIP-638). */
+const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
+
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
@@ -83,6 +89,7 @@ function useOperationalRun(): {
 	brief: ProjectBriefView;
 	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
+	chainRuns: ChainRunsView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -106,6 +113,7 @@ function useOperationalRun(): {
 	const [brief, setBrief] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
+	const [chainRuns, setChainRuns] = useState<ChainRunsView>(EMPTY_CHAIN_RUNS);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -119,6 +127,7 @@ function useOperationalRun(): {
 			fetchBrief(),
 			fetchProposals(),
 			fetchModelSettings(),
+			fetchChainRuns(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -128,6 +137,7 @@ function useOperationalRun(): {
 				briefSnapshot,
 				proposalSnapshot,
 				modelSnapshot,
+				chainRunsSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -145,6 +155,7 @@ function useOperationalRun(): {
 				setBrief(briefSnapshot.brief);
 				setHandoff(briefSnapshot.handoff);
 				setModelSettings(modelSnapshot);
+				setChainRuns(chainRunsSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -209,6 +220,7 @@ function useOperationalRun(): {
 		brief,
 		handoff,
 		modelSettings,
+		chainRuns,
 		version,
 		status,
 		pending,
@@ -234,6 +246,7 @@ function Screen(): ReactElement {
 		brief,
 		handoff,
 		modelSettings,
+		chainRuns,
 		version,
 		status,
 		pending,
@@ -249,6 +262,7 @@ function Screen(): ReactElement {
 	return (
 		<App
 			backlog={backlog}
+			chainRuns={chainRuns}
 			drafts={drafts}
 			brief={brief}
 			chatMessages={chatMessages}
@@ -286,6 +300,7 @@ function Screen(): ReactElement {
 			}}
 			onSaveBrief={(draft) => send(() => saveBrief(draft))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
+			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
 			onSelectIssue={setSelectedIssueId}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}

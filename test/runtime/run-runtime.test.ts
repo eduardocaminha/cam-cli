@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -357,6 +359,7 @@ describe('evidence check gates the executor', () => {
 			'run.created',
 			'run.started',
 			'run.evidence-diverged',
+			'run.chain-paused',
 		]);
 		await runtime.stop();
 		runtime.close();
@@ -401,6 +404,7 @@ describe('evidence check gates the executor', () => {
 			'run.created',
 			'run.started',
 			'run.evidence-diverged',
+			'run.chain-paused',
 			'workspace.released',
 		]);
 		await runtime.stop();
@@ -715,6 +719,7 @@ describe('abandoning an interrupted run', () => {
 			'run.started',
 			'run.interrupted',
 			'run.abandoned',
+			'run.chain-paused',
 			'workspace.released',
 		]);
 
@@ -841,6 +846,7 @@ describe('releasing a failed run workspace', () => {
 			'run.started',
 			'run.work-completed',
 			'run.verification-failed',
+			'run.chain-paused',
 			'workspace.released',
 		]);
 		await runtime.stop();
@@ -1133,6 +1139,131 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 			'Ratify the smaller seam.',
 			'Ratify it again.',
 		]);
+
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
+// GSHIP-638: encadear runs aprovadas em serie. The switch creates no new
+// authority -- it only starts what isPlannable (src/issues/plannable.ts)
+// already admits -- and only a run that settles as `done` advances the queue.
+describe('chaining approved runs in series (GSHIP-638)', () => {
+	const SPEC = { scope: 'Scope.', verify: ['bun test'] };
+
+	function admissibleIssue(id: string, overrides: Partial<IssueEntry> = {}): IssueEntry {
+		return {
+			id,
+			title: id,
+			stage: 'specified',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-08-18T00:00:00.000Z',
+			updatedAt: '2026-08-18T00:00:00.000Z',
+			spec: SPEC,
+			approval: { fingerprint: fingerprintSpec(SPEC), approvedAt: '2026-08-18T00:00:00.000Z' },
+			...overrides,
+		};
+	}
+
+	function createChainableRuntime(listBacklog: () => IssueEntry[]): RunRuntime {
+		return new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			listBacklog,
+		});
+	}
+
+	test('the switch is off by default and survives a service restart', () => {
+		const dbPath = join(createTestTmpdir('gship-run-runtime-chain-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		expect(runtime.getChainRuns()).toBe(false);
+		runtime.setChainRuns(true);
+		expect(runtime.getChainRuns()).toBe(true);
+		runtime.close();
+
+		const reopened = new RunRuntime({ cwd: '/project', store: new RunStore(dbPath) });
+		expect(reopened.getChainRuns()).toBe(true);
+		reopened.close();
+	});
+
+	test('a done run does not chain while the switch stays off', async () => {
+		const runtime = createChainableRuntime(() => [admissibleIssue('GSHIP-2')]);
+		const run = runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(runtime.listRuns().map((r) => r.issueId)).toEqual(['GSHIP-1']);
+		expect(runtime.getChainPause()).toMatchObject({ reason: 'chain-disabled' });
+		expect(runtime.listRunEvents(run.id).find((event) => event.kind === 'run.chain-paused')?.payload)
+			.toEqual({ reason: 'chain-disabled' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a failed run stops the queue with its own durable reason instead of chaining', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: false, detail: 'verification failed' }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+		});
+		runtime.setChainRuns(true);
+
+		const run = runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(runtime.listRuns().map((r) => r.issueId)).toEqual(['GSHIP-1']);
+		expect(runtime.getChainPause()).toMatchObject({ reason: 'previous-run-not-done' });
+		expect(runtime.listRunEvents(run.id).find((event) => event.kind === 'run.chain-paused')?.payload)
+			.toEqual({ reason: 'previous-run-not-done' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a done run chains to the next admissible issue in id order, and pauses once none remain', async () => {
+		// A strictly increasing fake clock: chained runs happen back to back, and a
+		// real clock could tie two of them to the same millisecond, which would
+		// make the `created_at` ordering this test checks flaky.
+		let clock = Date.parse('2026-08-18T00:00:00.000Z');
+		const now = () => new Date(clock++).toISOString();
+
+		const notApproved = admissibleIssue('GSHIP-2', { approval: undefined });
+		const nextInOrder = admissibleIssue('GSHIP-3');
+		const laterInOrder = admissibleIssue('GSHIP-9');
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			now,
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			// GSHIP-2 never becomes admissible; the fixture reads as gone once a run
+			// for it has already gone `done`, mirroring how the real backlog (read
+			// from the source ref) stops offering a just-shipped issue.
+			listBacklog: () => {
+				const done = new Set(
+					store.listRuns().filter((r) => r.state === 'done').map((r) => r.issueId),
+				);
+				return [notApproved, nextInOrder, laterInOrder].filter((entry) => !done.has(entry.id));
+			},
+		});
+		runtime.setChainRuns(true);
+
+		const first = runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(first.id)?.state === 'done');
+		await waitFor(() => runtime.getChainPause() !== null);
+
+		const runs = runtime.listRuns();
+		expect(runs.map((run) => run.issueId)).toEqual(['GSHIP-9', 'GSHIP-3', 'GSHIP-1']);
+		expect(runs.every((run) => run.state === 'done')).toBe(true);
+		expect(runtime.getChainPause()).toMatchObject({ reason: 'no-admissible-issue' });
 
 		await runtime.stop();
 		runtime.close();

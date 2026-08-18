@@ -16,6 +16,7 @@ export const CHAT_PATH = '/api/chat';
 export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
+export const CHAIN_RUNS_PATH = '/api/chain-runs';
 
 /**
  * One command run while specifying, and the output observed then -- the
@@ -424,6 +425,57 @@ export async function saveModelSettings(settings: ModelSettingsView): Promise<st
 	if (!response.ok) return payload.message ?? `Configuração recusada (${response.status}).`;
 	const notes = describeModelProbes(payload.probes);
 	return notes.length === 0 ? 'Modelos por papel atualizados.' : `Modelos por papel atualizados. ${notes}`;
+}
+
+/**
+ * Why the queue is not advancing on its own right now (GSHIP-638). Mirrors
+ * ChainPauseReason in src/runtime/run-runtime.ts.
+ */
+export type ChainPauseReason =
+	| 'chain-disabled'
+	| 'previous-run-not-done'
+	| 'no-admissible-issue'
+	| 'run-active'
+	| 'chain-start-failed';
+
+export interface ChainPauseView {
+	reason: ChainPauseReason;
+	createdAt: string;
+}
+
+/** The chain switch, off by default, plus why the queue is stopped when it is. */
+export interface ChainRunsView {
+	enabled: boolean;
+	pause: ChainPauseView | null;
+}
+
+interface ChainRunsPayload extends CommandPayload {
+	enabled?: boolean;
+	pause?: Partial<ChainPauseView> | null;
+}
+
+/** A pause missing either field reads as none: there is nothing coherent to show. */
+function chainPauseRecord(value: Partial<ChainPauseView> | null | undefined): ChainPauseView | null {
+	if (value === null || value === undefined) return null;
+	const { reason, createdAt } = value;
+	if (typeof reason !== 'string' || typeof createdAt !== 'string') return null;
+	return { reason: reason as ChainPauseReason, createdAt };
+}
+
+export async function fetchChainRuns(): Promise<ChainRunsView> {
+	const payload = await readJson<ChainRunsPayload>(await fetch(CHAIN_RUNS_PATH), 'Encadeamento');
+	return { enabled: payload.enabled === true, pause: chainPauseRecord(payload.pause) };
+}
+
+export async function saveChainRuns(enabled: boolean): Promise<string> {
+	const response = await fetch(CHAIN_RUNS_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ enabled }),
+	});
+	const payload = (await response.json()) as ChainRunsPayload;
+	if (!response.ok) return payload.message ?? `Encadeamento recusado (${response.status}).`;
+	return enabled ? 'Encadeamento automático ativado.' : 'Encadeamento automático desativado.';
 }
 
 export async function startCodexLogin(): Promise<string> {
