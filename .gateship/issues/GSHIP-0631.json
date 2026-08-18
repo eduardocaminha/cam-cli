@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T10:26:13.822Z",
-  "updatedAt": "2026-08-18T10:26:13.822Z",
+  "updatedAt": "2026-08-18T10:48:22.527Z",
   "description": "Dois ajustes cosmeticos no cabecalho da sidebar, ambos em webui/src. Primeiro, o badge de atencao corta. Hoje ele divide uma linha com o titulo e a versao num justify-between, dentro de uma sidebar de largura fixa lg:w-60, e um rotulo como Precisa de voce nao cabe. Mover o badge para uma linha propria abaixo do bloco de titulo e versao, ocupando a largura disponivel, de modo que rotulo nenhum seja truncado. Segundo, usar a marca do produto no lugar do texto simples. A marca existe e e autoral: o arquivo components/dss/dashboard/gateship-logo.tsx do projeto cam-dss define GateshipMark, o portao com a escada, e GateshipLockup, portao mais wordmark, ambos como paths SVG em currentColor, sem asset externo e sem dependencia. Vendorizar o componente para webui/src como arquivo proprio, mantendo currentColor para que a marca inverta junto com o tema, e removendo as classes de animacao logo e logo-gate, que dependem de CSS que nao vem junto; a marca entra estatica. Usar o lockup no cabecalho no lugar do h1 de texto, preservando o nome acessivel do produto, e manter a versao logo abaixo dele. O h1 nao pode simplesmente sumir: se o lockup substituir o texto visivel, garantir que a pagina continue tendo um titulo acessivel equivalente. Ajustar o tamanho do lockup para caber na largura util da sidebar sem estourar nem esticar, respeitando a proporcao original do viewBox. Nao mudar cor, tipografia, espacamento geral nem qualquer outra superficie: o escopo e o cabecalho da sidebar. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir que o cabecalho expoe o nome acessivel do produto, que o badge de atencao continua sendo renderizado com seu rotulo integral, e que a versao continua visivel quando informada. Fora de escopo: animacao da marca, favicon, tela de boot, identidade em outras superficies, mudanca de tema, tipografia, paleta, o mark quadrado em contextos menores e qualquer alteracao de navegacao ou de rotas.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/ui-client.test.tsx && bun run typecheck && bunx --bun knip"
     ]
+  },
+  "approval": {
+    "fingerprint": "38f728300704a939b63d409afabfe35a21ad13dc5f0a350ce71a27faebc0d9e4",
+    "approvedAt": "2026-08-18T10:48:22.527Z"
   }
 }
