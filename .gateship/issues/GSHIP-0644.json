@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-644",
+  "title": "Abandonar issue pela API e pela tela",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-18T22:32:08.947Z",
+  "updatedAt": "2026-08-18T22:32:08.947Z",
+  "description": "Tornar o abandono de issue alcancavel fora do comando tipado do orquestrador. A operacao existe no intake e esta guardada contra run em voo desde o GSHIP-614, mas nao ha rota HTTP nem controle na tela, entao a unica forma de abandonar um draft que o operador nao quer mais e pedir ao orquestrador. Expor uma rota same-origin de abandono de issue, exigindo a justificativa que o intake ja exige, e um controle na superficie onde os drafts sao revisados, com confirmacao explicita como a aprovacao ja tem. A rota deve recusar com o mesmo 409 de run ativa que as demais escritas ja usam, antes de qualquer trabalho de git. Abandonar nao apaga arquivo e nao toca em run: ele fecha a issue com a justificativa registrada. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir abandono bem sucedido, recusa por run ativa, recusa por justificativa vazia, e o controle so aparecendo quando elegivel. Fora de escopo: abandono em lote, desfazer abandono, apagar arquivo de issue, e qualquer alteracao no ciclo de vida da run.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tornar o abandono de issue alcancavel fora do comando tipado do orquestrador. A operacao existe no intake e esta guardada contra run em voo desde o GSHIP-614, mas nao ha rota HTTP nem controle na tela, entao a unica forma de abandonar um draft que o operador nao quer mais e pedir ao orquestrador. Expor uma rota same-origin de abandono de issue, exigindo a justificativa que o intake ja exige, e um controle na superficie onde os drafts sao revisados, com confirmacao explicita como a aprovacao ja tem. A rota deve recusar com o mesmo 409 de run ativa que as demais escritas ja usam, antes de qualquer trabalho de git. Abandonar nao apaga arquivo e nao toca em run: ele fecha a issue com a justificativa registrada. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir abandono bem sucedido, recusa por run ativa, recusa por justificativa vazia, e o controle so aparecendo quando elegivel. Fora de escopo: abandono em lote, desfazer abandono, apagar arquivo de issue, e qualquer alteracao no ciclo de vida da run.",
+    "verify": [
+      "bun test test/web/issue-intake-api.test.ts test/web/ui-client.test.tsx && bun run typecheck"
+    ],
+    "evidence": [
+      {
+        "command": "grep -c 'api/issues/:issueId/abandon' src/commands/web.ts",
+        "output": "0"
+      }
+    ]
+  }
+}
