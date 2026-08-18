@@ -745,6 +745,37 @@ describe('runs surface', () => {
 			expect(card).not.toContain(issueId);
 		}
 	});
+
+	// GSHIP-639: the per-run aggregate already derived on the server (GSHIP-623)
+	// is now sliced into the history list itself, so comparing configurations no
+	// longer requires opening one run at a time -- labeled the same way as the
+	// current run's own card, and just as absent, never a fabricated zero, when
+	// that run's CLI never reported a cost.
+	test('each history row shows its own run\'s expected cost, labeled the same way, absent when none was reported', () => {
+		const html = runsPage({
+			runs: [
+				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
+				runIn('done', {
+					id: 'run-2',
+					issueId: 'CAM-802',
+					cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+				}),
+				runIn('failed', { id: 'run-1', issueId: 'CAM-801' }),
+			],
+		});
+		const card = panel(html, 'Runs anteriores');
+
+		// The row for the run that reported a cost carries it, labeled the same
+		// way its own run card would label it -- never a bare number.
+		const withCostRow = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
+		expect(withCostRow).toContain('Custo esperado');
+		expect(withCostRow).toContain('US$');
+
+		// The sibling row whose CLI never reported a cost shows no number at all,
+		// the same absence-over-zero rule the current run's own card follows.
+		const withoutCostRow = card.slice(card.indexOf('CAM-801'));
+		expect(withoutCostRow).not.toContain('Custo esperado');
+	});
 });
 
 describe('work surface', () => {

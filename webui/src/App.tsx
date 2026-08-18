@@ -542,7 +542,11 @@ const PREVIOUS_RUNS_SHOWN = 4;
 /**
  * The runs before the one the page above commands, read-only: there is no
  * selection and no command here, only what an operator returning to the screen
- * needs to know about what already ran.
+ * needs to know about what already ran. Each row also carries the same
+ * expected-cost total the current run's own card shows (GSHIP-639), so
+ * comparing configurations no longer requires opening one run at a time --
+ * labeled the same way and just as absent, never a fabricated zero, when the
+ * CLI never reported one for that run.
  */
 function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
 	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
@@ -552,14 +556,21 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 			description={`${previous.length} run(s) antes do último, do mais recente ao mais antigo.`}
 			title="Runs anteriores"
 		>
-			<ul className="flex flex-col gap-2">
+			<ul className="flex flex-col gap-3">
 				{previous.map((run) => (
-					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
-						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
-						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
-						<time className="shrink-0 text-muted-foreground">
-							{run.updatedAt.slice(0, 16).replace('T', ' ')}
-						</time>
+					<li className="flex flex-col gap-1 text-sm" key={run.id}>
+						<div className="flex items-baseline justify-between gap-3">
+							<span className="min-w-0 break-all font-medium">{run.issueId}</span>
+							<Badge variant={toneOf(run.state)}>{run.state}</Badge>
+							<time className="shrink-0 text-muted-foreground">
+								{run.updatedAt.slice(0, 16).replace('T', ' ')}
+							</time>
+						</div>
+						{run.cost.totalCostUsd === null ? null : (
+							<p className="text-muted-foreground text-xs">
+								Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+							</p>
+						)}
 					</li>
 				))}
 			</ul>
