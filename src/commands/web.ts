@@ -1124,6 +1124,71 @@ async function executeOrchestratorCommand(
 	}
 }
 
+/**
+ * Limits enforced when pending proposals ride along in the orchestrator
+ * context: a large inbox must not dominate the prompt, and how many
+ * proposals were left out of the window is always reported, never silently
+ * dropped.
+ */
+const ORCHESTRATOR_PENDING_PROPOSALS_LIMITS = {
+	maxItems: 5,
+	evidence: 200,
+} as const;
+
+interface OrchestratorPendingProposalView {
+	id: string;
+	title: string;
+	evidence: string;
+	sourceIssueId: string;
+	sourceRunId: string;
+	createdAt: string;
+}
+
+interface OrchestratorPendingProposalsView {
+	pending: OrchestratorPendingProposalView[];
+	omittedCount: number;
+}
+
+/**
+ * The most recent pending proposals, read through the same
+ * `listPendingProposals` the operator's inbox API already uses (GSHIP-635).
+ * Undefined when nothing is pending, so an idle inbox leaves the snapshot
+ * exactly as it read before this existed.
+ */
+function readPendingProposalsContext(runtime: RunRuntime): OrchestratorPendingProposalsView | undefined {
+	const all = runtime.listPendingProposals();
+	if (all.length === 0) return undefined;
+	const { maxItems, evidence: evidenceLimit } = ORCHESTRATOR_PENDING_PROPOSALS_LIMITS;
+	const kept = all.slice(-maxItems);
+	const pending = kept.map((proposal) => ({
+		id: proposal.id,
+		title: proposal.title,
+		evidence: proposal.evidence.length > evidenceLimit
+			? `${proposal.evidence.slice(0, evidenceLimit)}…`
+			: proposal.evidence,
+		sourceIssueId: proposal.sourceIssueId,
+		sourceRunId: proposal.sourceRunId,
+		createdAt: proposal.createdAt,
+	}));
+	return { pending, omittedCount: all.length - kept.length };
+}
+
+/**
+ * The read-only snapshot handed to every orchestrator turn. Exported for
+ * direct unit coverage: the production context lives inside a closure that
+ * also wires a live provider CLI, which a unit test has no reason to spin up.
+ */
+export function buildOrchestratorContext(cwd: string, runtime: RunRuntime) {
+	const pendingProposals = readPendingProposalsContext(runtime);
+	return {
+		provider: runtime.getSelectedProvider(),
+		backlog: readIdleSnapshotState(cwd).backlog,
+		runs: runtime.listRuns(10),
+		workspaceNotices: runtime.listWorkspaceNotices(),
+		...(pendingProposals === undefined ? {} : { pendingProposals }),
+	};
+}
+
 function createDefaultOrchestrator(
 	cwd: string,
 	runtime: RunRuntime,
@@ -1138,12 +1203,7 @@ function createDefaultOrchestrator(
 			claude: new ClaudeAgentSession({ resolveModel: model('claude') }),
 			codex: new CodexAgentSession({ resolveModel: model('codex') }),
 		},
-		context: () => ({
-			provider: runtime.getSelectedProvider(),
-			backlog: readIdleSnapshotState(cwd).backlog,
-			runs: runtime.listRuns(10),
-			workspaceNotices: runtime.listWorkspaceNotices(),
-		}),
+		context: () => buildOrchestratorContext(cwd, runtime),
 		execute,
 	});
 }
