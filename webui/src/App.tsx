@@ -51,11 +51,14 @@ import { useLiveEdge } from './live-edge.ts';
 import {
 	actionsFor,
 	activeRunIssueId,
+	aggregateRunCosts,
 	attentionOf,
 	attentionToneOf,
 	type PlannableIssue,
 	phaseOf,
 	progressOf,
+	type RunCostRole,
+	type RunCostRoleUsage,
 	type RunEventView,
 	type RunView,
 	toneOf,
@@ -209,6 +212,20 @@ function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string 
 	if (entry.cacheReadInputTokens !== undefined) parts.push(`${entry.cacheReadInputTokens} cache lida`);
 	if (entry.cacheCreationInputTokens !== undefined) parts.push(`${entry.cacheCreationInputTokens} cache criada`);
 	return parts.length === 0 ? null : parts.join(' · ');
+}
+
+/**
+ * The role heading's own line: effort beside the role name, thinking tokens
+ * after it -- both properties of the invocation, not of any one model below
+ * it (GSHIP-628) -- omitted individually when that role's invocations never
+ * reported them, and the whole role label falls back to its bare name when
+ * neither did.
+ */
+function formatRoleUsage(role: RunCostRole, usage: RunCostRoleUsage | undefined): string {
+	const label = COST_ROLE_LABEL[role];
+	const suffix = usage?.effort === undefined ? '' : ` (${usage.effort})`;
+	const thinking = usage?.thinkingTokens === undefined ? '' : ` · ${usage.thinkingTokens} thinking`;
+	return `${label}${suffix}${thinking}`;
 }
 
 const BUTTON_CLASS =
@@ -464,30 +481,46 @@ function RunReport({ run }: { run: RunView }): React.ReactElement | null {
  * configured model" would misrepresent it -- the breakdown is shown instead.
  * Always the expected cost an equivalent API call would have billed, never an
  * amount charged: the operator pays a subscription.
+ *
+ * Effort and thinking tokens are properties of the invocation, not of any one
+ * model in it (GSHIP-628), so they sit on the role heading above its model
+ * rows instead of on a model row itself.
  */
 function RunCostPanel({ run }: { run: RunView }): React.ReactElement | null {
 	if (run.cost.breakdown.length === 0) return null;
+	const roles: RunCostRole[] = [];
+	for (const entry of run.cost.breakdown) {
+		if (!roles.includes(entry.role)) roles.push(entry.role);
+	}
 	return (
 		<ContextPanel
 			description="Custo esperado equivalente ao uso via API, por papel e por modelo. Nunca é o valor cobrado da assinatura."
 			title="Custo por papel e modelo"
 		>
-			<ul className="flex flex-col gap-3">
-				{run.cost.breakdown.map((entry) => {
-					const tokens = formatTokenCounts(entry);
+			<ul className="flex flex-col gap-4">
+				{roles.map((role) => {
+					const usage = run.cost.roles.find((entry) => entry.role === role);
 					return (
-						<li className="flex flex-col gap-1 text-sm" key={`${entry.role}-${entry.model}`}>
-							<div className="flex items-baseline justify-between gap-3">
-								<span className="min-w-0 break-all font-medium">
-									{COST_ROLE_LABEL[entry.role]} · {entry.model}
-								</span>
-								<span className="shrink-0 text-muted-foreground">
-									{formatCostUsd(entry.costUsd)}
-								</span>
-							</div>
-							{tokens === null ? null : (
-								<span className="text-muted-foreground text-xs">{tokens} tokens</span>
-							)}
+						<li className="flex flex-col gap-2" key={role}>
+							<p className="text-sm font-medium">{formatRoleUsage(role, usage)}</p>
+							<ul className="flex flex-col gap-3 pl-3">
+								{run.cost.breakdown.filter((entry) => entry.role === role).map((entry) => {
+									const tokens = formatTokenCounts(entry);
+									return (
+										<li className="flex flex-col gap-1 text-sm" key={`${entry.role}-${entry.model}`}>
+											<div className="flex items-baseline justify-between gap-3">
+												<span className="min-w-0 break-all">{entry.model}</span>
+												<span className="shrink-0 text-muted-foreground">
+													{formatCostUsd(entry.costUsd)}
+												</span>
+											</div>
+											{tokens === null ? null : (
+												<span className="text-muted-foreground text-xs">{tokens} tokens</span>
+											)}
+										</li>
+									);
+								})}
+							</ul>
 						</li>
 					);
 				})}
@@ -524,6 +557,26 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 				))}
 			</ul>
 		</ContextPanel>
+	);
+}
+
+/**
+ * The expected cost across exactly the runs this screen shows -- the current
+ * run's card plus the history panel below it, no more and no less (GSHIP-628).
+ * Never labeled as a project total or a billed amount, and the run count says
+ * plainly which runs it covers so it is never mistaken for a wider "session".
+ * Hidden entirely when none of those runs ever reported a cost, the same
+ * absence-over-zero rule a single run's own card already follows.
+ */
+function RunsCostSummary({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+	const aggregate = aggregateRunCosts(runs.slice(0, 1 + PREVIOUS_RUNS_SHOWN));
+	if (aggregate.totalCostUsd === null) return null;
+	return (
+		<p className="text-muted-foreground text-sm">
+			Custo esperado agregado de {aggregate.runCount} run(s) (os já listados acima):{' '}
+			{formatCostUsd(aggregate.totalCostUsd)}. Equivalente ao uso via API, nunca o total do projeto
+			nem o valor cobrado da assinatura.
+		</p>
 	);
 }
 
@@ -1390,6 +1443,7 @@ function RunsSurface(props: AppProps): React.ReactElement {
 			<RunActivity events={props.events} run={run} />
 			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
 			<PreviousRunsPanel runs={props.runs} />
+			<RunsCostSummary runs={props.runs} />
 		</SurfaceColumn>
 	);
 }

@@ -707,13 +707,100 @@ describe('run cost summary', () => {
 					outputTokens: 40,
 				},
 			],
+			// The executor's two invocations agreed on 'high'; the reviewer never
+			// reported an effort or a thinking count at all, so it has no row here.
+			roles: [{ role: 'executor', effort: 'high' }],
 		});
+		store.close();
+	});
+
+	// GSHIP-628: effort and thinkingTokens describe the whole invocation, not
+	// one model in it -- the effort flag it was called with, the thinking count
+	// `usage` reports at the call level -- so both are reported per role
+	// instead of matched against any model id. Real usage is always
+	// multi-model: the model-settings alias sits at the top of the event, and
+	// `modelUsage` carries the CLI's own resolved ids for the configured model
+	// plus an auxiliary call the operator's settings never named. Thinking
+	// always sums across a role's invocations, including the automatic fix
+	// round; effort stays absent for the whole role the moment two of its
+	// invocations disagree, instead of guessing by picking one.
+	test('reports effort and thinking per role, never on a model row, dropping effort when a role\'s invocations disagree', () => {
+		const store = storeWithRun('run-cost-thinking', 'CAM-64');
+		// First pass: the executor's alias at the top, modelUsage resolved into
+		// the configured model plus an auxiliary call.
+		appendUsage(store, 'run-cost-thinking', 'provider.usage', {
+			model: 'opus',
+			effort: 'xhigh',
+			totalCostUsd: 0.22,
+			usage: { inputTokens: 500, outputTokens: 100, thinkingTokens: 35704 },
+			modelUsage: [
+				{ model: 'claude-opus-4-6', inputTokens: 500, outputTokens: 100, costUsd: 0.2 },
+				{ model: 'claude-haiku-4-5', costUsd: 0.02 },
+			],
+		});
+		// The automatic fix round: same role, same effort. Its thinking tokens
+		// add to the first invocation's instead of replacing or duplicating it.
+		appendUsage(store, 'run-cost-thinking', 'provider.usage', {
+			model: 'opus',
+			effort: 'xhigh',
+			totalCostUsd: 0.07,
+			usage: { thinkingTokens: 1200 },
+			modelUsage: [
+				{ model: 'claude-opus-4-6', costUsd: 0.05 },
+				{ model: 'claude-haiku-4-5', costUsd: 0.02 },
+			],
+		});
+		// The reviewer, called twice at two different efforts: the role's effort
+		// must stay absent, but its thinking still sums across both invocations.
+		appendUsage(store, 'run-cost-thinking', 'review.usage', {
+			model: 'sonnet',
+			effort: 'high',
+			totalCostUsd: 0.02,
+			usage: { thinkingTokens: 900 },
+			modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }],
+		});
+		appendUsage(store, 'run-cost-thinking', 'review.usage', {
+			model: 'sonnet',
+			effort: 'medium',
+			totalCostUsd: 0.01,
+			usage: { thinkingTokens: 300 },
+			modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+
+		const summary = store.getRunCostSummary('run-cost-thinking');
+		expect(summary.totalCostUsd).toBeCloseTo(0.32, 6);
+		expect(summary.breakdown).toEqual([
+			{
+				role: 'executor',
+				model: 'claude-opus-4-6',
+				costUsd: expect.closeTo(0.25, 6),
+				inputTokens: 500,
+				outputTokens: 100,
+			},
+			{
+				role: 'executor',
+				model: 'claude-haiku-4-5',
+				costUsd: expect.closeTo(0.04, 6),
+			},
+			{
+				role: 'reviewer',
+				model: 'claude-sonnet-4-6',
+				costUsd: expect.closeTo(0.03, 6),
+			},
+		]);
+		expect(summary.roles).toEqual([
+			{ role: 'executor', thinkingTokens: 36904, effort: 'xhigh' },
+			// 'high' and 'medium' disagree, so the reviewer's effort is absent --
+			// its thinking still summed both invocations.
+			{ role: 'reviewer', thinkingTokens: 1200 },
+		]);
 		store.close();
 	});
 
 	test('reads as null, never zero, when the run has no usage event at all', () => {
 		const store = storeWithRun('run-cost-none', 'CAM-61');
-		expect(store.getRunCostSummary('run-cost-none')).toEqual({ totalCostUsd: null, breakdown: [] });
+		expect(store.getRunCostSummary('run-cost-none'))
+			.toEqual({ totalCostUsd: null, breakdown: [], roles: [] });
 		store.close();
 	});
 
@@ -755,6 +842,7 @@ describe('run cost summary', () => {
 		expect(store.getRunCostSummary('run-cost-noisy')).toEqual({
 			totalCostUsd: 0.05,
 			breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.05 }],
+			roles: [],
 		});
 		store.close();
 	});

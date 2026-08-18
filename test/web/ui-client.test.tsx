@@ -47,6 +47,7 @@ import {
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
 import {
 	actionsFor,
+	aggregateRunCosts,
 	attentionOf,
 	invalidatesSnapshot,
 	progressOf,
@@ -71,7 +72,7 @@ const NOTICES: AppProps['workspaceNotices'] = [{
 	detail: 'workspace is not owned by a persisted run',
 }];
 
-const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, breakdown: [] };
+const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, breakdown: [], roles: [] };
 
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	return {
@@ -400,6 +401,7 @@ describe('runs surface', () => {
 				cost: {
 					totalCostUsd: 0.1534,
 					breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.1534 }],
+					roles: [],
 				},
 			})],
 		});
@@ -427,6 +429,7 @@ describe('runs surface', () => {
 						},
 						{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: 0.03 },
 					],
+					roles: [],
 				},
 			})],
 		});
@@ -445,6 +448,71 @@ describe('runs surface', () => {
 
 		// No breakdown at all: no empty disclosure, same pattern as the report.
 		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Custo por papel e modelo');
+	});
+
+	// GSHIP-628: effort and thinking are properties of the invocation, not of
+	// any one model in it, so they sit on the role heading above its model
+	// rows -- never on a model row itself -- and only when that role's
+	// invocations actually reported them, never a fabricated value.
+	test('the breakdown shows effort and thinking on the role heading, never on a model row', () => {
+		const html = runsPage({
+			runs: [runIn('done', {
+				cost: {
+					totalCostUsd: 0.2,
+					breakdown: [
+						{
+							role: 'executor',
+							model: 'claude-opus-4-6',
+							costUsd: 0.18,
+							inputTokens: 1000,
+							outputTokens: 200,
+						},
+						// The reviewer's invocations never reported an effort or a
+						// thinking count: absence stays absent, never a fabricated zero.
+						{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: 0.02, inputTokens: 300 },
+					],
+					roles: [{ role: 'executor', effort: 'xhigh', thinkingTokens: 35704 }],
+				},
+			})],
+		});
+
+		const breakdown = panel(html, 'Custo por papel e modelo');
+		expect(breakdown).toContain('Executor (xhigh)');
+		expect(breakdown).toContain('35704 thinking');
+		// The effort and thinking sit on the role heading, not beside the model.
+		expect(breakdown).not.toContain('claude-opus-4-6 (xhigh)');
+
+		const reviewerLine = breakdown.slice(breakdown.indexOf('Revisor'));
+		expect(reviewerLine).not.toContain('(');
+		expect(reviewerLine).not.toContain('thinking');
+	});
+
+	// GSHIP-628: the same expected-cost total the individual cards show, but
+	// summed across exactly the runs this screen already lists -- current run
+	// plus history -- with the count of runs it covers, so it can never be read
+	// as the whole project's total or as an amount actually charged.
+	test('shows an aggregated total across exactly the listed runs, with the run count', () => {
+		const runs = [
+			runIn('done', { id: 'run-3', cost: { totalCostUsd: 0.1, breakdown: [], roles: [] } }),
+			runIn('done', { id: 'run-2', cost: { totalCostUsd: 0.05, breakdown: [], roles: [] } }),
+			runIn('done', { id: 'run-1', cost: EMPTY_RUN_COST }),
+		];
+		const aggregate = aggregateRunCosts(runs);
+		expect(aggregate.totalCostUsd).toBeCloseTo(0.15, 6);
+		expect(aggregate.runCount).toBe(3);
+
+		const html = runsPage({ runs });
+		expect(html).toContain('Custo esperado agregado');
+		expect(html).toContain('3 run(s)');
+		expect(html).toContain('US$');
+	});
+
+	// GSHIP-628: no run in the list ever reported a cost, so there is nothing to
+	// aggregate -- the total is absent, not a fabricated zero across zero runs.
+	test('shows no aggregated total when none of the listed runs have a cost', () => {
+		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
+		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2 });
+		expect(runsPage({ runs })).not.toContain('Custo esperado agregado');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {

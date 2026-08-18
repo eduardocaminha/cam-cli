@@ -40,6 +40,20 @@ export interface RunCostBreakdownEntry {
 }
 
 /**
+ * A role's effort and thinking-token totals, summed across every invocation of
+ * that role (GSHIP-628). Both are properties of the invocation -- the effort
+ * flag it was called with, the thinking count reported at the call level --
+ * never of one model inside it, which is why they are reported here instead
+ * of on a `RunCostBreakdownEntry` row. Mirrors RunCostRoleUsage in
+ * src/runtime/run-store.ts.
+ */
+export interface RunCostRoleUsage {
+	role: RunCostRole;
+	thinkingTokens?: number;
+	effort?: string;
+}
+
+/**
  * A run's whole reported cost, already summed on the server from the complete
  * event log (GSHIP-623): no display limit here can ever shrink the number the
  * card shows. `totalCostUsd` is `null`, never `0`, when the CLI reported no
@@ -48,6 +62,7 @@ export interface RunCostBreakdownEntry {
 export interface RunCostView {
 	totalCostUsd: number | null;
 	breakdown: readonly RunCostBreakdownEntry[];
+	roles: readonly RunCostRoleUsage[];
 }
 
 export interface RunView {
@@ -58,6 +73,27 @@ export interface RunView {
 	error: string | null;
 	updatedAt: string;
 	cost: RunCostView;
+}
+
+/** A cost total plus exactly how many runs it spans (GSHIP-628). */
+export interface RunCostAggregate {
+	totalCostUsd: number | null;
+	runCount: number;
+}
+
+/**
+ * The expected cost across exactly the runs the caller passes -- never a wider
+ * "session" or project total, and never more or fewer than what was passed in
+ * (GSHIP-628). A run whose CLI never reported a cost contributes nothing to
+ * the sum, never a fabricated zero; if none of the runs ever reported one,
+ * there is nothing to aggregate.
+ */
+export function aggregateRunCosts(runs: readonly RunView[]): RunCostAggregate {
+	const known = runs.filter((run) => run.cost.totalCostUsd !== null);
+	const totalCostUsd = known.length === 0
+		? null
+		: known.reduce((sum, run) => sum + (run.cost.totalCostUsd ?? 0), 0);
+	return { totalCostUsd, runCount: runs.length };
 }
 
 export interface RunEventView {
