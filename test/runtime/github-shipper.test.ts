@@ -111,90 +111,109 @@ function result(exitCode: number, stdout = '', stderr = ''): CommandResult {
 	return { exitCode, stdout, stderr };
 }
 
+function runGitCommand(repo: FakeRepo, args: string[]): CommandResult | undefined {
+	if (args[0] === 'rev-parse') {
+		return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
+	}
+	if (args[0] === 'add') return result(0);
+	if (args[0] === 'diff') return result(repo.staged ? 1 : 0);
+	if (args[0] === 'commit') {
+		repo.commits += 1;
+		repo.staged = false;
+		return result(0);
+	}
+	if (args[0] === 'push') {
+		if (repo.pushFails) return result(1, '', 'fatal: unable to access origin');
+		repo.pushes += 1;
+		return result(0);
+	}
+	if (args[0] === 'fetch') {
+		repo.fetches += 1;
+		return result(0);
+	}
+	if (args[0] === 'reset') {
+		repo.resets += 1;
+		return result(0);
+	}
+	return undefined;
+}
+
+function ghList(repo: FakeRepo): CommandResult {
+	const existing = repo.prNumber === null ? [] : [{
+		number: repo.prNumber,
+		state: repo.prState,
+		headRefOid: repo.prHeadRefOid,
+	}];
+	return result(0, JSON.stringify(existing));
+}
+
+function ghCreate(repo: FakeRepo): CommandResult {
+	repo.prNumber = 385;
+	repo.prCreates += 1;
+	return result(0, PR_URL);
+}
+
+function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
+	if (args.includes('--disable-auto')) {
+		repo.disarms += 1;
+		return repo.disarmFails
+			? result(1, '', 'failed to disable auto-merge: not enabled')
+			: result(0);
+	}
+	repo.armAttempts += 1;
+	if (repo.armDecisionFailure !== null) {
+		return result(1, '', repo.armDecisionFailure);
+	}
+	if (repo.armUnavailableRemaining > 0) {
+		repo.armUnavailableRemaining -= 1;
+		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+	}
+	return result(0);
+}
+
+function ghUpdateBranch(repo: FakeRepo): CommandResult {
+	repo.branchUpdates += 1;
+	repo.prHeadRefOid = UPDATED_SHAS[repo.branchUpdates - 1] ?? FOREIGN_SHA;
+	return result(0, `✓ Updated branch ${repo.branch}\n`);
+}
+
+function ghView(repo: FakeRepo): CommandResult {
+	repo.views += 1;
+	if (repo.viewUnavailableAlways || repo.views >= repo.viewUnavailableFromView) {
+		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+	}
+	// A force-push from outside the service is durable too: the pull
+	// request carries the foreign head from this poll onwards.
+	if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
+	const merged = repo.views >= repo.mergedOnView;
+	// A merge is durable: `gh pr list` reports MERGED from now on.
+	if (merged) repo.prState = 'MERGED';
+	const behind = !merged && repo.branchUpdates < repo.behindWhileUpdatesBelow;
+	return result(0, JSON.stringify({
+		state: merged ? 'MERGED' : 'OPEN',
+		mergeStateStatus: merged ? 'CLEAN' : (behind ? 'BEHIND' : 'BLOCKED'),
+		headRefOid: repo.prHeadRefOid,
+	}));
+}
+
+function runGhCommand(repo: FakeRepo, args: string[]): CommandResult | undefined {
+	if (args[1] === 'list') return ghList(repo);
+	if (args[1] === 'create') return ghCreate(repo);
+	if (args[1] === 'merge') return ghMerge(repo, args);
+	if (args[1] === 'update-branch') return ghUpdateBranch(repo);
+	if (args[1] === 'view') return ghView(repo);
+	return undefined;
+}
+
 /** In-memory git + gh double: the only I/O the shipper is allowed to do. */
 function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner {
 	return async ({ command, args }) => {
 		calls.push({ command, args });
-		if (command === 'git') {
-			if (args[0] === 'rev-parse') {
-				return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
-			}
-			if (args[0] === 'add') return result(0);
-			if (args[0] === 'diff') return result(repo.staged ? 1 : 0);
-			if (args[0] === 'commit') {
-				repo.commits += 1;
-				repo.staged = false;
-				return result(0);
-			}
-			if (args[0] === 'push') {
-				if (repo.pushFails) return result(1, '', 'fatal: unable to access origin');
-				repo.pushes += 1;
-				return result(0);
-			}
-			if (args[0] === 'fetch') {
-				repo.fetches += 1;
-				return result(0);
-			}
-			if (args[0] === 'reset') {
-				repo.resets += 1;
-				return result(0);
-			}
-		}
-		if (command === 'gh') {
-			if (args[1] === 'list') {
-				const existing = repo.prNumber === null ? [] : [{
-					number: repo.prNumber,
-					state: repo.prState,
-					headRefOid: repo.prHeadRefOid,
-				}];
-				return result(0, JSON.stringify(existing));
-			}
-			if (args[1] === 'create') {
-				repo.prNumber = 385;
-				repo.prCreates += 1;
-				return result(0, PR_URL);
-			}
-			if (args[1] === 'merge') {
-				if (args.includes('--disable-auto')) {
-					repo.disarms += 1;
-					return repo.disarmFails
-						? result(1, '', 'failed to disable auto-merge: not enabled')
-						: result(0);
-				}
-				repo.armAttempts += 1;
-				if (repo.armDecisionFailure !== null) {
-					return result(1, '', repo.armDecisionFailure);
-				}
-				if (repo.armUnavailableRemaining > 0) {
-					repo.armUnavailableRemaining -= 1;
-					return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
-				}
-				return result(0);
-			}
-			if (args[1] === 'update-branch') {
-				repo.branchUpdates += 1;
-				repo.prHeadRefOid = UPDATED_SHAS[repo.branchUpdates - 1] ?? FOREIGN_SHA;
-				return result(0, `✓ Updated branch ${repo.branch}\n`);
-			}
-			if (args[1] === 'view') {
-				repo.views += 1;
-				if (repo.viewUnavailableAlways || repo.views >= repo.viewUnavailableFromView) {
-					return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
-				}
-				// A force-push from outside the service is durable too: the pull
-				// request carries the foreign head from this poll onwards.
-				if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
-				const merged = repo.views >= repo.mergedOnView;
-				// A merge is durable: `gh pr list` reports MERGED from now on.
-				if (merged) repo.prState = 'MERGED';
-				const behind = !merged && repo.branchUpdates < repo.behindWhileUpdatesBelow;
-				return result(0, JSON.stringify({
-					state: merged ? 'MERGED' : 'OPEN',
-					mergeStateStatus: merged ? 'CLEAN' : (behind ? 'BEHIND' : 'BLOCKED'),
-					headRefOid: repo.prHeadRefOid,
-				}));
-			}
-		}
+		const response =
+			command === 'git' ? runGitCommand(repo, args) :
+			command === 'gh' ? runGhCommand(repo, args) :
+			undefined;
+		if (response !== undefined) return response;
 		throw new Error(`unscripted command: ${command} ${args.join(' ')}`);
 	};
 }
