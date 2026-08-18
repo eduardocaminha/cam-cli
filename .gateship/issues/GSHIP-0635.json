@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T12:13:51.586Z",
-  "updatedAt": "2026-08-18T12:13:51.586Z",
+  "updatedAt": "2026-08-18T13:32:34.224Z",
   "description": "Levar as propostas pendentes ao contexto do orquestrador, que hoje nao as ve. Evidencia: o contexto montado em src/commands/web.ts entrega provider, backlog, as dez runs mais recentes e avisos de workspace, e o backlog vem de readIdleSnapshotState, que projeta apenas issues; propostas ficam de fora. Na conversa mais recente o orquestrador listou o estado do inbox como algo que nao conseguia confirmar, o que estava correto e e exatamente o sintoma: com quinze propostas pendentes, ele so poderia acertar inventando. Acrescentar ao contexto as propostas pendentes, lidas pelo mesmo listPendingProposals que a API ja usa, limitadas em quantidade e com a evidencia de cada uma truncada com limite explicito, para que um inbox grande nao domine o prompt; ao truncar, informar quantas ficaram de fora, em vez de omitir em silencio. Manter a leitura como ciencia sem poder de acao: a uniao de comandos tipados nao ganha nenhum comando de proposta, entao o orquestrador passa a ver, comentar e recomendar, e descartar ou promover continua sendo ato do operador nas superficies que ja existem. Deixar explicito no prompt que sao propostas aguardando decisao do operador, e nao trabalho a fazer, para que ele nao as trate como fila. Quando nao houver proposta pendente, o contexto fica como e hoje. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir contexto sem propostas identico ao atual, contexto com propostas, truncamento informando quantas ficaram de fora, e a ausencia de qualquer comando tipado novo. Fora de escopo: permitir que o orquestrador descarte ou promova proposta, deduplicar, ranquear, resumir propostas com modelo, mudar o formato de armazenamento, mexer no inbox da tela e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/conversational-orchestrator.test.ts test/web/orchestrator-api.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "5de594b0cce37e678f7d59bb49cb7a0a2eb60639fa3265d455bfd9227a40a81b",
+    "approvedAt": "2026-08-18T13:32:34.224Z"
   }
 }
