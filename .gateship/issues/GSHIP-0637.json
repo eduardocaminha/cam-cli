@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T20:31:29.904Z",
-  "updatedAt": "2026-08-18T20:31:29.904Z",
+  "updatedAt": "2026-08-18T20:40:26.179Z",
   "description": "Levar ao prompt do executor o mesmo historico de decisoes do operador que o GSHIP-630 levou ao prompt da revisao. Evidencia: buildWorkPrompt em src/runtime/claude-cli-executor.ts recebe operatorGuidance, que e apenas a ultima resposta do operador, e reviewFeedback, nunca o historico acumulado; o mesmo mecanismo que o GSHIP-630 criou para o reviewer, lendo os eventos duraveis de decisao daquela run, nao existe do lado do executor. Na run do GSHIP-629 o operador tomou quatro decisoes e o executor via somente a mais recente a cada volta, de modo que decisao anterior ja ratificada podia ser reintroduzida como se fosse nova. Reusar o mesmo caminho que o GSHIP-630 estabeleceu: ler os eventos de decisao da propria run pela classe duravel do GSHIP-627, em ordem cronologica, sem o limite da leitura ao vivo, com limite de quantidade e de tamanho por item, descartando o excesso mais antigo em vez de truncar no meio. Apresentar o bloco rotulado como decisoes que o operador ja tomou nesta run, deixando explicito que sao vinculantes e nao sugestoes, e mantendo a ultima resposta em seu lugar atual, para que ela continue clara como o pedido corrente. Quando a run ainda nao tiver decisao alguma, o prompt fica exatamente como e hoje. Preferir extrair o que for comum entre reviewer e executor em vez de duplicar a montagem do bloco, sem criar abstracao para uso unico. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir prompt sem decisoes identico ao atual, prompt com decisoes em ordem, descarte do excesso mais antigo, e a ultima resposta continuando distinguivel do historico. Fora de escopo: mudar o schema do resultado do executor, passar o transcript da conversa, passar propostas, alterar o contrato de uma unica rodada automatica de fix, e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/run-runtime.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "685e76f014838aa6d3fc0dd4879edfdff1268dc3a32092e64dece06bab79ea69",
+    "approvedAt": "2026-08-18T20:40:26.179Z"
   }
 }
