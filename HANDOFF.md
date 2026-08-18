@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `7dcfe4b9` (GSHIP-629 shipped through PR #468)
+> Product baseline: `main` at `0e5a4e90` (GSHIP-633 shipped through PR #474)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -25,14 +25,16 @@ problem so it can be fixed in the product, rather than as a rule to follow.
 
 ## Current stage
 
-**Stage 5 of 15 — the serial autonomous scheduler is next, and GSHIP-629 just
-handed it the mechanism its revalidation needed. Stage 9 closed with per-role
+**Stage 5 of 15 — the serial autonomous scheduler is next, and GSHIP-629 handed it
+the mechanism its revalidation needed: re-running a specification's recorded
+evidence and comparing. Stage 9 closed with per-role
 model and effort live and validated against the CLI, the operator running Opus 5
 at `high` for the orchestrator and the reviewer and Sonnet 5 at `xhigh` for the
-executor, and the cost of each role now recorded. Fourteen slices shipped in this
-cycle, GSHIP-614 through GSHIP-629, and three of them are measured: a clean run
-cost about seven expected dollars, and a run that needed five rounds cost about
-forty-seven. No draft is open.**
+executor, and the cost of the executor and the reviewer now recorded. Eighteen
+slices shipped in this cycle, GSHIP-614 through GSHIP-633, seven of them measured:
+the cheapest cost about five expected dollars and the most expensive about
+forty-seven, and the difference is rounds rather than model. No draft is open and
+the backlog holds only GSHIP issues.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -220,6 +222,27 @@ same owned-command path as verification, with timeout and process-group
 termination, because an operator-authored command deserves the same containment
 whether it proves a premise or a result.
 
+GSHIP-630 carries the operator's own decisions into the review prompt, read from
+the durable class and bounded, and labelled as already settled so a reviewer that
+still disagrees says it disagrees with a decision rather than reporting a pending
+defect. It reaches both providers at once, because the two reviewers share one
+prompt builder.
+
+GSHIP-631 put the product's own mark in the sidebar and moved the attention badge
+to its own row, where a label like "Precisa de você" no longer truncates.
+
+GSHIP-632 lets the ship recover a pull request that fell behind. The service
+updates the branch itself and records the resulting head as the one it published,
+so GSHIP-615 keeps refusing a head moved from outside while the service's own
+update is not mistaken for one, with a small fixed cap on updates per ship.
+
+GSHIP-633 removed the previous era's spec contract. `acceptanceCriteria`,
+`gotchas` and `domainTerms` are gone from `Spec`, the verification fallback and
+`oracle-directive.ts` with it, and `verify` is now the only source of a
+verification command. The CAM-era backlog was retired in full beforehand, first
+the 80 open issues and then the 10 abandoned ones, so no file carried a shape the
+code was about to stop understanding.
+
 ### Proposed next bounded slice
 
 Stage 5's serial scheduler. GSHIP-629 already answers the part that needed design:
@@ -227,16 +250,18 @@ revalidating a queued issue is re-running its recorded evidence and comparing, s
 the queue pauses honestly when the premise moved rather than trusting a
 fingerprint that only sees the specification's own text.
 
-Three smaller slices are identified and unfiled. Operator decisions never reach
-the reviewer, so a ratified deviation is re-reported on every later round: each
-review is a fresh session and the review prompt carries no record of what the
-operator already settled. The legacy `Spec` fields can now go, since `gotchas` and
-`domainTerms` were already dead in code and retiring the CAM backlog made the
-`acceptanceCriteria` fallback dead in data. And provider errors should be
-classified at their source in each adapter, following the shape GSHIP-625 settled,
-with the Claude CLI's own `--fallback-model` wired as an optional per-role slot.
-Polling vendor status pages was considered and rejected, because a status page
-lagged reality in both directions during the outage this cycle.
+Two smaller slices remain identified and unfiled: classifying provider errors at
+their source in each adapter, following the shape GSHIP-625 settled, and wiring
+the Claude CLI's own `--fallback-model` as an optional per-role slot. Polling
+vendor status pages was considered and rejected, because a status page lagged
+reality in both directions during the outage this cycle.
+
+Two gaps are recorded without a slice. The orchestrator's own spend is invisible:
+its emit is a no-op, deliberately, because a conversation belongs to no run, so a
+long conversation on Opus 5 can cost more than a run and leave no record. And the
+proposal inbox never reaches the orchestrator's context, which reads the backlog
+only, so it cannot see the fifteen pending proposals and would invent them if
+asked.
 
 ### Recent process evidence
 
@@ -382,7 +407,20 @@ lagged reality in both directions during the outage this cycle.
   the same sequence merged a head the service never verified.
 - Retiring the CAM-era backlog removed 80 open issues that no run referenced and
   that carried the legacy `acceptanceCriteria` contract, which cut the directory
-  the snapshot parses from 120 open issues to 40.
+  the snapshot parses from 120 open issues to 40. The 10 abandoned CAM records
+  followed, because stripping the legacy fields from a retired record leaves a
+  file that is neither the original nor useful.
+- A pull request that waits for CI while `main` moves goes `BEHIND`, and this
+  happened four times in one day from three different causes: a checkpoint merge,
+  another issue merging, and filing a draft. Filing, approving and promoting all
+  commit to `main` through the intake, so using the product during a run breaks
+  that run's ship until GSHIP-632 shipped the recovery.
+- Seven runs are now measured, from about five expected dollars to about
+  forty-seven. The two most expensive were the two that needed operator decisions,
+  and the cheapest ran clean on the same models, so rounds dominate cost.
+- Revising GSHIP-633 was itself the staleness case GSHIP-629 exists for: its
+  premise named ten files that a merge had just deleted, the text was untouched
+  and the fingerprint still matched, so only a human noticing kept it honest.
 
 ## Product objective
 
@@ -581,7 +619,7 @@ For a fresh Claude Code or Codex session:
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
 > bounded slice. Stages 1 through 4 are complete, Stage 9 shipped ahead of Stage 5
-> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-629 followed. No
+> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-633 followed. No
 > draft is open and Stage 5 is next.
 > Report the current state, including the pending proposals in the inbox, and wait
 > for the operator's explicit approval before starting anything.
