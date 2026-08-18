@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+	buildOrchestratorContext,
 	type OrchestratorRuntime,
 	startWebServer,
 } from '../../src/commands/web.ts';
@@ -496,5 +497,124 @@ describe('project brief web API', () => {
 				openItems: [],
 			});
 		});
+	});
+});
+
+// GSHIP-635: pending proposals ride along in the orchestrator context as
+// read-only science -- the operator's inbox stays the only place a proposal
+// is dismissed or promoted.
+describe('orchestrator context pending proposals', () => {
+	function storeWithRun(id: string, issueId: string): RunStore {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id,
+			issueId,
+			sessionId: `session-${id}`,
+			workspacePath: `/workspaces/${id}`,
+			createdAt: '2026-08-18T12:00:00.000Z',
+		});
+		return store;
+	}
+
+	test('with no pending proposals the context matches today\'s snapshot', () => {
+		const cwd = createTestTmpdir('gship-orchestrator-context-idle-');
+		const runtime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
+		const context = buildOrchestratorContext(cwd, runtime) as Record<string, unknown>;
+
+		expect(Object.keys(context)).toEqual(['provider', 'backlog', 'runs', 'workspaceNotices']);
+		expect(context.provider).toBe(runtime.getSelectedProvider());
+		expect(context.runs).toEqual(runtime.listRuns(10));
+		expect(context.workspaceNotices).toEqual(runtime.listWorkspaceNotices());
+		expect(context.pendingProposals).toBeUndefined();
+	});
+
+	test('pending proposals ride along, read through the same listPendingProposals the inbox uses', () => {
+		const cwd = createTestTmpdir('gship-orchestrator-context-proposals-');
+		const store = storeWithRun('run-proposals-1', 'CAM-10');
+		const runtime = new RunRuntime({ cwd, store });
+		store.recordProposals({
+			runId: 'run-proposals-1',
+			issueId: 'CAM-10',
+			proposals: [
+				{ title: 'Extrair o parser de eventos', evidence: 'Duplicado em dois adaptadores.' },
+				{ title: 'Cobrir o caminho de erro do shipper', evidence: 'Sem teste para retry.' },
+			],
+			createdAt: '2026-08-18T12:05:00.000Z',
+		});
+		expect(runtime.listPendingProposals().map((proposal) => proposal.title)).toEqual([
+			'Extrair o parser de eventos',
+			'Cobrir o caminho de erro do shipper',
+		]);
+
+		const context = buildOrchestratorContext(cwd, runtime) as Record<string, unknown>;
+		expect(context.pendingProposals).toEqual({
+			pending: [
+				{
+					id: 'run-proposals-1-proposal-1',
+					title: 'Extrair o parser de eventos',
+					evidence: 'Duplicado em dois adaptadores.',
+					sourceIssueId: 'CAM-10',
+					sourceRunId: 'run-proposals-1',
+					createdAt: '2026-08-18T12:05:00.000Z',
+				},
+				{
+					id: 'run-proposals-1-proposal-2',
+					title: 'Cobrir o caminho de erro do shipper',
+					evidence: 'Sem teste para retry.',
+					sourceIssueId: 'CAM-10',
+					sourceRunId: 'run-proposals-1',
+					createdAt: '2026-08-18T12:05:00.000Z',
+				},
+			],
+			omittedCount: 0,
+		});
+	});
+
+	test('truncates the window to the most recent proposals and reports how many were left out', () => {
+		const cwd = createTestTmpdir('gship-orchestrator-context-truncate-');
+		const store = storeWithRun('run-proposals-2', 'CAM-11');
+		const runtime = new RunRuntime({ cwd, store });
+		// recordProposals caps each call at PROPOSAL_LIMITS.maxItems (3), so three
+		// calls on the same run accumulate eight pending proposals in total.
+		store.recordProposals({
+			runId: 'run-proposals-2', issueId: 'CAM-11', createdAt: '2026-08-18T12:10:00.000Z',
+			proposals: [1, 2, 3].map((n) => ({ title: `Ideia ${n}`, evidence: `Evidência ${n}.` })),
+		});
+		store.recordProposals({
+			runId: 'run-proposals-2', issueId: 'CAM-11', createdAt: '2026-08-18T12:11:00.000Z',
+			proposals: [4, 5, 6].map((n) => ({ title: `Ideia ${n}`, evidence: `Evidência ${n}.` })),
+		});
+		store.recordProposals({
+			runId: 'run-proposals-2', issueId: 'CAM-11', createdAt: '2026-08-18T12:12:00.000Z',
+			proposals: [7, 8].map((n) => ({ title: `Ideia ${n}`, evidence: `Evidência ${n}.` })),
+		});
+		expect(runtime.listPendingProposals()).toHaveLength(8);
+
+		const context = buildOrchestratorContext(cwd, runtime) as Record<string, unknown>;
+		const pendingProposals = context.pendingProposals as { pending: { title: string }[]; omittedCount: number };
+		expect(pendingProposals.pending.map((proposal) => proposal.title)).toEqual([
+			'Ideia 4', 'Ideia 5', 'Ideia 6', 'Ideia 7', 'Ideia 8',
+		]);
+		expect(pendingProposals.omittedCount).toBe(3);
+	});
+
+	test('truncates a long evidence string to the explicit context limit instead of the full stored text', () => {
+		const cwd = createTestTmpdir('gship-orchestrator-context-evidence-');
+		const store = storeWithRun('run-proposals-3', 'CAM-12');
+		const runtime = new RunRuntime({ cwd, store });
+		const fullEvidence = 'e'.repeat(500);
+		store.recordProposals({
+			runId: 'run-proposals-3',
+			issueId: 'CAM-12',
+			proposals: [{ title: 'Ideia com evidência longa', evidence: fullEvidence }],
+			createdAt: '2026-08-18T12:15:00.000Z',
+		});
+
+		const context = buildOrchestratorContext(cwd, runtime) as Record<string, unknown>;
+		const pendingProposals = context.pendingProposals as { pending: { evidence: string }[] };
+		const evidence = pendingProposals.pending[0]?.evidence ?? '';
+		expect(evidence).not.toBe(fullEvidence);
+		expect(evidence.length).toBeLessThan(fullEvidence.length);
+		expect(evidence.startsWith('e'.repeat(200))).toBe(true);
 	});
 });
