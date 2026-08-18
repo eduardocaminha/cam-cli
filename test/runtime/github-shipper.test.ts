@@ -25,6 +25,12 @@ const BRANCH = 'gship/cam-579-2a6af4e6';
 const HEAD_SHA = '9f1c0b7a5d3e2f1908a7b6c5d4e3f2a1b0c9d8e7';
 /** What a force-push from outside the service leaves on the branch (GSHIP-615). */
 const FOREIGN_SHA = '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
+/** Heads `gh pr update-branch` leaves behind, one per call (GSHIP-632). */
+const UPDATED_SHAS = [
+	'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1',
+	'b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2',
+	'c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3',
+];
 const PR_URL = 'https://github.com/gateship-dev/gateship/pull/385\n';
 
 interface RecordedCall {
@@ -38,8 +44,10 @@ interface FakeRepo {
 	staged: boolean;
 	commits: number;
 	pushes: number;
-	/** Post-merge refreshes of the runtime source ref (CAM-580). */
+	/** Post-merge refreshes of the runtime source ref (CAM-580), plus any post-update-branch worktree syncs (GSHIP-632). */
 	fetches: number;
+	/** Local worktree hard-resets after the service updates the branch (GSHIP-632). */
+	resets: number;
 	prNumber: number | null;
 	/** State `gh pr list --state all` reports for an existing pull request. */
 	prState: string;
@@ -51,6 +59,10 @@ interface FakeRepo {
 	mergedOnView: number;
 	/** The poll from which the branch carries a head the service never pushed. */
 	headMovedOnView: number;
+	/** `gh pr view` reports BEHIND while fewer than this many updates have run (GSHIP-632). */
+	behindWhileUpdatesBelow: number;
+	/** Times `gh pr update-branch` has been called. */
+	branchUpdates: number;
 	/** Arming take-downs GitHub accepted or refused (GSHIP-616). */
 	disarms: number;
 	disarmFails: boolean;
@@ -61,6 +73,8 @@ interface FakeRepo {
 	armDecisionFailure: string | null;
 	/** True while `gh pr view` keeps reporting HTTP 503 (GSHIP-625). */
 	viewUnavailableAlways: boolean;
+	/** `gh pr view` reports HTTP 503 from this poll onwards (GSHIP-632). */
+	viewUnavailableFromView: number;
 	armAttempts: number;
 }
 
@@ -71,6 +85,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		commits: 0,
 		pushes: 0,
 		fetches: 0,
+		resets: 0,
 		prNumber: null,
 		prState: 'OPEN',
 		prHeadRefOid: HEAD_SHA,
@@ -78,12 +93,15 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		views: 0,
 		mergedOnView: 1,
 		headMovedOnView: Number.MAX_SAFE_INTEGER,
+		behindWhileUpdatesBelow: 0,
+		branchUpdates: 0,
 		disarms: 0,
 		disarmFails: false,
 		pushFails: false,
 		armUnavailableRemaining: 0,
 		armDecisionFailure: null,
 		viewUnavailableAlways: false,
+		viewUnavailableFromView: Number.POSITIVE_INFINITY,
 		armAttempts: 0,
 		...overrides,
 	};
@@ -115,6 +133,10 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 			}
 			if (args[0] === 'fetch') {
 				repo.fetches += 1;
+				return result(0);
+			}
+			if (args[0] === 'reset') {
+				repo.resets += 1;
 				return result(0);
 			}
 		}
@@ -149,9 +171,14 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 				}
 				return result(0);
 			}
+			if (args[1] === 'update-branch') {
+				repo.branchUpdates += 1;
+				repo.prHeadRefOid = UPDATED_SHAS[repo.branchUpdates - 1] ?? FOREIGN_SHA;
+				return result(0, `✓ Updated branch ${repo.branch}\n`);
+			}
 			if (args[1] === 'view') {
 				repo.views += 1;
-				if (repo.viewUnavailableAlways) {
+				if (repo.viewUnavailableAlways || repo.views >= repo.viewUnavailableFromView) {
 					return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
 				}
 				// A force-push from outside the service is durable too: the pull
@@ -160,9 +187,10 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 				const merged = repo.views >= repo.mergedOnView;
 				// A merge is durable: `gh pr list` reports MERGED from now on.
 				if (merged) repo.prState = 'MERGED';
+				const behind = !merged && repo.branchUpdates < repo.behindWhileUpdatesBelow;
 				return result(0, JSON.stringify({
 					state: merged ? 'MERGED' : 'OPEN',
-					mergeStateStatus: merged ? 'CLEAN' : 'BLOCKED',
+					mergeStateStatus: merged ? 'CLEAN' : (behind ? 'BEHIND' : 'BLOCKED'),
 					headRefOid: repo.prHeadRefOid,
 				}));
 			}
@@ -591,6 +619,176 @@ describe('the GitHub shipper', () => {
 		for (const view of views) {
 			expect(view.args).toContain('state,mergeStateStatus,headRefOid');
 		}
+	});
+
+	test('a pull request BEHIND is updated by the service and still merges (GSHIP-632)', async () => {
+		// The monitor finds BEHIND on the head it just pushed — main advanced
+		// while this ship waited, not a divergence and not GitHub being
+		// unavailable — updates the branch itself, and the very next poll
+		// already reports the merge of the updated head.
+		const cwd = createWorkspace();
+		const repo = createRepo({ behindWhileUpdatesBelow: 1, mergedOnView: 3 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.branchUpdates).toBe(1);
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		expect(events).toEqual([
+			'ship.issue-closed',
+			'ship.committed',
+			'ship.pushed',
+			'ship.pr-opened',
+			'ship.automerge-armed',
+			'ship.branch-updated',
+			'ship.source-synced',
+			'ship.merged',
+		]);
+		// The new head is registered as the head this ship published, with the
+		// previous head kept for the run history (GSHIP-632).
+		expect(payloads.get('ship.branch-updated')).toEqual({
+			prNumber: 385,
+			previousHead: HEAD_SHA,
+			headSha: UPDATED_SHAS[0],
+		});
+		// No re-arm, and no disarm: BEHIND is neither a divergence nor a refusal.
+		expect(armCalls(calls)).toHaveLength(1);
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(events).not.toContain('ship.head-diverged');
+		// The run's own worktree is synced to the head GitHub just recorded, or
+		// this ship's next push would be rejected as non-fast-forward and every
+		// later head comparison would read against a stale local HEAD.
+		expect(findCall(calls, 'git', 'fetch')).toContainEqual({
+			command: 'git',
+			args: ['fetch', 'origin', BRANCH],
+		});
+		expect(findCall(calls, 'git', 'reset')[0]?.args).toEqual(['reset', '--hard', UPDATED_SHAS[0] as string]);
+	});
+
+	test('GitHub staying unavailable while confirming a branch update ends the ship as unconfirmed, not failed (GSHIP-632)', async () => {
+		// The first poll reports BEHIND and `gh pr update-branch` succeeds, but
+		// the follow-up read that would tell this ship what head resulted keeps
+		// failing. The same GSHIP-625 confusion applies here: GitHub may already
+		// have updated (or even merged) the branch and simply could not be
+		// asked, which is not the same thing as the update having failed.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: 3,
+			viewUnavailableFromView: 2,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		const detail = (failed as { detail: string }).detail;
+		expect(detail).toContain('could not be confirmed');
+		expect(detail).toContain('not a merge failure');
+		expect(events.at(-1)).toBe('ship.merge-unconfirmed');
+		expect(events).not.toContain('ship.branch-updated');
+		// `gh pr update-branch` itself succeeded; only the follow-up read failed.
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		// Without a confirmed new head, the worktree is never reset.
+		expect(findCall(calls, 'git', 'reset')).toHaveLength(0);
+	});
+
+	test('a head this ship updated to clear BEHIND is not read as a divergence across later polls (GSHIP-632)', async () => {
+		const cwd = createWorkspace();
+		// The merge lands a few polls after the update, so the updated head has
+		// to survive more than one divergence check before GitHub reports MERGED.
+		const repo = createRepo({ behindWhileUpdatesBelow: 1, mergedOnView: 4 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(events).not.toContain('ship.head-diverged');
+		expect(events).not.toContain('ship.automerge-disarmed');
+		expect(events.slice(-3)).toEqual(['ship.merge-pending', 'ship.source-synced', 'ship.merged']);
+		expect(disarmCalls(calls)).toHaveLength(0);
+	});
+
+	test('a head moved outside the service after a service branch update still fails with a disarm (GSHIP-632)', async () => {
+		// GSHIP-615's guard still has to tell the service's own update apart
+		// from someone else's force-push, using the updated head as the new
+		// baseline rather than the head this ship originally pushed.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			headMovedOnView: 3,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		const detail = (failed as { detail: string }).detail;
+		expect(detail).toContain(FOREIGN_SHA);
+		expect(detail).toContain(`not the head ${UPDATED_SHAS[0]}`);
+		expect(detail).not.toContain(`not the head ${HEAD_SHA}`);
+		expect(detail).toContain('moved outside the service');
+		expect(repo.branchUpdates).toBe(1);
+		expect(disarmCalls(calls)).toHaveLength(1);
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.head-diverged']);
+		expect(armCalls(calls)).toHaveLength(1);
+	});
+
+	test('exhausting the branch-update limit ends the ship with an explicit reason (GSHIP-632)', async () => {
+		// A main that never stops advancing must not turn this recovery into an
+		// infinite loop: BEHIND stays BEHIND no matter how many times the
+		// service updates the branch, so the fixed cap has to end the ship.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: Number.MAX_SAFE_INTEGER,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			maxBranchUpdates: 2,
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		const detail = (failed as { detail: string }).detail;
+		expect(detail).toContain('BEHIND');
+		expect(detail).toContain('2 branch updates');
+		expect(repo.branchUpdates).toBe(2);
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(2);
+		expect(events.filter((kind) => kind === 'ship.branch-updated')).toHaveLength(2);
+		// Giving up on BEHIND is not a divergence: nothing is disarmed.
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(armCalls(calls)).toHaveLength(1);
 	});
 
 	test('a push failure fails before any pull request exists, and keeps the diff', async () => {
