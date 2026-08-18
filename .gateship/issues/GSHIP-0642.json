@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T22:31:31.588Z",
-  "updatedAt": "2026-08-18T22:31:31.588Z",
+  "updatedAt": "2026-08-18T22:33:20.803Z",
   "description": "Eliminar a copia manual da lista de estados terminais da run no cliente web. O cliente mantem a propria lista com um comentario dizendo que ela espelha isTerminalRunState do runtime, e a derivacao que descobre a issue com run em voo depende dessa copia, sem que nenhum teste garanta que as duas concordam; acrescentar um estado novo quebra em silencio. Fazer o cliente deixar de manter lista propria, consumindo a definicao do runtime, e quando a fronteira de modulo impedir isso, manter a copia mas acrescentar um teste que falha quando as duas listas divergirem. Preferir a primeira opcao e so cair na segunda com o motivo explicito no codigo. Nao mudar nenhum estado, nenhuma transicao e nenhum comportamento observavel. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao. Fora de escopo: mudar a maquina de estados, renomear estado, unificar tipos alem do necessario e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "3"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "93c70cf80eeedf464c0f25301e5ebe1dc78d013f4370c4a3bb4bc792a7932d70",
+    "approvedAt": "2026-08-18T22:33:20.803Z"
   }
 }
