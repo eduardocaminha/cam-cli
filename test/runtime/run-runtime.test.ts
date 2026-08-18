@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
+import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
-import { RunStore } from '../../src/runtime/run-store.ts';
+import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 async function waitFor(
@@ -1027,6 +1028,112 @@ describe('run event class', () => {
 		expect(decisionKinds).not.toContain('provider.activity');
 		expect(decisionKinds).toContain('run.operator-note');
 		expect(decisionKinds).toContain('run.created');
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
+// GSHIP-630: the operator's already-made decisions carried into the review
+// prompt, so a ratification is not re-litigated every round.
+describe('selectOperatorDecisions', () => {
+	function guidanceEvent(seq: number, text: string): RunEvent {
+		return {
+			seq,
+			runId: 'run-1',
+			kind: 'run.operator-guidance',
+			fromState: 'waiting-user',
+			toState: 'waiting-user',
+			payload: { text },
+			createdAt: `2026-08-18T10:${String(seq).padStart(2, '0')}:00Z`,
+			eventClass: 'decision',
+		};
+	}
+
+	test('keeps only run.operator-guidance events, in the order given', () => {
+		const events: RunEvent[] = [
+			guidanceEvent(1, 'First decision.'),
+			{ ...guidanceEvent(2, 'noise'), kind: 'run.created' },
+			guidanceEvent(3, 'Second decision.'),
+		];
+		expect(selectOperatorDecisions(events)).toEqual(['First decision.', 'Second decision.']);
+	});
+
+	test('drops the oldest decisions past the item limit, keeping the newest in order', () => {
+		const total = OPERATOR_DECISION_LIMITS.maxItems + 2;
+		const events = Array.from({ length: total }, (_, index) => guidanceEvent(index + 1, `decision ${index + 1}`));
+		const selected = selectOperatorDecisions(events);
+		expect(selected.length).toBe(OPERATOR_DECISION_LIMITS.maxItems);
+		expect(selected[0]).toBe('decision 3');
+		expect(selected.at(-1)).toBe(`decision ${total}`);
+	});
+
+	test('caps an individual decision at the text limit', () => {
+		const long = 'x'.repeat(OPERATOR_DECISION_LIMITS.text + 50);
+		expect(selectOperatorDecisions([guidanceEvent(1, long)])).toEqual([
+			long.slice(0, OPERATOR_DECISION_LIMITS.text),
+		]);
+	});
+});
+
+describe('operator decisions reach the reviewer (GSHIP-630)', () => {
+	// Mirrors the GSHIP-629 evidence this issue cites: the operator ratifies a
+	// deviation, the next review reports it again as a pending defect, and the
+	// operator has to ratify it a second time. With decisions threaded into the
+	// prompt, both ratifications must actually reach the reviewer, in order.
+	test('each review sees every operator decision made so far, accumulating in chronological order', async () => {
+		const store = new RunStore(':memory:');
+		let executorCalls = 0;
+		let reviewCalls = 0;
+		const reviewDecisions: Array<readonly string[] | undefined> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-decisions',
+			newSessionId: () => 'session-decisions',
+			executor: {
+				execute: async ({ resume }) => {
+					executorCalls += 1;
+					if (!resume) return { outcome: 'waiting-user', summary: 'Choose the seam.' };
+					return { outcome: 'completed', summary: `pass ${executorCalls}` };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async (input) => {
+					reviewCalls += 1;
+					reviewDecisions.push(input.operatorDecisions);
+					// Findings on the first two reviews reproduce the "reported again"
+					// step; findings on review 2 forces the fix-limit wait for a
+					// second ratification, and review 3 is clean so the run settles.
+					return reviewCalls < 3
+						? { verdict: 'findings', detail: '1. src/a.ts: same point again' }
+						: { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = runtime.startRun('CAM-90');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		runtime.resumeRun(run.id, 'Ratify the smaller seam.');
+		await waitFor(() => reviewCalls >= 2);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		runtime.resumeRun(run.id, 'Ratify it again.');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(reviewDecisions).toEqual([
+			['Ratify the smaller seam.'],
+			['Ratify the smaller seam.'],
+			['Ratify the smaller seam.', 'Ratify it again.'],
+		]);
+		expect(runtime.listRunDecisionEvents(run.id)
+			.filter((event) => event.kind === 'run.operator-guidance')
+			.map((event) => event.payload['text'])).toEqual([
+			'Ratify the smaller seam.',
+			'Ratify it again.',
+		]);
+
 		await runtime.stop();
 		runtime.close();
 	});

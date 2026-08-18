@@ -75,7 +75,7 @@ export class CodexCliReviewer implements RuntimeReviewer {
 			sessionId: randomUUID(),
 			resume: false,
 			cwd: input.cwd,
-			prompt: buildReviewPrompt(input.issueId, issue, change),
+			prompt: buildReviewPrompt(input.issueId, issue, change, input.operatorDecisions ?? []),
 			outputSchema: REVIEW_RESULT_SCHEMA,
 			signal: input.signal,
 			emit: input.emit,

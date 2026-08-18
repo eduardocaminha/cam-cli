@@ -146,10 +146,17 @@ export function collectChange(runGit: GitCommandRunner, cwd: string): { status: 
 	};
 }
 
+/**
+ * `decisions` are this run's own `run.operator-guidance` events, already
+ * selected and chronologically ordered by `selectOperatorDecisions`
+ * (GSHIP-630). An empty list leaves the prompt exactly as it was before this
+ * issue -- every first review of a run has none.
+ */
 export function buildReviewPrompt(
 	issueId: string,
 	issue: string,
 	change: { status: string; diff: string },
+	decisions: readonly string[],
 ): string {
 	return [
 		`Review the uncommitted change in this worktree for Gateship issue ${issueId}.`,
@@ -163,6 +170,15 @@ export function buildReviewPrompt(
 		'a real bug, a broken contract, or work outside the issue. Style preference',
 		'and speculation are not findings.',
 		'',
+		...(decisions.length === 0 ? [] : [
+			'Decisions the operator has already made for this run, oldest first:',
+			...decisions.map((decision, index) => `${index + 1}. ${decision}`),
+			'',
+			'You may disagree with one of these. If you do, say so explicitly: report',
+			'that you disagree with a decision already made, not as a pending defect',
+			'the change still needs to fix.',
+			'',
+		]),
 		'End your reply with a single JSON object on the last line and nothing after it:',
 		'{"verdict":"CLEAN","findings":[]}',
 		'or',
@@ -257,7 +273,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			argv,
 			cwd: input.cwd,
 			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
-			prompt: buildReviewPrompt(input.issueId, issue, change),
+			prompt: buildReviewPrompt(input.issueId, issue, change, input.operatorDecisions ?? []),
 			signal: input.signal,
 			emit: input.emit,
 			eventPrefix: 'review',

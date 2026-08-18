@@ -41,7 +41,10 @@ if (mode === 'wait') {
 			verdict,
 			findings: verdict === 'CLEAN'
 				? []
-				: [{ file: 'src/reviewed.ts', summary: `argv: ${JSON.stringify(process.argv.slice(2))}` }],
+				: [{
+					file: 'src/reviewed.ts',
+					summary: JSON.stringify({ argv: process.argv.slice(2), prompt: input }),
+				}],
 		};
 		process.stdout.write(`${JSON.stringify({
 			type: 'result',
