@@ -384,6 +384,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.resume,
 			input.reviewFeedback,
 			input.operatorGuidance,
+			input.operatorDecisions ?? [],
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

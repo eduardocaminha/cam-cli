@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { buildWorkPrompt } from '../../src/runtime/claude-cli-executor.ts';
 import {
 	buildCodexCliArgv,
 	buildCodexEnv,
@@ -241,6 +242,31 @@ describe('Codex CLI runtime executor', () => {
 		);
 		await runtime.stop();
 		runtime.close();
+	});
+
+	// GSHIP-637: the same operator-decision history GSHIP-630 carried into the
+	// Claude reviewer's prompt, shared by buildWorkPrompt and now also reaching
+	// the Codex executor's prompt.
+	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-37"}',
+		});
+		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
+		const result = await executor.execute({
+			runId: 'run-37',
+			issueId: 'CAM-37',
+			sessionId: 'provisional',
+			resume: false,
+			operatorDecisions: decisions,
+			cwd: createTestTmpdir('gship-codex-decisions-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { input } = JSON.parse(result.summary as string) as { input: string };
+		expect(input).toBe(
+			buildWorkPrompt('CAM-37', '{"id":"CAM-37"}', false, undefined, undefined, decisions),
+		);
 	});
 
 	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.

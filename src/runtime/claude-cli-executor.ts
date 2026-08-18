@@ -20,6 +20,7 @@ import {
 	type ModelSlotResolver,
 	resolveModelSlot,
 } from './model-settings.ts';
+import { formatOperatorDecisionList } from './operator-decision.ts';
 import { normalizeProposalDrafts, PROPOSAL_LIMITS } from './run-proposal.ts';
 import type {
 	RuntimeExecutionInput,
@@ -141,6 +142,7 @@ export function buildWorkPrompt(
 	resume: boolean,
 	reviewFeedback: string | undefined,
 	operatorGuidance: string | undefined,
+	decisions: readonly string[] = [],
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -157,6 +159,17 @@ export function buildWorkPrompt(
 		'The operator answered your previous request. Treat this as the decision for the current turn:',
 		operatorGuidance,
 	];
+	// Same source and ordering the reviewer's prompt carries (GSHIP-630): this
+	// run's own `run.operator-guidance` events, chronological. An empty list
+	// leaves the prompt exactly as it was before this issue -- every run's
+	// first turn has none. Kept ahead of `guidanceSection` so the latest
+	// answer still reads as the current turn's request, not as one more item
+	// in the history above it.
+	const decisionsSection = decisions.length === 0 ? [] : [
+		'',
+		'Decisions the operator has already made in this run, oldest first. These are binding, not suggestions:',
+		...formatOperatorDecisionList(decisions),
+	];
 	return [
 		resume
 			? `Continue the existing Gateship work session for ${issueId}.`
@@ -168,6 +181,7 @@ export function buildWorkPrompt(
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
 		'',
@@ -307,6 +321,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.resume,
 			input.reviewFeedback,
 			input.operatorGuidance,
+			input.operatorDecisions ?? [],
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

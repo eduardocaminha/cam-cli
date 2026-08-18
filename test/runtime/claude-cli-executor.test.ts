@@ -430,6 +430,31 @@ describe('Claude CLI runtime executor', () => {
 		runtime.close();
 	});
 
+	// GSHIP-637: the same run.operator-guidance history GSHIP-630 carried into
+	// the review prompt, now also reaching the executor's own prompt.
+	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-37"}',
+		});
+		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
+		const result = await executor.execute({
+			runId: 'run-37',
+			issueId: 'CAM-37',
+			sessionId: 'session-37',
+			resume: false,
+			operatorDecisions: decisions,
+			cwd: createTestTmpdir('gship-claude-decisions-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { input } = JSON.parse(result.summary as string) as { input: string };
+		const stdinMessage = JSON.parse(input.trim()) as { message: { content: string } };
+		expect(stdinMessage.message.content).toBe(
+			buildWorkPrompt('CAM-37', '{"id":"CAM-37"}', false, undefined, undefined, decisions),
+		);
+	});
+
 	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.
 	describe('probeClaudeModel', () => {
 		test('accepts a clean read-only turn for the probed model and effort', async () => {
@@ -463,5 +488,88 @@ describe('Claude CLI runtime executor', () => {
 			expect(result.outcome).toBe('inconclusive');
 			expect(result.message).toBeDefined();
 		});
+	});
+});
+
+// GSHIP-637: the same operator-decision block GSHIP-630 established for the
+// reviewer's prompt, now also built into the executor's.
+describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
+	const issueId = 'CAM-637';
+	const issue = '{"id":"CAM-637"}';
+
+	// With no decisions -- every run's first turn -- the prompt must stay
+	// byte-for-byte what it was before this issue.
+	test('with no decisions, the prompt is exactly what it was before this issue', () => {
+		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, []);
+		expect(prompt).toBe([
+			`Implement Gateship issue ${issueId}.`,
+			'Inspect the current working tree before editing and keep the change limited to this issue.',
+			'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
+			'Run focused tests for the changed surface. The service will perform independent verification afterward.',
+			'Return status completed when the issue work is ready for verification.',
+			'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
+			'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
+			`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+			'',
+			'Issue record:',
+			issue,
+		].join('\n'));
+	});
+
+	// The decisions argument this issue adds defaults to none, so every
+	// existing call site that never passes it keeps behaving exactly as before.
+	test('omitting the decisions argument leaves the prompt unchanged', () => {
+		expect(buildWorkPrompt(issueId, issue, false, undefined, undefined)).toBe(
+			buildWorkPrompt(issueId, issue, false, undefined, undefined, []),
+		);
+	});
+
+	test('one decision is presented as a labeled, binding block', () => {
+		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, ['Keep the smaller seam.']);
+		expect(prompt).toContain('Decisions the operator has already made in this run');
+		expect(prompt).toContain('binding, not suggestions');
+		expect(prompt).toContain('1. Keep the smaller seam.');
+		// The block sits after the scope instructions and before the issue record.
+		expect(prompt.indexOf('Keep this issue closed to its scope'))
+			.toBeLessThan(prompt.indexOf('Decisions the operator'));
+		expect(prompt.indexOf('Decisions the operator')).toBeLessThan(prompt.indexOf('Issue record:'));
+	});
+
+	test('multiple decisions render numbered in the order given', () => {
+		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, ['First.', 'Second.', 'Third.']);
+		const first = prompt.indexOf('1. First.');
+		const second = prompt.indexOf('2. Second.');
+		const third = prompt.indexOf('3. Third.');
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(second).toBeGreaterThan(first);
+		expect(third).toBeGreaterThan(second);
+	});
+
+	// The current turn's answer must stay clearly the current request, not one
+	// more item folded into the history block above it.
+	test('the latest operator response stays distinguishable from the decisions history', () => {
+		const prompt = buildWorkPrompt(
+			issueId,
+			issue,
+			true,
+			undefined,
+			'Use the smaller migration.',
+			['Keep the smaller seam.', 'Use fetch, not axios.'],
+		);
+		expect(prompt).toContain('1. Keep the smaller seam.');
+		expect(prompt).toContain('2. Use fetch, not axios.');
+		expect(prompt).toContain(
+			'The operator answered your previous request. Treat this as the decision for the current turn:',
+		);
+		expect(prompt).toContain('Use the smaller migration.');
+		// The history block comes first, then the current turn's own answer.
+		expect(prompt.indexOf('Decisions the operator')).toBeLessThan(
+			prompt.indexOf('The operator answered your previous request'),
+		);
+		expect(prompt.indexOf('2. Use fetch, not axios.')).toBeLessThan(
+			prompt.indexOf('Use the smaller migration.'),
+		);
+		// The current answer is never itself numbered into the history list.
+		expect(prompt).not.toContain('3. Use the smaller migration.');
 	});
 });
