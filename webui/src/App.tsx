@@ -17,6 +17,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Badge } from './components/ui/badge.tsx';
+import { GateshipLockup } from './components/gateship-logo.tsx';
 import {
 	Card,
 	CardAction,
@@ -1337,9 +1338,11 @@ function ShellSidebar({
 	const attention = attentionOf(run, workspaceNotices);
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
-			<div className="flex items-center justify-between gap-3">
-				<div className="flex items-baseline gap-2">
-					<h1 className="font-heading font-semibold text-xl">gateship</h1>
+			<div className="flex flex-col items-start gap-3">
+				<div className="flex flex-col gap-1">
+					<h1>
+						<GateshipLockup className="block aspect-[15665/3068] h-7 w-auto" />
+					</h1>
 					{version === '' ? null : (
 						<span className="font-mono text-muted-foreground text-xs">v{version}</span>
 					)}
