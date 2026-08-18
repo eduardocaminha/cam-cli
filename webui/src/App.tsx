@@ -33,6 +33,8 @@ import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import {
 	aggregateChatTurnCosts,
+	type ChainPauseReason,
+	type ChainRunsView,
 	type ChatMessageView,
 	emptyModelSettings,
 	type IssueReviewDraft,
@@ -106,6 +108,8 @@ export interface AppProps {
 	handoff: ProjectBriefView;
 	/** Model and effort per (provider, role); empty text keeps the CLI default. */
 	modelSettings: ModelSettingsView;
+	/** Off by default: autonomy never turns itself on (GSHIP-638). */
+	chainRuns: ChainRunsView;
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
 	/** Newest first, exactly as /api/runs returned it. */
@@ -140,6 +144,7 @@ export interface AppProps {
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
+	onSetChainRuns: (enabled: boolean) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -828,6 +833,54 @@ function ModelSettingsPanel({
 					Salvar modelos
 				</button>
 			</form>
+		</ContextPanel>
+	);
+}
+
+/** One line per reason the queue is not advancing on its own (GSHIP-638). */
+const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
+	'chain-disabled': 'o interruptor está desligado.',
+	'previous-run-not-done': 'a run anterior não terminou em done.',
+	'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
+	'run-active': 'uma run ainda está ativa.',
+	'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+};
+
+/**
+ * The switch that lets the runtime start the next admissible issue by itself
+ * once a run ends in `done` (GSHIP-638). It creates no new authority: it only
+ * starts what the operator already approved, and it never approves, reviews
+ * or promotes anything on its own. Off by default, because autonomy never
+ * turns itself on.
+ */
+function ChainRunsPanel({
+	chainRuns,
+	pending,
+	onSetChainRuns,
+}: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'>): React.ReactElement {
+	return (
+		<ContextPanel
+			description="Ao terminar uma run em done, inicia sozinho a próxima issue já aprovada, na ordem do id."
+			open
+			title="Encadeamento automático"
+		>
+			<div className="flex flex-col gap-3">
+				<label className="flex items-center gap-2 text-sm">
+					<input
+						checked={chainRuns.enabled}
+						disabled={pending}
+						onChange={(event) =>
+							onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
+						type="checkbox"
+					/>
+					<span className="font-medium">Encadear runs aprovadas automaticamente</span>
+				</label>
+				{chainRuns.pause === null ? null : (
+					<p className="text-muted-foreground text-sm">
+						Fila parada: {CHAIN_PAUSE_LABELS[chainRuns.pause.reason]}
+					</p>
+				)}
+			</div>
 		</ContextPanel>
 	);
 }
@@ -1763,6 +1816,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 			<ModelSettingsPanel
 				modelSettings={props.modelSettings}
 				onSaveModelSettings={props.onSaveModelSettings}
+				pending={props.pending}
+			/>
+			<ChainRunsPanel
+				chainRuns={props.chainRuns}
+				onSetChainRuns={props.onSetChainRuns}
 				pending={props.pending}
 			/>
 			<NotificationsPanel

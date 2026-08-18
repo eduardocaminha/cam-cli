@@ -61,6 +61,8 @@ describe('shipping a run', () => {
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		// No operator command sits between run.verified and run.ship-started.
+		// The chain switch is off by default, so the terminal `done` still pauses
+		// the queue with its own durable reason (GSHIP-638).
 		expect(eventKinds(runtime)).toEqual([
 			'run.created',
 			'run.started',
@@ -69,15 +71,19 @@ describe('shipping a run', () => {
 			'run.ship-started',
 			'ship.pushed',
 			'run.shipped',
+			'run.chain-paused',
 		]);
 		const events = runtime.listEvents();
-		expect(events.at(-1)?.payload).toEqual({ prNumber: 385 });
+		expect(events.find((event) => event.kind === 'run.shipped')?.payload).toEqual({ prNumber: 385 });
 		// The ship is a phase of the run, persisted like every other one.
 		expect(events.find((event) => event.kind === 'run.ship-started')).toMatchObject({
 			fromState: 'ready-to-ship',
 			toState: 'shipping',
 		});
-		expect(events.at(-1)).toMatchObject({ fromState: 'shipping', toState: 'done' });
+		expect(events.find((event) => event.kind === 'run.shipped')).toMatchObject({
+			fromState: 'shipping',
+			toState: 'done',
+		});
 		await runtime.stop();
 		runtime.close();
 	});
@@ -105,7 +111,9 @@ describe('shipping a run', () => {
 
 		expect(runtime.getRun(run.id)?.state).toBe('done');
 		expect(releases).toEqual(['/project/.gship/worktrees/run-release']);
-		expect(eventKinds(runtime).slice(-2)).toEqual(['run.shipped', 'workspace.released']);
+		// The chain switch is off by default, so `done` still pauses the queue
+		// with its own durable reason (GSHIP-638) before the workspace releases.
+		expect(eventKinds(runtime).slice(-3)).toEqual(['run.shipped', 'run.chain-paused', 'workspace.released']);
 		expect(runtime.listEvents().at(-1)?.payload).toEqual({
 			branch: 'gship/cam-583-run-rel',
 			outcome: 'released',

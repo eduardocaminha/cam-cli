@@ -14,6 +14,10 @@ import {
 	aggregateChatTurnCosts,
 	approveIssue,
 	BRIEF_PATH,
+	type ChainPauseReason,
+	type ChainPauseView,
+	type ChainRunsView,
+	CHAIN_RUNS_PATH,
 	commandRun,
 	createIssue,
 	CHAT_PATH,
@@ -21,6 +25,7 @@ import {
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
+	fetchChainRuns,
 	fetchChat,
 	fetchProposals,
 	fetchProviders,
@@ -35,6 +40,7 @@ import {
 	ISSUES_PATH,
 	PROVIDERS_PATH,
 	saveBrief,
+	saveChainRuns,
 	fetchModelSettings,
 	saveModelSettings,
 	emptyModelSettings,
@@ -102,6 +108,8 @@ function eventIn(fromState: RunState, toState: RunState, kind: string): RunEvent
 
 const EMPTY_MODEL_SETTINGS: ModelSettingsView = emptyModelSettings();
 
+const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
+
 const EMPTY_BRIEF: ProjectBriefView = {
 	objective: '',
 	decisions: [],
@@ -113,6 +121,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
+			chainRuns={EMPTY_CHAIN_RUNS}
 			drafts={[]}
 			brief={EMPTY_BRIEF}
 			chatMessages={[]}
@@ -132,6 +141,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onResume={() => {}}
 			onSaveBrief={() => {}}
 			onSaveModelSettings={() => {}}
+			onSetChainRuns={() => {}}
 			onSelectIssue={() => {}}
 			onSelectProvider={() => {}}
 			onSendMessage={() => {}}
@@ -1085,6 +1095,41 @@ describe('settings surface', () => {
 		expect(buttonIsEnabled(html, 'Salvar brief')).toBe(true);
 		expect(panel(html, 'Handoff automático')).toContain('Nada registrado ainda.');
 	});
+
+	// GSHIP-638: off by default, and no pause reason to show while it never ran.
+	test('the chain switch is off by default and shows no pause reason', () => {
+		const chainRuns = panel(settingsPage(), 'Encadeamento automático');
+
+		expect(chainRuns).not.toContain('checked=""');
+		expect(chainRuns).not.toContain('Fila parada');
+	});
+
+	test('the chain switch reflects the stored setting and is held while a command is in flight', () => {
+		const on = panel(settingsPage({ chainRuns: { enabled: true, pause: null } }), 'Encadeamento automático');
+		expect(on).toContain('checked=""');
+
+		const checkbox = elementWith(settingsPage({ pending: true }), 'type="checkbox"');
+		expect(checkbox).toContain('disabled=""');
+	});
+
+	// The four named pause reasons (GSHIP-638), each in the operator's own words.
+	test('a stopped queue shows the reason of its last pause', () => {
+		const labels: Record<ChainPauseReason, string> = {
+			'chain-disabled': 'o interruptor está desligado.',
+			'previous-run-not-done': 'a run anterior não terminou em done.',
+			'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
+			'run-active': 'uma run ainda está ativa.',
+			'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+		};
+		for (const [reason, label] of Object.entries(labels)) {
+			const pause = { reason: reason as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
+			const chainRuns = panel(
+				settingsPage({ chainRuns: { enabled: false, pause } }),
+				'Encadeamento automático',
+			);
+			expect(chainRuns).toContain(`Fila parada: ${label}`);
+		}
+	});
 });
 
 describe('operator shell', () => {
@@ -1411,6 +1456,7 @@ describe('same-origin transport', () => {
 		expect(CHAT_PATH).toBe('/api/chat');
 		expect(BRIEF_PATH).toBe('/api/brief');
 		expect(PROPOSALS_PATH).toBe('/api/proposals');
+		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
 	});
 
 	test('the inbox is read and decided on the proposal-scoped routes', async () => {
@@ -1582,6 +1628,46 @@ describe('same-origin transport', () => {
 			probes: { claude: { executor: { outcome: 'accepted' } } },
 		}, 200, async () => {
 			expect(await saveModelSettings(EMPTY_MODEL_SETTINGS)).toBe('Modelos por papel atualizados.');
+		});
+	});
+
+	// GSHIP-638: the switch and, when the queue is stopped, the reason of its
+	// last pause, read and written on one same-origin route.
+	test('the chain switch is read and written on one same-origin route', async () => {
+		await withRecordedFetch({ enabled: true, pause: null }, 200, async (calls) => {
+			expect(await fetchChainRuns()).toEqual({ enabled: true, pause: null });
+			expect(calls).toEqual([{ url: CHAIN_RUNS_PATH, method: 'GET', body: null }]);
+		});
+		// A payload missing either key reads as off with nothing paused, never as a hole.
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchChainRuns()).toEqual(EMPTY_CHAIN_RUNS);
+		});
+		const pause: ChainPauseView = { reason: 'no-admissible-issue', createdAt: '2026-08-18T21:00:00.000Z' };
+		await withRecordedFetch({ enabled: true, pause }, 200, async () => {
+			expect(await fetchChainRuns()).toEqual({ enabled: true, pause });
+		});
+		// A pause missing a field reads as none: there is nothing coherent to show.
+		await withRecordedFetch({ enabled: true, pause: { reason: 'no-admissible-issue' } }, 200, async () => {
+			expect(await fetchChainRuns()).toEqual({ enabled: true, pause: null });
+		});
+
+		await withRecordedFetch({ ok: true, enabled: true, pause: null }, 200, async (calls) => {
+			expect(await saveChainRuns(true)).toBe('Encadeamento automático ativado.');
+			expect(calls).toEqual([{
+				url: CHAIN_RUNS_PATH,
+				method: 'PUT',
+				body: JSON.stringify({ enabled: true }),
+			}]);
+		});
+		await withRecordedFetch({ ok: true, enabled: false, pause: null }, 200, async () => {
+			expect(await saveChainRuns(false)).toBe('Encadeamento automático desativado.');
+		});
+		await withRecordedFetch({
+			ok: false,
+			code: 'invalid-request',
+			message: '"enabled" deve ser um booleano.',
+		}, 400, async () => {
+			expect(await saveChainRuns(true)).toBe('"enabled" deve ser um booleano.');
 		});
 	});
 

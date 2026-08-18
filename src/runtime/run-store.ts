@@ -492,6 +492,9 @@ function decodePayload(json: string): Record<string, unknown> {
 	return {};
 }
 
+/** Single `runtime_settings` row holding the chain switch (GSHIP-638), beside `provider` and `MODEL_SETTINGS_KEY`. */
+const CHAIN_RUNS_KEY = 'chain-runs';
+
 /** Anything other than the literal `activity` reads as `decision`, the safe default. */
 function decodeEventClass(value: string): RunEventClass {
 	return value === 'activity' ? 'activity' : 'decision';
@@ -927,6 +930,21 @@ export class RunStore {
 		`).run({ providerId });
 	}
 
+	/** Off by default (GSHIP-638): autonomy never turns itself on. */
+	getChainRunsEnabled(): boolean {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: CHAIN_RUNS_KEY }) as { value: string } | null;
+		return row?.value === 'true';
+	}
+
+	setChainRunsEnabled(enabled: boolean): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({ key: CHAIN_RUNS_KEY, value: enabled ? 'true' : 'false' });
+	}
+
 	/**
 	 * The per-role model choice, kept as one JSON row beside the selected
 	 * provider. A missing or corrupt row reads as the empty choice, which is the
@@ -1127,6 +1145,19 @@ export class RunStore {
 			ORDER BY seq ASC
 		`).all({ runId }) as EventRow[];
 		return rows.map(decodeEvent);
+	}
+
+	/**
+	 * The most recent chain-pause reason across every run (GSHIP-638). Always
+	 * the one the latest terminal transition just recorded: chaining is
+	 * evaluated synchronously at that same transition, so this can never be a
+	 * stale echo from an earlier run once a later one has started.
+	 */
+	getLastChainPauseEvent(): RunEvent | null {
+		const row = this.#db.query(`
+			SELECT * FROM run_events WHERE kind = 'run.chain-paused' ORDER BY seq DESC LIMIT 1
+		`).get() as EventRow | null;
+		return row === null ? null : decodeEvent(row);
 	}
 
 	/**

@@ -574,6 +574,39 @@ describe('per-role model settings', () => {
 	});
 });
 
+// GSHIP-638: the chain switch is off by default and survives a restart, kept
+// beside the provider and the per-role model slots in `runtime_settings`.
+describe('chain runs switch', () => {
+	test('is off by default and round-trips through the same store', () => {
+		const store = new RunStore(':memory:');
+		expect(store.getChainRunsEnabled()).toBe(false);
+
+		store.setChainRunsEnabled(true);
+		expect(store.getChainRunsEnabled()).toBe(true);
+
+		store.setChainRunsEnabled(false);
+		expect(store.getChainRunsEnabled()).toBe(false);
+		store.close();
+	});
+
+	test('survives a service restart, as its own runtime_settings row', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-chain-runs-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.setChainRunsEnabled(true);
+		store.close();
+
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getChainRunsEnabled()).toBe(true);
+		reopened.close();
+
+		const rows = new Database(dbPath);
+		const stored = rows.query('SELECT key, value FROM runtime_settings ORDER BY key')
+			.all() as Array<{ key: string; value: string }>;
+		expect(stored).toContainEqual({ key: 'chain-runs', value: 'true' });
+		rows.close();
+	});
+});
+
 describe('project brief', () => {
 	test('round-trips the four fields as a single overwritten record', () => {
 		const store = new RunStore(':memory:');

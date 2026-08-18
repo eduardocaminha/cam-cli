@@ -172,6 +172,7 @@ describe('independent review stage', () => {
 			'run.review-clean',
 			'run.ship-started',
 			'run.shipped',
+			'run.chain-paused',
 		]);
 		expect(shipped).toEqual([run.id]);
 		await runtime.stop();

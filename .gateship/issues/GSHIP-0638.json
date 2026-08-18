@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-638",
   "title": "Etapa 5: encadear runs aprovadas em serie",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T21:14:32.797Z",
-  "updatedAt": "2026-08-18T21:15:36.171Z",
+  "updatedAt": "2026-08-18T22:00:52.815Z",
   "description": "Primeira fatia da Etapa 5: encadear runs em serie, sem supervisao, para issues que o operador ja aprovou. Duas pecas que o roadmap pedia ja existem e nao devem ser reconstruidas: isPlannable em src/issues/plannable.ts ja exige aprovacao com fingerprint valido e ja recusa issue bloqueada por dependencia nao shipada via isBlocked, e o GSHIP-629 ja revalida a premissa de cada spec no inicio da run, no workspace dela. Acrescentar um interruptor de encadeamento, guardado em runtime_settings junto do provider e dos slots de modelo, desligado por padrao e alternavel pela UI, porque autonomia nunca se liga sozinha. Com ele ligado, quando uma run atinge estado terminal, o runtime seleciona a proxima issue admissivel e a inicia sozinho. A selecao e deterministica pela ordem de id, sem inventar campo de prioridade. Somente uma run que termina em done encadeia: failed e cancelled param a fila, porque prosseguir depois de falha e a forma mais rapida de transformar um defeito em varios. O encadeamento nao cria autoridade nova: ele so inicia o que ja e admissivel, isto e, aprovado pelo operador com fingerprint correspondente, e nao aprova, nao revisa e nao promove nada. Toda pausa e explicita e registrada com motivo proprio em evento duravel, cobrindo pelo menos interruptor desligado, nenhuma issue admissivel, run anterior nao terminou em done, e run ainda ativa. A UI mostra o interruptor e, quando a fila esta parada, o motivo da ultima pausa. Nao criar limite de quantidade de runs encadeadas: a fila e limitada pelo que o operador aprovou, e aprovacao ja e o controle de gasto. Nao introduzir laco, temporizador nem processo proprio: o encadeamento acontece na transicao terminal que ja existe. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir interruptor desligado nao encadeando, done encadeando para a proxima admissivel na ordem esperada, failed parando com motivo, ausencia de issue admissivel parando com motivo, e o interruptor sobrevivendo a reinicio. Fora de escopo: paralelismo, multiprojeto, prioridade, agendamento por horario, retry de run falha, autoaprovacao, promocao automatica de proposta, e qualquer mudanca no ciclo de vida da run alem do encadeamento descrito.",
   "specSource": "operator",
   "spec": {
