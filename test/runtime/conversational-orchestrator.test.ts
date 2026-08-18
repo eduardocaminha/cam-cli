@@ -41,15 +41,24 @@ class FakeSession implements AgentSession {
 	readonly provider;
 	readonly inputs: AgentSessionInput[] = [];
 	#outputs: unknown[];
+	/** One `orchestrator.usage` payload to emit per call, GSHIP-634; a call with none emits nothing. */
+	#usagePayloads: Array<Record<string, unknown> | undefined>;
 
-	constructor(provider: 'claude' | 'codex', outputs: unknown[]) {
+	constructor(
+		provider: 'claude' | 'codex',
+		outputs: unknown[],
+		usagePayloads: Array<Record<string, unknown> | undefined> = [],
+	) {
 		this.provider = provider;
 		this.#outputs = outputs;
+		this.#usagePayloads = usagePayloads;
 	}
 
 	async run(input: AgentSessionInput): Promise<{ summary: string; structuredOutput: unknown }> {
 		this.inputs.push(input);
 		if (this.provider === 'codex') input.onSessionId?.('codex-thread-1');
+		const usagePayload = this.#usagePayloads.shift();
+		if (usagePayload !== undefined) input.emit('orchestrator.usage', usagePayload);
 		const structuredOutput = this.#outputs.shift();
 		return { summary: JSON.stringify(structuredOutput), structuredOutput };
 	}
@@ -270,6 +279,86 @@ describe('conversational orchestrator', () => {
 			'A run in state done was already shipped and its branch is already merged: never request ship_run for it',
 		);
 		await orchestrator.stop();
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-634: runClaudeCli already produces the `.usage` event GSHIP-623
+	// taught the store to fold into a run's cost; the orchestrator's own turn
+	// now captures it too, storing it beside the message that turn produced
+	// instead of discarding it in `emit: () => {}`.
+	test('captures the turn\'s own usage event and stores it beside the orchestrator\'s own message', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-usage-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('claude');
+		const usagePayload = {
+			model: 'claude-opus-4-6',
+			effort: 'high',
+			totalCostUsd: 0.0842,
+			usage: {
+				inputTokens: 1200,
+				outputTokens: 340,
+				cacheCreationInputTokens: 50,
+				cacheReadInputTokens: 900,
+				thinkingTokens: 4200,
+			},
+		};
+		const claude = new FakeSession('claude', [
+			{ message: 'Investiguei o core.', command: { type: 'none' } },
+		], [usagePayload]);
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude, codex: new FakeSession('codex', []) },
+			context: () => ({}),
+			execute: () => '',
+			newSessionId: () => 'new-session',
+		});
+
+		const result = await orchestrator.turn('Investigue o core.');
+		const expectedUsage = {
+			model: 'claude-opus-4-6',
+			effort: 'high',
+			totalCostUsd: 0.0842,
+			inputTokens: 1200,
+			outputTokens: 340,
+			cacheCreationInputTokens: 50,
+			cacheReadInputTokens: 900,
+			thinkingTokens: 4200,
+		};
+		expect(result.assistant.usage).toEqual(expectedUsage);
+
+		const stored = runtime.listOrchestratorMessages();
+		expect(stored.find((message) => message.role === 'orchestrator')?.usage).toEqual(expectedUsage);
+		// Never on the operator's own message: only the turn's own output carries it.
+		expect(stored.find((message) => message.role === 'operator')?.usage).toBeUndefined();
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a turn that reports no usage records nothing and the message carries none', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-no-usage-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('claude');
+		const claude = new FakeSession('claude', [
+			{ message: 'Sem custo reportado pelo CLI.', command: { type: 'none' } },
+		]);
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude, codex: new FakeSession('codex', []) },
+			context: () => ({}),
+			execute: () => '',
+			newSessionId: () => 'new-session',
+		});
+
+		const result = await orchestrator.turn('Só uma pergunta.');
+		expect(result.assistant.usage).toBeUndefined();
+		expect(runtime.listOrchestratorMessages().every((message) => message.usage === undefined)).toBe(true);
 		await runtime.stop();
 		runtime.close();
 	});

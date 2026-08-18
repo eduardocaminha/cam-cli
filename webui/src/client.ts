@@ -149,12 +149,50 @@ export function emptyModelSettings(): ModelSettingsView {
 	return { claude: roles(), codex: roles() };
 }
 
+/**
+ * One orchestrator turn's own reported usage (GSHIP-634). Mirrors
+ * OrchestratorMessageUsage in src/runtime/run-store.ts: a field the CLI never
+ * reported stays absent, never a fabricated zero.
+ */
+export interface ChatMessageUsageView {
+	model?: string;
+	effort?: string;
+	totalCostUsd?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheCreationInputTokens?: number;
+	cacheReadInputTokens?: number;
+	thinkingTokens?: number;
+}
+
 export interface ChatMessageView {
 	seq: number;
 	providerId: ProviderStatusView['id'];
 	role: 'operator' | 'orchestrator' | 'system';
 	text: string;
 	createdAt: string;
+	/** Present only on the orchestrator's own message, and only when that turn reported usage. */
+	usage?: ChatMessageUsageView;
+}
+
+/** A cost total plus exactly how many orchestrator turns it spans (GSHIP-634). */
+export interface ChatCostAggregate {
+	totalCostUsd: number | null;
+	turnCount: number;
+}
+
+/**
+ * The expected cost across every orchestrator turn the transcript carries a
+ * usage event for -- never the executor's or the reviewer's own runs, which
+ * report through RunCostView instead. A turn that reported nothing measurable
+ * contributes nothing to the sum and is not counted in `turnCount`, the same
+ * absence-over-zero rule GSHIP-623 established for a run's cost.
+ */
+export function aggregateChatTurnCosts(messages: readonly ChatMessageView[]): ChatCostAggregate {
+	const known = messages.filter((message) => message.usage?.totalCostUsd !== undefined);
+	if (known.length === 0) return { totalCostUsd: null, turnCount: 0 };
+	const totalCostUsd = known.reduce((sum, message) => sum + (message.usage?.totalCostUsd ?? 0), 0);
+	return { totalCostUsd, turnCount: known.length };
 }
 
 interface SnapshotPayload {

@@ -5,12 +5,17 @@ import type {
 	AgentSession,
 } from './agent-session.ts';
 import {
+	decodeOrchestratorTurnUsage,
 	normalizeOrchestratorHandoff,
 	type OrchestratorHandoff,
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
+	type OrchestratorMessageUsage,
 	type ProjectBrief,
 } from './run-store.ts';
+
+/** The `.usage` event kind `emitUsage` (claude-cli-process.ts) writes for the fixed `orchestrator` event prefix this turn always uses. */
+const ORCHESTRATOR_USAGE_EVENT_KIND = 'orchestrator.usage';
 
 export type OrchestratorCommand =
 	| { type: 'none' }
@@ -38,6 +43,7 @@ export interface OrchestratorPersistence {
 		providerId: AgentProviderId,
 		role: OrchestratorMessageRole,
 		text: string,
+		usage?: OrchestratorMessageUsage,
 	): OrchestratorMessage;
 	listOrchestratorMessages(limit?: number): OrchestratorMessage[];
 	getOrchestratorHandoff(): OrchestratorHandoff;
@@ -344,21 +350,30 @@ export class ConversationalOrchestrator {
 		const brief = persistence.getProjectBrief();
 		const messages = persistence.listOrchestratorMessages(12);
 		const prompt = buildOrchestratorPrompt(this.#options.context(), brief, handoff, messages);
-		const run = (resume: boolean) => this.#options.sessions[providerId].run({
-			sessionId,
-			resume,
-			cwd: this.#options.cwd,
-			prompt,
-			access: 'read-only',
-			outputSchema: ORCHESTRATOR_RESULT_SCHEMA,
-			signal,
-			emit: () => {},
-			eventPrefix: 'orchestrator',
-			onSessionId: (assignedId) => {
-				sessionId = assignedId;
-				persistence.setOrchestratorSession(providerId, assignedId);
-			},
-		});
+		// Captured from the call this turn actually keeps, never from a resume
+		// attempt that failed and was replaced -- each attempt starts from a clean
+		// slate so a discarded attempt's usage can never be attributed to the turn.
+		let usage: OrchestratorMessageUsage | undefined;
+		const run = (resume: boolean) => {
+			usage = undefined;
+			return this.#options.sessions[providerId].run({
+				sessionId,
+				resume,
+				cwd: this.#options.cwd,
+				prompt,
+				access: 'read-only',
+				outputSchema: ORCHESTRATOR_RESULT_SCHEMA,
+				signal,
+				emit: (kind, payload) => {
+					if (kind === ORCHESTRATOR_USAGE_EVENT_KIND) usage = decodeOrchestratorTurnUsage(payload ?? {});
+				},
+				eventPrefix: 'orchestrator',
+				onSessionId: (assignedId) => {
+					sessionId = assignedId;
+					persistence.setOrchestratorSession(providerId, assignedId);
+				},
+			});
+		};
 		let result;
 		try {
 			result = await run(existingSessionId !== null);
@@ -376,6 +391,7 @@ export class ConversationalOrchestrator {
 			providerId,
 			'orchestrator',
 			parsed.message,
+			usage,
 		);
 		if (parsed.command.type === 'none') {
 			return { assistant, command: parsed.command, commandResult: null };

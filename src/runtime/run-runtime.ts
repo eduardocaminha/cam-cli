@@ -13,6 +13,7 @@ import {
 	type OrchestratorHandoff,
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
+	type OrchestratorMessageUsage,
 	type ProjectBrief,
 	type RunCostSummary,
 	type RunEvent,
@@ -415,12 +416,14 @@ export class RunRuntime {
 		providerId: AgentProviderId,
 		role: OrchestratorMessageRole,
 		text: string,
+		usage?: OrchestratorMessageUsage,
 	): OrchestratorMessage {
 		return this.#store.appendOrchestratorMessage({
 			providerId,
 			role,
 			text,
 			createdAt: this.#now(),
+			...(usage === undefined ? {} : { usage }),
 		});
 	}
 
