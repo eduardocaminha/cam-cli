@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
-import { fingerprintSpec, type Spec, validateSpec } from '../issues/spec.ts';
+import { type EvidenceItem, fingerprintSpec, type Spec, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { defaultRunGit } from './git-runtime.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -14,6 +14,8 @@ const MAX_PUBLISH_ATTEMPTS = 3;
 export interface OperatorSpecInput {
 	scope: string;
 	verificationCommand: string;
+	/** Executable premise recorded at specify time; never run here (GSHIP-629). */
+	evidence?: EvidenceItem[];
 }
 
 export interface OperatorIssueInput extends OperatorSpecInput {
@@ -57,18 +59,44 @@ function requiredString(value: unknown, label: string): string {
 	return value.trim();
 }
 
+/**
+ * Shape-coerce the optional evidence payload without executing or judging its
+ * contents: `validateSpec` (called from `buildSpec`) is the single place that
+ * enforces item count and size, so a malformed field surfaces one consistent
+ * error instead of two different messages for the same contract.
+ */
+function optionalEvidence(value: unknown): EvidenceItem[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', 'Evidência deve ser uma lista.', 400);
+	}
+	if (value.length === 0) return undefined;
+	return value.map((item, index) => {
+		if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+			throw new IssueIntakeError('invalid-request', `Evidência ${index + 1} deve ser um objeto.`, 400);
+		}
+		const record = item as Record<string, unknown>;
+		return {
+			command: typeof record['command'] === 'string' ? record['command'] : '',
+			output: typeof record['output'] === 'string' ? record['output'] : '',
+		};
+	});
+}
+
 /** Validate the browser payload before any Git or filesystem write occurs. */
 export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
 	}
 	const input = value as Record<string, unknown>;
+	const evidence = optionalEvidence(input['evidence']);
 	return {
 		scope: requiredString(input['scope'], 'Escopo'),
 		verificationCommand: requiredString(
 			input['verificationCommand'],
 			'Comando de verificação',
 		),
+		...(evidence === undefined ? {} : { evidence }),
 	};
 }
 
@@ -116,9 +144,10 @@ function nextIssueNumber(cwd: string, sourceSha: string): number {
 }
 
 function buildSpec(input: OperatorSpecInput): Spec {
-	const spec = {
+	const spec: Spec = {
 		scope: input.scope,
 		verify: [input.verificationCommand],
+		...(input.evidence === undefined ? {} : { evidence: input.evidence }),
 	};
 	const validated = validateSpec(spec);
 	if (!validated.ok) {

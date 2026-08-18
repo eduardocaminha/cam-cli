@@ -685,6 +685,34 @@ describe('work surface', () => {
 		expect(buttonIsEnabled(card, 'Salvar revisão')).toBe(false);
 		expect(buttonIsEnabled(card, 'Aprovar')).toBe(false);
 		expect(card).not.toContain('fingerprint');
+		// GSHIP-629: absent from every already-filed issue, so nothing renders.
+		expect(card).not.toContain('Evidência checada no workspace da run');
+	});
+
+	// GSHIP-629: the spec's executable premise is shown beside the scope and the
+	// verification command it sits next to, read-only -- this panel edits the
+	// scope and the command, never the recorded evidence.
+	test('shows the evidence checked in the run workspace beside the scope and the verification command', () => {
+		const html = workPage({ drafts: [{
+			id: 'CAM-42',
+			title: 'Draft revisável',
+			scope: 'Escopo persistido',
+			verificationCommand: 'bun test focused',
+			evidence: [
+				{ command: 'wc -l src/domain-models.ts', output: '3 src/domain-models.ts' },
+				{ command: 'git log --oneline -1', output: 'abc1234 seed' },
+			],
+			state: 'stale',
+		}] });
+		const card = panel(html, 'Revisar e aprovar');
+
+		expect(card).toContain('Evidência checada no workspace da run');
+		expect(card).toContain('wc -l src/domain-models.ts');
+		expect(card).toContain('3 src/domain-models.ts');
+		expect(card).toContain('git log --oneline -1');
+		expect(card).toContain('abc1234 seed');
+		// Read-only: no input carries the evidence text.
+		expect(card).not.toContain('name="evidence"');
 	});
 
 	// GSHIP-614: while a run owns the issue file, the screen explains that

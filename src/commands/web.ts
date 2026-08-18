@@ -26,6 +26,7 @@ import {
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
+	GitEvidenceChecker,
 	GitIssueVerifier,
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
@@ -1048,6 +1049,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 		}),
 		shipper: new GithubShipper(),
 		preflight: createGitRuntimePreflight(cwd),
+		evidenceCheck: new GitEvidenceChecker(),
 		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
 	};
 }

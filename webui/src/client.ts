@@ -17,6 +17,17 @@ export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
 
+/**
+ * One command run while specifying, and the output observed then -- the
+ * spec's executable premise (GSHIP-629). Read-only here: this screen never
+ * edits it, and a revision that omits it drops it, the same as any other
+ * field this form does not carry.
+ */
+export interface EvidenceView {
+	command: string;
+	output: string;
+}
+
 export interface OperatorIssueDraft {
 	title: string;
 	scope: string;
@@ -26,6 +37,7 @@ export interface OperatorIssueDraft {
 export interface OperatorSpecDraft {
 	scope: string;
 	verificationCommand: string;
+	evidence?: EvidenceView[];
 }
 
 export interface CreatedIssue {

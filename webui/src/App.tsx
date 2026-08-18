@@ -1485,7 +1485,11 @@ function IssueReviewForm({
 			onSubmit={(event) => {
 				event.preventDefault();
 				setConfirmed(false);
-				onReviewIssue(draft.id, { scope: scope.trim(), verificationCommand: verificationCommand.trim() });
+				onReviewIssue(draft.id, {
+					scope: scope.trim(),
+					verificationCommand: verificationCommand.trim(),
+					evidence: draft.evidence,
+				});
 			}}
 		>
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[draft.state]}</Badge></div>
@@ -1497,6 +1501,19 @@ function IssueReviewForm({
 				<span className="font-medium">Comando de verificação</span>
 				<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
 			</label>
+			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
+				<div className="flex flex-col gap-2 text-sm">
+					<span className="font-medium">Evidência checada no workspace da run</span>
+					<ul className="flex flex-col gap-2">
+						{draft.evidence.map((item, index) => (
+							<li className="flex flex-col gap-1" key={index}>
+								<code className="break-all text-xs">{item.command}</code>
+								<p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.output}</p>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
 			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Salvar revisão</button>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -124,6 +124,80 @@ describe('remote-main operator issue intake', () => {
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
 		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]))
 			.toBe(git(fixture.remote, ['rev-parse', 'main']));
+	});
+
+	// GSHIP-629: the intake persists the executable premise exactly as sent,
+	// and never runs it -- an evidence command that would leave a detectable
+	// side effect must not fire during intake.
+	test('accepts and persists evidence without ever running the recorded command', () => {
+		const fixture = seedFixture();
+
+		const created = createOperatorIssue(fixture.local, {
+			title: 'Intake com evidência',
+			scope: 'O intake registra a evidência sem executá-la.',
+			verificationCommand: 'bun test',
+			evidence: [
+				{ command: 'touch should-not-execute.txt', output: 'irrelevant' },
+				{ command: 'wc -l README.md', output: '10 README.md' },
+			],
+		}, {}, () => '2026-08-16T08:00:00.000Z');
+
+		expect(existsSync(join(fixture.local, 'should-not-execute.txt'))).toBe(false);
+		expect(created).toMatchObject({ id: 'GSHIP-3', title: 'Intake com evidência' });
+		const content = git(fixture.remote, ['show', 'main:.gateship/issues/GSHIP-0003.json']);
+		const issue = JSON.parse(content) as Record<string, unknown>;
+		expect(issue['spec']).toMatchObject({
+			evidence: [
+				{ command: 'touch should-not-execute.txt', output: 'irrelevant' },
+				{ command: 'wc -l README.md', output: '10 README.md' },
+			],
+		});
+	});
+
+	test('rejects evidence past the item or size limit before touching the remote', () => {
+		const fixture = seedFixture();
+		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+
+		try {
+			createOperatorIssue(fixture.local, {
+				title: 'Evidência demais',
+				scope: 'Excede o limite de itens.',
+				verificationCommand: 'bun test',
+				evidence: [
+					{ command: 'a', output: '1' },
+					{ command: 'b', output: '2' },
+					{ command: 'c', output: '3' },
+					{ command: 'd', output: '4' },
+				],
+			});
+			throw new Error('expected createOperatorIssue to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect(error).toMatchObject({ code: 'invalid-request', status: 400 });
+		}
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+	});
+
+	test('a specified draft revised without resending evidence loses it, same as any other spec replacement', () => {
+		const fixture = seedFixture();
+		specifyOperatorIssue(fixture.local, 'CAM-1', {
+			scope: 'Contrato com evidência.',
+			verificationCommand: 'bun test',
+			evidence: [{ command: 'true', output: 'ok' }],
+		}, () => '2026-08-16T09:00:00.000Z');
+		let issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(issue['spec']).toMatchObject({ evidence: [{ command: 'true', output: 'ok' }] });
+
+		specifyOperatorIssue(fixture.local, 'CAM-1', {
+			scope: 'Contrato revisado sem reenviar evidência.',
+			verificationCommand: 'bun test',
+		}, () => '2026-08-16T09:01:00.000Z');
+		issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect((issue['spec'] as Record<string, unknown>)['evidence']).toBeUndefined();
 	});
 
 	test('fails closed when the runtime source cannot be fetched', () => {

@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	createGitRuntimePreflight,
+	defaultRunGit,
+	GitEvidenceChecker,
 	GitIssueVerifier,
 	type GitCommandRunner,
 } from '../../src/runtime/git-runtime.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 function gitRunner(values: { branch?: string; status?: string; diffExit?: number }): GitCommandRunner {
 	return (_cwd, args) => {
@@ -172,6 +175,124 @@ describe('git runtime boundary', () => {
 			terminationGraceMs: 50,
 		});
 		const pending = verifier.verify({
+			...verificationInput,
+			cwd: process.cwd(),
+			signal: controller.signal,
+		});
+		await Bun.sleep(30);
+		controller.abort();
+		await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+	});
+});
+
+// GSHIP-629: the spec's executable premise. Checked by GitEvidenceChecker in
+// the run's own workspace, after workspace.prepare and before the executor
+// ever runs (run-runtime.ts) -- never by the preflight above, which runs
+// before that workspace exists (the very first test in this file already
+// covers a spec with no evidence field starting normally, unaffected).
+describe('GitEvidenceChecker', () => {
+	function issueWithEvidence(evidence: Array<{ command: string; output: string }>): string {
+		const spec = { scope: 'Outcome backed by evidence.', verify: ['bun test'], evidence };
+		return JSON.stringify({ spec });
+	}
+
+	test('a spec without evidence passes without running any command', async () => {
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => JSON.stringify({ spec: { scope: 'x', verify: ['bun test'] } }),
+			runCommand: async () => {
+				throw new Error('must not run any command when the spec has no evidence');
+			},
+		});
+		expect(await checker.check(verificationInput)).toEqual({ ok: true });
+	});
+
+	test('matching evidence passes, running each command in the input cwd', async () => {
+		const commands: string[] = [];
+		const cwds: string[] = [];
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'echo hi', output: 'hi' }]),
+			runCommand: async ({ cwd, command }) => {
+				commands.push(command);
+				cwds.push(cwd);
+				return { exitCode: 0, stdout: 'hi\n', stderr: '' };
+			},
+		});
+
+		expect(await checker.check(verificationInput)).toEqual({ ok: true });
+		expect(commands).toEqual(['echo hi']);
+		expect(cwds).toEqual([verificationInput.cwd]);
+	});
+
+	test('diverging evidence fails, showing the command and both outputs', async () => {
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'wc -l file.txt', output: '3 file.txt' }]),
+			runCommand: async () => ({ exitCode: 0, stdout: '5 file.txt\n', stderr: '' }),
+		});
+
+		const result = await checker.check(verificationInput);
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain('wc -l file.txt');
+		expect(result.detail).toContain('3 file.txt');
+		expect(result.detail).toContain('5 file.txt');
+	});
+
+	test('an evidence command that fails to run is treated as divergence', async () => {
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'nonexistent-tool', output: 'irrelevant' }]),
+			runCommand: async () => ({ exitCode: 127, stdout: '', stderr: 'command not found' }),
+		});
+
+		const result = await checker.check(verificationInput);
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain('evidence diverged');
+	});
+
+	// A command run against a repository that moved can print far more than the
+	// 600 chars recorded at specify time; the refusal detail must not embed an
+	// unbounded amount of it, same as the legacy verify diagnostic.
+	test('caps the observed output shown in the divergence detail', async () => {
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'cat huge-file', output: 'short recorded output' }]),
+			runCommand: async () => ({ exitCode: 0, stdout: 'x'.repeat(3_000), stderr: '' }),
+		});
+
+		const result = await checker.check(verificationInput);
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain('short recorded output');
+		expect(result.detail).toContain('x'.repeat(2_000));
+		expect(result.detail).not.toContain('x'.repeat(2_001));
+		expect(result.detail?.length).toBeLessThan(2_200);
+	});
+
+	// GSHIP-629 (review): the checker runs in the workspace the run already
+	// has -- it must never cut a worktree of its own, additional or otherwise.
+	test('never registers a git worktree of its own', async () => {
+		const repo = createTestTmpdir('gship-evidence-check-');
+		defaultRunGit(repo, ['init', '-q']);
+		const before = defaultRunGit(repo, ['worktree', 'list']).stdout;
+
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'echo hi', output: 'hi' }]),
+			runCommand: async () => ({ exitCode: 0, stdout: 'hi\n', stderr: '' }),
+		});
+		await checker.check({ ...verificationInput, cwd: repo });
+
+		expect(defaultRunGit(repo, ['worktree', 'list']).stdout).toBe(before);
+	});
+
+	// GSHIP-629 (review): an evidence command runs through the same
+	// cancellable, timeout-bound path GitIssueVerifier already uses, so a
+	// command that hangs is terminated by the run's own abort instead of
+	// blocking the service.
+	test('a hanging evidence command is terminated by the run signal instead of hanging the process', async () => {
+		const controller = new AbortController();
+		const checker = new GitEvidenceChecker({
+			loadIssueFromWorkspace: () => issueWithEvidence([
+				{ command: "trap 'exit 0' TERM; while :; do sleep 0.1; done", output: 'never observed' },
+			]),
+			terminationGraceMs: 50,
+		});
+		const pending = checker.check({
 			...verificationInput,
 			cwd: process.cwd(),
 			signal: controller.signal,

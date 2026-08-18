@@ -16,7 +16,7 @@
 // CAM-190 US-001.
 
 import type { IssueEntry, IssueStage } from './types.ts';
-import { fingerprintSpec } from './spec.ts';
+import { type EvidenceItem, fingerprintSpec } from './spec.ts';
 import { isPlannable } from './plannable.ts';
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,8 @@ export interface DraftJsonRow {
 	title: string;
 	scope: string;
 	verificationCommand: string;
+	/** The spec's executable premise, checked in the run's own workspace before any provider runs (GSHIP-629). Absent when the spec has none. */
+	evidence?: EvidenceItem[];
 	state: 'draft' | 'approved' | 'stale';
 	approvedAt?: string;
 }
@@ -238,11 +240,13 @@ export function deriveBacklogJson(
 		.sort(compareBacklogEntries)
 		.map((issue): DraftJsonRow => {
 			const approval = issue.approval;
+			const evidence = issue.spec?.evidence;
 			return {
 				id: issue.id,
 				title: issue.title,
 				scope: issue.spec?.scope ?? '',
 				verificationCommand: issue.spec?.verify?.[0] ?? '',
+				...(evidence === undefined || evidence.length === 0 ? {} : { evidence }),
 				state: approval === undefined
 					? 'draft'
 					: issue.spec !== undefined && approval.fingerprint === fingerprintSpec(issue.spec)
