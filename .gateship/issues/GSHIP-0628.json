@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T00:57:12.489Z",
-  "updatedAt": "2026-08-18T00:57:12.489Z",
+  "updatedAt": "2026-08-18T00:59:58.484Z",
   "description": "Completar a exibicao do custo com o que ja esta gravado e nao chega na tela, para que o operador possa comparar configuracoes sem somar a mao. Evidencia da primeira run medida, GSHIP-627: o evento provider.usage guarda effort xhigh e thinkingTokens 35704 no executor, e o evento review.usage guarda effort high no reviewer, mas RunCostBreakdownEntry em webui/src/run-view.ts nao tem nenhum dos dois campos, entao getRunCostSummary em src/runtime/run-store.ts descarta os dois na agregacao e a tela nunca os ve. Levar thinkingTokens e effort ate a entrada agregada e exibi-los: thinking entra na linha de contagens ao lado de entrada, saida, cache lida e cache criada, e o effort aparece junto do modelo, de modo que cada run fique autoexplicativa sobre a configuracao que a produziu. Acrescentar tambem um total agregado das runs que a lista ja mostra, com o rotulo de custo esperado equivalente a uso via API e o numero de runs que ele cobre, para que o valor nunca seja lido como total do projeto nem como valor cobrado. Nao inventar o conceito de sessao: o agregado cobre exatamente as runs listadas, nem mais nem menos. Manter as regras que o GSHIP-623 estabeleceu: ausencia nunca vira zero, campo que o CLI nao reportou continua ausente na exibicao, e a quebra continua por modelo porque o total inclui chamadas auxiliares que a configuracao do operador nao nomeia. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir agregacao carregando thinking e effort, exibicao de entrada com thinking ausente, total agregado com a contagem de runs, e lista sem nenhuma run com custo nao exibindo total. Fora de escopo: agrupamento por data, filtros, agregacao por configuracao, comparacao automatica entre configuracoes, grafico, exportacao, orcamento, alerta de gasto, o usage do Codex e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/run-store.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "75dbda826a0299a5641dc8907cca3863ac93f9b8fdd9cdca4c8c4d6f9fac6ee8",
+    "approvedAt": "2026-08-18T00:59:58.484Z"
   }
 }
