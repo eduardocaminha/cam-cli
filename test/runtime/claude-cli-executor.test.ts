@@ -327,6 +327,32 @@ describe('Claude CLI runtime executor', () => {
 		expect(JSON.stringify(events)).not.toContain('/not-persisted');
 	});
 
+	// GSHIP-627: only the raw stream kinds declare activity; the turn's own
+	// bookkeeping kinds declare nothing and default to decision downstream.
+	test('declares activity only for the streamed system and assistant events', async () => {
+		const events: Array<{ kind: string; eventClass?: string }> = [];
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-34"}',
+		});
+		await executor.execute({
+			runId: 'run-34',
+			issueId: 'CAM-34',
+			sessionId: 'session-34',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-event-class-'),
+			signal: new AbortController().signal,
+			emit: (kind, _payload, eventClass) => events.push({
+				kind,
+				...(eventClass === undefined ? {} : { eventClass }),
+			}),
+		});
+
+		expect(events).toContainEqual({ kind: 'provider.system', eventClass: 'activity' });
+		expect(events).toContainEqual({ kind: 'provider.activity', eventClass: 'activity' });
+		expect(events.find((event) => event.kind === 'provider.result')?.eventClass).toBeUndefined();
+	});
+
 	test('reports a real waiting-user outcome and includes operator guidance on resume', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=waiting-user'],

@@ -172,9 +172,12 @@ function consumeCompletedItem(
 ): void {
 	const item = recordOf(itemValue);
 	const itemType = item?.['type'];
+	// This is Codex's own raw provider/review output stream (GSHIP-627), the
+	// equivalent of claude-cli-process.ts's `.activity` -- always declared
+	// activity, never a decision the run made.
 	if (itemType !== 'agent_message') {
 		if (typeof itemType === 'string' && itemType !== 'reasoning') {
-			input.emit(`${input.eventPrefix}.activity`, { tools: [itemType] });
+			input.emit(`${input.eventPrefix}.activity`, { tools: [itemType] }, 'activity');
 		}
 		return;
 	}
@@ -187,7 +190,7 @@ function consumeCompletedItem(
 		state.structuredOutput = undefined;
 	}
 	const text = message.trim().slice(0, MAX_ACTIVITY_TEXT);
-	if (text.length > 0) input.emit(`${input.eventPrefix}.activity`, { text });
+	if (text.length > 0) input.emit(`${input.eventPrefix}.activity`, { text }, 'activity');
 }
 
 function consumeCodexEvent(
