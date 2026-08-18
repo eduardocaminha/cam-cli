@@ -50,6 +50,7 @@ import {
 	type ModelSlotResolver,
 	resolveModelSlot,
 } from './model-settings.ts';
+import { formatOperatorDecisionList } from './operator-decision.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
@@ -172,7 +173,7 @@ export function buildReviewPrompt(
 		'',
 		...(decisions.length === 0 ? [] : [
 			'Decisions the operator has already made for this run, oldest first:',
-			...decisions.map((decision, index) => `${index + 1}. ${decision}`),
+			...formatOperatorDecisionList(decisions),
 			'',
 			'You may disagree with one of these. If you do, say so explicitly: report',
 			'that you disagree with a decision already made, not as a pending defect',

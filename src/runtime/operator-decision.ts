@@ -31,3 +31,13 @@ export function selectOperatorDecisions(events: readonly RunEvent[]): string[] {
 		.map((text) => text.slice(0, OPERATOR_DECISION_LIMITS.text));
 	return texts.slice(-OPERATOR_DECISION_LIMITS.maxItems);
 }
+
+/**
+ * The numbered lines both the reviewer's (GSHIP-630) and the executor's
+ * (GSHIP-637) prompts render for a run's already-made decisions -- identical
+ * in both; only the label and follow-up text around the list differ per
+ * audience, so those stay with each caller instead of living here.
+ */
+export function formatOperatorDecisionList(decisions: readonly string[]): string[] {
+	return decisions.map((decision, index) => `${index + 1}. ${decision}`);
+}
