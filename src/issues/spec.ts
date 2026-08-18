@@ -19,21 +19,14 @@ export const EVIDENCE_LIMITS = {
 } as const;
 
 /**
- * The executable task contract. New issues need only an outcome (`scope`) and
- * one or more commands that prove it (`verify`). The legacy fields stay
- * readable until the existing backlog has naturally drained.
+ * The executable task contract: an outcome (`scope`) and one or more
+ * commands that prove it (`verify`).
  */
 export interface Spec {
 	scope: string;
 	verify?: string[];
 	/** Executable premise, checked in the run's own workspace before any provider runs; never at intake. */
 	evidence?: EvidenceItem[];
-	/** Legacy deep-spec prose with embedded `[oracle: ...]` commands. */
-	acceptanceCriteria?: string[];
-	/** Legacy interview notes; ignored by the runtime. */
-	gotchas?: string[];
-	/** Legacy interview glossary; ignored by the runtime. */
-	domainTerms?: string[];
 }
 
 export interface ValidationResult {
@@ -90,7 +83,7 @@ function validateEvidence(value: unknown, errors: string[]): void {
 	value.forEach((item, index) => validateEvidenceItem(item, index, errors));
 }
 
-/** Accept the direct contract and keep old backlog records executable. */
+/** Accept the direct contract. */
 export function validateSpec(value: unknown): ValidationResult {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		return { ok: false, errors: ['spec must be a non-null object'] };
@@ -100,18 +93,14 @@ export function validateSpec(value: unknown): ValidationResult {
 	if (!isNonEmptyString(candidate['scope'])) {
 		errors.push('scope must be a non-empty string');
 	}
-	if (
-		!isNonEmptyStringArray(candidate['verify'])
-		&& !isNonEmptyStringArray(candidate['acceptanceCriteria'])
-	) {
+	if (!isNonEmptyStringArray(candidate['verify'])) {
 		errors.push('spec requires non-empty verify commands');
 	}
 	validateEvidence(candidate['evidence'], errors);
 	return { ok: errors.length === 0, errors };
 }
 
-/** Pure plannability check shared by old and new issue records. */
+/** Pure plannability check. */
 export function hasVerification(spec: Spec | undefined): boolean {
-	return isNonEmptyStringArray(spec?.verify)
-		|| isNonEmptyStringArray(spec?.acceptanceCriteria);
+	return isNonEmptyStringArray(spec?.verify);
 }

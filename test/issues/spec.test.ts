@@ -25,15 +25,6 @@ describe('direct issue spec', () => {
 		})).toEqual({ ok: true, errors: [] });
 	});
 
-	test('keeps legacy acceptance criteria readable during backlog migration', () => {
-		expect(validateSpec({
-			scope: 'Legacy issue.',
-			acceptanceCriteria: ['works [oracle: bun test]'],
-			gotchas: [],
-			domainTerms: [],
-		})).toEqual({ ok: true, errors: [] });
-	});
-
 	test('requires an object, an outcome and at least one nonblank command', () => {
 		expect(validateSpec(null)).toEqual({
 			ok: false,
@@ -47,9 +38,8 @@ describe('direct issue spec', () => {
 		expect(validateSpec({ scope: 'Outcome', verify: ['  '] })).toMatchObject({ ok: false });
 	});
 
-	test('plannability recognizes direct and legacy contracts only', () => {
+	test('plannability recognizes the direct contract only', () => {
 		expect(hasVerification({ scope: 'new', verify: ['bun test'] })).toBe(true);
-		expect(hasVerification({ scope: 'old', acceptanceCriteria: ['AC'] })).toBe(true);
 		expect(hasVerification({ scope: 'missing' })).toBe(false);
 		expect(hasVerification(undefined)).toBe(false);
 	});

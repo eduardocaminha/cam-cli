@@ -36,7 +36,7 @@ function identify(cwd: string): void {
 
 function writeIssue(cwd: string, file: string, id: string, stage: string): void {
 	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
-	const spec = { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] };
+	const spec = { verify: ['works'], scope: 'test' };
 	writeFileSync(
 		join(cwd, '.gateship', 'issues', file),
 		`${JSON.stringify({

@@ -57,14 +57,6 @@ describe("isPlannable — executable spec", () => {
 		expect(isPlannable(entry, [entry])).toBe(true);
 	});
 
-	test("accepts a legacy acceptanceCriteria issue while the backlog drains", () => {
-		const entry = approve(makeIssue({
-			id: "CAM-legacy",
-			spec: { acceptanceCriteria: ["do the thing"], scope: "s" },
-		}));
-		expect(isPlannable(entry, [entry])).toBe(true);
-	});
-
 	test("rejects missing and stale approval for an otherwise executable issue", () => {
 		const draft = makeIssue({
 			id: "CAM-draft",
@@ -82,7 +74,7 @@ describe("isPlannable — executable spec", () => {
 		expect(isPlannable(stale, [stale])).toBe(false);
 	});
 
-	test("still rejects a blocked entry even with non-empty acceptanceCriteria", () => {
+	test("still rejects a blocked entry even with non-empty verification", () => {
 		const dep = makeIssue({ id: "CAM-4", stage: "idea" });
 		const entry = approve(makeIssue({
 			id: "CAM-5",
