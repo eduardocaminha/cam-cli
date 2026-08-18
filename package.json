@@ -29,7 +29,7 @@
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
     "check:all": "bun run typecheck && bun test && bun run lint && bunx --bun knip",
-    "lint": "bunx biome lint src scripts webui --error-on-warnings",
+    "lint": "bunx biome lint src scripts webui test --error-on-warnings",
     "verify": "bun run check:all"
   },
   "devDependencies": {

@@ -13,6 +13,13 @@
     "enabled": false
   },
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "webui/**/*.{ts,tsx}"]
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "scripts/**/*.ts",
+      "webui/**/*.{ts,tsx}",
+      "test/**/*.ts",
+      "test/**/*.tsx"
+    ]
   }
 }

@@ -88,52 +88,68 @@ interface Hub {
 	breakRemoteOnMerge: boolean;
 }
 
+function runGit(cwd: string, args: string[]): CommandResult {
+	const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+	return {
+		exitCode: result.status ?? 1,
+		stdout: result.stdout ?? '',
+		stderr: result.stderr ?? '',
+	} satisfies CommandResult;
+}
+
+function ghList(hub: Hub): CommandResult {
+	return { exitCode: 0, stdout: JSON.stringify(hub.pr === null ? [] : [hub.pr]), stderr: '' };
+}
+
+function ghCreate(fixture: Fixture, hub: Hub): CommandResult {
+	hub.creates += 1;
+	hub.pr = {
+		number: PR_NUMBER,
+		state: 'OPEN',
+		headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
+	};
+	return { exitCode: 0, stdout: `https://github.com/x/y/pull/${PR_NUMBER}\n`, stderr: '' };
+}
+
+function ghMerge(hub: Hub): CommandResult {
+	hub.merges += 1;
+	return { exitCode: 0, stdout: '', stderr: '' };
+}
+
+/** GitHub merges the branch: the REMOTE's main moves, nothing local does. */
+function ghView(fixture: Fixture, hub: Hub): CommandResult {
+	git(fixture.remote, ['update-ref', 'refs/heads/main', `refs/heads/${BRANCH}`]);
+	if (hub.pr !== null) hub.pr.state = 'MERGED';
+	if (hub.breakRemoteOnMerge) {
+		git(fixture.local, ['remote', 'set-url', 'origin', join(fixture.root, 'gone')]);
+	}
+	return {
+		exitCode: 0,
+		stdout: JSON.stringify({
+			state: 'MERGED',
+			mergeStateStatus: 'CLEAN',
+			// The merged head is the one the ship pushed, so the head check
+			// the monitor runs on every poll (GSHIP-615) lets it through.
+			headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
+		}),
+		stderr: '',
+	};
+}
+
+function runGh(fixture: Fixture, hub: Hub, args: string[]): CommandResult | undefined {
+	if (args[1] === 'list') return ghList(hub);
+	if (args[1] === 'create') return ghCreate(fixture, hub);
+	if (args[1] === 'merge') return ghMerge(hub);
+	if (args[1] === 'view') return ghView(fixture, hub);
+	return undefined;
+}
+
 /** Real git, doubled gh. The doubled merge lands on the remote's own main. */
 function createRunner(fixture: Fixture, hub: Hub): ShipCommandRunner {
 	return async ({ cwd, command, args }) => {
-		if (command === 'git') {
-			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
-			return {
-				exitCode: result.status ?? 1,
-				stdout: result.stdout ?? '',
-				stderr: result.stderr ?? '',
-			} satisfies CommandResult;
-		}
-		if (command === 'gh' && args[1] === 'list') {
-			return { exitCode: 0, stdout: JSON.stringify(hub.pr === null ? [] : [hub.pr]), stderr: '' };
-		}
-		if (command === 'gh' && args[1] === 'create') {
-			hub.creates += 1;
-			hub.pr = {
-				number: PR_NUMBER,
-				state: 'OPEN',
-				headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
-			};
-			return { exitCode: 0, stdout: `https://github.com/x/y/pull/${PR_NUMBER}\n`, stderr: '' };
-		}
-		if (command === 'gh' && args[1] === 'merge') {
-			hub.merges += 1;
-			return { exitCode: 0, stdout: '', stderr: '' };
-		}
-		if (command === 'gh' && args[1] === 'view') {
-			// GitHub merges the branch: the REMOTE's main moves, nothing local does.
-			git(fixture.remote, ['update-ref', 'refs/heads/main', `refs/heads/${BRANCH}`]);
-			if (hub.pr !== null) hub.pr.state = 'MERGED';
-			if (hub.breakRemoteOnMerge) {
-				git(fixture.local, ['remote', 'set-url', 'origin', join(fixture.root, 'gone')]);
-			}
-			return {
-				exitCode: 0,
-				stdout: JSON.stringify({
-					state: 'MERGED',
-					mergeStateStatus: 'CLEAN',
-					// The merged head is the one the ship pushed, so the head check
-					// the monitor runs on every poll (GSHIP-615) lets it through.
-					headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
-				}),
-				stderr: '',
-			};
-		}
+		if (command === 'git') return runGit(cwd, args);
+		const response = command === 'gh' ? runGh(fixture, hub, args) : undefined;
+		if (response !== undefined) return response;
 		throw new Error(`unscripted command: ${command} ${args.join(' ')}`);
 	};
 }
