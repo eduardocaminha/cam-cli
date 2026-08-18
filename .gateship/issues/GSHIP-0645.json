@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T22:32:11.992Z",
-  "updatedAt": "2026-08-18T22:32:11.992Z",
+  "updatedAt": "2026-08-18T22:33:34.839Z",
   "description": "Fazer a tela atualizar quando uma run captura proposta, o que hoje nao acontece. A funcao que decide se um evento invalida o snapshot responde sim apenas quando o estado da run muda, mais dois casos nomeados; a captura de proposta e emitida com estado igual antes e depois, entao o inbox so aparece atualizado no proximo evento que por acaso mude estado. Incluir a captura de proposta entre os eventos que invalidam o snapshot, sem alargar a regra para eventos de atividade, que sao a maioria do fluxo e tornariam a atualizacao constante. Os testes novos entram no arquivo ja existente nomeado no comando de verificacao e devem cobrir captura invalidando, evento de atividade nao invalidando, e mudanca de estado continuando a invalidar. Fora de escopo: mudar a forma como o snapshot e lido, paginar, alterar a frequencia de atualizacao e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "0"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "6747dcd959fc84d6ee9e2c522b656bb23213f8b6ed728fa576d44c3393667c5d",
+    "approvedAt": "2026-08-18T22:33:34.839Z"
   }
 }
