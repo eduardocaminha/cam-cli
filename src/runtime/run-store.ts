@@ -189,6 +189,20 @@ export interface RunCostBreakdownEntry {
 }
 
 /**
+ * A role's effort and thinking-token totals, summed across every invocation of
+ * that role (GSHIP-628). Both are properties of the invocation -- the effort
+ * flag it was called with, the thinking count `usage` reports at the call
+ * level -- never of one model inside it, which is why they are reported here
+ * instead of on a `RunCostBreakdownEntry` row. `effort` is absent, not
+ * guessed, when the role's invocations reported more than one distinct value.
+ */
+export interface RunCostRoleUsage {
+	role: RunCostRole;
+	thinkingTokens?: number;
+	effort?: string;
+}
+
+/**
  * A run's whole reported cost (GSHIP-623), derived from every `.usage` event
  * the run has, never from a display-bounded read. `totalCostUsd` is `null`
  * when the CLI never reported a cost for this run -- never `0`, which would
@@ -197,6 +211,7 @@ export interface RunCostBreakdownEntry {
 export interface RunCostSummary {
 	totalCostUsd: number | null;
 	breakdown: RunCostBreakdownEntry[];
+	roles: RunCostRoleUsage[];
 }
 
 /** The two `.usage` event kinds `emitUsage` (claude-cli-process.ts) writes, keyed to their role. */
@@ -264,6 +279,62 @@ function accumulateUsageRow(
 		for (const entry of modelUsage) mergeModelUsageEntry(breakdown, role, entry);
 	}
 	return next;
+}
+
+/** `payload.effort`, the flag `emitUsage` (claude-cli-process.ts) passed for the whole invocation. */
+function decodeEffort(payload: Record<string, unknown>): string | undefined {
+	const value = payload['effort'];
+	return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** `payload.usage.thinkingTokens`, the invocation-level count `ClaudeResultUsage` reports (claude-stream.ts). */
+function decodeThinkingTokens(payload: Record<string, unknown>): number | undefined {
+	const usage = payload['usage'];
+	if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
+	return decodeUsageNumber((usage as Record<string, unknown>)['thinkingTokens']);
+}
+
+interface RoleUsageAccumulator {
+	thinkingTokens: number | undefined;
+	effort: string | undefined;
+	/** Once two invocations of the role disagreed, `effort` stays absent for good. */
+	effortDiverged: boolean;
+}
+
+/**
+ * Folds one invocation's effort and thinking tokens into its role's running
+ * total (GSHIP-628). Thinking always sums, the same as any other count; effort
+ * is carried only while every invocation of the role agrees, and is cleared
+ * for good the moment two of them disagree -- never guessed by picking one.
+ */
+function accumulateRoleUsage(
+	roles: Map<RunCostRole, RoleUsageAccumulator>,
+	role: RunCostRole,
+	payload: Record<string, unknown>,
+): void {
+	const effort = decodeEffort(payload);
+	const thinkingTokens = decodeThinkingTokens(payload);
+	const existing = roles.get(role) ?? { thinkingTokens: undefined, effort: undefined, effortDiverged: false };
+	existing.thinkingTokens = addTokenCount(existing.thinkingTokens, thinkingTokens);
+	if (!existing.effortDiverged && effort !== undefined) {
+		if (existing.effort === undefined) {
+			existing.effort = effort;
+		} else if (existing.effort !== effort) {
+			existing.effort = undefined;
+			existing.effortDiverged = true;
+		}
+	}
+	roles.set(role, existing);
+}
+
+/** Drops a role with nothing to report, the same absence-over-empty-value pattern as the breakdown. */
+function toRoleUsage(role: RunCostRole, acc: RoleUsageAccumulator): RunCostRoleUsage | undefined {
+	if (acc.thinkingTokens === undefined && acc.effort === undefined) return undefined;
+	return {
+		role,
+		...(acc.thinkingTokens === undefined ? {} : { thinkingTokens: acc.thinkingTokens }),
+		...(acc.effort === undefined ? {} : { effort: acc.effort }),
+	};
 }
 
 interface RunRow {
@@ -916,11 +987,12 @@ export class RunStore {
 	}
 
 	/**
-	 * A run's total reported cost and its breakdown by role and model
-	 * (GSHIP-623), derived by summing every `provider.usage`/`review.usage`
-	 * event the run has -- deliberately unbounded, unlike `listRunEvents`'s
-	 * display window, so a run with more events than that limit still reports
-	 * its true total instead of a silently truncated one.
+	 * A run's total reported cost, its breakdown by role and model, and its
+	 * effort/thinking totals by role (GSHIP-623, GSHIP-628), derived by summing
+	 * every `provider.usage`/`review.usage` event the run has -- deliberately
+	 * unbounded, unlike `listRunEvents`'s display window, so a run with more
+	 * events than that limit still reports its true total instead of a
+	 * silently truncated one.
 	 */
 	getRunCostSummary(runId: string): RunCostSummary {
 		const rows = this.#db.query(`
@@ -931,12 +1003,18 @@ export class RunStore {
 
 		let totalCostUsd: number | null = null;
 		const breakdown = new Map<string, RunCostBreakdownEntry>();
+		const roles = new Map<RunCostRole, RoleUsageAccumulator>();
 		for (const row of rows) {
 			const role = USAGE_EVENT_ROLES[row.kind];
 			if (role === undefined) continue;
-			totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, decodePayload(row.payload_json));
+			const payload = decodePayload(row.payload_json);
+			totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, payload);
+			accumulateRoleUsage(roles, role, payload);
 		}
-		return { totalCostUsd, breakdown: [...breakdown.values()] };
+		const roleUsage = [...roles.entries()]
+			.map(([role, acc]) => toRoleUsage(role, acc))
+			.filter((usage): usage is RunCostRoleUsage => usage !== undefined);
+		return { totalCostUsd, breakdown: [...breakdown.values()], roles: roleUsage };
 	}
 
 	/**
