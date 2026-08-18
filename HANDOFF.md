@@ -2,7 +2,7 @@
 
 > Last operator checkpoint: 2026-08-16
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `2daa22c1` (GSHIP-625 shipped through PR #463)
+> Product baseline: `main` at `7dcfe4b9` (GSHIP-629 shipped through PR #468)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -25,13 +25,14 @@ problem so it can be fixed in the product, rather than as a rule to follow.
 
 ## Current stage
 
-**Stage 5 of 15 — the serial autonomous scheduler is next and unspecified. Stage 9
-came forward and closed: per-role model and effort is live and validated against
-the CLI, the operator chose Opus 5 at `high` for the orchestrator and the reviewer
-and Sonnet 5 at `xhigh` for the executor, and GSHIP-623 now records what each role
-costs. Eleven slices shipped for it, GSHIP-617 through GSHIP-626. No draft is
-open, and no cost has been measured yet: every run so far predates the recording,
-so the first numbers arrive with the next run.**
+**Stage 5 of 15 — the serial autonomous scheduler is next, and GSHIP-629 just
+handed it the mechanism its revalidation needed. Stage 9 closed with per-role
+model and effort live and validated against the CLI, the operator running Opus 5
+at `high` for the orchestrator and the reviewer and Sonnet 5 at `xhigh` for the
+executor, and the cost of each role now recorded. Fourteen slices shipped in this
+cycle, GSHIP-614 through GSHIP-629, and three of them are measured: a clean run
+cost about seven expected dollars, and a run that needed five rounds cost about
+forty-seven. No draft is open.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -195,21 +196,47 @@ transient `HTTP 503` is retried with backoff instead of ending the ship, and a
 merge that cannot be observed is reported as unconfirmed rather than failed, while
 a divergent head still fails immediately.
 
+GSHIP-627 split the event log by lifetime. Measured before the change, 92.8% of
+16006 events were the four provider-stream kinds and only 1153 carried a decision;
+the largest run held 1144 events of which 35 were decisions, most of them outside
+the newest 200 the live read returns. Class is written at emit time and never
+inferred at read time, the default is durable so a new kind that forgets to
+declare itself shows up rather than vanishing, and the suffix rule that described
+the old rows was used once by the migration and is not live logic.
+
+GSHIP-628 completed the cost surface, and its two rounds were both modelling
+errors in the specification rather than in the implementation. Effort and thinking
+tokens are properties of an invocation, not of a model: the CLI reports thinking
+once per invocation and never inside `modelUsage`, and matching a model name is
+impossible anyway because the operator's slot holds a free-text alias while the
+CLI reports resolved ids. Both are now reported per role, and an effort that
+differs between a role's invocations is reported as absent rather than guessed.
+
+GSHIP-629 gave a specification an executable premise. `evidence` holds up to three
+command-and-observed-output pairs, checked in the run's own workspace after it is
+prepared and before any provider work, with a divergence ending the run and
+naming the command, the recorded output and the current one. It runs through the
+same owned-command path as verification, with timeout and process-group
+termination, because an operator-authored command deserves the same containment
+whether it proves a premise or a result.
+
 ### Proposed next bounded slice
 
-Stage 5's serial scheduler, now that the meter exists. It queues already-approved
-issues, revalidates just in time against current `origin/main`, and pauses
-honestly when revalidation fails. Revalidation is the part that needs design
-attention rather than transcription: a specification goes stale when the code it
-describes moves, and its approval fingerprint still matches, so checking the
-fingerprint alone would let the queue run work whose assumptions no longer hold.
+Stage 5's serial scheduler. GSHIP-629 already answers the part that needed design:
+revalidating a queued issue is re-running its recorded evidence and comparing, so
+the queue pauses honestly when the premise moved rather than trusting a
+fingerprint that only sees the specification's own text.
 
-Two smaller slices are identified and unfiled: classifying provider errors at
-their source in each adapter, following the shape GSHIP-625 settled, and wiring
-the Claude CLI's own `--fallback-model` as an optional per-role slot, empty by
-default, with the model actually used visible in the run event. Polling vendor
-status pages was considered and rejected, because a status page lagged reality in
-both directions during the outage this cycle.
+Three smaller slices are identified and unfiled. Operator decisions never reach
+the reviewer, so a ratified deviation is re-reported on every later round: each
+review is a fresh session and the review prompt carries no record of what the
+operator already settled. The legacy `Spec` fields can now go, since `gotchas` and
+`domainTerms` were already dead in code and retiring the CAM backlog made the
+`acceptanceCriteria` fallback dead in data. And provider errors should be
+classified at their source in each adapter, following the shape GSHIP-625 settled,
+with the Claude CLI's own `--fallback-model` wired as an optional per-role slot.
+Polling vendor status pages was considered and rejected, because a status page
+lagged reality in both directions during the outage this cycle.
 
 ### Recent process evidence
 
@@ -336,6 +363,26 @@ both directions during the outage this cycle.
 - Eleven issues shipped in this cycle, GSHIP-614 through GSHIP-626, nine of them
   with no fix round. The two fix rounds and the one failed run were all found by
   the reviewer or by the mechanism, never by the operator reading code.
+- The first measured costs, all expected API-equivalent and none of them charged:
+  GSHIP-627 cost about seven dollars with no round, GSHIP-628 about twenty-two
+  with three, and GSHIP-629 about forty-seven with five. Rounds, not the model,
+  dominate what a run costs, because every round pays the executor and the
+  reviewer again.
+- Of the nine operator decisions those two runs needed, seven corrected a premise
+  the specification had stated wrongly and two corrected the implementation. The
+  bottleneck this cycle was specification quality, not execution, and GSHIP-629
+  exists because of it.
+- The reviewer never sees an operator decision. Each review is a fresh session
+  with no resume, and the review prompt carries no record of what was settled, so
+  the same ratified deviation was reported twice on GSHIP-629 and cost a round
+  each time.
+- Moving a run's pull request from outside is now safe: on GSHIP-629 the head
+  moved, GSHIP-615 detected it, GSHIP-616 disarmed the auto-merge, and nothing
+  landed unwatched. The day before, with the disarm missing from a stale process,
+  the same sequence merged a head the service never verified.
+- Retiring the CAM-era backlog removed 80 open issues that no run referenced and
+  that carried the legacy `acceptanceCriteria` contract, which cut the directory
+  the snapshot parses from 120 open issues to 40.
 
 ## Product objective
 
@@ -436,9 +483,9 @@ loop over recreating the former harness in the browser.
    everything. Revalidation must cover a specification's assumptions, not only
    its approval fingerprint: a draft written before the previous run goes stale
    because that run changed the code it described, and the fingerprint still
-   matches. This is the capability that makes a queue of pre-written work safe,
-   and until it exists, writing several drafts ahead is guesswork rather than a
-   plan.
+   matches. GSHIP-629 supplies the mechanism, since a specification's premise is
+   now recorded as commands with their observed output, so revalidating a queued
+   issue is re-running them and comparing.
 6. **Robust sandbox.** Tighten filesystem, process, network, secret, cancellation,
    and cleanup boundaries around provider work without restoring container-era
    orchestration complexity.
@@ -533,7 +580,8 @@ For a fresh Claude Code or Codex session:
 > Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete, and Stage 9 shipped ahead of
-> Stage 5 as GSHIP-617 through GSHIP-626. No draft is open and Stage 5 is next.
+> bounded slice. Stages 1 through 4 are complete, Stage 9 shipped ahead of Stage 5
+> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-629 followed. No
+> draft is open and Stage 5 is next.
 > Report the current state, including the pending proposals in the inbox, and wait
 > for the operator's explicit approval before starting anything.
