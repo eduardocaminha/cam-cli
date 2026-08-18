@@ -40,7 +40,7 @@ function writeIssue(cwd: string, number: number, stage: 'idea' | 'specified' = '
 			createdAt: '2026-08-15T00:00:00.000Z',
 			updatedAt: '2026-08-15T00:00:00.000Z',
 			...(stage === 'specified'
-				? { spec: { acceptanceCriteria: ['works'], scope: 'fixture', gotchas: [], domainTerms: [] } }
+				? { spec: { verify: ['works'], scope: 'fixture' } }
 				: {}),
 		}, null, 2)}\n`,
 	);

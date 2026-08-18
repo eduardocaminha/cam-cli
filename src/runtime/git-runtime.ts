@@ -5,7 +5,6 @@ import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { issueFilePath } from '../issues/backlog.ts';
-import { parseOracleDirective } from '../issues/oracle-directive.ts';
 import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts';
 import { terminateProcessGroup } from './process-group.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -169,22 +168,7 @@ function verificationCommands(issueContent: string): string[] {
 	if (Array.isArray(direct) && direct.length > 0 && direct.every((item) => typeof item === 'string')) {
 		return direct;
 	}
-	const criteria = (spec as Record<string, unknown>).acceptanceCriteria;
-	if (!Array.isArray(criteria) || criteria.length === 0 || !criteria.every((item) => typeof item === 'string')) {
-		throw new Error('issue has no verification commands');
-	}
-	return criteria.map((criterion, index) => {
-		const directive = parseOracleDirective(criterion);
-		if (directive === null || directive.kind === 'invalid') {
-			throw new Error(`legacy acceptance criterion ${index + 1} has no runnable command`);
-		}
-		if (directive.kind === 'unsupported') {
-			throw new Error(
-				`legacy acceptance criterion ${index + 1} uses unsupported oracle ${directive.name}`,
-			);
-		}
-		return directive.command;
-	});
+	throw new Error('issue has no verification commands');
 }
 
 function outputTail(result: CommandResult): string {

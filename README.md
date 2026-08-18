@@ -119,9 +119,8 @@ operator task
 
 The task specification is the execution contract. Gateship does not require a
 planner to rewrite it or an auditor to negotiate with the planner. Verification
-runs the commands in the direct `spec: { scope, verify }` contract. Legacy
-`acceptanceCriteria` records remain readable while the existing backlog drains;
-new tasks do not use an embedded oracle DSL. Review is a separate fresh session
+runs the commands in the direct `spec: { scope, verify }` contract; an issue
+with no `verify` commands fails preflight. Review is a separate fresh session
 with mechanically read-only capabilities.
 
 ## Main commands

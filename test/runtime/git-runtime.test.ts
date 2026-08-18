@@ -32,10 +32,6 @@ const verificationInput = {
 	emit: () => {},
 };
 
-function issueWithCriteria(criteria: string[]): string {
-	return JSON.stringify({ spec: { acceptanceCriteria: criteria } });
-}
-
 function issueWithVerification(commands: string[]): string {
 	return JSON.stringify({ spec: { scope: 'Expected outcome.', verify: commands } });
 }
@@ -105,15 +101,12 @@ describe('git runtime boundary', () => {
 		});
 	});
 
-	test('runs every legacy issue oracle in order and emits command lifecycle events', async () => {
+	test('runs every verify command in order and emits command lifecycle events', async () => {
 		const commands: string[] = [];
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const verifier = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria([
-				'first [oracle: named-command bun test one]',
-				'second [oracle: file-assert test -f output.txt]',
-			]),
+			loadIssue: () => issueWithVerification(['bun test one', 'test -f output.txt']),
 			runCommand: async ({ command }) => {
 				commands.push(command);
 				return { exitCode: 0, stdout: '', stderr: '' };
@@ -135,28 +128,21 @@ describe('git runtime boundary', () => {
 		]);
 	});
 
-	test('fails closed for missing or unsupported oracles and limits command diagnostics', async () => {
+	test('fails closed when the issue has no verification commands', async () => {
 		const missing = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria(['no directive']),
+			loadIssue: () => JSON.stringify({ spec: { scope: 'no verify' } }),
 		});
 		expect(await missing.verify(verificationInput)).toMatchObject({
 			ok: false,
-			detail: 'legacy acceptance criterion 1 has no runnable command',
+			detail: 'issue has no verification commands',
 		});
+	});
 
-		const unsupported = new GitIssueVerifier({
-			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria(['visual [oracle: reviewer-judgment]']),
-		});
-		expect(await unsupported.verify(verificationInput)).toMatchObject({
-			ok: false,
-			detail: 'legacy acceptance criterion 1 uses unsupported oracle reviewer-judgment',
-		});
-
+	test('caps command diagnostics on a failed verification command', async () => {
 		const failed = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria(['fails [oracle: false]']),
+			loadIssue: () => issueWithVerification(['false']),
 			runCommand: async () => ({ exitCode: 7, stdout: 'x'.repeat(3_000), stderr: '' }),
 		});
 		const failedResult = await failed.verify(verificationInput);
@@ -165,12 +151,12 @@ describe('git runtime boundary', () => {
 		expect(failedResult.detail?.length).toBeLessThan(2_100);
 	});
 
-	test('cancels and awaits a real oracle subprocess group', async () => {
+	test('cancels and awaits a real verify subprocess group', async () => {
 		const controller = new AbortController();
 		const verifier = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria([
-				"wait [oracle: trap 'exit 0' TERM; while :; do sleep 0.1; done]",
+			loadIssue: () => issueWithVerification([
+				"trap 'exit 0' TERM; while :; do sleep 0.1; done",
 			]),
 			terminationGraceMs: 50,
 		});
