@@ -736,3 +736,41 @@ describe('releasing a failed run workspace', () => {
 		runtime.close();
 	});
 });
+
+// GSHIP-627: the executor declares activity at the emit call site; the
+// runtime's own wrapper must thread that declaration through to the store
+// instead of dropping it, and everything undeclared stays a decision.
+describe('run event class', () => {
+	test('threads the caller-declared class through to the store, defaulting the rest to decision', async () => {
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-event-class',
+			newSessionId: () => 'session-event-class',
+			executor: {
+				execute: async ({ emit }) => {
+					emit('provider.activity', { text: 'noise' }, 'activity');
+					emit('run.operator-note', { text: 'kept' });
+					return { outcome: 'completed', summary: 'Changed one seam.' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const started = runtime.startRun('CAM-80');
+		await waitFor(() => runtime.getRun(started.id)?.state === 'ready-to-ship');
+
+		const live = runtime.listRunEvents(started.id)
+			.map((event) => ({ kind: event.kind, eventClass: event.eventClass }));
+		expect(live).toContainEqual({ kind: 'provider.activity', eventClass: 'activity' });
+		expect(live).toContainEqual({ kind: 'run.operator-note', eventClass: 'decision' });
+
+		const decisionKinds = runtime.listRunDecisionEvents(started.id).map((event) => event.kind);
+		expect(decisionKinds).not.toContain('provider.activity');
+		expect(decisionKinds).toContain('run.operator-note');
+		expect(decisionKinds).toContain('run.created');
+		await runtime.stop();
+		runtime.close();
+	});
+});

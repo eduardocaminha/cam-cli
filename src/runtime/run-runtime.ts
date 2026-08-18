@@ -15,6 +15,7 @@ import {
 	type ProjectBrief,
 	type RunCostSummary,
 	type RunEvent,
+	type RunEventClass,
 	type RunRecord,
 	RunStore,
 } from './run-store.ts';
@@ -27,7 +28,8 @@ export interface RuntimeExecutionInput {
 	resume: boolean;
 	cwd: string;
 	signal: AbortSignal;
-	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/** `eventClass` is the caller's declaration (GSHIP-627); omitted defaults to `decision`. */
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
 	/** Persist a provider-assigned thread id as soon as it becomes available. */
 	setSessionId?: (sessionId: string) => void;
 	/**
@@ -73,7 +75,7 @@ export interface RuntimeShipInput {
 	issueId: string;
 	cwd: string;
 	signal: AbortSignal;
-	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
 }
 
 /**
@@ -301,6 +303,14 @@ export class RunRuntime {
 	}
 
 	/**
+	 * Every durable decision event for one run, unbounded (GSHIP-627) unlike
+	 * `listRunEvents`' display window.
+	 */
+	listRunDecisionEvents(runId: string): RunEvent[] {
+		return this.#store.listRunDecisionEvents(runId);
+	}
+
+	/**
 	 * The run's total reported cost and its breakdown by role and model
 	 * (GSHIP-623), read from the complete event log rather than the display
 	 * window `listRunEvents` caps.
@@ -492,7 +502,7 @@ export class RunRuntime {
 				issueId: run.issueId,
 				cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 				signal,
-				emit: (kind, payload) => this.#emit(run.id, kind, payload),
+				emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 			});
 			if (signal.aborted) {
 				this.#transition(run.id, 'ready-to-ship', 'run.ship-cancelled');
@@ -631,7 +641,7 @@ export class RunRuntime {
 			resume: attempt.resume,
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
-			emit: (kind, payload) => this.#emit(run.id, kind, payload),
+			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 			setSessionId: (sessionId) => this.#setSessionId(run, sessionId),
 			...(attempt.reviewFeedback === undefined
 				? {}
@@ -651,12 +661,13 @@ export class RunRuntime {
 	}
 
 	/** Persist one progress event that does not move the run's state. */
-	#emit(runId: string, kind: string, payload?: Record<string, unknown>): void {
+	#emit(runId: string, kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass): void {
 		const event = this.#store.appendEvent({
 			runId,
 			kind,
 			createdAt: this.#now(),
 			...(payload === undefined ? {} : { payload }),
+			...(eventClass === undefined ? {} : { eventClass }),
 		});
 		this.#publish(event);
 	}

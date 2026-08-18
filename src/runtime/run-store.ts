@@ -35,6 +35,16 @@ export interface RunRecord {
 	error: string | null;
 }
 
+/**
+ * Ephemeral provider/review stream chatter versus a durable decision the run
+ * made (GSHIP-627). Written once at emission and never re-derived at read
+ * time: `createRun` and `transition` write `decision` by construction, and
+ * `appendEvent` defaults to `decision` unless its caller declares otherwise,
+ * so a new kind that forgets to declare stays visible to a derived read
+ * instead of silently disappearing from it.
+ */
+export type RunEventClass = 'activity' | 'decision';
+
 export interface RunEvent {
 	seq: number;
 	runId: string;
@@ -43,6 +53,7 @@ export interface RunEvent {
 	toState: RunState;
 	payload: Record<string, unknown>;
 	createdAt: string;
+	eventClass: RunEventClass;
 }
 
 export type OrchestratorMessageRole = 'operator' | 'orchestrator' | 'system';
@@ -152,6 +163,8 @@ export interface AppendRunEventInput {
 	kind: string;
 	createdAt: string;
 	payload?: Record<string, unknown>;
+	/** Declared by the caller; omitted means `decision`, never guessed from `kind`. */
+	eventClass?: RunEventClass;
 }
 
 export interface RecordProposalsInput {
@@ -275,6 +288,7 @@ interface EventRow {
 	to_state: string;
 	payload_json: string;
 	created_at: string;
+	event_class: string;
 }
 
 interface ProposalRow {
@@ -332,6 +346,11 @@ function decodePayload(json: string): Record<string, unknown> {
 	return {};
 }
 
+/** Anything other than the literal `activity` reads as `decision`, the safe default. */
+function decodeEventClass(value: string): RunEventClass {
+	return value === 'activity' ? 'activity' : 'decision';
+}
+
 function decodeEvent(row: EventRow): RunEvent {
 	return {
 		seq: row.seq,
@@ -341,6 +360,7 @@ function decodeEvent(row: EventRow): RunEvent {
 		toState: decodeState(row.to_state),
 		payload: decodePayload(row.payload_json),
 		createdAt: row.created_at,
+		eventClass: decodeEventClass(row.event_class),
 	};
 }
 
@@ -418,7 +438,8 @@ export class RunStore {
 				from_state TEXT,
 				to_state TEXT NOT NULL,
 				payload_json TEXT NOT NULL,
-				created_at TEXT NOT NULL
+				created_at TEXT NOT NULL,
+				event_class TEXT NOT NULL DEFAULT 'decision'
 			);
 			CREATE INDEX IF NOT EXISTS run_events_run_seq ON run_events(run_id, seq);
 			CREATE TABLE IF NOT EXISTS run_proposals (
@@ -482,6 +503,19 @@ export class RunStore {
 		if (!proposalColumns.some((column) => column.name === 'promoted_issue_id')) {
 			this.#db.exec('ALTER TABLE run_proposals ADD COLUMN promoted_issue_id TEXT;');
 		}
+		// A pre-GSHIP-627 database has no class at all. The suffixes below are a
+		// one-time read of what those rows already were -- the four stream kinds
+		// they name are exactly the ephemeral provider/review activity measured
+		// at spec time -- and this rule never runs again after this migration:
+		// every row written from here on carries the class its writer declared.
+		const eventColumns = this.#db.query('PRAGMA table_info(run_events)').all() as Array<{ name: string }>;
+		if (!eventColumns.some((column) => column.name === 'event_class')) {
+			this.#db.exec("ALTER TABLE run_events ADD COLUMN event_class TEXT NOT NULL DEFAULT 'decision';");
+			this.#db.exec(`
+				UPDATE run_events SET event_class = 'activity'
+				WHERE kind LIKE '%.system' OR kind LIKE '%.activity';
+			`);
+		}
 	}
 
 	createRun(input: CreateRunInput): { run: RunRecord; event: RunEvent } {
@@ -500,8 +534,8 @@ export class RunStore {
 			});
 			const inserted = this.#db.query(`
 				INSERT INTO run_events (
-					run_id, kind, from_state, to_state, payload_json, created_at
-				) VALUES ($runId, 'run.created', NULL, 'queued', '{}', $createdAt)
+					run_id, kind, from_state, to_state, payload_json, created_at, event_class
+				) VALUES ($runId, 'run.created', NULL, 'queued', '{}', $createdAt, 'decision')
 				RETURNING *
 			`).get({ runId: input.id, createdAt: input.createdAt }) as EventRow;
 			return inserted;
@@ -535,8 +569,8 @@ export class RunStore {
 			});
 			return this.#db.query(`
 				INSERT INTO run_events (
-					run_id, kind, from_state, to_state, payload_json, created_at
-				) VALUES ($runId, $kind, $fromState, $toState, $payloadJson, $createdAt)
+					run_id, kind, from_state, to_state, payload_json, created_at, event_class
+				) VALUES ($runId, $kind, $fromState, $toState, $payloadJson, $createdAt, 'decision')
 				RETURNING *
 			`).get({
 				runId: input.runId,
@@ -558,8 +592,8 @@ export class RunStore {
 		if (current === null) throw new Error(`run not found: ${input.runId}`);
 		const row = this.#db.query(`
 			INSERT INTO run_events (
-				run_id, kind, from_state, to_state, payload_json, created_at
-			) VALUES ($runId, $kind, $state, $state, $payloadJson, $createdAt)
+				run_id, kind, from_state, to_state, payload_json, created_at, event_class
+			) VALUES ($runId, $kind, $state, $state, $payloadJson, $createdAt, $eventClass)
 			RETURNING *
 		`).get({
 			runId: input.runId,
@@ -567,6 +601,7 @@ export class RunStore {
 			state: current.state,
 			payloadJson: JSON.stringify(input.payload ?? {}),
 			createdAt: input.createdAt,
+			eventClass: input.eventClass ?? 'decision',
 		}) as EventRow;
 		return decodeEvent(row);
 	}
@@ -861,6 +896,22 @@ export class RunStore {
 				LIMIT $limit
 			) ORDER BY seq ASC
 		`).all({ runId, limit }) as EventRow[];
+		return rows.map(decodeEvent);
+	}
+
+	/**
+	 * Every durable decision event for one run, unbounded (GSHIP-627): the class
+	 * was fixed at emission, so this filters on the stored column instead of
+	 * re-deriving anything from `kind`. Unlike `listRunEvents`' display window,
+	 * a derived read must not silently drop a decision that falls outside the
+	 * newest 200.
+	 */
+	listRunDecisionEvents(runId: string): RunEvent[] {
+		const rows = this.#db.query(`
+			SELECT * FROM run_events
+			WHERE run_id = $runId AND event_class = 'decision'
+			ORDER BY seq ASC
+		`).all({ runId }) as EventRow[];
 		return rows.map(decodeEvent);
 	}
 

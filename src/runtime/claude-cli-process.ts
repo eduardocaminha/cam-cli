@@ -26,7 +26,11 @@ export interface ClaudeCliRunInput {
 	env: Record<string, string | undefined>;
 	prompt: string;
 	signal: AbortSignal;
-	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/**
+	 * `eventClass` declares GSHIP-627's activity/decision split at the emit
+	 * call site; omitted means the store defaults it to `decision`.
+	 */
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: 'activity' | 'decision') => void;
 	/** Event namespace, so a reviewer child is distinguishable from the implementer. */
 	eventPrefix: string;
 	/**
@@ -137,10 +141,13 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
 		onLine: (line) => {
 		const event = classifyHeadlessStreamLine(line);
+		// Only these two stream kinds are declared activity (GSHIP-627): they are
+		// the CLI's raw provider/review output, never a decision the run made.
+		// Everything else below stays undeclared and defaults to decision.
 		if (event.kind === 'system') {
-			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' });
+			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' }, 'activity');
 		} else if (event.kind === 'assistant') {
-			input.emit(`${input.eventPrefix}.activity`, projectAssistantActivity(event.raw));
+			input.emit(`${input.eventPrefix}.activity`, projectAssistantActivity(event.raw), 'activity');
 		} else if (event.kind === 'rate_limit_event') {
 			input.emit(`${input.eventPrefix}.rate-limit`);
 		} else if (event.kind === 'result') {

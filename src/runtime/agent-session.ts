@@ -9,7 +9,11 @@ export interface AgentSessionInput {
 	access?: 'read-only' | 'write';
 	outputSchema?: Record<string, unknown>;
 	signal: AbortSignal;
-	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/**
+	 * `eventClass` declares GSHIP-627's activity/decision split at the emit
+	 * call site; omitted means the store defaults it to `decision`.
+	 */
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: 'activity' | 'decision') => void;
 	eventPrefix: string;
 	/** Persist a provider-assigned id as soon as the stream reveals it. */
 	onSessionId?: (sessionId: string) => void;

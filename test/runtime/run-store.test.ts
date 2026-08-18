@@ -81,6 +81,144 @@ describe('run store workspace migration', () => {
 	});
 });
 
+// GSHIP-627: separates ephemeral provider/review stream chatter from durable
+// decisions in the event log, so a derived read no longer depends on the same
+// display-bounded window the screen uses.
+describe('run event class migration', () => {
+	test('classifies rows written before the column existed once, by kind suffix', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-event-class-'), 'runtime.sqlite');
+		const legacy = new Database(dbPath, { create: true });
+		legacy.exec(`
+			CREATE TABLE runs (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				session_id TEXT,
+				provider_id TEXT,
+				workspace_path TEXT,
+				state TEXT NOT NULL,
+				fix_rounds INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				summary TEXT,
+				error TEXT
+			);
+			CREATE TABLE run_events (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+				kind TEXT NOT NULL,
+				from_state TEXT,
+				to_state TEXT NOT NULL,
+				payload_json TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			);
+			INSERT INTO runs (
+				id, issue_id, session_id, provider_id, workspace_path, state, fix_rounds, created_at, updated_at
+			) VALUES (
+				'legacy-run', 'CAM-70', 'legacy-session', 'claude', '/workspaces/legacy-run',
+				'done', 0, '2026-08-10T10:00:00Z', '2026-08-10T10:05:00Z'
+			);
+			INSERT INTO run_events (run_id, kind, from_state, to_state, payload_json, created_at) VALUES
+				('legacy-run', 'run.created', NULL, 'queued', '{}', '2026-08-10T10:00:00Z'),
+				('legacy-run', 'provider.system', 'queued', 'queued', '{}', '2026-08-10T10:00:01Z'),
+				('legacy-run', 'provider.activity', 'queued', 'queued', '{}', '2026-08-10T10:00:02Z'),
+				('legacy-run', 'review.system', 'queued', 'queued', '{}', '2026-08-10T10:00:03Z'),
+				('legacy-run', 'review.activity', 'queued', 'queued', '{}', '2026-08-10T10:00:04Z'),
+				('legacy-run', 'run.verified', 'queued', 'ready-to-ship', '{}', '2026-08-10T10:00:05Z');
+		`);
+		legacy.close();
+
+		const migrated = new RunStore(dbPath);
+		expect(migrated.listRunEvents('legacy-run').map((event) => ({
+			kind: event.kind,
+			eventClass: event.eventClass,
+		}))).toEqual([
+			{ kind: 'run.created', eventClass: 'decision' },
+			{ kind: 'provider.system', eventClass: 'activity' },
+			{ kind: 'provider.activity', eventClass: 'activity' },
+			{ kind: 'review.system', eventClass: 'activity' },
+			{ kind: 'review.activity', eventClass: 'activity' },
+			{ kind: 'run.verified', eventClass: 'decision' },
+		]);
+		migrated.close();
+	});
+});
+
+describe('run event class', () => {
+	test('createRun and transition always record a decision, regardless of kind', () => {
+		const store = new RunStore(':memory:');
+		const { event: created } = store.createRun({
+			id: 'run-class',
+			issueId: 'CAM-71',
+			sessionId: 'session-class',
+			workspacePath: '/workspaces/run-class',
+			createdAt: '2026-08-17T09:00:00.000Z',
+		});
+		expect(created.eventClass).toBe('decision');
+
+		const { event: transitioned } = store.transition({
+			runId: 'run-class',
+			toState: 'working',
+			kind: 'run.started',
+			createdAt: '2026-08-17T09:00:01.000Z',
+		});
+		expect(transitioned.eventClass).toBe('decision');
+		store.close();
+	});
+
+	test('appendEvent records the class its caller declares, and defaults an undeclared kind to decision', () => {
+		const store = storeWithRun('run-class-append', 'CAM-72');
+
+		const activity = store.appendEvent({
+			runId: 'run-class-append',
+			kind: 'provider.activity',
+			createdAt: '2026-08-17T09:00:02.000Z',
+			eventClass: 'activity',
+		});
+		expect(activity.eventClass).toBe('activity');
+
+		// A kind nobody declared a class for -- new or forgotten -- must fail open
+		// into the derived read rather than silently vanish from it.
+		const undeclared = store.appendEvent({
+			runId: 'run-class-append',
+			kind: 'some.brand-new.kind',
+			createdAt: '2026-08-17T09:00:03.000Z',
+		});
+		expect(undeclared.eventClass).toBe('decision');
+		store.close();
+	});
+
+	test('the live read stays limited while the derived read returns every decision', () => {
+		const store = storeWithRun('run-class-reads', 'CAM-73');
+		const total = 210;
+		for (let index = 0; index < total; index += 1) {
+			store.appendEvent({
+				runId: 'run-class-reads',
+				kind: 'provider.activity',
+				createdAt: '2026-08-17T09:00:00.000Z',
+				eventClass: 'activity',
+			});
+			store.appendEvent({
+				runId: 'run-class-reads',
+				kind: 'run.operator-note',
+				createdAt: '2026-08-17T09:00:00.000Z',
+			});
+		}
+
+		// Live read: still capped at its historical default -- it serves the
+		// screen, unaffected by this change.
+		expect(store.listRunEvents('run-class-reads').length).toBe(200);
+
+		// Derived read: every decision event, including the ones the window
+		// above already dropped -- plus the run.created event createRun wrote.
+		const decisions = store.listRunDecisionEvents('run-class-reads');
+		expect(decisions.length).toBe(total + 1);
+		expect(decisions.every((event) => event.eventClass === 'decision')).toBe(true);
+		expect(decisions.some((event) => event.kind === 'run.operator-note')).toBe(true);
+		expect(decisions.some((event) => event.kind === 'provider.activity')).toBe(false);
+		store.close();
+	});
+});
+
 // GSHIP-612: ideas the executor finds outside its issue are kept as evidence,
 // without touching the run that produced them.
 describe('derived proposals', () => {
