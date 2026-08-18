@@ -1049,6 +1049,20 @@ describe('operator shell', () => {
 		expect(home({ version: '0.292.0' })).toContain('>v0.292.0<');
 	});
 
+	test('the header carries the product mark as its accessible title, the badge in full, and the version', () => {
+		const html = shellHeader(runsPage({ runs: [runIn('failed')], version: '0.292.0' }));
+		const title = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
+
+		// The wordmark replaces the text h1, but the h1 itself stays: its
+		// accessible name now comes from the mark's own role="img" label.
+		expect(title).toContain('role="img"');
+		expect(title).toContain('aria-label="Gateship"');
+		// The badge moved off the title's row, so its longest label is never
+		// squeezed for space.
+		expect(html).toContain('>Precisa de você<');
+		expect(html).toContain('>v0.292.0<');
+	});
+
 	test('the technical run state stays on the run card and never reaches the header', () => {
 		const html = runsPage({ runs: [runIn('failed')] });
 
