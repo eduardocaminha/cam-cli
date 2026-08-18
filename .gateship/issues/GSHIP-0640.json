@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-640",
+  "title": "Lint cobrindo os testes",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-18T22:30:59.753Z",
+  "updatedAt": "2026-08-18T22:30:59.753Z",
+  "description": "Fazer o lint cobrir o diretorio de testes, que hoje fica de fora, e corrigir a indentacao inconsistente ja commitada que essa ausencia permitiu. O script de lint cobre apenas src, scripts e webui, entao arquivo de teste nunca e verificado e ja ha mistura de indentacao no repositorio, o que obrigou pelo menos um executor a imitar o estilo errado para nao poluir o diff. Acrescentar o diretorio de testes aos alvos do lint e corrigir as violacoes que aparecerem, sem alterar o comportamento de nenhum teste. Se a correcao automatica do formatador tocar muitos arquivos, isso e esperado e aceitavel, desde que nenhum teste mude de significado. Nao acrescentar regra nova de lint, nao mudar configuracao de estilo e nao desativar regra para fazer passar. Fora de escopo: formatar arquivos fora de teste, mudar o manifesto de verificacao alem do alvo do lint, e qualquer alteracao no ciclo de vida da run.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Fazer o lint cobrir o diretorio de testes, que hoje fica de fora, e corrigir a indentacao inconsistente ja commitada que essa ausencia permitiu. O script de lint cobre apenas src, scripts e webui, entao arquivo de teste nunca e verificado e ja ha mistura de indentacao no repositorio, o que obrigou pelo menos um executor a imitar o estilo errado para nao poluir o diff. Acrescentar o diretorio de testes aos alvos do lint e corrigir as violacoes que aparecerem, sem alterar o comportamento de nenhum teste. Se a correcao automatica do formatador tocar muitos arquivos, isso e esperado e aceitavel, desde que nenhum teste mude de significado. Nao acrescentar regra nova de lint, nao mudar configuracao de estilo e nao desativar regra para fazer passar. Fora de escopo: formatar arquivos fora de teste, mudar o manifesto de verificacao alem do alvo do lint, e qualquer alteracao no ciclo de vida da run.",
+    "verify": [
+      "bun run lint && bun test && bun run typecheck"
+    ],
+    "evidence": [
+      {
+        "command": "grep -o '\"lint\": \"[^\"]*\"' package.json",
+        "output": "\"lint\": \"bunx biome lint src scripts webui --error-on-warnings\""
+      }
+    ]
+  }
+}
