@@ -6,6 +6,7 @@ import type {
 	WorkspaceRunReference,
 } from './git-workspace.ts';
 import type { ModelSettings } from './model-settings.ts';
+import { selectOperatorDecisions } from './operator-decision.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
@@ -40,6 +41,14 @@ export interface RuntimeExecutionInput {
 	reviewFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
+	/**
+	 * Every decision the operator has already made for this run, chronological
+	 * (GSHIP-630) -- not only the latest one `operatorGuidance` carries. Read
+	 * from the durable event log, so it survives past the resume that produced
+	 * it. Reviewers fold this into their prompt so a ratification already made
+	 * is not re-litigated on the next review; empty on a run's first review.
+	 */
+	operatorDecisions?: readonly string[];
 }
 
 export type RuntimeExecutionResult =
@@ -716,6 +725,7 @@ export class RunRuntime {
 			signal,
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 			setSessionId: (sessionId) => this.#setSessionId(run, sessionId),
+			operatorDecisions: selectOperatorDecisions(this.#store.listRunDecisionEvents(run.id)),
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),

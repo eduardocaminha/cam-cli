@@ -12,7 +12,9 @@ import process from 'node:process';
 
 import {
 	buildReviewerCliArgv,
+	buildReviewPrompt,
 	ClaudeCliReviewer,
+	collectChange,
 	parseReviewVerdict,
 	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
@@ -48,12 +50,22 @@ function flagValue(argv: string[], flag: string): string | undefined {
 	return index >= 0 ? argv[index + 1] : undefined;
 }
 
-/** The argv the fixture child actually received, echoed back through its verdict. */
-function argvFromReview(result: RuntimeReviewResult): string[] {
+/** The argv and prompt the fixture child actually received, echoed back through its verdict. */
+function reviewEcho(result: RuntimeReviewResult): { argv: string[]; prompt: string } {
 	const detail = result.verdict === 'findings' ? result.detail : '';
-	const start = detail.indexOf('[');
+	const start = detail.indexOf('{');
 	expect(start).toBeGreaterThanOrEqual(0);
-	return JSON.parse(detail.slice(start)) as string[];
+	return JSON.parse(detail.slice(start)) as { argv: string[]; prompt: string };
+}
+
+function argvFromReview(result: RuntimeReviewResult): string[] {
+	return reviewEcho(result).argv;
+}
+
+/** The bare prompt text the child received, decoded out of the stream-json envelope. */
+function promptFromReview(result: RuntimeReviewResult): string {
+	const envelope = JSON.parse(reviewEcho(result).prompt.trim()) as { message: { content: string } };
+	return envelope.message.content;
 }
 
 function reviewInput(overrides: Partial<RuntimeExecutionInput> = {}): RuntimeExecutionInput {
@@ -283,5 +295,81 @@ describe('independent Claude CLI reviewer', () => {
 		controller.abort();
 		expect(await settled).toBe('rejected');
 		expect(isProcessAlive(childPid)).toBe(false);
+	});
+
+	// GSHIP-630: the operator's already-made decisions, carried into the review
+	// prompt so a ratification the operator gave once is not re-litigated on the
+	// next round.
+	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
+		const reviewer = fixtureReviewer('FINDINGS');
+		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
+		const result = await reviewer.review(reviewInput({ operatorDecisions: decisions }));
+		const change = collectChange(() => ({ exitCode: 0, stdout: 'M src/a.ts\n', stderr: '' }), 'ignored');
+		expect(promptFromReview(result)).toBe(
+			buildReviewPrompt('CAM-577', '{"id":"CAM-577"}', change, decisions),
+		);
+	});
+});
+
+describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
+	const issueId = 'CAM-630';
+	const issue = '{"id":"CAM-630"}';
+	const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n' };
+
+	// With no decisions -- every run's first review -- the prompt must stay
+	// byte-for-byte what it was before this issue.
+	test('with no decisions, the prompt is exactly what it was before this issue', () => {
+		const prompt = buildReviewPrompt(issueId, issue, change, []);
+		expect(prompt).toBe([
+			`Review the uncommitted change in this worktree for Gateship issue ${issueId}.`,
+			'You are an independent reviewer. You have Read, Grep and Glob only, by design:',
+			'you cannot edit files, run commands or delegate, and you must not try.',
+			'Read the files around the diff before judging. Entries marked ?? in the',
+			'status below are new files that the diff does not contain; open them with Read.',
+			'',
+			'Judge only whether the change is correct and limited to the issue.',
+			'Report a finding only for a defect you can point at in a specific file:',
+			'a real bug, a broken contract, or work outside the issue. Style preference',
+			'and speculation are not findings.',
+			'',
+			'End your reply with a single JSON object on the last line and nothing after it:',
+			'{"verdict":"CLEAN","findings":[]}',
+			'or',
+			'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+			'',
+			'Issue record:',
+			issue,
+			'',
+			'Working tree status:',
+			change.status,
+			'',
+			'Diff against HEAD:',
+			change.diff,
+		].join('\n'));
+	});
+
+	test('one decision is presented as a labeled block the reviewer may disagree with', () => {
+		const prompt = buildReviewPrompt(issueId, issue, change, ['Keep the smaller seam.']);
+		expect(prompt).toContain('Decisions the operator has already made for this run');
+		expect(prompt).toContain('1. Keep the smaller seam.');
+		expect(prompt).toContain('You may disagree with one of these');
+		expect(prompt).toContain('report');
+		expect(prompt).toContain('disagree with a decision already made');
+		// The block sits after the judging instructions and before the verdict format.
+		expect(prompt.indexOf('Judge only whether')).toBeLessThan(prompt.indexOf('Decisions the operator'));
+		expect(prompt.indexOf('Decisions the operator')).toBeLessThan(prompt.indexOf('End your reply'));
+	});
+
+	test('multiple decisions render numbered in the order given', () => {
+		const prompt = buildReviewPrompt(issueId, issue, change, ['First.', 'Second.', 'Third.']);
+		expect(prompt).toContain('1. First.');
+		expect(prompt).toContain('2. Second.');
+		expect(prompt).toContain('3. Third.');
+		const first = prompt.indexOf('1. First.');
+		const second = prompt.indexOf('2. Second.');
+		const third = prompt.indexOf('3. Third.');
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(second).toBeGreaterThan(first);
+		expect(third).toBeGreaterThan(second);
 	});
 });

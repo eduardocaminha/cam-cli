@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { buildReviewPrompt, collectChange } from '../../src/runtime/claude-cli-reviewer.ts';
 import { CodexCliReviewer } from '../../src/runtime/codex-cli-reviewer.ts';
 import { buildCodexReviewArgv } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
@@ -91,5 +92,30 @@ describe('independent Codex reviewer', () => {
 			verdict: 'findings',
 			detail: '1. src/reviewed.ts: fixture finding',
 		});
+	});
+
+	// GSHIP-630: buildReviewPrompt is shared by both providers, so the same
+	// operator decisions produce the same labeled block for either one -- this
+	// reviewer is proven here, the Claude reviewer in claude-cli-reviewer.test.ts.
+	test('forwards the run\'s operator decisions into the prompt, same block as the Claude reviewer', async () => {
+		let capturedPrompt = '';
+		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
+		const reviewer = new CodexCliReviewer({
+			session: {
+				provider: 'codex',
+				run: async (sessionInput) => {
+					capturedPrompt = sessionInput.prompt;
+					return { summary: '', structuredOutput: { verdict: 'CLEAN', findings: [] } };
+				},
+			},
+			loadIssue: () => '{"id":"CAM-1"}',
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+		});
+
+		expect(await reviewer.review({ ...input(), operatorDecisions: decisions }))
+			.toEqual({ verdict: 'clean' });
+
+		const change = collectChange(() => ({ exitCode: 0, stdout: '', stderr: '' }), 'ignored');
+		expect(capturedPrompt).toBe(buildReviewPrompt('CAM-1', '{"id":"CAM-1"}', change, decisions));
 	});
 });
