@@ -728,6 +728,33 @@ describe('runs surface', () => {
 		expect(card).not.toContain('aria-pressed');
 	});
 
+	// GSHIP-639: each history row carries its own expected cost so Sonnet and
+	// another choice can be compared without opening either run, labeled with
+	// the same honesty rule GSHIP-623 established -- expected cost equivalent
+	// to API usage, never an amount billed -- and a run whose CLI never
+	// reported one shows no number at all, never a fabricated zero.
+	test('each history row shows its own run cost, labeled as expected cost, or none at all', () => {
+		const html = runsPage({
+			runs: [
+				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
+				runIn('done', {
+					id: 'run-2',
+					issueId: 'CAM-802',
+					cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+				}),
+				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
+			],
+		});
+		const card = panel(html, 'Runs anteriores');
+
+		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
+		expect(row802).toContain('Custo esperado');
+		expect(row802).toContain('US$');
+
+		const row801 = card.slice(card.indexOf('CAM-801'));
+		expect(row801).not.toContain('Custo esperado');
+	});
+
 	test('history stops at four entries however long the list is', () => {
 		const card = panel(
 			runsPage({
