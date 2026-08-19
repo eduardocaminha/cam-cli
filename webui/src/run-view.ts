@@ -5,6 +5,8 @@
 // computed here so the view stays a function of its props and stays testable
 // by static rendering alone.
 
+import { isTerminalRunState } from '../../src/runtime/run-state.ts';
+
 /** Mirrors src/runtime/run-state.ts. The server is the only writer. */
 export type RunState =
 	| 'queued'
@@ -222,9 +224,6 @@ const CANCELLABLE: readonly RunState[] = [
 	'shipping',
 ];
 
-/** Mirrors isTerminalRunState in src/runtime/run-state.ts. */
-const TERMINAL: readonly RunState[] = ['done', 'failed', 'cancelled'];
-
 /**
  * The issue whose file a run owns right now, or null. Mirrors
  * findActiveRunForIssue in src/runtime/run-runtime.ts: while a run is not
@@ -232,7 +231,7 @@ const TERMINAL: readonly RunState[] = ['done', 'failed', 'cancelled'];
  * control that would write the same file on main and break the ship.
  */
 export function activeRunIssueId(runs: readonly RunView[]): string | null {
-	return runs.find((run) => !TERMINAL.includes(run.state))?.issueId ?? null;
+	return runs.find((run) => !isTerminalRunState(run.state))?.issueId ?? null;
 }
 
 export interface RunActions {
@@ -249,7 +248,7 @@ export interface RunActions {
  */
 export function actionsFor(run: RunView | null, hasSelection: boolean): RunActions {
 	const state = run?.state;
-	const settled = state === undefined || TERMINAL.includes(state);
+	const settled = state === undefined || isTerminalRunState(state);
 	return {
 		start: hasSelection && settled,
 		resume: state === 'interrupted' || state === 'waiting-user',
