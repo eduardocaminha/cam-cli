@@ -39,6 +39,7 @@ import {
 	type CreatedOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
+	parseOperatorAbandonInput,
 	parseOperatorIssueInput,
 	parseOperatorSpecInput,
 	specifyOperatorIssue,
@@ -561,6 +562,39 @@ async function approveIssueFromOperator(
 	try {
 		assertIssueFileIsFree(runtime, id);
 		return Response.json({ ok: true, issue: issueApprover(id) });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+/**
+ * Close one open issue without shipping it. Same run-active guard as every
+ * other issue write, checked before the abandon itself touches git.
+ */
+async function abandonIssueFromOperator(
+	request: Request,
+	id: string,
+	runtime: RunRuntime,
+	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const input = parseOperatorAbandonInput(body);
+		assertIssueFileIsFree(runtime, id);
+		return Response.json({ ok: true, issue: issueAbandoner(id, input) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -1379,6 +1413,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request.params.issueId,
 					runRuntime,
 					issueApprover,
+				),
+			},
+			'/api/issues/:issueId/abandon': {
+				POST: (request) => abandonIssueFromOperator(
+					request,
+					request.params.issueId,
+					runRuntime,
+					issueAbandoner,
 				),
 			},
 			// The inbox is the pending proposals alone: a settled one stays durable

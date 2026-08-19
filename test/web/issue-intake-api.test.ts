@@ -306,9 +306,10 @@ describe('operator issue intake API', () => {
 	// GSHIP-614: the issue file belongs to the run while it is in flight, so the
 	// routes that rewrite it on main refuse instead of guaranteeing a conflict
 	// when the run ships.
-	test('refuses to revise or approve an issue a non-terminal run owns', async () => {
+	test('refuses to revise, approve or abandon an issue a non-terminal run owns', async () => {
 		const specified: string[] = [];
 		const approved: string[] = [];
+		const abandoned: string[] = [];
 		const store = new RunStore(':memory:');
 		const runtime = new RunRuntime({ cwd: '/project', store });
 		store.createRun({
@@ -330,6 +331,10 @@ describe('operator issue intake API', () => {
 				approved.push(id);
 				return { id, title: 'Draft', sha: 'approved-sha' };
 			},
+			issueAbandoner: (id) => {
+				abandoned.push(id);
+				return { id, title: 'Draft', sha: 'abandoned-sha' };
+			},
 		});
 		const origin = `http://${handle.hostname}:${handle.port}`;
 		const spec = { scope: 'Escopo revisado.', verificationCommand: 'bun test' };
@@ -348,9 +353,18 @@ describe('operator issue intake API', () => {
 			expect(approve.status).toBe(409);
 			expect(await approve.json()).toMatchObject({ ok: false, code: 'issue-run-active' });
 
+			const abandon = await fetch(`${origin}/api/issues/CAM-42/abandon`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ reason: 'Não faz mais sentido.' }),
+			});
+			expect(abandon.status).toBe(409);
+			expect(await abandon.json()).toMatchObject({ ok: false, code: 'issue-run-active' });
+
 			// Nothing reached git, and another issue is untouched by this run.
 			expect(specified).toEqual([]);
 			expect(approved).toEqual([]);
+			expect(abandoned).toEqual([]);
 			const other = await fetch(`${origin}/api/issues/CAM-43/approve`, {
 				method: 'POST', headers: { origin },
 			});
@@ -375,11 +389,13 @@ describe('operator issue intake API', () => {
 				kind: 'run.abandoned',
 				createdAt: '2026-08-16T22:20:00.000Z',
 			});
-			const released = await fetch(`${origin}/api/issues/CAM-42/approve`, {
-				method: 'POST', headers: { origin },
+			const released = await fetch(`${origin}/api/issues/CAM-42/abandon`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ reason: 'Não faz mais sentido.' }),
 			});
 			expect(released.status).toBe(200);
-			expect(approved).toEqual(['CAM-43', 'CAM-42']);
+			expect(abandoned).toEqual(['CAM-42']);
 		} finally {
 			await handle.stop();
 			runtime.close();
@@ -408,6 +424,77 @@ describe('operator issue intake API', () => {
 			});
 			expect(response.status).toBe(200);
 			expect(received).toEqual(['CAM-42']);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('abandons an open issue with a justification, only through the trusted origin', async () => {
+		const received: unknown[] = [];
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-abandon-api-'),
+			runRuntime: runtime,
+			issueAbandoner: (id, input) => {
+				received.push({ id, input });
+				return { id, title: 'Draft', sha: 'abandoned-sha' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const body = { reason: '  Não é mais necessário.  ' };
+		try {
+			const forbidden = await fetch(`${origin}/api/issues/CAM-42/abandon`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			expect(forbidden.status).toBe(403);
+			expect(received).toEqual([]);
+
+			const response = await fetch(`${origin}/api/issues/CAM-42/abandon`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				ok: true,
+				issue: { id: 'CAM-42', title: 'Draft' },
+			});
+			expect(received).toEqual([{
+				id: 'CAM-42',
+				input: { reason: 'Não é mais necessário.' },
+			}]);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('rejects an empty justification before calling the abandon writer', async () => {
+		let calls = 0;
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-abandon-invalid-'),
+			runRuntime: runtime,
+			issueAbandoner: (id) => {
+				calls += 1;
+				return { id, title: 'unreachable', sha: 'abc1234' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const response = await fetch(`${origin}/api/issues/CAM-42/abandon`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ reason: '   ' }),
+			});
+			expect(response.status).toBe(400);
+			expect(await response.json()).toMatchObject({ code: 'invalid-request' });
+			expect(calls).toBe(0);
 		} finally {
 			await handle.stop();
 			runtime.close();

@@ -13,6 +13,7 @@ import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 
 import { createRoot } from 'react-dom/client';
 import { App, routeOf } from './App.tsx';
 import {
+	abandonIssue,
 	approveIssue,
 	type ChainRunsView,
 	commandRun,
@@ -325,6 +326,9 @@ function Screen(): ReactElement {
 				}));
 			}}
 			onApproveIssue={(issueId) => send(() => approveIssue(issueId).then(() => `${issueId} aprovada.`))}
+			onAbandonIssue={(issueId, reason) => {
+				send(() => abandonIssue(issueId, reason).then(() => `${issueId} abandonada.`));
+			}}
 			onReviewIssue={(issueId, draft) => {
 				send(() => specifyIssue(issueId, draft).then(() => `${issueId} revisada.`));
 			}}

@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
 import {
+	abandonIssue,
 	aggregateChatTurnCosts,
 	approveIssue,
 	BRIEF_PATH,
@@ -138,6 +139,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
 			onApproveIssue={() => {}}
+			onAbandonIssue={() => {}}
 			onDismissProposal={() => {}}
 			onEnableNotifications={() => {}}
 			onPromoteProposal={() => {}}
@@ -797,6 +799,9 @@ describe('work surface', () => {
 		expect(card).toContain('type="checkbox"');
 		expect(buttonIsEnabled(card, 'Salvar revisão')).toBe(false);
 		expect(buttonIsEnabled(card, 'Aprovar')).toBe(false);
+		// Abandoning needs a justification before its own confirmation unlocks.
+		expect(card).toContain('Motivo do abandono');
+		expect(buttonIsEnabled(card, 'Abandonar')).toBe(false);
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
 		expect(card).not.toContain('Evidência checada no workspace da run');
@@ -844,6 +849,7 @@ describe('work surface', () => {
 		expect(owned).toContain('CAM-900 está sendo executada por uma run.');
 		expect(hasButton(owned, 'Salvar revisão')).toBe(false);
 		expect(hasButton(owned, 'Aprovar')).toBe(false);
+		expect(hasButton(owned, 'Abandonar')).toBe(false);
 		expect(owned).not.toContain('type="checkbox"');
 
 		// Another draft is untouched by that run, and a settled run returns the
@@ -853,8 +859,10 @@ describe('work surface', () => {
 			'Revisar e aprovar',
 		);
 		expect(hasButton(other, 'Aprovar')).toBe(true);
+		expect(hasButton(other, 'Abandonar')).toBe(true);
 		const settled = panel(workPage({ drafts: [draft], runs: [runIn('done')] }), 'Revisar e aprovar');
 		expect(hasButton(settled, 'Aprovar')).toBe(true);
+		expect(hasButton(settled, 'Abandonar')).toBe(true);
 		expect(settled).not.toContain('está sendo executada por uma run');
 	});
 
@@ -1914,6 +1922,17 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
 			expect(await approveIssue('CAM-42')).toBe('Run atualizada.');
 			expect(calls).toEqual([{ url: '/api/issues/CAM-42/approve', method: 'POST', body: null }]);
+		});
+	});
+
+	test('abandoning an issue uses the same trusted origin route with its justification', async () => {
+		await withRecordedFetch({ ok: true }, 200, async (calls) => {
+			expect(await abandonIssue('CAM-42', 'Não faz mais sentido.')).toBe('Run atualizada.');
+			expect(calls).toEqual([{
+				url: '/api/issues/CAM-42/abandon',
+				method: 'POST',
+				body: JSON.stringify({ reason: 'Não faz mais sentido.' }),
+			}]);
 		});
 	});
 
