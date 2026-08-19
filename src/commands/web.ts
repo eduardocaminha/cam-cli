@@ -993,13 +993,14 @@ const LOADED_FILES = ['index.ts', 'package.json', 'bun.lock'];
 
 /**
  * Directories the running process loads at boot, per the import graph rooted
- * at `index.ts`: everything under `src/`, and the built browser bundle under
- * `webui/dist/` (resolved via the static `with { type: "file" }` imports in
- * `src/commands/web-assets.ts`). Anything else -- docs, `test/`, `.github/`,
+ * at `index.ts`: everything under `src/`, and the browser UI under `webui/src/`.
+ * The bundle this process actually serves lives at `webui/dist/`, but that is a
+ * build output and is no longer tracked, so a commit can only ever show up here
+ * as the source it was built from. Anything else -- docs, `test/`, `.github/`,
  * `scripts/`, `.gateship/` -- changes the tree without changing what this
  * process has in memory.
  */
-const LOADED_DIR_PREFIXES = ['src/', 'webui/dist/'];
+const LOADED_DIR_PREFIXES = ['src/', 'webui/src/'];
 
 function isLoadedPath(path: string): boolean {
 	return LOADED_FILES.includes(path) || LOADED_DIR_PREFIXES.some((prefix) => path.startsWith(prefix));
