@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T01:42:10.143Z",
-  "updatedAt": "2026-08-19T01:42:10.143Z",
+  "updatedAt": "2026-08-19T09:31:38.923Z",
   "description": "Fazer o runtime verificar o que vale para o repositorio inteiro, para que verificacao local e CI parem de discordar. Evidencia real: a run do GSHIP-639 passou na propria verificacao, que era focada nos testes de cliente e no typecheck, shipou, e o CI reprovou no portao de bundle que o GSHIP-636 acrescentou ao manifesto check:all; a checagem de bundle existe apenas la e nao no que a run roda. O resultado e que um executor pode verificar com sucesso e ser reprovado depois, o que transforma um defeito barato em um ship morto e, com encadeamento ligado, para a fila. A causa e de atribuicao: propriedade que vale para o repositorio inteiro nao pode depender de o autor da spec lembrar de escreve-la no comando de verificacao. Fazer a etapa de verificacao da run executar, alem dos comandos da issue, a checagem de bundle quando o diff da run tocar o fonte da UI, com a mesma mensagem que o CI ja produz, e falhar a verificacao quando ela reprovar. Nao transformar isso em rodar check:all na run: o contrato de testes focados durante a edicao e um limite deliberado do projeto, e o que entra aqui e apenas a invariante que o proprio repositorio ja declara. Deixar explicito no codigo que este e o lugar das invariantes de repositorio, para que a proxima nao seja escrita de novo dentro do manifesto de CI apenas. Quando o diff nao tocar o fonte da UI, a verificacao fica exatamente como e hoje. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir diff tocando a UI com bundle defasado reprovando, diff tocando a UI com bundle correto passando, e diff que nao toca a UI nao executando a checagem. Fora de escopo: rodar check:all na run, acrescentar invariante nova alem da de bundle, mudar o manifesto de CI, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "1"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "4dcf0ef415f8241e25e6af3c9bf5c56d188f9cd6bd232230b513a227e5fc485a",
+    "approvedAt": "2026-08-19T09:31:38.923Z"
   }
 }
