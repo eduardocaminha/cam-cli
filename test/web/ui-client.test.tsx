@@ -745,6 +745,34 @@ describe('runs surface', () => {
 			expect(card).not.toContain(issueId);
 		}
 	});
+
+	// GSHIP-639: comparing configurations (e.g. Sonnet vs. another choice) needs
+	// each history row's own expected cost, not just the current run's card --
+	// same honesty rule GSHIP-623 established: labeled as expected cost, never a
+	// fabricated zero when that run's CLI reported none.
+	test('each history row shows its own expected cost, labeled, only when the run reported one', () => {
+		const html = runsPage({
+			runs: [
+				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
+				runIn('done', {
+					id: 'run-2',
+					issueId: 'CAM-802',
+					cost: { totalCostUsd: 0.42, breakdown: [], roles: [] },
+				}),
+				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
+			],
+		});
+		const card = panel(html, 'Runs anteriores');
+
+		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
+		expect(row802).toContain('Custo esperado');
+		expect(row802).toContain('US$');
+
+		// This run's CLI never reported a cost: its row says nothing about cost
+		// rather than showing a fabricated zero.
+		const row801 = card.slice(card.indexOf('CAM-801'));
+		expect(row801).not.toContain('Custo esperado');
+	});
 });
 
 describe('work surface', () => {
