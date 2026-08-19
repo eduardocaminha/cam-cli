@@ -78,6 +78,12 @@ interface FakeRepo {
 	/** `gh pr view` reports HTTP 503 from this poll onwards (GSHIP-632). */
 	viewUnavailableFromView: number;
 	armAttempts: number;
+	/** What `gh pr checks --required` reports while the pull request is BLOCKED (GSHIP-646). */
+	requiredChecks: Array<{ name: string; bucket: string }>;
+	/** Times `gh pr checks --required` reports HTTP 503 before succeeding (GSHIP-646). */
+	requiredChecksUnavailableRemaining: number;
+	/** Times `gh pr checks --required` has been called. */
+	requiredChecksCalls: number;
 }
 
 function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
@@ -106,6 +112,9 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		viewUnavailableAlways: false,
 		viewUnavailableFromView: Number.POSITIVE_INFINITY,
 		armAttempts: 0,
+		requiredChecks: [],
+		requiredChecksUnavailableRemaining: 0,
+		requiredChecksCalls: 0,
 		...overrides,
 	};
 }
@@ -210,12 +219,30 @@ function ghView(repo: FakeRepo): CommandResult {
 	return result(0, JSON.stringify({ state, mergeStateStatus, headRefOid: repo.prHeadRefOid }));
 }
 
+/**
+ * `gh pr checks --required`: empty by default, so BLOCKED stays a wait
+ * exactly as before GSHIP-646. `gh` documents a non-zero exit for a failing
+ * check even under `--json`, so this reports one right alongside the `fail`
+ * payload, the same as the real command would: the shipper has to read
+ * stdout regardless of the exit code, not only when it happens to be 0.
+ */
+function ghChecks(repo: FakeRepo): CommandResult {
+	repo.requiredChecksCalls += 1;
+	if (repo.requiredChecksUnavailableRemaining > 0) {
+		repo.requiredChecksUnavailableRemaining -= 1;
+		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+	}
+	const failing = repo.requiredChecks.some((check) => check.bucket === 'fail');
+	return result(failing ? 1 : 0, JSON.stringify(repo.requiredChecks));
+}
+
 function runGhCommand(repo: FakeRepo, args: string[]): CommandResult | undefined {
 	if (args[1] === 'list') return ghList(repo);
 	if (args[1] === 'create') return ghCreate(repo);
 	if (args[1] === 'merge') return ghMerge(repo, args);
 	if (args[1] === 'update-branch') return ghUpdateBranch(repo);
 	if (args[1] === 'view') return ghView(repo);
+	if (args[1] === 'checks') return ghChecks(repo);
 	return undefined;
 }
 
@@ -721,6 +748,99 @@ describe('the GitHub shipper', () => {
 		for (const view of views) {
 			expect(view.args).toContain('state,mergeStateStatus,headRefOid');
 		}
+	});
+
+	test('a required check completed in failure ends the ship immediately, naming it (GSHIP-646)', async () => {
+		// The evidence: on the GSHIP-639 run, CI failed, the pull request went
+		// BLOCKED, and the shipper kept polling — left alone it would have spent
+		// the whole hour-long timeout to fail. This must end on the first poll.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			requiredChecks: [{ name: 'ci/build', bucket: 'fail' }],
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(failed).toEqual({
+			outcome: 'failed',
+			detail: 'pull request #385 is blocked: required check "ci/build" completed in failure',
+		});
+		// Ends on the very first poll, not after waiting out the merge timeout.
+		expect(repo.views).toBe(1);
+		expect(repo.requiredChecksCalls).toBe(1);
+		// GSHIP-616: the arming this ship placed comes down before the failure
+		// is reported, the same as every other non-merge ending.
+		expect(disarmCalls(calls)[0]?.args).toEqual(['pr', 'merge', '385', '--disable-auto']);
+		expect(repo.disarms).toBe(1);
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.required-check-failed']);
+		expect(payloads.get('ship.required-check-failed')).toEqual({
+			prNumber: 385,
+			headSha: HEAD_SHA,
+			check: 'ci/build',
+		});
+		expect(events).not.toContain('ship.merged');
+		expect(armCalls(calls)).toHaveLength(1);
+	});
+
+	test('a required check still running leaves the monitor waiting instead of ending the ship (GSHIP-646)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			mergedOnView: 3,
+			requiredChecks: [{ name: 'ci/build', bucket: 'pending' }],
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.requiredChecksCalls).toBe(2);
+		expect(events).not.toContain('ship.required-check-failed');
+		expect(events).not.toContain('ship.automerge-disarmed');
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(events.slice(-2)).toEqual(['ship.source-synced', 'ship.merged']);
+	});
+
+	test('GitHub staying unavailable while reading required checks repeats instead of failing the ship (GSHIP-646)', async () => {
+		const cwd = createWorkspace();
+		// The pull request stays BLOCKED for two polls with `gh pr checks`
+		// always reporting HTTP 503, then GitHub reports the merge on the third
+		// — the outage must never turn into a ship failure of its own.
+		const repo = createRepo({
+			mergedOnView: 3,
+			requiredChecksUnavailableRemaining: Number.MAX_SAFE_INTEGER,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		});
+
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		// One initial attempt plus three retries, on each of the two BLOCKED polls.
+		expect(repo.requiredChecksCalls).toBe(8);
+		expect(events.filter((kind) => kind === 'ship.github-unavailable')).toHaveLength(6);
+		expect(events).not.toContain('ship.required-check-failed');
+		expect(events).not.toContain('ship.merge-unconfirmed');
+		expect(disarmCalls(calls)).toHaveLength(0);
 	});
 
 	test('a pull request BEHIND is updated by the service and still merges (GSHIP-632)', async () => {

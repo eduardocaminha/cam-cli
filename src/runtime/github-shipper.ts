@@ -69,6 +69,30 @@
 // unavailable while updating the branch or reading the result ends the ship
 // as unconfirmed, the same as any other read (GSHIP-625): the update may have
 // already landed and simply could not be confirmed.
+//
+// BLOCKED is a fourth category the monitor only used to wait out (GSHIP-646):
+// GitHub reports BLOCKED for several reasons, and a required check it has
+// already completed in failure is one of them — a decision, in the same
+// classification GSHIP-625 drew 503 out of, not unavailability and not a
+// wait. The evidence was the GSHIP-639 run: CI failed, the pull request went
+// BLOCKED, and the monitor kept polling BLOCKED for the rest of the
+// hour-long timeout with nothing to show for it. So a BLOCKED poll on the
+// head this ship still recognises as its own asks GitHub for the pull
+// request's required checks and ends the ship the moment one of them is
+// reported completed in failure, naming it in the failure and in its own
+// event, with the same auto-merge take-down (GSHIP-616) every other
+// non-merge ending here already performs — no merge, no branch deletion. A
+// required check still running leaves BLOCKED exactly the wait it already
+// was. `gh pr checks` is read outside `#checked`: its documented exit codes
+// mean failure and pending checks can both leave a non-zero exit sitting
+// next to a perfectly good JSON answer on stdout, so whatever the exit code,
+// stdout that parses as the checks array is trusted over it — only a stdout
+// that does not parse falls back to the exit code to tell an unavailable
+// answer from a decision. GitHub staying unavailable retries with the same
+// fixed backoff as the four commands above, but exhausting that budget here
+// does not end the ship at all, unconfirmed or otherwise: unlike reading the
+// merge state itself, this is a second opinion the ship can simply ask for
+// again on the next poll.
 
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -154,6 +178,12 @@ interface ExistingPullRequest {
 	number: number;
 	state: string;
 	headRefOid: string;
+}
+
+/** One required check as `gh pr checks --required` buckets it: `fail` is the only bucket this file acts on. */
+interface RequiredCheck {
+	name: string;
+	bucket: string;
 }
 
 function errorMessage(error: unknown): string {
@@ -254,6 +284,30 @@ function parsePullRequestView(json: string): PullRequestView {
 		mergeStateStatus: typeof view?.mergeStateStatus === 'string' ? view.mergeStateStatus : 'UNKNOWN',
 		headRefOid: typeof view?.headRefOid === 'string' ? view.headRefOid : '',
 	};
+}
+
+/**
+ * Null means stdout was not the checks array `gh pr checks --required --json
+ * name,state,bucket` reports on success — never thrown, since this is read
+ * regardless of exit code and an unparseable answer is exactly the signal
+ * that falls back to classifying the exit code instead (GSHIP-646).
+ */
+function parseRequiredChecks(json: string): RequiredCheck[] | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(json);
+	} catch {
+		return null;
+	}
+	if (!Array.isArray(parsed)) return null;
+	const checks: RequiredCheck[] = [];
+	for (const entry of parsed) {
+		const check = entry as { name?: unknown; bucket?: unknown };
+		if (typeof check?.name === 'string' && typeof check?.bucket === 'string') {
+			checks.push({ name: check.name, bucket: check.bucket });
+		}
+	}
+	return checks;
 }
 
 function pullRequestBody(runId: string, issueId: string): string {
@@ -621,9 +675,94 @@ export class GithubShipper implements RuntimeShipper {
 				throw error;
 			}
 		}
+		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
+		if (blocked !== null) return { result: blocked };
 		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 		if (verdict !== null) return { result: verdict };
 		return { headSha, branchUpdates, pending: view.mergeStateStatus };
+	}
+
+	/**
+	 * BLOCKED on the head this ship still recognises as its own may be a
+	 * required check GitHub already completed in failure — a decision, not the
+	 * wait BLOCKED otherwise is (GSHIP-646). A BEHIND head that is not ours is
+	 * already handled above #pollOnce's call to this; a BLOCKED head that is
+	 * not ours is left to #pollVerdict, which reports it as a divergence like
+	 * any other, so this only ever asks about the head this ship published.
+	 */
+	async #pollBlocked(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		view: PullRequestView,
+	): Promise<RuntimeShipResult | null> {
+		if (view.state !== 'OPEN' || view.mergeStateStatus !== 'BLOCKED' || view.headRefOid !== headSha) {
+			return null;
+		}
+		const failedCheck = await this.#failedRequiredCheck(input, prNumber);
+		if (failedCheck === null) return null;
+		return await this.#requiredCheckFailed(input, prNumber, headSha, failedCheck);
+	}
+
+	/**
+	 * A required check GitHub reports completed in failure ends the ship here
+	 * (GSHIP-646), naming the check so the cause shows up in the run's history.
+	 * The armed auto-merge comes down first (GSHIP-616), the same as every
+	 * other ending in this file that is not a merge — nothing is merged and no
+	 * branch is deleted.
+	 */
+	async #requiredCheckFailed(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		checkName: string,
+	): Promise<RuntimeShipResult> {
+		await this.#disarmAutoMerge(input, prNumber);
+		input.emit('ship.required-check-failed', { prNumber, headSha, check: checkName });
+		return {
+			outcome: 'failed',
+			detail: `pull request #${prNumber} is blocked: required check "${checkName}" completed in failure`,
+		};
+	}
+
+	/**
+	 * Consulted only once a poll finds the pull request BLOCKED: the name of
+	 * the first required check GitHub reports completed in failure, or null
+	 * when none has — a required check still running is exactly the wait
+	 * BLOCKED already was before this existed, and so is no required checks
+	 * being reported at all.
+	 *
+	 * This reads outside `#checked` on purpose: `gh pr checks` documents a
+	 * non-zero exit both for a failing check and for one still pending, so a
+	 * usable JSON answer can sit on stdout right next to an exit code
+	 * `#checked` would otherwise throw on unread. Stdout that parses as the
+	 * checks array is trusted whatever the exit code; only a stdout that does
+	 * not parse falls back to the exit code, and only then to tell GitHub
+	 * being unavailable from a decision. Unavailable retries with the same
+	 * fixed backoff as every other idempotent `gh` read in this file, but
+	 * exhausting that budget here never fails the ship, and neither does a
+	 * decision: unlike reading the merge state itself, this is a second
+	 * opinion, and the next poll simply asks again.
+	 */
+	async #failedRequiredCheck(input: RuntimeShipInput, prNumber: number): Promise<string | null> {
+		for (let attempt = 0; ; attempt++) {
+			const checked = await this.#run(input, 'gh', [
+				'pr', 'checks', String(prNumber), '--required', '--json', 'name,state,bucket',
+			]);
+			const checks = parseRequiredChecks(checked.stdout);
+			if (checks !== null) return checks.find((check) => check.bucket === 'fail')?.name ?? null;
+			if (checked.exitCode === 0) return null;
+			const detail = failureDetail(checked);
+			if (!isGithubUnavailable(detail) || attempt >= this.#unavailableRetryDelaysMs.length) return null;
+			input.emit('ship.github-unavailable', {
+				command: 'gh',
+				args: ['pr', 'checks'],
+				attempt: attempt + 1,
+				detail,
+			});
+			await sleep(this.#unavailableRetryDelaysMs[attempt] ?? 0, input.signal);
+			if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+		}
 	}
 
 	/**
@@ -705,7 +844,10 @@ export class GithubShipper implements RuntimeShipper {
 	 * idempotent — reusing the pull request, arming auto-merge, reading its
 	 * state, updating the branch to clear BEHIND — and only then does an
 	 * unavailable answer get retried; a decision still fails on the spot, here
-	 * or anywhere else `#checked` is called.
+	 * or anywhere else `#checked` is called. Reading a BLOCKED pull request's
+	 * required checks (GSHIP-646) is read outside this method instead, since a
+	 * failed or pending check can leave a non-zero exit next to a usable
+	 * answer on stdout, which `#checked` would discard unread.
 	 */
 	async #checked(
 		input: RuntimeShipInput,
