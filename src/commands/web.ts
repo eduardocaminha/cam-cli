@@ -104,6 +104,14 @@ export interface WebServerOptions {
 	orchestrator?: (
 		execute: (command: OrchestratorCommand) => Promise<string>,
 	) => OrchestratorRuntime;
+	/**
+	 * Test seam for the commit the running binary was compiled from (GSHIP-648).
+	 * Production reads `readBuildSha()`, which only resolves to something other
+	 * than null inside a binary `scripts/build-release.sh` produced. `undefined`
+	 * defers to that real read; `null` or a string is taken verbatim, including a
+	 * sha that does not resolve in the local repository.
+	 */
+	buildSha?: string | null;
 }
 
 export interface OrchestratorRuntime {
@@ -1001,7 +1009,11 @@ function readIdleSnapshotState(cwd: string): { backlog: BacklogJsonView } {
  * or a ship, and a restart makes it disappear on its own.
  */
 interface StaleServiceNotice {
-	/** `origin/main` at the moment this process started. */
+	/**
+	 * The commit the running binary was compiled from (GSHIP-648) when it was
+	 * built by `scripts/build-release.sh`; otherwise `origin/main` at the
+	 * moment this process started, same as before that build sha existed.
+	 */
 	bootSha: string;
 	/** `origin/main` right now. */
 	currentSha: string;
@@ -1018,6 +1030,19 @@ function readSourceSha(cwd: string): string | null {
 	if (result.exitCode !== 0) return null;
 	const sha = result.stdout.trim();
 	return sha.length === 0 ? null : sha;
+}
+
+/**
+ * `scripts/build-release.sh` bakes the commit it compiled into each binary
+ * with `bun build --define GSHIP_BUILD_SHA='"<sha>"'`. Running from source --
+ * `bun run`, `bun test`, `bun x gship` -- there is no such global: `typeof` on
+ * an undeclared identifier never throws, so the read degrades to null instead
+ * of crashing (GSHIP-648).
+ */
+declare const GSHIP_BUILD_SHA: string | undefined;
+
+function readBuildSha(): string | null {
+	return typeof GSHIP_BUILD_SHA === 'string' ? GSHIP_BUILD_SHA : null;
 }
 
 /**
@@ -1319,8 +1344,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
 	// Read once, at boot, and kept in memory: it is what this process loaded, so
-	// no later read of the ref can change it short of a restart.
-	const bootSourceSha = readSourceSha(options.cwd);
+	// no later read of the ref can change it short of a restart. The compiled
+	// build sha (GSHIP-648) is preferred when the binary carries one, since it
+	// names the commit the executable actually came from rather than the ref
+	// this process happened to read at start; a source run falls back to the
+	// ref read exactly as before that sha existed.
+	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
+	const bootSourceSha = buildSha ?? readSourceSha(options.cwd);
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
 		port: options.port,

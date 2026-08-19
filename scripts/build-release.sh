@@ -68,6 +68,13 @@ fi
 VERSION="$(echo "${VERSION_LINE}" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")"
 echo "[build-release] gateship v${VERSION}"
 
+# --- Resolve the commit being compiled (GSHIP-648) --------------------------
+# Baked into every binary below via `--define`, so the running process can
+# report the commit it was actually built from -- see readBuildSha() in
+# src/commands/web.ts -- instead of only the ref it happens to read at boot.
+BUILD_SHA="$(git rev-parse HEAD)"
+echo "[build-release] embedding build sha ${BUILD_SHA}"
+
 # --- Resolve the host-native target (US-003) --------------------------------
 # `--target=bun-<os>-<arch>` is the documented Bun target string (the docs
 # require the `bun-` prefix; see https://bun.sh/docs/bundler/executables).
@@ -103,7 +110,7 @@ for entry in "${TARGETS[@]}"; do
 	BIN="dist/${OUT_NAME}"
 
 	echo "[build-release] compiling ${BIN} (--target=${BUN_TARGET})"
-	bun build --compile --target="${BUN_TARGET}" --minify ./index.ts --outfile "${BIN}"
+	bun build --compile --target="${BUN_TARGET}" --define "GSHIP_BUILD_SHA=\"${BUILD_SHA}\"" --minify ./index.ts --outfile "${BIN}"
 
 	# --- Ad-hoc re-sign darwin artifacts only (US-001) ------------------------
 	# bun --compile produces a binary whose codesign signature reads invalid;

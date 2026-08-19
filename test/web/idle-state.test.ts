@@ -87,12 +87,18 @@ function seedIdleRepo(): string {
  * more than once: the boot sha is resolved when the process starts, so what the
  * ref does afterwards is only observable through a second read of the same
  * server.
+ *
+ * `buildSha` stands in for the compiled-binary global (GSHIP-648): omitted, it
+ * defers to the real `readBuildSha()`, which is always null under `bun test`
+ * since nothing here compiles a binary, so the server falls back to the ref
+ * read exactly as it did before that global existed.
  */
 async function withSnapshotServer<T>(
 	cwd: string,
 	body: (readSnapshot: () => Promise<Record<string, unknown>>) => Promise<T>,
+	buildSha?: string | null,
 ): Promise<T> {
-	const handle = startWebServer({ port: 0, cwd });
+	const handle = startWebServer({ port: 0, cwd, buildSha });
 	try {
 		return await body(async () => {
 			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
@@ -370,5 +376,63 @@ describe('GET /api/snapshot service freshness', () => {
 			expect(payload['staleService']).toBeUndefined();
 			expect(payload['version']).toBe(GSHIP_VERSION);
 		});
+	});
+});
+
+describe('GET /api/snapshot service freshness -- compiled build sha (GSHIP-648)', () => {
+	test('a build sha older than the boot-time ref is preferred and catches the staleness the ref read alone would miss', async () => {
+		const cwd = seedIdleRepo();
+		const buildSha = sourceSha(cwd);
+
+		// The shape of the bug this closes: a binary compiled at `buildSha` only
+		// starts after a pull has already landed `advanceRemoteMain`'s commit, so
+		// `origin/main` read fresh at boot is already the new commit -- the old
+		// boot-ref comparison would find bootSha === currentSha and say nothing.
+		advanceRemoteMain(cwd);
+		const currentSha = sourceSha(cwd);
+		expect(currentSha).not.toBe(buildSha);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha: buildSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+		}, buildSha);
+	});
+
+	test('no build sha falls back to the boot-time ref read, same as before the build sha existed', async () => {
+		const cwd = seedIdleRepo();
+		const bootSha = sourceSha(cwd);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			expect((await readSnapshot())['staleService']).toBeUndefined();
+
+			advanceRemoteMain(cwd);
+			const currentSha = sourceSha(cwd);
+
+			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
+			expect(notice).toEqual({
+				bootSha,
+				currentSha,
+				detail: expect.stringContaining('Reinicie o serviço'),
+			});
+		}, null);
+	});
+
+	test('a build sha that does not resolve locally omits the notice, never inventing a divergence', async () => {
+		const cwd = seedIdleRepo();
+		// Shaped like a real sha, but no such object exists in this repository --
+		// a build made from another clone, or from a branch that no longer exists.
+		const unresolvableBuildSha = '0'.repeat(40);
+
+		await withSnapshotServer(cwd, async (readSnapshot) => {
+			advanceRemoteMain(cwd);
+
+			const payload = await readSnapshot();
+			expect(payload['staleService']).toBeUndefined();
+			expect(payload['version']).toBe(GSHIP_VERSION);
+		}, unresolvableBuildSha);
 	});
 });
