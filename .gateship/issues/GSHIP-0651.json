@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T17:28:30.109Z",
-  "updatedAt": "2026-08-19T17:28:30.109Z",
+  "updatedAt": "2026-08-19T17:30:34.453Z",
   "description": "Fazer o servico avisar por push quando um run precisa do operador, para que uma fila que roda de madrugada nao dependa de uma aba aberta no navegador. Hoje a unica notificacao e a do navegador, em webui/src/notifications.ts, e ela so existe enquanto a pagina esta carregada; nao ha nenhum canal server-side no repositorio.\n\nCanal escolhido pelo operador: ntfy. Um POST HTTP para uma URL de topico, sem SDK, sem conta e sem dependencia nova, usando fetch. A URL completa do topico vive em uma unica variavel de ambiente lida no processo do servico. Ausente significa desligado: o servico sobe e opera exatamente como hoje, sem erro e sem aviso.\n\nRegras de segredo, que sao contrato do produto e nao preferencia: a URL nunca entra no SQLite, nunca aparece em resposta ao navegador, nunca e escrita em log, e nunca e passada no ambiente de um filho agente ou do gh. Se alguma resposta precisar dizer se o canal esta configurado, diz apenas um booleano.\n\nO que notifica: os mesmos momentos que ja merecem alerta no navegador e que exigem uma decisao ou encerram o trabalho, ou seja run que passa a waiting-user, run que falha, run interrompido que nao foi cancelado pelo operador, ship que voltou para nova tentativa, e a fila parada. Nada de notificar progresso: um evento por transicao que pede atencao, nunca por atividade de stream.\n\nUma falha de envio jamais altera estado de run. O envio e disparado a partir do log de eventos ja existente, com timeout curto, e um erro de rede e engolido apos ser contado, porque o canal e opcional por definicao.\n\nO modulo novo e src/runtime/remote-notifier.ts e o teste novo e test/runtime/remote-notifier.test.ts, nomeado no comando de verificacao. Os casos a cobrir: variavel ausente nao envia nada e nao falha, cada transicao que pede atencao envia uma vez com titulo e corpo, transicao que nao pede atencao nao envia, falha de rede nao propaga, e a URL nao aparece em nenhuma saida observavel.\n\nFora de escopo: segundo canal, barramento generico de integracao, configuracao pela tela, notificar progresso de run, agrupar ou repetir alertas, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "export function notificationForRunEvent"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "e6648029edf005c960e50ad160a64909fea4f69fa40b385373721edb4ecc581d",
+    "approvedAt": "2026-08-19T17:30:34.453Z"
   }
 }
