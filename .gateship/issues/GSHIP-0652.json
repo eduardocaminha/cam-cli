@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-652",
+  "title": "Segredo de notificacao no projeto e estado visivel em Ajustes",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-19T20:49:42.117Z",
+  "updatedAt": "2026-08-19T20:49:42.117Z",
+  "description": "Tirar o segredo de notificacao da variavel de ambiente e leva-lo para um arquivo do proprio projeto, e mostrar em Ajustes se o canal esta configurado, com um teste que prova o caminho inteiro. Hoje o unico caminho e a variavel GATESHIP_NTFY_URL no ambiente do processo, definida em src/runtime/remote-notifier.ts. Isso falha de tres formas observadas: some a cada reinicio se nao estiver no shell, nao aparece em lugar nenhum da interface, e quando esta ausente o canal fica desligado em silencio, sem que nada avise.\n\nDecisao do operador que a fatia implementa: o segredo e vinculado ao projeto e nunca global, de modo que apagar o projeto apaga tudo, sem residuo em cofre do sistema. O arquivo vive em .gship/, que ja e o diretorio de estado local e ja esta inteiro no .gitignore, e e criado com permissao 600. Nao usar keychain do sistema: ele nao e portavel entre macOS, Linux e Windows e, pior, sobreviveria ao projeto apagado.\n\nO segredo nunca entra no SQLite e nunca aparece em resposta ao navegador. A leitura exposta pela API devolve apenas um booleano por canal, dizendo se esta configurado. A variavel de ambiente continua funcionando e tem precedencia sobre o arquivo, para nao quebrar quem ja a usa.\n\nEm Ajustes, ao lado dos paineis que ja existem, o painel de notificacoes passa a mostrar por canal se esta configurado, um botao que dispara uma mensagem real de teste e informa se a entrega foi aceita, e a instrucao de como configurar com link para a documentacao do canal. O painel nunca exibe o valor guardado nem o devolve em resposta alguma, mesmo mascarado.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: leitura do arquivo quando ele existe, precedencia da variavel de ambiente sobre o arquivo, arquivo criado com permissao 600, ausencia dos dois deixando o canal desligado sem erro, e a resposta da API devolvendo booleano e nunca o valor.\n\nFora de escopo: canal novo, cofre do sistema operacional, edicao do segredo pela tela, criptografia do arquivo, e qualquer alteracao no ciclo de vida da run.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tirar o segredo de notificacao da variavel de ambiente e leva-lo para um arquivo do proprio projeto, e mostrar em Ajustes se o canal esta configurado, com um teste que prova o caminho inteiro. Hoje o unico caminho e a variavel GATESHIP_NTFY_URL no ambiente do processo, definida em src/runtime/remote-notifier.ts. Isso falha de tres formas observadas: some a cada reinicio se nao estiver no shell, nao aparece em lugar nenhum da interface, e quando esta ausente o canal fica desligado em silencio, sem que nada avise.\n\nDecisao do operador que a fatia implementa: o segredo e vinculado ao projeto e nunca global, de modo que apagar o projeto apaga tudo, sem residuo em cofre do sistema. O arquivo vive em .gship/, que ja e o diretorio de estado local e ja esta inteiro no .gitignore, e e criado com permissao 600. Nao usar keychain do sistema: ele nao e portavel entre macOS, Linux e Windows e, pior, sobreviveria ao projeto apagado.\n\nO segredo nunca entra no SQLite e nunca aparece em resposta ao navegador. A leitura exposta pela API devolve apenas um booleano por canal, dizendo se esta configurado. A variavel de ambiente continua funcionando e tem precedencia sobre o arquivo, para nao quebrar quem ja a usa.\n\nEm Ajustes, ao lado dos paineis que ja existem, o painel de notificacoes passa a mostrar por canal se esta configurado, um botao que dispara uma mensagem real de teste e informa se a entrega foi aceita, e a instrucao de como configurar com link para a documentacao do canal. O painel nunca exibe o valor guardado nem o devolve em resposta alguma, mesmo mascarado.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: leitura do arquivo quando ele existe, precedencia da variavel de ambiente sobre o arquivo, arquivo criado com permissao 600, ausencia dos dois deixando o canal desligado sem erro, e a resposta da API devolvendo booleano e nunca o valor.\n\nFora de escopo: canal novo, cofre do sistema operacional, edicao do segredo pela tela, criptografia do arquivo, e qualquer alteracao no ciclo de vida da run.",
+    "verify": [
+      "bun test test/runtime/remote-notifier.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -o \"export const NTFY_URL_ENV_VAR = 'GATESHIP_NTFY_URL';\" src/runtime/remote-notifier.ts",
+        "output": "export const NTFY_URL_ENV_VAR = 'GATESHIP_NTFY_URL';"
+      },
+      {
+        "command": "grep -o 'function NotificationsPanel({' webui/src/App.tsx",
+        "output": "function NotificationsPanel({"
+      }
+    ]
+  }
+}
