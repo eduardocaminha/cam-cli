@@ -55,6 +55,7 @@ import {
 	type ModelSlot,
 	type ModelSlotResolver,
 } from '../runtime/model-settings.ts';
+import { createRemoteNotifier } from '../runtime/remote-notifier.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	type ChainPauseView,
@@ -1329,6 +1330,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsOrchestrator = options.orchestrator === undefined;
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
+	// The same durable event log the SSE stream below reads per-connection
+	// (GSHIP-651); a missing GATESHIP_NTFY_URL makes this a no-op subscriber.
+	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier());
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } = resolveIssueWriters(options);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
 	const modelProber = options.modelProber ?? new NativeModelProber();
@@ -1515,6 +1519,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		stop: async () => {
 			if (stopped) return;
 			stopped = true;
+			unsubscribeRemoteNotifier();
 			if (ownsOrchestrator) await orchestrator.stop();
 			await runRuntime.stop();
 			if (ownsProviderAuth) await providerAuth.close();
