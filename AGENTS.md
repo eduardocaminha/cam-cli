@@ -6,15 +6,20 @@ not blanket authorization to implement the roadmap.
 
 ## Product boundary
 
-Gateship is one local web service. Bun serves the UI, SQLite stores durable run
-state and provider adapters invoke coding agents installed and authenticated by
-the operator.
+Gateship is one web service, packaged as one container image. Bun serves the UI,
+SQLite stores durable run state and provider adapters invoke coding agents that
+are installed in the image and authenticated by the operator on first boot.
 
 - Simplicity governs scope. Prefer removing obsolete surface or fixing a small
   root cause over adding a gate, policy, compatibility layer, daemon or state
   file.
-- Do not add tmux, send-keys, sidecars, container workers, terminal UIs or a
-  second `gshipd` process.
+- One image, one volume, one process supervising its children. The container is
+  the isolation boundary and replaces the local-process sandbox the roadmap had
+  planned. Do not add tmux, send-keys, sidecars, terminal UIs or a second
+  `gshipd` process, and do not split the runtime across several containers.
+- Provider and GitHub authentication happens inside the container and persists
+  on the volume. Never copy host credentials into the image, and never trade the
+  operator's subscription login for API-key billing.
 - The operator-facing conversational orchestrator may investigate the project,
   refine intent and invoke typed Gateship commands. The deterministic runtime,
   not the conversational agent, owns run state, verification and shipping.
