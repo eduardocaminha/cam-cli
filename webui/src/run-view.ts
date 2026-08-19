@@ -11,6 +11,7 @@ export type RunState =
 	| 'working'
 	| 'verify'
 	| 'review'
+	| 'full-verify'
 	| 'ready-to-ship'
 	| 'shipping'
 	| 'done'
@@ -117,6 +118,7 @@ export const RUN_PHASES: readonly RunState[] = [
 	'working',
 	'verify',
 	'review',
+	'full-verify',
 	'ready-to-ship',
 	'shipping',
 	'done',
@@ -161,6 +163,7 @@ const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
 	working: 'Trabalhando',
 	verify: 'Trabalhando',
 	review: 'Trabalhando',
+	'full-verify': 'Trabalhando',
 	shipping: 'Trabalhando',
 	'ready-to-ship': 'Precisa de você',
 	'waiting-user': 'Precisa de você',
@@ -214,6 +217,7 @@ const CANCELLABLE: readonly RunState[] = [
 	'working',
 	'verify',
 	'review',
+	'full-verify',
 	'ready-to-ship',
 	'shipping',
 ];

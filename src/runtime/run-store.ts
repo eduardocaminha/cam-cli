@@ -1202,6 +1202,7 @@ export class RunStore {
 			working: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			verify: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			review: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			'full-verify': { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			shipping: { toState: 'ready-to-ship', kind: 'run.recovered-shippable' },
 		};
 		return this.listRuns(10_000)

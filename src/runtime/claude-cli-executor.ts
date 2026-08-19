@@ -143,6 +143,10 @@ export function buildWorkPrompt(
 	reviewFeedback: string | undefined,
 	operatorGuidance: string | undefined,
 	decisions: readonly string[] = [],
+	// Appended last, defaulted, so every existing positional call site keeps
+	// working unchanged: only the two executors that actually reach the
+	// full-verify gate (GSHIP-649) pass it.
+	fullVerifyFeedback: string | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -153,6 +157,17 @@ export function buildWorkPrompt(
 		'',
 		'Review findings:',
 		reviewFeedback,
+	];
+	// The full-project verification's own single automatic fix round
+	// (GSHIP-649): a rejection here is the project's whole manifest, not the
+	// reviewer, so it gets its own section instead of overloading reviewSection.
+	const fullVerifySection = fullVerifyFeedback === undefined ? [] : [
+		'',
+		"The project's full verification (its `verify` script) failed after your change.",
+		'Fix exactly this failure and nothing else; do not widen the change.',
+		'',
+		'Full verification output:',
+		fullVerifyFeedback,
 	];
 	const guidanceSection = operatorGuidance === undefined ? [] : [
 		'',
@@ -184,6 +199,7 @@ export function buildWorkPrompt(
 		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
+		...fullVerifySection,
 		'',
 		'Issue record:',
 		issue,
@@ -322,6 +338,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.reviewFeedback,
 			input.operatorGuidance,
 			input.operatorDecisions ?? [],
+			input.fullVerifyFeedback,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

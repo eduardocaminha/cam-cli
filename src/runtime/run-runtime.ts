@@ -42,6 +42,14 @@ export interface RuntimeExecutionInput {
 	 * only channel that puts its verdict in front of the executor.
 	 */
 	reviewFeedback?: string;
+	/**
+	 * The full-project verification's failure output (GSHIP-649), present only
+	 * on the single automatic fix round after the project's own `verify`
+	 * script rejected an otherwise clean, reviewed change. Independent of
+	 * `reviewFeedback`: this channel never carries the code reviewer's own
+	 * verdict, only the full verification's.
+	 */
+	fullVerifyFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
 	/**
@@ -66,6 +74,13 @@ export interface RuntimeExecutor {
 export interface RuntimeVerificationResult {
 	ok: boolean;
 	detail?: string;
+	/**
+	 * Set on an `ok` result the check never actually ran (GSHIP-649), e.g. a
+	 * full verifier finding no `verify` script declared. Lets the caller tell
+	 * a real pass from a step that had nothing to check without treating
+	 * either one as a failure.
+	 */
+	skipped?: boolean;
 }
 
 export interface RuntimeVerifier {
@@ -120,6 +135,14 @@ export interface RunRuntimeOptions {
 	executor?: RuntimeExecutor;
 	verifier?: RuntimeVerifier;
 	reviewer?: RuntimeReviewer;
+	/**
+	 * The project's full verification manifest (GSHIP-649), run once the
+	 * issue's own verify and the independent review are both clean and before
+	 * the run is ever shipped. Optional like `reviewer`: a project or a test
+	 * runtime with none configured skips straight to shipping, unchanged from
+	 * before this gate existed.
+	 */
+	fullVerifier?: RuntimeVerifier;
 	shipper?: RuntimeShipper;
 	now?: () => string;
 	newId?: () => string;
@@ -183,10 +206,14 @@ interface ActiveRun {
 	promise: Promise<void>;
 }
 
-/** One implementation attempt: the first pass, or the single review fix. */
+/**
+ * One implementation attempt: the first pass, the single review fix, or the
+ * single full-verification fix (GSHIP-649).
+ */
 interface RunAttempt {
 	resume: boolean;
 	reviewFeedback?: string;
+	fullVerifyFeedback?: string;
 	operatorGuidance?: string;
 }
 
@@ -200,6 +227,7 @@ export class RunRuntime {
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
+	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #now: () => string;
 	readonly #newId: () => string;
@@ -218,6 +246,7 @@ export class RunRuntime {
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
+		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
 		this.#now = options.now ?? (() => new Date().toISOString());
 		this.#newId = options.newId ?? randomUUID;
@@ -561,10 +590,16 @@ export class RunRuntime {
 	}
 
 	/**
-	 * One pass per implementation attempt through work and review, and --
-	 * once verified and reviewed clean -- the ship attempt. A findings verdict
-	 * starts the second and last pass; the fix-round ceiling lives in
-	 * run-state.ts.
+	 * One pass per implementation attempt through work, review and the full
+	 * project verification, and -- once all three are clean -- the ship
+	 * attempt. A review finding or a full-verify failure (GSHIP-649) each buy
+	 * the run its own single automatic fix round; either one persisting past
+	 * that round ends the run at waiting-user instead of shipping or looping.
+	 * The fix-round ceiling for review lives in run-state.ts; full-verify's own
+	 * ceiling is tracked independently, by `#fullVerifyFixUsed`. `#review` owns
+	 * the whole clean path through to `ready-to-ship`, including full
+	 * verification's own phase and retry, so this loop only ever sees one of:
+	 * a fix-round attempt to redo, or the settled run.
 	 */
 	async #driveImplementation(
 		executor: RuntimeExecutor,
@@ -582,8 +617,9 @@ export class RunRuntime {
 			if (next === null) break;
 			attempt = next;
 		}
-		// A run that got here verified and reviewed clean ships under the same
-		// ownership: the operator asked for the change, not for a button.
+		// A run that got here verified, reviewed and fully verified clean ships
+		// under the same ownership: the operator asked for the change, not for a
+		// button.
 		const shipper = this.#shipper;
 		if (shipper === undefined) return;
 		if (this.#store.getRun(run.id)?.state !== 'ready-to-ship') return;
@@ -718,7 +754,8 @@ export class RunRuntime {
 
 	/**
 	 * One independent review of a verified change. Returns the next attempt when
-	 * findings buy the single automatic fix, or null once the run has settled.
+	 * findings buy the single automatic fix, or once the review itself is clean,
+	 * defers to `#enterFullVerify` for the rest of the path to `ready-to-ship`.
 	 */
 	async #review(
 		run: RunRecord,
@@ -727,8 +764,7 @@ export class RunRuntime {
 	): Promise<RunAttempt | null> {
 		const reviewer = this.#reviewer;
 		if (reviewer === undefined) {
-			this.#transition(run.id, 'ready-to-ship', 'run.verified');
-			return null;
+			return this.#enterFullVerify(run, signal, executionInput, 'run.verified');
 		}
 		this.#transition(run.id, 'review', 'run.review-started');
 		const review = await reviewer.review(executionInput);
@@ -737,8 +773,7 @@ export class RunRuntime {
 			return null;
 		}
 		if (review.verdict === 'clean') {
-			this.#transition(run.id, 'ready-to-ship', 'run.review-clean');
-			return null;
+			return this.#enterFullVerify(run, signal, executionInput, 'run.review-clean');
 		}
 		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
 			this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
@@ -751,6 +786,73 @@ export class RunRuntime {
 			payload: { findings: review.detail },
 		});
 		return { resume: true, reviewFeedback: review.detail };
+	}
+
+	/**
+	 * The project's full verification manifest (GSHIP-649) -- `package.json`'s
+	 * own `verify` script, e.g. `bun run check:all` -- run once the issue's own
+	 * verify and the independent review are both clean, in its own phase
+	 * (`full-verify`, run-state.ts) exactly like shipping is its own phase after
+	 * `ready-to-ship`. The slice the issue verify and the review each cover is
+	 * always a cutout of the project's whole; this is the gate that catches what
+	 * the cutout missed -- a stale bundle, a lint rule that moved -- as a fix
+	 * round the executor still owns, instead of a CI failure discovered once
+	 * nobody is in the loop anymore. `cleanKind` is the transition that got the
+	 * run here (`run.verified` with no reviewer configured, `run.review-clean`
+	 * otherwise); reused verbatim as the entry into `full-verify` so the event
+	 * still reads as what actually happened. Optional like `#reviewer`: with no
+	 * full verifier configured, `cleanKind` instead lands the run directly on
+	 * `ready-to-ship`, unchanged from before this gate existed. Returns the next
+	 * attempt when a failure buys the single automatic fix, or null once the run
+	 * has settled (clean, skipped, or handed to the operator).
+	 */
+	async #enterFullVerify(
+		run: RunRecord,
+		signal: AbortSignal,
+		executionInput: RuntimeExecutionInput,
+		cleanKind: string,
+	): Promise<RunAttempt | null> {
+		const fullVerifier = this.#fullVerifier;
+		if (fullVerifier === undefined) {
+			this.#transition(run.id, 'ready-to-ship', cleanKind);
+			return null;
+		}
+		this.#transition(run.id, 'full-verify', cleanKind);
+		const result = await fullVerifier.verify(executionInput);
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return null;
+		}
+		if (result.ok) {
+			this.#transition(run.id, 'ready-to-ship', result.skipped ? 'run.full-verify-skipped' : 'run.full-verify-clean');
+			return null;
+		}
+		const detail = result.detail ?? 'Full project verification failed.';
+		if (this.#fullVerifyFixUsed(run.id)) {
+			this.#transition(run.id, 'waiting-user', 'run.full-verify-fix-limit', {
+				summary: detail,
+				payload: { findings: detail },
+			});
+			return null;
+		}
+		this.#transition(run.id, 'working', 'run.full-verify-fix-requested', {
+			payload: { findings: detail },
+		});
+		return { resume: true, fullVerifyFeedback: detail };
+	}
+
+	/**
+	 * Whether this run already spent its one automatic full-verify fix round,
+	 * read from the durable decision log (GSHIP-649) rather than an in-memory
+	 * counter, so a second failure ends the run at waiting-user even across a
+	 * crash-and-resume between the two full-verify attempts. Deliberately
+	 * independent of `fixRounds`: a full-verify failure is never a review
+	 * finding, and consuming the review's own one-round budget for it would tie
+	 * two unrelated gates together for no reason the spec asks for.
+	 */
+	#fullVerifyFixUsed(runId: string): boolean {
+		return this.#store.listRunDecisionEvents(runId)
+			.some((event) => event.kind === 'run.full-verify-fix-requested');
 	}
 
 	/**
@@ -796,6 +898,9 @@ export class RunRuntime {
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),
+			...(attempt.fullVerifyFeedback === undefined
+				? {}
+				: { fullVerifyFeedback: attempt.fullVerifyFeedback }),
 			...(attempt.operatorGuidance === undefined
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),
