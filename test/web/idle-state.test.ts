@@ -144,10 +144,10 @@ function advanceRemoteMainDocsOnly(cwd: string): void {
 	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 }
 
-/** Land one more commit on the remote's main that touches `webui/dist/`. */
-function advanceRemoteMainWebuiDist(cwd: string): void {
-	mkdirSync(join(cwd, 'webui', 'dist'), { recursive: true });
-	writeFileSync(join(cwd, 'webui', 'dist', 'app.js'), 'console.log("built");\n');
+/** Land one more commit on the remote's main that touches `webui/src/`. */
+function advanceRemoteMainWebuiSrc(cwd: string): void {
+	mkdirSync(join(cwd, 'webui', 'src'), { recursive: true });
+	writeFileSync(join(cwd, 'webui', 'src', 'App.tsx'), 'export const App = () => null;\n');
 	git(cwd, ['add', '.']);
 	git(cwd, ['commit', '-q', '-m', 'ship a rebuilt bundle']);
 	git(cwd, ['push', '-q', 'origin', 'main']);
@@ -301,12 +301,12 @@ describe('GET /api/snapshot service freshness', () => {
 		});
 	});
 
-	test('a diff touching webui/dist/ reports the restart', async () => {
+	test('a diff touching webui/src/ reports the restart', async () => {
 		const cwd = seedIdleRepo();
 		const bootSha = sourceSha(cwd);
 
 		await withSnapshotServer(cwd, async (readSnapshot) => {
-			advanceRemoteMainWebuiDist(cwd);
+			advanceRemoteMainWebuiSrc(cwd);
 			const currentSha = sourceSha(cwd);
 
 			const notice = (await readSnapshot())['staleService'] as Record<string, unknown>;
