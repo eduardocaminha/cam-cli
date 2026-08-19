@@ -26,7 +26,11 @@
 // merged only while the head GitHub merged is still the head we pushed. Ending
 // the ship is not enough on its own: the arming outlives this process, so a
 // refused head is disarmed with `--disable-auto` before the failure is
-// reported, or GitHub could still land it with nobody watching.
+// reported, or GitHub could still land it with nobody watching. A pull
+// request closed without merging carries the same risk if it is reopened
+// later, so both places this ship ends on CLOSED disarm the same way
+// (GSHIP-641) — the disarm's own failure never displaces the closed reason
+// that is actually reported.
 //
 // Every `gh` command receives an allowlisted environment with no token
 // variables, so authentication always belongs to gh's own credential store.
@@ -333,7 +337,9 @@ export class GithubShipper implements RuntimeShipper {
 	 * A pull request that already left the open state ends the ship here. The
 	 * armed auto-merge can land the branch while nobody is watching (a monitor
 	 * timeout, a cancel, a restart mid-ship), so a retry has to recognise its
-	 * own merged pull request instead of opening a second, zero-diff one.
+	 * own merged pull request instead of opening a second, zero-diff one. A
+	 * pull request found already CLOSED is disarmed here too (GSHIP-641): a
+	 * reopen later must not resurrect an arming this run left behind.
 	 */
 	async #settledPullRequest(
 		input: RuntimeShipInput,
@@ -353,6 +359,7 @@ export class GithubShipper implements RuntimeShipper {
 			return await this.#merged(input, pullRequest.number);
 		}
 		if (pullRequest.state === 'CLOSED') {
+			await this.#disarmAutoMerge(input, pullRequest.number);
 			return {
 				outcome: 'failed',
 				detail: `pull request #${pullRequest.number} was closed without merging`,
@@ -392,15 +399,16 @@ export class GithubShipper implements RuntimeShipper {
 	}
 
 	/**
-	 * Take the arming off a pull request whose head this ship just refused, so
-	 * GitHub cannot land it later with nobody watching. `--disable-auto` is
-	 * idempotent: a pull request with nothing armed — never armed, already
-	 * disarmed, already merged — is exactly where we want it, so gh's refusal is
-	 * recorded and no more than that.
+	 * Take the arming off a pull request this ship is about to end on without a
+	 * merge of its own — a head it just refused, or a pull request it found
+	 * closed — so GitHub cannot land the old arming later with nobody watching.
+	 * `--disable-auto` is idempotent: a pull request with nothing armed — never
+	 * armed, already disarmed, already merged — is exactly where we want it, so
+	 * gh's refusal is recorded and no more than that.
 	 *
 	 * The disarm never decides the ship's outcome: whether it worked or not, the
-	 * divergence stays the reported reason. Only cancellation still belongs to
-	 * the runtime, so it is the one error that keeps propagating.
+	 * reason this ship is ending stays the reported one. Only cancellation still
+	 * belongs to the runtime, so it is the one error that keeps propagating.
 	 */
 	async #disarmAutoMerge(input: RuntimeShipInput, prNumber: number): Promise<void> {
 		let detail: string;
@@ -658,6 +666,7 @@ export class GithubShipper implements RuntimeShipper {
 				: await this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
 		}
 		if (view.state === 'CLOSED') {
+			await this.#disarmAutoMerge(input, prNumber);
 			return {
 				outcome: 'failed',
 				detail: `pull request #${prNumber} was closed without merging`,
