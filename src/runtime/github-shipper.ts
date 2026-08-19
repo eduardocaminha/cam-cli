@@ -334,6 +334,12 @@ export class GithubShipper implements RuntimeShipper {
 	 * armed auto-merge can land the branch while nobody is watching (a monitor
 	 * timeout, a cancel, a restart mid-ship), so a retry has to recognise its
 	 * own merged pull request instead of opening a second, zero-diff one.
+	 *
+	 * A pull request closed without merging is disarmed the same way a
+	 * diverged head is (GSHIP-641): the arming outlives this process, and a
+	 * closed pull request can be reopened later with the old arming still in
+	 * place, landing a merge nobody reviewed. The disarm never changes the
+	 * reported reason for ending the ship.
 	 */
 	async #settledPullRequest(
 		input: RuntimeShipInput,
@@ -353,6 +359,7 @@ export class GithubShipper implements RuntimeShipper {
 			return await this.#merged(input, pullRequest.number);
 		}
 		if (pullRequest.state === 'CLOSED') {
+			await this.#disarmAutoMerge(input, pullRequest.number);
 			return {
 				outcome: 'failed',
 				detail: `pull request #${pullRequest.number} was closed without merging`,
@@ -644,7 +651,9 @@ export class GithubShipper implements RuntimeShipper {
 	/**
 	 * What one poll decides: a merge of the head this ship published, a pull
 	 * request closed without merging, or a head that is no longer ours. Null is
-	 * the only answer that keeps the monitor waiting.
+	 * the only answer that keeps the monitor waiting. A close disarms the same
+	 * way a diverged head does (GSHIP-641), so a later reopen cannot land the
+	 * old arming unwatched.
 	 */
 	async #pollVerdict(
 		input: RuntimeShipInput,
@@ -658,6 +667,7 @@ export class GithubShipper implements RuntimeShipper {
 				: await this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
 		}
 		if (view.state === 'CLOSED') {
+			await this.#disarmAutoMerge(input, prNumber);
 			return {
 				outcome: 'failed',
 				detail: `pull request #${prNumber} was closed without merging`,

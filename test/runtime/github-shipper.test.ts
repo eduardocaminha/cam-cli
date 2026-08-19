@@ -57,6 +57,8 @@ interface FakeRepo {
 	views: number;
 	/** The poll on which `gh pr view` starts reporting MERGED. */
 	mergedOnView: number;
+	/** The poll from which `gh pr view` reports the pull request closed without merging (GSHIP-641). */
+	closedOnView: number;
 	/** The poll from which the branch carries a head the service never pushed. */
 	headMovedOnView: number;
 	/** `gh pr view` reports BEHIND while fewer than this many updates have run (GSHIP-632). */
@@ -92,6 +94,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		prCreates: 0,
 		views: 0,
 		mergedOnView: 1,
+		closedOnView: Number.MAX_SAFE_INTEGER,
 		headMovedOnView: Number.MAX_SAFE_INTEGER,
 		behindWhileUpdatesBelow: 0,
 		branchUpdates: 0,
@@ -188,10 +191,16 @@ function ghView(repo: FakeRepo): CommandResult {
 	const merged = repo.views >= repo.mergedOnView;
 	// A merge is durable: `gh pr list` reports MERGED from now on.
 	if (merged) repo.prState = 'MERGED';
-	const behind = !merged && repo.branchUpdates < repo.behindWhileUpdatesBelow;
+	// A close without merging is durable too, but `mergedOnView` wins when both
+	// thresholds are set: it defaults to 1, so a test exercising the close path
+	// must push `mergedOnView` out (e.g. Number.MAX_SAFE_INTEGER) or the fake
+	// reports MERGED first and `closedOnView` never takes effect.
+	const closed = !merged && repo.views >= repo.closedOnView;
+	if (closed) repo.prState = 'CLOSED';
+	const behind = !merged && !closed && repo.branchUpdates < repo.behindWhileUpdatesBelow;
 	return result(0, JSON.stringify({
-		state: merged ? 'MERGED' : 'OPEN',
-		mergeStateStatus: merged ? 'CLEAN' : (behind ? 'BEHIND' : 'BLOCKED'),
+		state: merged ? 'MERGED' : (closed ? 'CLOSED' : 'OPEN'),
+		mergeStateStatus: merged ? 'CLEAN' : (closed ? 'UNKNOWN' : (behind ? 'BEHIND' : 'BLOCKED')),
 		headRefOid: repo.prHeadRefOid,
 	}));
 }
@@ -450,17 +459,23 @@ describe('the GitHub shipper', () => {
 		expect(repo.views).toBe(1);
 	});
 
-	test('a pull request closed without merging fails instead of reopening one', async () => {
+	test('a pull request closed without merging fails instead of reopening one, and disarms auto-merge (GSHIP-641)', async () => {
 		const cwd = createWorkspace();
+		// This is the pull request already closed the moment the ship resolves
+		// it — an earlier ship of this same run armed auto-merge, then the pull
+		// request was closed outside the service. Left armed, a later reopen
+		// would let GitHub merge it with nobody watching.
 		const repo = createRepo({ prNumber: 385, prState: 'CLOSED' });
 		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
 		const shipper = new GithubShipper({
 			runCommand: createRunner(repo, calls),
 			pollIntervalMs: 0,
 		});
 
 		const failed = await shipper.ship(
-			createShipInput(cwd, [], new AbortController().signal),
+			createShipInput(cwd, events, new AbortController().signal, payloads),
 		);
 
 		expect(failed).toEqual({
@@ -468,7 +483,68 @@ describe('the GitHub shipper', () => {
 			detail: 'pull request #385 was closed without merging',
 		});
 		expect(repo.prCreates).toBe(0);
-		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(0);
+		expect(disarmCalls(calls)[0]?.args).toEqual(['pr', 'merge', '385', '--disable-auto']);
+		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
+		expect(events.at(-1)).toBe('ship.automerge-disarmed');
+		expect(payloads.get('ship.automerge-disarmed')).toEqual({ prNumber: 385, disarmed: true });
+	});
+
+	test('a disarm GitHub refuses after a close still reports the close as the reason (GSHIP-641)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ prNumber: 385, prState: 'CLOSED', disarmFails: true });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(failed).toEqual({
+			outcome: 'failed',
+			detail: 'pull request #385 was closed without merging',
+		});
+		expect(repo.disarms).toBe(1);
+		expect(events.at(-1)).toBe('ship.automerge-disarmed');
+		expect(payloads.get('ship.automerge-disarmed')).toEqual({
+			prNumber: 385,
+			disarmed: false,
+			detail: 'failed to disable auto-merge: not enabled',
+		});
+	});
+
+	test('a pull request closed without merging mid-poll fails and disarms auto-merge (GSHIP-641)', async () => {
+		const cwd = createWorkspace();
+		// GSHIP-641: the pull request is open when the ship arms auto-merge, and
+		// closes without merging while the monitor is still waiting for CI —
+		// the second of the two exits GSHIP-616 left the old arming intact on.
+		const repo = createRepo({ mergedOnView: Number.MAX_SAFE_INTEGER, closedOnView: 2 });
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+		});
+
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(failed).toEqual({
+			outcome: 'failed',
+			detail: 'pull request #385 was closed without merging',
+		});
+		expect(repo.views).toBe(2);
+		expect(disarmCalls(calls)[0]?.args).toEqual(['pr', 'merge', '385', '--disable-auto']);
+		expect(events.slice(-1)).toEqual(['ship.automerge-disarmed']);
+		expect(payloads.get('ship.automerge-disarmed')).toEqual({ prNumber: 385, disarmed: true });
+		expect(armCalls(calls)).toHaveLength(1);
+		expect(repo.fetches).toBe(0);
 	});
 
 	test('a merge of a different head never counts as this run shipping', async () => {
