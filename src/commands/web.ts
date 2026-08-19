@@ -1386,6 +1386,15 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/proposals': {
 				GET: () => Response.json({ proposals: runRuntime.listPendingProposals() }),
 			},
+			// Read-only history of settled proposals, distinct from the pending
+			// inbox above: a dismissed one and a promoted one, the latter carrying
+			// the issue it became (GSHIP-643).
+			'/api/proposals/resolved': {
+				GET: () => {
+					const { proposals, omittedCount } = runRuntime.listResolvedProposals();
+					return Response.json({ proposals, omittedCount });
+				},
+			},
 			'/api/proposals/:proposalId/dismiss': {
 				POST: (request) => dismissProposalFromOperator(
 					request,

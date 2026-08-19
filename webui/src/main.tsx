@@ -26,6 +26,7 @@ import {
 	fetchModelSettings,
 	fetchProposals,
 	fetchProviders,
+	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
 	promoteProposal,
@@ -37,6 +38,7 @@ import {
 	type ProjectBriefView,
 	type ProposalView,
 	type ProviderStatusView,
+	type ResolvedProposalView,
 	saveBrief,
 	saveChainRuns,
 	saveModelSettings,
@@ -78,6 +80,8 @@ function useOperationalRun(): {
 	ideas: PlannableIssue[];
 	drafts: IssueReviewDraft[];
 	proposals: ProposalView[];
+	resolvedProposals: ResolvedProposalView[];
+	resolvedProposalsOmittedCount: number;
 	runs: RunView[];
 	events: RunEventView[];
 	workspaceNotices: WorkspaceNoticeView[];
@@ -100,6 +104,8 @@ function useOperationalRun(): {
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
 	const [drafts, setDrafts] = useState<IssueReviewDraft[]>([]);
 	const [proposals, setProposals] = useState<ProposalView[]>([]);
+	const [resolvedProposals, setResolvedProposals] = useState<ResolvedProposalView[]>([]);
+	const [resolvedProposalsOmittedCount, setResolvedProposalsOmittedCount] = useState(0);
 	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
@@ -126,6 +132,7 @@ function useOperationalRun(): {
 			fetchChat(),
 			fetchBrief(),
 			fetchProposals(),
+			fetchResolvedProposals(),
 			fetchModelSettings(),
 			fetchChainRuns(),
 		])
@@ -136,6 +143,7 @@ function useOperationalRun(): {
 				chatSnapshot,
 				briefSnapshot,
 				proposalSnapshot,
+				resolvedProposalSnapshot,
 				modelSnapshot,
 				chainRunsSnapshot,
 			]) => {
@@ -146,6 +154,8 @@ function useOperationalRun(): {
 				setIdeas(backlogSnapshot.ideas);
 				setDrafts(backlogSnapshot.drafts);
 				setProposals(proposalSnapshot);
+				setResolvedProposals(resolvedProposalSnapshot.proposals);
+				setResolvedProposalsOmittedCount(resolvedProposalSnapshot.omittedCount);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
 				setStaleService(backlogSnapshot.staleService);
 				setVersion(backlogSnapshot.version);
@@ -209,6 +219,8 @@ function useOperationalRun(): {
 		ideas,
 		drafts,
 		proposals,
+		resolvedProposals,
+		resolvedProposalsOmittedCount,
 		runs,
 		events,
 		workspaceNotices,
@@ -235,6 +247,8 @@ function Screen(): ReactElement {
 		ideas,
 		drafts,
 		proposals,
+		resolvedProposals,
+		resolvedProposalsOmittedCount,
 		runs,
 		events,
 		workspaceNotices,
@@ -321,6 +335,8 @@ function Screen(): ReactElement {
 			pending={pending}
 			proposals={proposals}
 			providers={providers}
+			resolvedProposals={resolvedProposals}
+			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
 			route={routeOf(window.location.pathname)}
 			runs={runs}
 			selectedIssueId={selectedIssueId}

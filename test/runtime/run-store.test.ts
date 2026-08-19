@@ -426,6 +426,42 @@ describe('proposal decisions', () => {
 		store.close();
 	});
 
+	// GSHIP-643: the operator can read what a settled proposal became, without
+	// that history ever competing with the pending inbox above.
+	test('resolved proposals are read newest-decided-first, distinct from the pending inbox', () => {
+		const store = storeWithProposals();
+		// Captured in order -1, -2 (storeWithProposals), but decided in the
+		// opposite order: -2 first, -1 last. Newest-*decided*-first must read
+		// -1 on top despite it having the lower capture sequence, or this would
+		// pass just as well sorted by capture order alone.
+		store.promoteProposal('run-inbox-proposal-2', 'CAM-91', '2026-08-16T23:00:00.000Z');
+		store.dismissProposal('run-inbox-proposal-1', '2026-08-16T23:10:00.000Z');
+
+		const { proposals, omittedCount } = store.listResolvedProposals();
+		expect(proposals.map((proposal) => proposal.id)).toEqual([
+			'run-inbox-proposal-1',
+			'run-inbox-proposal-2',
+		]);
+		expect(omittedCount).toBe(0);
+		expect(proposals[0]).toMatchObject({ status: 'dismissed', promotedIssueId: null });
+		expect(proposals[1]).toMatchObject({ status: 'promoted', promotedIssueId: 'CAM-91' });
+		// The pending inbox this run started with is now empty: neither decision
+		// leaves anything behind for it to compete with.
+		expect(store.listPendingProposals()).toEqual([]);
+		store.close();
+	});
+
+	test('a resolved history beyond the limit reports how many were left out', () => {
+		const store = storeWithProposals();
+		store.dismissProposal('run-inbox-proposal-1', '2026-08-16T23:00:00.000Z');
+		store.promoteProposal('run-inbox-proposal-2', 'CAM-91', '2026-08-16T23:10:00.000Z');
+
+		const { proposals, omittedCount } = store.listResolvedProposals(1);
+		expect(proposals.map((proposal) => proposal.id)).toEqual(['run-inbox-proposal-2']);
+		expect(omittedCount).toBe(1);
+		store.close();
+	});
+
 	test('a GSHIP-612 database gains the promoted column without losing its proposals', () => {
 		const dbPath = join(createTestTmpdir('gship-run-store-proposals-'), 'runtime.sqlite');
 		const legacy = new Database(dbPath, { create: true });
