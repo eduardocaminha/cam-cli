@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T12:16:38.777Z",
-  "updatedAt": "2026-08-19T12:16:38.777Z",
+  "updatedAt": "2026-08-19T12:18:36.633Z",
   "description": "Fazer a run rodar o manifesto de verificacao completo do projeto antes de commitar, para que uma reprovacao volte ao executor como round de correcao em vez de aparecer no CI depois que a run ja terminou.\n\nProblema medido hoje, duas vezes com causas diferentes: o comando de verificacao aprovado de cada issue e sempre um recorte, e o conjunto completo so roda no CI. A GSHIP-639 morreu quatro vezes por bundle defasado, que o verify dela nao cobria, e a GSHIP-641 morreu no lint de test/ que entrou pela GSHIP-640, que o verify dela tambem nao cobria. Nos dois casos o executor passou na propria verificacao, a run terminou e a reprovacao chegou quando ninguem mais estava no laco. Em src/runtime/run-runtime.ts a transicao para shipping acontece logo depois da revisao limpa, sem nenhuma verificacao completa entre as duas.\n\nO projeto ja declara esse comando: package.json tem o script verify apontando para bun run check:all, entao a fatia usa o que ja existe e nao cria configuracao nova, campo novo na issue nem tela nova. Se o projeto nao declarar o script, a etapa e pulada sem falhar a run.\n\nA etapa roda pelo mesmo caminho de comando proprio que ja executa a verificacao da issue e as evidencias do GSHIP-629, com timeout e terminacao do grupo de processos, porque um comando longo que trava nao pode prender a run indefinidamente.\n\nUma reprovacao gera no maximo um round de correcao do executor, o mesmo limite que a revisao ja usa, e uma segunda reprovacao encerra a run e devolve o julgamento ao operador em vez de abrir laco.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir quatro casos: aprovacao segue para o ship, reprovacao gera um round de correcao, segunda reprovacao encerra a run, e projeto sem o script declarado pula a etapa sem falhar.\n\nFora de escopo: mudar o que check:all contem, tornar o comando configuravel pela tela, rodar a etapa fora do ship, mexer no CI, e qualquer mudanca no encadeamento de runs.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "this.#transition(run.id, 'shipping', 'run.ship-started');"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "8d2c12ad2338a6c89ec239e77a962fbc07a133c78642a4eb67d53f66ceeffe3e",
+    "approvedAt": "2026-08-19T12:18:36.633Z"
   }
 }
