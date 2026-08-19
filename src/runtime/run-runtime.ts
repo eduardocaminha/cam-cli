@@ -190,9 +190,18 @@ export const CHAIN_PAUSE_REASONS = {
 
 export type ChainPauseReason = (typeof CHAIN_PAUSE_REASONS)[keyof typeof CHAIN_PAUSE_REASONS];
 
+/**
+ * The reason alone named nothing the operator could act on without opening
+ * the runtime's own event log (GSHIP-650). `run` and `issue` name what the
+ * `run.chain-paused` event's own runId resolves to, when it still resolves --
+ * the run_events foreign key means it always should, but the read never
+ * assumes that and degrades to the reason alone rather than invent a link.
+ */
 export interface ChainPauseView {
 	reason: ChainPauseReason;
 	createdAt: string;
+	run?: { id: string; issueId: string };
+	issue?: { id: string; title: string };
 }
 
 function isChainPauseReason(value: unknown): value is ChainPauseReason {
@@ -479,7 +488,10 @@ export class RunRuntime {
 	 * Why the queue is not advancing on its own right now, or null while it is
 	 * not stopped -- i.e. a run is actively in flight. Reflects only the most
 	 * recent terminal run: a run started since, chained or manual, always
-	 * supersedes an earlier pause.
+	 * supersedes an earlier pause. Names the run and issue the pausing event
+	 * fired on (GSHIP-650), the issue read from the same `listBacklog` chaining
+	 * itself reads, so the operator sees what stopped the queue without opening
+	 * the event log.
 	 */
 	getChainPause(): ChainPauseView | null {
 		const latest = this.#store.listRuns(1)[0];
@@ -487,7 +499,35 @@ export class RunRuntime {
 		const event = this.#store.getLastChainPauseEvent();
 		if (event === null) return null;
 		const reason = event.payload['reason'];
-		return isChainPauseReason(reason) ? { reason, createdAt: event.createdAt } : null;
+		if (!isChainPauseReason(reason)) return null;
+		const run = this.#store.getRun(event.runId);
+		if (run === null) return { reason, createdAt: event.createdAt };
+		const issue = this.#findIssue(run.issueId);
+		return {
+			reason,
+			createdAt: event.createdAt,
+			run: { id: run.id, issueId: run.issueId },
+			...(issue === undefined ? {} : { issue: { id: issue.id, title: issue.title } }),
+		};
+	}
+
+	/**
+	 * `listBacklog` (e.g. `readBacklogFromMain`) is fail-closed by contract
+	 * (src/issues/backlog.ts): a caller that needs non-fatal behavior must wrap
+	 * the call itself, exactly as `#maybeChain` already does for chaining.
+	 * `getChainPause` is now read by both the GET and the PUT of
+	 * /api/chain-runs, and the browser fetches every snapshot through one
+	 * `Promise.all` (webui/src/main.tsx), so an exception here would take down
+	 * runs, backlog, providers and chat with it -- not just this one field. A
+	 * pause whose issue can't be read this way still shows by its reason and
+	 * run alone, never propagating the read failure.
+	 */
+	#findIssue(issueId: string): IssueEntry | undefined {
+		try {
+			return this.#listBacklog?.().find((entry) => entry.id === issueId);
+		} catch {
+			return undefined;
+		}
 	}
 
 	getOrchestratorSession(providerId: AgentProviderId): string | null {

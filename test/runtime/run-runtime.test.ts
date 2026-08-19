@@ -7,7 +7,7 @@ import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
-import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
+import { RunStore, type RunEvent, type RunRecord } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 async function waitFor(
@@ -1177,6 +1177,24 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		});
 	}
 
+	/**
+	 * A store double whose `getRun` can be made to miss one run, simulating the
+	 * run_events foreign key's own guarantee (run_id REFERENCES runs(id)) not
+	 * holding -- structurally not expected, but `getChainPause` must not assume
+	 * it and invent a link the data does not have.
+	 */
+	class RunLookupGapStore extends RunStore {
+		#hiddenRunId: string | null = null;
+
+		hideRun(runId: string): void {
+			this.#hiddenRunId = runId;
+		}
+
+		override getRun(runId: string): RunRecord | null {
+			return runId === this.#hiddenRunId ? null : super.getRun(runId);
+		}
+	}
+
 	test('the switch is off by default and survives a service restart', () => {
 		const dbPath = join(createTestTmpdir('gship-run-runtime-chain-'), 'runtime.sqlite');
 		const store = new RunStore(dbPath);
@@ -1222,6 +1240,86 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		expect(runtime.getChainPause()).toMatchObject({ reason: 'previous-run-not-done' });
 		expect(runtime.listRunEvents(run.id).find((event) => event.kind === 'run.chain-paused')?.payload)
 			.toEqual({ reason: 'previous-run-not-done' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-650: the pause used to name only its reason, even though the
+	// run.chain-paused event fires on the very run that stopped the queue.
+	test('a pause loads the issue and run that stopped the queue', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: false, detail: 'verification failed' }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-1', { title: 'Corrigir o parser' })],
+		});
+		runtime.setChainRuns(true);
+
+		const run = runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		const pause = runtime.getChainPause();
+		expect(pause?.reason).toBe('previous-run-not-done');
+		expect(pause?.run).toEqual({ id: run.id, issueId: 'GSHIP-1' });
+		expect(pause?.issue).toEqual({ id: 'GSHIP-1', title: 'Corrigir o parser' });
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-650 review: listBacklog (e.g. readBacklogFromMain) is fail-closed by
+	// contract -- getChainPause must wrap it itself, like #maybeChain already
+	// does for chaining, so a bad read degrades the pause instead of taking
+	// down the whole /api/chain-runs response the browser's single Promise.all
+	// depends on.
+	test('a pause whose issue lookup fails degrades to the pause without the issue, never propagating', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			listBacklog: () => {
+				throw new Error('git cat-file --batch failed');
+			},
+		});
+		// The switch stays off, so #attemptChain never itself reaches the
+		// backlog read; only the later getChainPause() call below does.
+
+		const run = runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
+
+		const pause = runtime.getChainPause();
+		expect(pause?.reason).toBe('chain-disabled');
+		expect(pause?.run).toEqual({ id: run.id, issueId: 'GSHIP-1' });
+		expect(pause?.issue).toBeUndefined();
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a pause whose event carries no resolvable run loads only the reason', async () => {
+		const store = new RunLookupGapStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+		});
+
+		const run = runtime.startRun('GSHIP-1');
+		await waitFor(() => store.getRun(run.id)?.state === 'done');
+		store.hideRun(run.id);
+
+		const pause = runtime.getChainPause();
+		expect(pause?.reason).toBe('chain-disabled');
+		expect(pause?.run).toBeUndefined();
+		expect(pause?.issue).toBeUndefined();
+
 		await runtime.stop();
 		runtime.close();
 	});

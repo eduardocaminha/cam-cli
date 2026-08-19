@@ -177,16 +177,20 @@ const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
 };
 
 /**
- * The run state and the preserved workspaces read as one human state, because
- * the operator asks a single question of the header. A notice outlives the run
- * that left it, so it decides before the state does.
+ * The run state, the preserved workspaces and a stopped chain queue (GSHIP-
+ * 650) read as one human state, because the operator asks a single question
+ * of the header. A notice outlives the run that left it and a stopped queue
+ * is silent otherwise -- either the terminal run it stopped on reads `done`
+ * or `cancelled`, which alone would answer `Ocioso` -- so both decide before
+ * the run state does.
  */
 export function attentionOf(
 	run: RunView | null,
 	notices: boolean | readonly unknown[],
+	chainPaused = false,
 ): OperatorAttention {
 	const hasNotice = typeof notices === 'boolean' ? notices : notices.length > 0;
-	if (hasNotice) return 'Precisa de você';
+	if (hasNotice || chainPaused) return 'Precisa de você';
 	if (run === null) return 'Ocioso';
 	return ATTENTION_STATES[run.state];
 }
