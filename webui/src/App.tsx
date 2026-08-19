@@ -542,7 +542,11 @@ const PREVIOUS_RUNS_SHOWN = 4;
 /**
  * The runs before the one the page above commands, read-only: there is no
  * selection and no command here, only what an operator returning to the screen
- * needs to know about what already ran.
+ * needs to know about what already ran. Each row carries its own expected cost
+ * (GSHIP-639) so Sonnet and another choice can be compared without opening
+ * either run -- labeled the same "custo esperado" as every other cost figure
+ * on this screen, never the amount actually billed, and omitted entirely
+ * rather than shown as zero when its run never reported one.
  */
 function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
 	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
@@ -557,6 +561,11 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
 						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
 						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
+						{run.cost.totalCostUsd === null ? null : (
+							<span className="shrink-0 text-muted-foreground">
+								Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+							</span>
+						)}
 						<time className="shrink-0 text-muted-foreground">
 							{run.updatedAt.slice(0, 16).replace('T', ' ')}
 						</time>
