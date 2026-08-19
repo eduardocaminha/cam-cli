@@ -11,9 +11,11 @@
 // `--compile` silently mutates the CSS and drops the JS.
 //
 // Because the specifiers are static, `webui/dist` has to exist for this module
-// to resolve. Its three stable build outputs are committed and included in the
-// npm package; `bun run build:ui` refreshes them when the UI changes. That keeps
-// every CLI command loadable in a clean checkout without a global build hook.
+// to resolve. It is a build output and is not tracked: the `prepare` script runs
+// `build:ui` on every `bun install`, so a clean checkout has the bundle before
+// anything imports this module, and `build:release` rebuilds it before compiling.
+// The bundle used to be committed, which made a copy older than `webui/src`
+// possible at all; generating it removes that failure instead of gating it.
 
 import { join } from 'node:path';
 import process from 'node:process';

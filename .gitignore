@@ -19,11 +19,10 @@ gate-results.json
 .DS_Store
 Refactor*.md
 
-# The UI bundle is committed because the compiled binary embeds it.
-webui/dist/*
-!webui/dist/index.html
-!webui/dist/app.js
-!webui/dist/app.css
+# The UI bundle is a build output, produced by the `prepare` script on install
+# and by `build:release`. It is never committed: a committed copy can only ever
+# be older than webui/src.
+webui/dist/
 
 # Local runtime and test state.
 .gship/
