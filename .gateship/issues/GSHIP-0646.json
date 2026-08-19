@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T01:41:46.286Z",
-  "updatedAt": "2026-08-19T01:41:46.286Z",
+  "updatedAt": "2026-08-19T09:31:23.122Z",
   "description": "Fazer o ship encerrar imediatamente quando o pull request esta bloqueado por check obrigatorio reprovado, em vez de esperar o timeout. Evidencia real: na run do GSHIP-639 o CI reprovou, o pull request ficou BLOCKED, e o shipper seguiu poletando; sem intervencao teria gastado a hora inteira do timeout para so entao falhar, e a fila de encadeamento teria ficado parada esse tempo todo sem motivo visivel. O monitor hoje observa mergeStateStatus e trata qualquer valor que nao seja terminal como espera, e nao consulta o resultado dos checks. Check obrigatorio reprovado nao e indisponibilidade nem espera: e decisao, na mesma classificacao que o GSHIP-625 estabeleceu para separar 503 de recusa. Ao observar bloqueio, consultar o resultado dos checks do pull request e, quando houver check obrigatorio concluido em falha, encerrar o ship com motivo explicito nomeando o check, desarmando o auto-merge como o GSHIP-616 ja faz nas outras saidas, sem mergear e sem apagar branch. Bloqueio por check ainda em andamento continua sendo espera, e indisponibilidade ao consultar o resultado continua repetindo com recuo em vez de virar falha. Emitir evento proprio para a deteccao, com o nome do check, para que a causa apareca no historico da run. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir check reprovado encerrando com o nome, check em andamento continuando a esperar, indisponibilidade ao consultar repetindo, e as saidas ja existentes inalteradas. Fora de escopo: reexecutar check, corrigir a causa do check, rebase, resolucao de conflito e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "0"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "7cada76d91f0c8dd59e6cbb31d5f801fd0f1908fd8032b621a927b13507bcf4c",
+    "approvedAt": "2026-08-19T09:31:23.122Z"
   }
 }
