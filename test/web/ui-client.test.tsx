@@ -1548,6 +1548,10 @@ describe('screen derivations', () => {
 		expect(invalidatesSnapshot(eventIn('done', 'done', 'workspace.cleanup-warning'))).toBe(true);
 	});
 
+	test('a proposal capture makes the snapshot stale though it never changes state', () => {
+		expect(invalidatesSnapshot(eventIn('working', 'working', 'run.proposals-captured'))).toBe(true);
+	});
+
 	test('ordinary activity inside one state leaves the snapshot current', () => {
 		expect(invalidatesSnapshot(eventIn('done', 'done', 'activity'))).toBe(false);
 	});
