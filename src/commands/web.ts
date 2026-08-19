@@ -27,6 +27,7 @@ import {
 	createGitRuntimePreflight,
 	defaultRunGit,
 	GitEvidenceChecker,
+	GitFullVerifier,
 	GitIssueVerifier,
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
@@ -1059,8 +1060,8 @@ function modelResolver(
 
 /**
  * Production composition of the durable runtime: the real implementer, the
- * real oracle verifier, the real independent reviewer and the real GitHub
- * shipper over one sqlite store.
+ * real oracle verifier, the real full-project verifier (GSHIP-649), the real
+ * independent reviewer and the real GitHub shipper over one sqlite store.
  */
 export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 	const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
@@ -1074,6 +1075,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 			codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
 		}),
 		verifier: new GitIssueVerifier(),
+		fullVerifier: new GitFullVerifier(),
 		reviewer: new AgentReviewerRouter({
 			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer') }),
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),

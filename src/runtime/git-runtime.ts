@@ -384,3 +384,64 @@ export class GitIssueVerifier implements RuntimeVerifier {
 		return { ok: true };
 	}
 }
+
+/**
+ * Whether the workspace's own `package.json` declares a `verify` script
+ * (GSHIP-649). A missing or unreadable `package.json`, invalid JSON, or a
+ * `scripts.verify` of the wrong shape all read the same way as "no script
+ * declared" -- this only ever decides whether to run `bun run verify`, never
+ * fails the run on its own.
+ */
+function hasVerifyScript(cwd: string): boolean {
+	let raw: string;
+	try {
+		raw = readFileSync(join(cwd, 'package.json'), 'utf8');
+	} catch {
+		return false;
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return false;
+	}
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+	const scripts = (parsed as Record<string, unknown>).scripts;
+	if (scripts === null || typeof scripts !== 'object' || Array.isArray(scripts)) return false;
+	return typeof (scripts as Record<string, unknown>).verify === 'string';
+}
+
+/**
+ * The project's full verification gate (GSHIP-649): whatever `package.json`
+ * already declares as its `verify` script -- e.g. `bun run check:all` --
+ * run once per ready-to-ship pass, through the same cancellable,
+ * timeout-bound command path `GitIssueVerifier` and `GitEvidenceChecker`
+ * already use. The slice never hardcodes what `verify` runs: a project that
+ * declares no such script is skipped, not failed, so this stays exactly the
+ * cutout the issue's own `spec.verify` and the project's full manifest
+ * already agree on.
+ */
+export class GitFullVerifier implements RuntimeVerifier {
+	readonly #runCommand: VerificationCommandRunner;
+
+	constructor(options: GitRuntimeOptions = {}) {
+		this.#runCommand = options.runCommand ?? ((input) =>
+			defaultRunCommand(input, options.terminationGraceMs));
+	}
+
+	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
+		if (!hasVerifyScript(input.cwd)) return { ok: true, skipped: true };
+
+		input.emit('full-verify.command.started');
+		const result = await this.#runCommand({
+			cwd: input.cwd,
+			command: 'bun run verify',
+			signal: input.signal,
+		});
+		input.emit('full-verify.command.completed', { exitCode: result.exitCode });
+		if (result.exitCode !== 0) {
+			return { ok: false, detail: `full verification failed: ${outputTail(result)}` };
+		}
+		return { ok: true };
+	}
+}

@@ -10,9 +10,11 @@ import { describe, expect, test } from 'bun:test';
 import {
 	RunRuntime,
 	RuntimeUnavailableError,
+	type RuntimeExecutionInput,
 	type RuntimeShipInput,
 	type RuntimeShipper,
 	type RuntimeShipResult,
+	type RuntimeVerifier,
 } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
@@ -461,6 +463,227 @@ describe('shipping a run', () => {
 			kind: 'workspace.released',
 			payload: { outcome: 'already-released', reconciled: true },
 		});
+		runtime.close();
+	});
+});
+
+// GSHIP-649: the project's own full verification manifest (package.json's
+// `verify` script, e.g. `bun run check:all`) runs once the issue's own verify
+// and the independent review are both clean, and before the run is ever
+// reported ready to ship -- so a rejection reaches the executor as a fix
+// round instead of surfacing only in CI once the run has already ended.
+describe('the full-project verification gate (GSHIP-649)', () => {
+	interface FullVerifyExecution {
+		resume: boolean;
+		fullVerifyFeedback: string | undefined;
+	}
+
+	function createFullVerifyRuntime(
+		fullVerifier: RuntimeVerifier,
+		shipper: RuntimeShipper,
+	): { runtime: RunRuntime; executions: FullVerifyExecution[] } {
+		const executions: FullVerifyExecution[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-full-verify',
+			newSessionId: () => 'session-full-verify',
+			executor: {
+				execute: async (input: RuntimeExecutionInput) => {
+					executions.push({ resume: input.resume, fullVerifyFeedback: input.fullVerifyFeedback });
+					return { outcome: 'completed', summary: 'change written' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			fullVerifier,
+			shipper,
+		});
+		return { runtime, executions };
+	}
+
+	test('a clean full verification lets an otherwise-verified run ship', async () => {
+		const calls: string[] = [];
+		const { runtime } = createFullVerifyRuntime(
+			{
+				verify: async () => {
+					calls.push('full-verify');
+					return { ok: true };
+				},
+			},
+			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
+		);
+		const run = runtime.startRun('GSHIP-649');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(calls).toEqual(['full-verify']);
+		expect(eventKinds(runtime)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-clean',
+			'run.ship-started',
+			'run.shipped',
+			'run.chain-paused',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a rejection sends the run back to the executor for one fix round, then ships', async () => {
+		let calls = 0;
+		const { runtime, executions } = createFullVerifyRuntime(
+			{
+				verify: async () => {
+					calls += 1;
+					return calls === 1
+						? { ok: false, detail: 'bun run verify: dist/ is stale' }
+						: { ok: true };
+				},
+			},
+			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
+		);
+		const run = runtime.startRun('GSHIP-649');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(calls).toBe(2);
+		expect(eventKinds(runtime)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-fix-requested',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-clean',
+			'run.ship-started',
+			'run.shipped',
+			'run.chain-paused',
+		]);
+		// The fix round is the only execution that carries the full
+		// verification's failure output, and it continues the same session.
+		expect(executions).toEqual([
+			{ resume: false, fullVerifyFeedback: undefined },
+			{ resume: true, fullVerifyFeedback: 'bun run verify: dist/ is stale' },
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a second rejection ends the run at waiting-user instead of looping or shipping', async () => {
+		let shipCalls = 0;
+		const { runtime, executions } = createFullVerifyRuntime(
+			{ verify: async () => ({ ok: false, detail: 'bun run verify: lint failed in test/' }) },
+			{
+				ship: async () => {
+					shipCalls += 1;
+					return { outcome: 'merged', prNumber: 649 };
+				},
+			},
+		);
+		const run = runtime.startRun('GSHIP-649');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		expect(runtime.getRun(run.id)).toMatchObject({
+			state: 'waiting-user',
+			summary: 'bun run verify: lint failed in test/',
+		});
+		expect(eventKinds(runtime)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-fix-requested',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-fix-limit',
+		]);
+		expect(runtime.listEvents().at(-1)?.payload).toEqual({
+			findings: 'bun run verify: lint failed in test/',
+		});
+		expect(executions).toHaveLength(2);
+		expect(shipCalls).toBe(0);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a project with no declared verify script skips the gate without failing the run', async () => {
+		const { runtime } = createFullVerifyRuntime(
+			{ verify: async () => ({ ok: true, skipped: true }) },
+			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
+		);
+		const run = runtime.startRun('GSHIP-649');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(eventKinds(runtime)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.verified',
+			'run.full-verify-skipped',
+			'run.ship-started',
+			'run.shipped',
+			'run.chain-paused',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('sits in its own full-verify phase while the check runs, not resting at ready-to-ship', async () => {
+		let release = (): void => {};
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const { runtime } = createFullVerifyRuntime(
+			{
+				verify: async () => {
+					await released;
+					return { ok: true };
+				},
+			},
+			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
+		);
+		const run = runtime.startRun('GSHIP-649');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'full-verify');
+
+		// ready-to-ship is a resting state again (GSHIP-649): the operator's
+		// screen must not read "needs you" with the Ship command enabled while
+		// the gate itself is still running.
+		expect(runtime.getRun(run.id)?.state).toBe('full-verify');
+		expect(eventKinds(runtime)).not.toContain('run.ship-started');
+
+		release();
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a crash mid-full-verify recovers as interrupted, the same as any other mid-flight state', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-crashed-full-verify',
+			issueId: 'GSHIP-649',
+			sessionId: 'session-crashed-full-verify',
+			workspacePath: '/workspaces/run-crashed-full-verify',
+			createdAt: '2026-08-19T10:00:00Z',
+		});
+		for (const toState of ['working', 'verify', 'full-verify'] as const) {
+			store.transition({
+				runId: 'run-crashed-full-verify',
+				toState,
+				kind: `run.${toState}`,
+				createdAt: '2026-08-19T10:00:01Z',
+			});
+		}
+
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			now: () => '2026-08-19T10:01:00Z',
+		});
+
+		expect(runtime.getRun('run-crashed-full-verify')?.state).toBe('interrupted');
+		expect(runtime.listEvents().at(-1)?.kind).toBe('run.recovered-interrupted');
 		runtime.close();
 	});
 });

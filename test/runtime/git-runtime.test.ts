@@ -1,9 +1,12 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
 	GitEvidenceChecker,
+	GitFullVerifier,
 	GitIssueVerifier,
 	type GitCommandRunner,
 } from '../../src/runtime/git-runtime.ts';
@@ -281,6 +284,137 @@ describe('GitEvidenceChecker', () => {
 		const pending = checker.check({
 			...verificationInput,
 			cwd: process.cwd(),
+			signal: controller.signal,
+		});
+		await Bun.sleep(30);
+		controller.abort();
+		await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+	});
+});
+
+// GSHIP-649: the project's own full verification manifest, read straight from
+// the run's own workspace `package.json` -- never a hardcoded command of its
+// own -- and run through the same cancellable, timeout-bound path
+// GitIssueVerifier and GitEvidenceChecker already use.
+describe('GitFullVerifier', () => {
+	function writePackageJson(dir: string, content: string): void {
+		writeFileSync(join(dir, 'package.json'), content);
+	}
+
+	function neverRunCommand(): never {
+		throw new Error('must not run any command when the project declares no verify script');
+	}
+
+	test('skips without running any command when package.json is missing', async () => {
+		const dir = createTestTmpdir('gship-full-verify-no-file-');
+		const verifier = new GitFullVerifier({ runCommand: () => neverRunCommand() });
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true, skipped: true });
+	});
+
+	test('skips without running any command when package.json is invalid JSON', async () => {
+		const dir = createTestTmpdir('gship-full-verify-bad-json-');
+		writePackageJson(dir, '{ not valid json');
+		const verifier = new GitFullVerifier({ runCommand: () => neverRunCommand() });
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true, skipped: true });
+	});
+
+	test('skips without running any command when package.json declares no verify script', async () => {
+		const cases: Array<[string, unknown]> = [
+			['no scripts field at all', { name: 'x' }],
+			['scripts present but no verify key', { scripts: { test: 'bun test' } }],
+			['verify present but not a string', { scripts: { verify: ['bun', 'run', 'check:all'] } }],
+			['scripts is not an object', { scripts: 'bun run check:all' }],
+		];
+		for (const [label, content] of cases) {
+			const dir = createTestTmpdir('gship-full-verify-skip-');
+			writePackageJson(dir, JSON.stringify(content));
+			const verifier = new GitFullVerifier({
+				runCommand: () => { throw new Error(`must not run any command: ${label}`); },
+			});
+			expect(await verifier.verify({ ...verificationInput, cwd: dir }))
+				.toEqual({ ok: true, skipped: true });
+		}
+	});
+
+	test('runs bun run verify and emits command lifecycle events when a script is declared', async () => {
+		const dir = createTestTmpdir('gship-full-verify-clean-');
+		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
+		const commands: Array<{ cwd: string; command: string }> = [];
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const verifier = new GitFullVerifier({
+			runCommand: async ({ cwd, command }) => {
+				commands.push({ cwd, command });
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+
+		const result = await verifier.verify({
+			...verificationInput,
+			cwd: dir,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		expect(result).toEqual({ ok: true });
+		// The command is always `bun run verify`, never the script's own content
+		// (`bun run check:all` above): the slice never hardcodes or inlines what
+		// the project declared, it only asks bun to resolve the script by name.
+		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify' }]);
+		expect(events).toEqual([
+			{ kind: 'full-verify.command.started' },
+			{ kind: 'full-verify.command.completed', payload: { exitCode: 0 } },
+		]);
+	});
+
+	test('fails with a prefixed detail carrying the command output when the exit code is not zero', async () => {
+		const dir = createTestTmpdir('gship-full-verify-failed-');
+		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
+		const events: string[] = [];
+		const verifier = new GitFullVerifier({
+			runCommand: async () => ({
+				exitCode: 1,
+				stdout: 'stale bundle\n',
+				stderr: 'error: dist/ out of date\n',
+			}),
+		});
+
+		const result = await verifier.verify({
+			...verificationInput,
+			cwd: dir,
+			emit: (kind) => events.push(kind),
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.detail).toStartWith('full verification failed:');
+		expect(result.detail).toContain('stale bundle');
+		expect(result.detail).toContain('error: dist/ out of date');
+		// The command still ran to completion and reported its exit code, even
+		// though the overall result is a failure.
+		expect(events).toEqual(['full-verify.command.started', 'full-verify.command.completed']);
+	});
+
+	test('caps command diagnostics on a failed full verification, same as the issue verifier', async () => {
+		const dir = createTestTmpdir('gship-full-verify-capped-');
+		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
+		const verifier = new GitFullVerifier({
+			runCommand: async () => ({ exitCode: 1, stdout: 'x'.repeat(3_000), stderr: '' }),
+		});
+
+		const result = await verifier.verify({ ...verificationInput, cwd: dir });
+		expect(result.ok).toBe(false);
+		expect(result.detail).toEndWith('x'.repeat(2_000));
+		expect(result.detail?.length).toBeLessThan(2_100);
+	});
+
+	test('cancels and awaits a real full-verify subprocess group', async () => {
+		const dir = createTestTmpdir('gship-full-verify-cancel-');
+		writePackageJson(dir, JSON.stringify({
+			scripts: { verify: "trap 'exit 0' TERM; while :; do sleep 0.1; done" },
+		}));
+		const controller = new AbortController();
+		const verifier = new GitFullVerifier({ terminationGraceMs: 50 });
+		const pending = verifier.verify({
+			...verificationInput,
+			cwd: dir,
 			signal: controller.signal,
 		});
 		await Bun.sleep(30);
