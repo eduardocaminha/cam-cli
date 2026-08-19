@@ -140,6 +140,7 @@ export interface AppProps {
 	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onReviewIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onApproveIssue: (issueId: string) => void;
+	onAbandonIssue: (issueId: string, reason: string) => void;
 	onDismissProposal: (proposalId: string) => void;
 	onPromoteProposal: (proposalId: string, input: OperatorIssueDraft) => void;
 	onStart: () => void;
@@ -1554,23 +1555,28 @@ function draftChanged(draft: IssueReviewDraft, scope: string, command: string): 
 	return scope !== draft.scope || command !== draft.verificationCommand;
 }
 
-/** The editable contract of one draft: its revision, and its approval. */
+/** The editable contract of one draft: its revision, its approval, and its abandonment. */
 function IssueReviewForm({
 	draft,
 	pending,
 	onReviewIssue,
 	onApproveIssue,
-}: Pick<AppProps, 'pending' | 'onReviewIssue' | 'onApproveIssue'> & {
+	onAbandonIssue,
+}: Pick<AppProps, 'pending' | 'onReviewIssue' | 'onApproveIssue' | 'onAbandonIssue'> & {
 	draft: IssueReviewDraft;
 }): React.ReactElement {
 	const [scope, setScope] = useState(draft.scope);
 	const [verificationCommand, setVerificationCommand] = useState(draft.verificationCommand);
 	const [confirmed, setConfirmed] = useState(false);
+	const [abandonReason, setAbandonReason] = useState('');
+	const [abandonConfirmed, setAbandonConfirmed] = useState(false);
 
 	useEffect(() => {
 		setScope(draft.scope);
 		setVerificationCommand(draft.verificationCommand);
 		setConfirmed(false);
+		setAbandonReason('');
+		setAbandonConfirmed(false);
 	}, [draft.id, draft.scope, draft.verificationCommand]);
 
 	const dirty = draftChanged(draft, scope, verificationCommand);
@@ -1621,6 +1627,23 @@ function IssueReviewForm({
 				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
 				type="button"
 			>Aprovar</button>
+			<label className="flex flex-col gap-1 text-sm" htmlFor="abandon-reason">
+				<span className="font-medium">Motivo do abandono</span>
+				<textarea className={cn(FIELD_CLASS, 'min-h-20')} id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
+			</label>
+			<label className="flex items-start gap-2 text-sm">
+				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
+				<span>Confirmo o abandono de {draft.id} com esse motivo.</span>
+			</label>
+			<button
+				className={BUTTON_CLASS}
+				disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
+				onClick={() => {
+					setAbandonConfirmed(false);
+					onAbandonIssue(draft.id, abandonReason.trim());
+				}}
+				type="button"
+			>Abandonar</button>
 		</form>
 	);
 }
@@ -1631,9 +1654,10 @@ function IssueReviewPanel({
 	runs,
 	onReviewIssue,
 	onApproveIssue,
+	onAbandonIssue,
 }: Pick<
 	AppProps,
-	'drafts' | 'pending' | 'runs' | 'onReviewIssue' | 'onApproveIssue'
+	'drafts' | 'pending' | 'runs' | 'onReviewIssue' | 'onApproveIssue' | 'onAbandonIssue'
 >): React.ReactElement {
 	const [selectedId, setSelectedId] = useState<string | null>(drafts[0]?.id ?? null);
 	const selected = drafts.find((draft) => draft.id === selectedId) ?? null;
@@ -1673,6 +1697,7 @@ function IssueReviewPanel({
 				{selected === null || ownedByRun ? null : (
 					<IssueReviewForm
 						draft={selected}
+						onAbandonIssue={onAbandonIssue}
 						onApproveIssue={onApproveIssue}
 						onReviewIssue={onReviewIssue}
 						pending={pending}
@@ -1872,7 +1897,7 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
 			/>
-			<IssueReviewPanel drafts={props.drafts} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
+			<IssueReviewPanel drafts={props.drafts} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
 			<ProposalsPanel
 				onDismissProposal={props.onDismissProposal}
 				onPromoteProposal={props.onPromoteProposal}

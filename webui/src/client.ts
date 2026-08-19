@@ -624,6 +624,11 @@ export function approveIssue(id: string): Promise<string> {
 	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/approve`);
 }
 
+/** Closes an open issue without shipping it, keeping the justification durable. */
+export function abandonIssue(id: string, reason: string): Promise<string> {
+	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/abandon`, { reason });
+}
+
 export function commandRun(
 	runId: string,
 	action: RunAction,
