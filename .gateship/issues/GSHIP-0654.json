@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-654",
+  "title": "Imagem de container que roda o servico e os agentes",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-19T21:03:09.780Z",
+  "updatedAt": "2026-08-19T21:03:09.780Z",
+  "description": "Empacotar o Gateship como uma imagem de container que roda o servico e os agentes dentro dela, com um volume para o estado. Esta e a primeira fatia da decisao registrada em AGENTS.md e no HANDOFF: uma imagem, um volume, um processo supervisionando seus filhos, com o container sendo a fronteira de isolamento.\n\nO que a imagem precisa conter para o produto funcionar: o binario do Gateship compilado no proprio build, git, o GitHub CLI e o CLI da Claude. O servico escuta na porta que ja usa e a UI responde por ela.\n\nAutenticacao acontece dentro do container e persiste no volume, nunca copiada do host. Isso nao e preferencia: no macOS o CLI da Claude guarda a credencial no Keychain e nao existe arquivo de credencial para montar, entao importar do host nao e uma opcao que exista. O primeiro boot precisa permitir que o operador rode o login do claude e do gh de dentro do container, e o resultado tem de sobreviver a recriacao do container. Nao acrescentar campo de chave de API em lugar algum: a decisao de usar a assinatura do operador continua valendo.\n\nEstado duravel vive no volume, nao na imagem: o SQLite, os logins e o que hoje mora em .gship/. Recriar o container a partir da mesma imagem e do mesmo volume precisa devolver o operador ao mesmo lugar.\n\nO que fica de fora desta fatia, porque cada uma merece a sua: mover o repositorio de trabalho para dentro do volume, publicar a imagem no release, e a troca do shell POSIX por algo portavel. Esta fatia entrega a imagem que sobe e serve, com autenticacao possivel dentro dela.\n\nVerificacao pede o daemon do Docker no ar. O build entra no comando de verificacao para que uma imagem quebrada seja reprovada dentro da run, e nao no CI depois que ela terminou, que foi o modo de falha das GSHIP-639 e GSHIP-641. O CI ganha o mesmo build como passo proprio.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao. Fora de escopo: orquestrar mais de um container, Kubernetes, registry privado, healthcheck sofisticado, e qualquer alteracao no ciclo de vida da run.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Empacotar o Gateship como uma imagem de container que roda o servico e os agentes dentro dela, com um volume para o estado. Esta e a primeira fatia da decisao registrada em AGENTS.md e no HANDOFF: uma imagem, um volume, um processo supervisionando seus filhos, com o container sendo a fronteira de isolamento.\n\nO que a imagem precisa conter para o produto funcionar: o binario do Gateship compilado no proprio build, git, o GitHub CLI e o CLI da Claude. O servico escuta na porta que ja usa e a UI responde por ela.\n\nAutenticacao acontece dentro do container e persiste no volume, nunca copiada do host. Isso nao e preferencia: no macOS o CLI da Claude guarda a credencial no Keychain e nao existe arquivo de credencial para montar, entao importar do host nao e uma opcao que exista. O primeiro boot precisa permitir que o operador rode o login do claude e do gh de dentro do container, e o resultado tem de sobreviver a recriacao do container. Nao acrescentar campo de chave de API em lugar algum: a decisao de usar a assinatura do operador continua valendo.\n\nEstado duravel vive no volume, nao na imagem: o SQLite, os logins e o que hoje mora em .gship/. Recriar o container a partir da mesma imagem e do mesmo volume precisa devolver o operador ao mesmo lugar.\n\nO que fica de fora desta fatia, porque cada uma merece a sua: mover o repositorio de trabalho para dentro do volume, publicar a imagem no release, e a troca do shell POSIX por algo portavel. Esta fatia entrega a imagem que sobe e serve, com autenticacao possivel dentro dela.\n\nVerificacao pede o daemon do Docker no ar. O build entra no comando de verificacao para que uma imagem quebrada seja reprovada dentro da run, e nao no CI depois que ela terminou, que foi o modo de falha das GSHIP-639 e GSHIP-641. O CI ganha o mesmo build como passo proprio.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao. Fora de escopo: orquestrar mais de um container, Kubernetes, registry privado, healthcheck sofisticado, e qualquer alteracao no ciclo de vida da run.",
+    "verify": [
+      "docker build -t gateship:verify . && docker compose config >/dev/null && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "ls Dockerfile compose.yaml docker-compose.yml .dockerignore 2>/dev/null | wc -l | tr -d ' '",
+        "output": "0"
+      },
+      {
+        "command": "grep -o \"return '/bin/sh';\" src/runtime/git-runtime.ts",
+        "output": "return '/bin/sh';"
+      }
+    ]
+  }
+}
