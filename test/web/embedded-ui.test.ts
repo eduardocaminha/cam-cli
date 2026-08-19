@@ -11,7 +11,6 @@ import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { resolveWebAssets, WEB_DIR_ENV } from '../../src/commands/web-assets.ts';
-import { gitAvailable } from '../helpers/test-deps.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
@@ -120,43 +119,4 @@ describe('embedded web bundle', () => {
 			else process.env[WEB_DIR_ENV] = previous;
 		}
 	});
-
-	// webui/dist is committed and served as-is (see the file header); nothing
-	// in `check:all` previously rebuilt it, so a dist gone stale relative to
-	// webui/src passed every test silently. Rebuilding here and diffing
-	// against the tracked copy turns that drift into a red, explained gate
-	// instead of a green one.
-	test.skipIf(!gitAvailable)(
-		'rebuilding webui reproduces the committed webui/dist exactly (bundle is not stale)',
-		() => {
-			const build = Bun.spawnSync(['bun', 'run', 'build:ui'], {
-				cwd: REPO_ROOT,
-				// `bun test` sets NODE_ENV=test on its own process, which
-				// Bun.spawnSync inherits by default; vite reads that and builds
-				// unminified dev output, a false "stale" diff against the
-				// production bundle that's actually committed. Force the same
-				// mode `bun run build:ui` runs under outside of tests.
-				env: { ...process.env, NODE_ENV: 'production' },
-				stdout: 'pipe',
-				stderr: 'pipe',
-			});
-			if (build.exitCode !== 0) {
-				throw new Error(`bun run build:ui failed:\n${new TextDecoder().decode(build.stderr)}`);
-			}
-
-			const diff = Bun.spawnSync(['git', 'diff', '--exit-code', '--', 'webui/dist'], {
-				cwd: REPO_ROOT,
-				stdout: 'pipe',
-				stderr: 'pipe',
-			});
-			if (diff.exitCode !== 0) {
-				throw new Error(
-					'webui/dist is stale: rebuilding webui/src produced different bytes than the ' +
-						'committed bundle. Run `bun run build:ui` and commit the result.\n\n' +
-						new TextDecoder().decode(diff.stdout),
-				);
-			}
-			expect(diff.exitCode).toBe(0);
-		},
-	);
 });

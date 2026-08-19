@@ -26,6 +26,7 @@
   "scripts": {
     "build:release": "bun run build:ui && bash scripts/build-release.sh",
     "build:ui": "vite build webui",
+    "prepare": "bun run build:ui",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
     "check:all": "bun run typecheck && bun test && bun run lint && bunx --bun knip",
