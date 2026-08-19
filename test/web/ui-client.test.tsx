@@ -29,6 +29,7 @@ import {
 	fetchChat,
 	fetchProposals,
 	fetchProviders,
+	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
 	type ProjectBriefView,
@@ -36,6 +37,8 @@ import {
 	type ModelSettingsView,
 	promoteProposal,
 	PROPOSALS_PATH,
+	RESOLVED_PROPOSALS_PATH,
+	type ResolvedProposalView,
 	RUNS_PATH,
 	ISSUES_PATH,
 	PROVIDERS_PATH,
@@ -152,6 +155,8 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			pending={false}
 			proposals={[]}
 			providers={[]}
+			resolvedProposals={[]}
+			resolvedProposalsOmittedCount={0}
 			route={route}
 			runs={[]}
 			selectedIssueId={null}
@@ -935,6 +940,103 @@ describe('work surface', () => {
 		expect(buttonIsEnabled(held, 'Promover')).toBe(false);
 	});
 
+	// GSHIP-643: a settled proposal is visible, read-only, and distinguishes a
+	// promoted one -- which shows the issue it became -- from a dismissed one.
+	test('a promoted proposal is shown resolved, carrying the issue it became', () => {
+		const html = workPage({
+			resolvedProposals: [{
+				id: 'run-1-proposal-2',
+				title: 'Extrair o parser de eventos',
+				evidence: 'Duplicado em dois adaptadores.',
+				sourceRunId: 'run-1',
+				sourceIssueId: 'CAM-50',
+				status: 'promoted',
+				promotedIssueId: 'CAM-951',
+			}],
+		});
+		const card = panel(html, 'Propostas resolvidas');
+
+		expect(card).toContain('1 proposta(s) resolvida(s).');
+		expect(card).toContain('Extrair o parser de eventos');
+		expect(card).toContain('Promovida');
+		expect(card).toContain('CAM-951');
+		expect(card).not.toContain('Descartada');
+		// It is read-only: no decision is offered here, ever.
+		expect(hasButton(card, 'Descartar')).toBe(false);
+		expect(hasButton(card, 'Promover')).toBe(false);
+	});
+
+	test('a dismissed proposal is shown resolved, carrying no issue', () => {
+		const card = panel(workPage({
+			resolvedProposals: [{
+				id: 'run-1-proposal-3',
+				title: 'Ideia descartada',
+				evidence: 'Já coberto em outro lugar.',
+				sourceRunId: 'run-1',
+				sourceIssueId: 'CAM-50',
+				status: 'dismissed',
+				promotedIssueId: null,
+			}],
+		}), 'Propostas resolvidas');
+
+		expect(card).toContain('Ideia descartada');
+		expect(card).toContain('Descartada');
+		expect(card).not.toContain('Promovida');
+	});
+
+	test('an empty or truncated resolved history renders as such, never in silence', () => {
+		const empty = panel(workPage(), 'Propostas resolvidas');
+		expect(empty).toContain('0 proposta(s) resolvida(s).');
+		expect(empty).toContain('Nenhuma proposta resolvida ainda.');
+		expect(empty).not.toContain('não exibida(s)');
+
+		const truncated = panel(
+			workPage({
+				resolvedProposals: [{
+					id: 'run-1-proposal-4',
+					title: 'Mais uma ideia',
+					evidence: 'Evidência.',
+					sourceRunId: 'run-1',
+					sourceIssueId: 'CAM-50',
+					status: 'dismissed',
+					promotedIssueId: null,
+				}],
+				resolvedProposalsOmittedCount: 5,
+			}),
+			'Propostas resolvidas',
+		);
+		expect(truncated).toContain('+5 proposta(s) resolvida(s) não exibida(s).');
+	});
+
+	test('a resolved proposal never appears in, or shrinks, the pending inbox', () => {
+		const html = workPage({
+			proposals: [{
+				id: 'run-1-proposal-1',
+				title: 'Proposta pendente',
+				evidence: 'Evidência capturada.',
+				sourceRunId: 'run-1',
+				sourceIssueId: 'CAM-50',
+			}],
+			resolvedProposals: [{
+				id: 'run-1-proposal-2',
+				title: 'Proposta promovida',
+				evidence: 'Evidência resolvida.',
+				sourceRunId: 'run-1',
+				sourceIssueId: 'CAM-50',
+				status: 'promoted',
+				promotedIssueId: 'CAM-951',
+			}],
+		});
+		const pendingCard = panel(html, 'Propostas derivadas');
+		expect(pendingCard).toContain('1 proposta(s) pendente(s).');
+		expect(pendingCard).toContain('Proposta pendente');
+		expect(pendingCard).not.toContain('Proposta promovida');
+
+		const resolvedCard = panel(html, 'Propostas resolvidas');
+		expect(resolvedCard).toContain('Proposta promovida');
+		expect(resolvedCard).not.toContain('Proposta pendente');
+	});
+
 	test('ideas are specified directly, without a planner, and only when there are any', () => {
 		const html = workPage({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
 
@@ -1483,6 +1585,7 @@ describe('same-origin transport', () => {
 		expect(CHAT_PATH).toBe('/api/chat');
 		expect(BRIEF_PATH).toBe('/api/brief');
 		expect(PROPOSALS_PATH).toBe('/api/proposals');
+		expect(RESOLVED_PROPOSALS_PATH).toBe('/api/proposals/resolved');
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
 	});
 
@@ -1529,6 +1632,28 @@ describe('same-origin transport', () => {
 				}]);
 			},
 		);
+	});
+
+	// GSHIP-643: the resolved history is read on its own route, distinct from
+	// the pending inbox above, and never writes anything back.
+	test('the resolved history is read on its own route, omitted count included', async () => {
+		const resolved: ResolvedProposalView[] = [{
+			id: 'run-1-proposal-1',
+			title: 'Cobrir o retry do shipper',
+			evidence: 'Sem teste no caminho de erro.',
+			sourceRunId: 'run-1',
+			sourceIssueId: 'CAM-50',
+			status: 'promoted',
+			promotedIssueId: 'CAM-951',
+		}];
+		await withRecordedFetch({ proposals: resolved, omittedCount: 3 }, 200, async (calls) => {
+			expect(await fetchResolvedProposals()).toEqual({ proposals: resolved, omittedCount: 3 });
+			expect(calls).toEqual([{ url: RESOLVED_PROPOSALS_PATH, method: 'GET', body: null }]);
+		});
+		// A payload missing either key reads as an empty, un-truncated history.
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchResolvedProposals()).toEqual({ proposals: [], omittedCount: 0 });
+		});
 	});
 
 	test('a refused decision surfaces the server message instead of a generic failure', async () => {

@@ -854,6 +854,24 @@ export class RunStore {
 		return rows.map(decodeProposal);
 	}
 
+	/**
+	 * The proposals the operator already settled, newest decision first, capped
+	 * at `limit` so a long-lived project's history never renders unbounded.
+	 * `omittedCount` is the settled total beyond that cap -- reported instead of
+	 * dropped in silence (GSHIP-643), the same way `omittedCount` already works
+	 * for the orchestrator's own proposal context in web.ts.
+	 */
+	listResolvedProposals(limit = 20): { proposals: RunProposal[]; omittedCount: number } {
+		const { total } = this.#db.query(`
+			SELECT COUNT(*) AS total FROM run_proposals WHERE status != 'pending'
+		`).get() as { total: number };
+		const rows = this.#db.query(`
+			SELECT * FROM run_proposals WHERE status != 'pending'
+			ORDER BY updated_at DESC, seq DESC LIMIT $limit
+		`).all({ limit }) as ProposalRow[];
+		return { proposals: rows.map(decodeProposal), omittedCount: total - rows.length };
+	}
+
 	getProposal(id: string): RunProposal | null {
 		const row = this.#db.query(`
 			SELECT * FROM run_proposals WHERE id = $id

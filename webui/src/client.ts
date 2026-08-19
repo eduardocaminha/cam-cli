@@ -15,6 +15,7 @@ export const PROVIDERS_PATH = '/api/providers';
 export const CHAT_PATH = '/api/chat';
 export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
+export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
 export const CHAIN_RUNS_PATH = '/api/chain-runs';
 
@@ -86,6 +87,16 @@ export interface ProposalView {
 	evidence: string;
 	sourceRunId: string;
 	sourceIssueId: string;
+}
+
+/**
+ * A proposal the operator already settled: discarded, or promoted into the
+ * issue named by `promotedIssueId` (GSHIP-643). Read-only, same as
+ * `ProposalView` -- this screen never reopens or re-decides one.
+ */
+export interface ResolvedProposalView extends ProposalView {
+	status: 'dismissed' | 'promoted';
+	promotedIssueId: string | null;
 }
 
 export interface WorkspaceNoticeView {
@@ -228,6 +239,17 @@ interface CreateIssuePayload extends CommandPayload {
 
 interface ProposalsPayload {
 	proposals?: ProposalView[];
+}
+
+interface ResolvedProposalsPayload {
+	proposals?: ResolvedProposalView[];
+	omittedCount?: number;
+}
+
+/** The settled proposals shown, and how many more exist beyond that window. */
+export interface ResolvedProposalsSnapshot {
+	proposals: ResolvedProposalView[];
+	omittedCount: number;
 }
 
 interface ProvidersPayload {
@@ -552,6 +574,18 @@ export async function specifyIssue(id: string, input: OperatorSpecDraft): Promis
 export async function fetchProposals(): Promise<ProposalView[]> {
 	const payload = await readJson<ProposalsPayload>(await fetch(PROPOSALS_PATH), 'Propostas');
 	return payload.proposals ?? [];
+}
+
+/**
+ * The settled proposals, newest decision first, separate from the pending
+ * inbox above so a historical record never mixes with a pending decision.
+ */
+export async function fetchResolvedProposals(): Promise<ResolvedProposalsSnapshot> {
+	const payload = await readJson<ResolvedProposalsPayload>(
+		await fetch(RESOLVED_PROPOSALS_PATH),
+		'Propostas resolvidas',
+	);
+	return { proposals: payload.proposals ?? [], omittedCount: payload.omittedCount ?? 0 };
 }
 
 export async function dismissProposal(id: string): Promise<string> {

@@ -48,6 +48,7 @@ import {
 	type ProjectBriefView,
 	type ProposalView,
 	type ProviderStatusView,
+	type ResolvedProposalView,
 	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
@@ -98,6 +99,14 @@ export interface AppProps {
 	drafts: readonly IssueReviewDraft[];
 	/** Ideas captured by executed runs, still awaiting an operator decision. */
 	proposals: readonly ProposalView[];
+	/**
+	 * Proposals already settled -- dismissed or promoted -- newest decision
+	 * first, plus how many more exist beyond that window (GSHIP-643). Kept
+	 * separate from `proposals` above so a historical record never mixes with a
+	 * pending decision.
+	 */
+	resolvedProposals: readonly ResolvedProposalView[];
+	resolvedProposalsOmittedCount: number;
 	events: readonly RunEventView[];
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
@@ -1784,6 +1793,74 @@ function ProposalsPanel({
 	);
 }
 
+/**
+ * What a settled proposal became, read-only: a dismissed one stays a
+ * discarded idea, a promoted one names the issue it turned into (GSHIP-643).
+ * Separate from `ProposalsPanel` above so the pending inbox is never mixed
+ * with this historical record, and offers no decision -- no undo, no
+ * re-promotion -- only the outcome.
+ */
+function ResolvedProposalsPanel({
+	resolvedProposals,
+	resolvedProposalsOmittedCount,
+}: Pick<AppProps, 'resolvedProposals' | 'resolvedProposalsOmittedCount'>): React.ReactElement {
+	return (
+		<CardDisclosure className="group">
+			<CardSummary>
+				<CardTitle>Propostas resolvidas</CardTitle>
+				<CardDescription>{resolvedProposals.length} proposta(s) resolvida(s).</CardDescription>
+				<CardAction><Badge variant="secondary">{resolvedProposals.length}</Badge></CardAction>
+			</CardSummary>
+			<CardPanel className="flex flex-col gap-4">
+				<div className="flex flex-wrap items-center gap-2">
+					<Badge variant="outline">somente leitura</Badge>
+					<span className="text-muted-foreground text-sm">
+						Descarte e promoção não podem ser desfeitos aqui.
+					</span>
+				</div>
+				<Separator />
+				{resolvedProposals.length === 0 ? (
+					<p className="text-muted-foreground text-sm">
+						Nenhuma proposta resolvida ainda.
+					</p>
+				) : (
+					<ul className="flex flex-col gap-4">
+						{resolvedProposals.map((proposal) => (
+							<li className="flex min-w-0 flex-col gap-2 text-sm" key={proposal.id}>
+								<div className="flex flex-wrap items-center gap-2">
+									<span className="break-words font-medium">{proposal.title}</span>
+									{proposal.status === 'promoted' ? (
+										<Badge variant="success">Promovida</Badge>
+									) : (
+										<Badge variant="secondary">Descartada</Badge>
+									)}
+								</div>
+								<p className="whitespace-pre-wrap break-words text-muted-foreground">
+									{proposal.evidence}
+								</p>
+								<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+									<Badge variant="outline">{proposal.sourceIssueId}</Badge>
+									<code className="break-all text-xs">{proposal.sourceRunId}</code>
+									{proposal.status === 'promoted' && proposal.promotedIssueId !== null ? (
+										<span className="break-words">
+											virou <Badge variant="info">{proposal.promotedIssueId}</Badge>
+										</span>
+									) : null}
+								</div>
+							</li>
+						))}
+					</ul>
+				)}
+				{resolvedProposalsOmittedCount > 0 ? (
+					<p className="text-muted-foreground text-sm">
+						+{resolvedProposalsOmittedCount} proposta(s) resolvida(s) não exibida(s).
+					</p>
+				) : null}
+			</CardPanel>
+		</CardDisclosure>
+	);
+}
+
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	return (
@@ -1801,6 +1878,10 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onPromoteProposal={props.onPromoteProposal}
 				pending={props.pending}
 				proposals={props.proposals}
+			/>
+			<ResolvedProposalsPanel
+				resolvedProposals={props.resolvedProposals}
+				resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
 			/>
 			<IssueSpecifyPanel
 				ideas={props.ideas}

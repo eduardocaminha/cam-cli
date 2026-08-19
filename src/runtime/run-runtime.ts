@@ -422,6 +422,15 @@ export class RunRuntime {
 		return this.#store.listPendingProposals(limit);
 	}
 
+	/**
+	 * The dismissed and promoted proposals, newest decision first, so the
+	 * operator can see what a proposal became without mixing it into the
+	 * pending inbox above (GSHIP-643).
+	 */
+	listResolvedProposals(limit?: number): { proposals: RunProposal[]; omittedCount: number } {
+		return this.#store.listResolvedProposals(limit);
+	}
+
 	getProposal(id: string): RunProposal | null {
 		return this.#store.getProposal(id);
 	}
