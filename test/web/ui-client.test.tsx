@@ -1249,23 +1249,15 @@ describe('settings surface', () => {
 		expect(checkbox).toContain('disabled=""');
 	});
 
-	// The four named pause reasons (GSHIP-638), each in the operator's own words.
-	test('a stopped queue shows the reason of its last pause', () => {
-		const labels: Record<ChainPauseReason, string> = {
-			'chain-disabled': 'o interruptor está desligado.',
-			'previous-run-not-done': 'a run anterior não terminou em done.',
-			'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
-			'run-active': 'uma run ainda está ativa.',
-			'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
-		};
-		for (const [reason, label] of Object.entries(labels)) {
-			const pause = { reason: reason as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
-			const chainRuns = panel(
-				settingsPage({ chainRuns: { enabled: false, pause } }),
-				'Encadeamento automático',
-			);
-			expect(chainRuns).toContain(`Fila parada: ${label}`);
-		}
+	// GSHIP-650: a stopped queue asks for attention in the shell header now,
+	// never buried as a secondary line next to the toggle that turned it on.
+	test('a stopped queue is never reported inside the chaining switch\'s own panel', () => {
+		const pause = { reason: 'no-admissible-issue' as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
+		const chainRuns = panel(
+			settingsPage({ chainRuns: { enabled: false, pause } }),
+			'Encadeamento automático',
+		);
+		expect(chainRuns).not.toContain('Fila parada');
 	});
 });
 
@@ -1371,6 +1363,87 @@ describe('operator shell', () => {
 			.toContain('Precisa de você');
 		expect(shellHeader(runsPage({ runs: [runIn('working')], workspaceNotices: NOTICES })))
 			.toContain('Precisa de você');
+	});
+
+	// GSHIP-650: a stopped chain queue asks for the operator too, wherever they
+	// are, the same way a preserved workspace already does -- and names the
+	// issue that stopped it instead of leaving the operator to go find out.
+	test('a stopped chain queue asks for the operator and names the issue that stopped it', () => {
+		const pause: ChainPauseView = {
+			reason: 'previous-run-not-done',
+			createdAt: '2026-08-19T00:00:00.000Z',
+			run: { id: 'run-9', issueId: 'GSHIP-647' },
+			issue: { id: 'GSHIP-647', title: 'Corrigir a divergência de evidência' },
+		};
+		for (const route of SURFACE_PATHS) {
+			const header = shellHeader(renderAt(route, { chainRuns: { enabled: true, pause } }));
+			expect(header).toContain('Precisa de você');
+			expect(header).toContain('Fila parada');
+			expect(header).toContain('GSHIP-647');
+			expect(header).toContain('Corrigir a divergência de evidência');
+			expect(header).toContain('a run anterior não terminou em done.');
+		}
+		// The ordinary case says nothing at all.
+		expect(shellHeader(home())).not.toContain('Fila parada');
+	});
+
+	// A pause the read could not resolve a run for still asks for attention,
+	// but by its reason alone -- never a fabricated issue name. Excludes
+	// chain-disabled: that reason is covered separately below, since it never
+	// escalates.
+	test('a stopped chain queue with no resolvable issue is still reported by its reason alone', () => {
+		const labels: Record<Exclude<ChainPauseReason, 'chain-disabled'>, string> = {
+			'previous-run-not-done': 'a run anterior não terminou em done.',
+			'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
+			'run-active': 'uma run ainda está ativa.',
+			'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+		};
+		for (const [reason, label] of Object.entries(labels)) {
+			const pause = { reason: reason as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
+			const header = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
+			expect(header).toContain('Precisa de você');
+			expect(header).toContain(`Fila parada`);
+			expect(header).toContain(label);
+			expect(header).not.toContain('GSHIP');
+		}
+	});
+
+	// GSHIP-650 review: chaining is off by default (GSHIP-638), so
+	// chain-disabled is every default install's steady state, not a stopped
+	// queue -- escalating it would read "Precisa de você" with a warning
+	// callout forever, on every surface, for an install that never turned
+	// chaining on.
+	test('the switch simply being off never escalates the header or shows the callout', () => {
+		const pause: ChainPauseView = { reason: 'chain-disabled', createdAt: '2026-08-18T00:00:00.000Z' };
+		const header = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
+
+		expect(header).toContain('Ocioso');
+		expect(header).not.toContain('Precisa de você');
+		expect(header).not.toContain('Fila parada');
+	});
+
+	// GSHIP-650 review: setChainRuns writes the setting alone and emits no
+	// event, so a pause recorded before the operator turned the switch off
+	// survives the turn-off in storage. Turning the switch off must still clear
+	// the shown state -- there is no stopped queue while it is off, whatever
+	// the reason recorded.
+	test('turning the switch off clears a previously recorded pause from the header', () => {
+		const pause: ChainPauseView = {
+			reason: 'no-admissible-issue',
+			createdAt: '2026-08-18T00:00:00.000Z',
+			run: { id: 'run-9', issueId: 'GSHIP-9' },
+			issue: { id: 'GSHIP-9', title: 'Última issue encadeada' },
+		};
+
+		const on = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
+		expect(on).toContain('Precisa de você');
+		expect(on).toContain('Fila parada');
+
+		const off = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
+		expect(off).toContain('Ocioso');
+		expect(off).not.toContain('Precisa de você');
+		expect(off).not.toContain('Fila parada');
+		expect(off).not.toContain('GSHIP-9');
 	});
 });
 
@@ -1521,6 +1594,16 @@ describe('screen derivations', () => {
 		expect(attentionOf(null, NOTICES)).toBe('Precisa de você');
 		expect(attentionOf(runIn('done'), [])).toBe('Ocioso');
 		expect(attentionOf(runIn('working'), true)).toBe('Precisa de você');
+	});
+
+	// GSHIP-650: a stopped chain queue decides before the run state does, the
+	// same way a preserved workspace already does -- otherwise a queue paused
+	// after a `done` run reads as idle, hiding exactly the state it named.
+	test('a stopped chain queue decides before the run state does', () => {
+		expect(attentionOf(runIn('done'), false, true)).toBe('Precisa de você');
+		expect(attentionOf(runIn('cancelled'), false, true)).toBe('Precisa de você');
+		expect(attentionOf(runIn('done'), false, false)).toBe('Ocioso');
+		expect(attentionOf(runIn('done'), false)).toBe('Ocioso');
 	});
 
 	test('an interrupted run is resumable and a terminal one is not', () => {

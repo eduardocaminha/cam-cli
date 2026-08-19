@@ -856,21 +856,13 @@ function ModelSettingsPanel({
 	);
 }
 
-/** One line per reason the queue is not advancing on its own (GSHIP-638). */
-const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
-	'chain-disabled': 'o interruptor está desligado.',
-	'previous-run-not-done': 'a run anterior não terminou em done.',
-	'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
-	'run-active': 'uma run ainda está ativa.',
-	'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
-};
-
 /**
  * The switch that lets the runtime start the next admissible issue by itself
  * once a run ends in `done` (GSHIP-638). It creates no new authority: it only
  * starts what the operator already approved, and it never approves, reviews
  * or promotes anything on its own. Off by default, because autonomy never
- * turns itself on.
+ * turns itself on. A stopped queue is reported in the shell header instead of
+ * here (GSHIP-650): it is a state that asks for attention, not configuration.
  */
 function ChainRunsPanel({
 	chainRuns,
@@ -883,23 +875,16 @@ function ChainRunsPanel({
 			open
 			title="Encadeamento automático"
 		>
-			<div className="flex flex-col gap-3">
-				<label className="flex items-center gap-2 text-sm">
-					<input
-						checked={chainRuns.enabled}
-						disabled={pending}
-						onChange={(event) =>
-							onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
-						type="checkbox"
-					/>
-					<span className="font-medium">Encadear runs aprovadas automaticamente</span>
-				</label>
-				{chainRuns.pause === null ? null : (
-					<p className="text-muted-foreground text-sm">
-						Fila parada: {CHAIN_PAUSE_LABELS[chainRuns.pause.reason]}
-					</p>
-				)}
-			</div>
+			<label className="flex items-center gap-2 text-sm">
+				<input
+					checked={chainRuns.enabled}
+					disabled={pending}
+					onChange={(event) =>
+						onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
+					type="checkbox"
+				/>
+				<span className="font-medium">Encadear runs aprovadas automaticamente</span>
+			</label>
 		</ContextPanel>
 	);
 }
@@ -1416,20 +1401,78 @@ function StaleServiceCallout({
 	);
 }
 
+/** One line per reason the queue is not advancing on its own (GSHIP-638). */
+const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
+	'chain-disabled': 'o interruptor está desligado.',
+	'previous-run-not-done': 'a run anterior não terminou em done.',
+	'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
+	'run-active': 'uma run ainda está ativa.',
+	'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+};
+
+/**
+ * A stopped queue only exists while the switch is on. `setChainRuns` writes
+ * the setting alone and emits no event (GSHIP-638), so a pause recorded
+ * before the operator turned the switch off -- `no-admissible-issue`,
+ * `previous-run-not-done`, any reason -- would otherwise survive the turn-off
+ * and keep reading "Precisa de você" with a warning callout on every surface,
+ * with nothing to clear it until some future run reaches a terminal state and
+ * records a fresh `chain-disabled` pause, which may never happen (GSHIP-650
+ * review). `chain-disabled` itself never escalates either, on or off: chaining
+ * is off by default (GSHIP-638), so it is the steady state of a default
+ * install, not a stopped queue.
+ */
+function stoppedQueuePause(chainRuns: ChainRunsView): ChainRunsView['pause'] {
+	if (!chainRuns.enabled) return null;
+	const { pause } = chainRuns;
+	return pause === null || pause.reason === 'chain-disabled' ? null : pause;
+}
+
+/**
+ * The stopped queue, named where the operator already looks for what needs
+ * them (GSHIP-650) -- not a secondary line inside the chaining switch's own
+ * settings panel, next to the toggle that turned it on. A pause whose read
+ * could not resolve the issue that stopped it is still shown by its reason
+ * alone: never a fabricated link. `pause` is already filtered to reasons that
+ * represent an actually stopped queue -- see `stoppedQueuePause`.
+ */
+function ChainPauseCallout({
+	pause,
+}: { pause: ChainRunsView['pause'] }): React.ReactElement | null {
+	if (pause === null) return null;
+	const named = pause.issue === undefined
+		? CHAIN_PAUSE_LABELS[pause.reason]
+		: `${pause.issue.id}: ${pause.issue.title} — ${CHAIN_PAUSE_LABELS[pause.reason]}`;
+	return (
+		<section
+			aria-label="Fila de encadeamento parada"
+			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+		>
+			<span className="font-medium text-sm">Fila parada</span>
+			<p className="break-words text-xs">{named}</p>
+		</section>
+	);
+}
+
 function ShellSidebar({
+	chainRuns,
 	route,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'staleService' | 'workspaceNotices'> & {
+}: Pick<AppProps, 'chainRuns' | 'staleService' | 'workspaceNotices'> & {
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
 }): React.ReactElement {
 	// The header answers one question -- is Gateship waiting on the operator --
-	// so it carries the human state alone. The run's own state stays on the card.
-	const attention = attentionOf(run, workspaceNotices);
+	// so it carries the human state alone. The run's own state stays on the
+	// card. A stopped chain queue (GSHIP-650) answers it too, the same way a
+	// preserved workspace already does -- but only while the switch is on and
+	// something else stopped it, never for the switch simply being off.
+	const stoppedQueue = stoppedQueuePause(chainRuns);
+	const attention = attentionOf(run, workspaceNotices, stoppedQueue !== null);
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
 			<div className="flex flex-col items-start gap-3">
@@ -1443,6 +1486,7 @@ function ShellSidebar({
 				</div>
 				<Badge variant={attentionToneOf(attention)}>{attention}</Badge>
 			</div>
+			<ChainPauseCallout pause={stoppedQueue} />
 			<StaleServiceCallout staleService={staleService} />
 			<Separator />
 			<nav aria-label="Superfícies do operador">
@@ -1959,6 +2003,7 @@ export function App(props: AppProps): React.ReactElement {
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<ShellSidebar
+				chainRuns={props.chainRuns}
 				route={props.route}
 				run={run}
 				staleService={props.staleService}

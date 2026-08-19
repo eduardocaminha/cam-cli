@@ -460,9 +460,12 @@ export type ChainPauseReason =
 	| 'run-active'
 	| 'chain-start-failed';
 
+/** Mirrors ChainPauseView in src/runtime/run-runtime.ts. */
 export interface ChainPauseView {
 	reason: ChainPauseReason;
 	createdAt: string;
+	run?: { id: string; issueId: string };
+	issue?: { id: string; title: string };
 }
 
 /** The chain switch, off by default, plus why the queue is stopped when it is. */
@@ -476,12 +479,32 @@ interface ChainRunsPayload extends CommandPayload {
 	pause?: Partial<ChainPauseView> | null;
 }
 
-/** A pause missing either field reads as none: there is nothing coherent to show. */
+/** Read as absent unless both identifying fields parse -- never a half link. */
+function chainPauseRun(value: unknown): ChainPauseView['run'] {
+	if (value === null || typeof value !== 'object') return undefined;
+	const { id, issueId } = value as Record<string, unknown>;
+	return typeof id === 'string' && typeof issueId === 'string' ? { id, issueId } : undefined;
+}
+
+function chainPauseIssue(value: unknown): ChainPauseView['issue'] {
+	if (value === null || typeof value !== 'object') return undefined;
+	const { id, title } = value as Record<string, unknown>;
+	return typeof id === 'string' && typeof title === 'string' ? { id, title } : undefined;
+}
+
+/** A pause missing either core field reads as none: there is nothing coherent to show. */
 function chainPauseRecord(value: Partial<ChainPauseView> | null | undefined): ChainPauseView | null {
 	if (value === null || value === undefined) return null;
 	const { reason, createdAt } = value;
 	if (typeof reason !== 'string' || typeof createdAt !== 'string') return null;
-	return { reason: reason as ChainPauseReason, createdAt };
+	const run = chainPauseRun(value.run);
+	const issue = chainPauseIssue(value.issue);
+	return {
+		reason: reason as ChainPauseReason,
+		createdAt,
+		...(run === undefined ? {} : { run }),
+		...(issue === undefined ? {} : { issue }),
+	};
 }
 
 export async function fetchChainRuns(): Promise<ChainRunsView> {

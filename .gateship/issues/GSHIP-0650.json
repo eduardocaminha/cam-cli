@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-650",
   "title": "Fila parada nomeia a issue e pede atencao",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T17:26:58.230Z",
-  "updatedAt": "2026-08-19T17:30:19.118Z",
+  "updatedAt": "2026-08-19T19:14:20.324Z",
   "description": "Fazer a fila parada dizer o que parou e aparecer com peso de atencao, para que o operador saiba do estado sem precisar perguntar. Evidencia real de hoje: a fila encadeou seis runs aprovadas sozinha e parou na GSHIP-647, cuja evidencia divergiu do repositorio, e o estado ficou legivel apenas para quem abrisse o painel de configuracao do encadeamento e lesse uma linha em cinza.\n\nSao duas lacunas, ambas pequenas. Primeira, a pausa nao nomeia nada: getChainPause devolve apenas reason e createdAt, embora o evento run.chain-paused seja emitido no proprio run, entao a issue e o run que pararam a fila estao disponiveis e sao descartados na leitura. Segunda, a apresentacao contradiz a importancia: a linha vive dentro do painel Encadeamento automatico, que e configuracao, com classe de texto secundario, ao lado do interruptor que a ligou.\n\nA fatia e: ChainPauseView passa a carregar a issue e o run que originaram a pausa quando o evento os tem, e a tela apresenta a fila parada como estado que pede atencao, nomeando a issue, no mesmo lugar em que o produto ja mostra o que precisa do operador. Uma pausa cujo evento nao carrega run associado continua sendo apresentada apenas pela razao, sem inventar vinculo.\n\nNao criar canal de notificacao nesta fatia: notificacao que chega com o navegador fechado e uma decisao separada, com escolha de canal, e nao cabe aqui.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: pausa originada por um run carrega issue e run na leitura, pausa sem run associado carrega apenas a razao, e a tela apresenta a fila parada nomeando a issue.\n\nFora de escopo: qualquer canal de notificacao, mudar as razoes de pausa existentes, mudar quando a fila pausa, pular issue com evidencia divergente, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
