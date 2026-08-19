@@ -486,9 +486,25 @@ loop over recreating the former harness in the browser.
 
 ## Decisions already made
 
-- Gateship is web-first: one local Bun service, React UI, SQLite, and provider
-  adapters. Do not add tmux, send-keys, a sidecar, container workers, a terminal
-  UI, or a second `gshipd` process.
+- Gateship is web-first: one Bun service, React UI, SQLite, and provider
+  adapters. Do not add tmux, send-keys, a sidecar, a terminal UI, or a second
+  `gshipd` process.
+- **Revoked on 2026-08-19: the service ships as one container image rather than
+  as a local binary.** The earlier rule forbade container workers, and that rule
+  is withdrawn deliberately, with its reasons on the record. Three problems this
+  cycle have the same root: the executor runs with no sandbox, so no secret on
+  the machine is out of its reach; Windows has no supported path at all, since
+  the release produces only darwin and linux artifacts and verification shells
+  out to `/bin/sh`; and an installed binary can be arbitrarily older than the
+  repository while saying nothing, which burned two runs in one afternoon. A
+  versioned image answers all three at once. What is not traded away is the
+  subscription login: the container is not a reason to adopt API-key billing.
+  Measured before deciding: on macOS the Claude CLI keeps its credential in the
+  Keychain and no `~/.claude/.credentials.json` exists, so mounting host
+  credentials is not an option that exists. `claude` and `gh` therefore log in
+  inside the container on first boot and persist on the volume, which also keeps
+  Gateship credential-blind, since the CLI owns the store and Gateship never
+  reads it.
 - Use the operator's authenticated subscription CLIs. Claude Code and Codex are
   the first providers; provider-specific credentials remain in their own local
   stores. Never copy OAuth tokens or API keys into Gateship or expose token
@@ -587,9 +603,11 @@ loop over recreating the former harness in the browser.
    matches. GSHIP-629 supplies the mechanism, since a specification's premise is
    now recorded as commands with their observed output, so revalidating a queued
    issue is re-running them and comparing.
-6. **Robust sandbox.** Tighten filesystem, process, network, secret, cancellation,
-   and cleanup boundaries around provider work without restoring container-era
-   orchestration complexity.
+6. **Containerized runtime and sandbox.** Package the service, git, `gh` and the
+   provider CLIs as one image with one volume, authenticate inside it on first
+   boot, and let the container be the filesystem, process and network boundary
+   around provider work. This supersedes the local-process hardening the stage
+   previously described; secret and cancellation boundaries stay in scope.
 7. **Onboarding.** Separate flows for an existing repository and a new project;
    discover scripts and repository facts, then ask the operator to confirm the
    proposed setup.
@@ -649,9 +667,10 @@ approval fingerprint still matches its executable contract.
 ## Boundaries to preserve
 
 - Keep one process and one owner for HTTP, SQLite, children, and cancellation;
-  do not add `gshipd` or a sidecar.
-- Do not reintroduce tmux, send-keys, container workers, terminal UI, installed
-  personas, or control-file protocols.
+  do not add `gshipd` or a sidecar, and do not split the runtime across several
+  containers.
+- Do not reintroduce tmux, send-keys, terminal UI, installed personas, or
+  control-file protocols.
 - Keep the conversational orchestrator read-only. It may investigate and return
   at most one typed command; only the deterministic service mutates lifecycle.
 - Use authenticated subscription CLIs, not an Agent SDK or API-key billing.
