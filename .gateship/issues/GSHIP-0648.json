@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-648",
   "title": "Binario compilado reporta o commit de que foi construido",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T11:27:30.214Z",
-  "updatedAt": "2026-08-19T16:14:43.750Z",
+  "updatedAt": "2026-08-19T16:22:43.575Z",
   "description": "Fazer o binario compilado reportar o commit de que foi construido, para que o aviso de servico velho cubra o executavel instalado e nao apenas o repositorio. Hoje o aviso compara o origin/main do boot com o atual, ou seja, mede a idade do repositorio desde que o processo subiu, e nao a idade do codigo que o processo esta executando. Um binario compilado num commit antigo e iniciado depois de um pull grava o sha ja atualizado no boot e nunca acusa nada. Foi assim que um binario sete horas mais velho que o repositorio serviu uma UI que se disfarcou de regressao de produto.\n\nMedicao feita agora neste repositorio: src/commands/web.ts grava const bootSourceSha = readSourceSha(options.cwd) no start, que le refs/remotes/origin/main no instante do boot e nao tem relacao alguma com o commit de onde o executavel saiu; scripts/build-release.sh nao injeta nada no binario.\n\nMecanismo ja verificado antes desta especificacao, para que a implementacao nao precise descobri-lo: bun build --compile --define GSHIP_BUILD_SHA='\"<sha>\"' grava o valor no executavel e ele le de volta, e sem o define, rodando do fonte, typeof GSHIP_BUILD_SHA === 'string' e falso e a leitura degrada para nulo sem lancar.\n\nA fatia e: scripts/build-release.sh passa o commit compilado, e web.ts prefere o sha de build quando ele existe, caindo no comportamento de hoje quando nao existe. Nada mais muda: mesma comparacao, mesmo campo staleService, mesma lista de caminhos carregados e mesmo aviso na tela. Um sha de build que nao resolve no repositorio local, vindo de um build feito em outro clone ou de um branch que ja nao existe, precisa continuar caindo no caminho de desconhecido de changedPathsTouchCode, que devolve nulo e omite o aviso em vez de inventar divergencia.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir tres casos: com sha de build presente ele e preferido ao do boot, sem ele o comportamento e identico ao atual, e um sha de build que nao resolve omite o aviso.\n\nFora de escopo: recompilar ou reinstalar o binario automaticamente, marcar arvore suja no momento do build, cobrir assinatura codesign, reescrever o texto do aviso alem do minimo necessario, e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
