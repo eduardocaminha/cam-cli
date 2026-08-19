@@ -542,7 +542,13 @@ const PREVIOUS_RUNS_SHOWN = 4;
 /**
  * The runs before the one the page above commands, read-only: there is no
  * selection and no command here, only what an operator returning to the screen
- * needs to know about what already ran.
+ * needs to know about what already ran -- including, per row, the same
+ * expected cost the current run's own card shows, so comparing configurations
+ * no longer requires opening each run in turn (GSHIP-639). Reads from the
+ * server-computed total alone; a run whose CLI never reported a cost shows no
+ * number at all, never a fabricated zero, and the figure is always the
+ * expected cost an equivalent API call would have billed, never an amount
+ * charged (the honesty rule GSHIP-623 established).
  */
 function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
 	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
@@ -557,6 +563,11 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
 						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
 						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
+						{run.cost.totalCostUsd === null ? null : (
+							<span className="shrink-0 text-muted-foreground">
+								Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+							</span>
+						)}
 						<time className="shrink-0 text-muted-foreground">
 							{run.updatedAt.slice(0, 16).replace('T', ' ')}
 						</time>

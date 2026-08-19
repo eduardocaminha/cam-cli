@@ -745,6 +745,35 @@ describe('runs surface', () => {
 			expect(card).not.toContain(issueId);
 		}
 	});
+
+	// GSHIP-639: the per-run total already computed for the current run's own
+	// card (GSHIP-623), now also on each history row, so comparing
+	// configurations no longer requires opening every run. Same honesty rule:
+	// labeled "Custo esperado", never a value the operator was charged, and a
+	// run whose CLI never reported a cost shows no number, not a zero.
+	test('a history row shows the same expected-cost label as the current run card', () => {
+		const card = panel(
+			runsPage({
+				runs: [
+					runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
+					runIn('done', {
+						id: 'run-2',
+						issueId: 'CAM-802',
+						cost: { totalCostUsd: 0.1234, breakdown: [], roles: [] },
+					}),
+					runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
+				],
+			}),
+			'Runs anteriores',
+		);
+
+		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
+		expect(row802).toContain('Custo esperado: US$');
+
+		const row801 = card.slice(card.indexOf('CAM-801'));
+		// A run with no reported cost shows no number at all, not a fabricated zero.
+		expect(row801).not.toContain('Custo esperado');
+	});
 });
 
 describe('work surface', () => {

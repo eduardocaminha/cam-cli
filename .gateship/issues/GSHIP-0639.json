@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-639",
   "title": "Custo por run no painel de runs anteriores",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-18T22:30:56.596Z",
-  "updatedAt": "2026-08-18T22:37:35.843Z",
+  "updatedAt": "2026-08-19T09:55:38.857Z",
   "description": "Mostrar o custo esperado de cada run no painel de runs anteriores, para que o operador compare configuracoes sem abrir uma run por vez. Hoje aquele painel renderiza apenas issue, estado e horario, e o custo so aparece no card da run corrente, de modo que comparar Sonnet contra outra escolha exige abrir cada run. O agregado por run ja existe no servidor desde o GSHIP-623 e ja e derivado de fonte completa, entao a fatia e leva-lo a lista e exibi-lo por linha. Manter as regras de honestidade que aquele issue estabeleceu: valor sempre rotulado como custo esperado equivalente a uso via API e nunca como valor cobrado, e run sem custo reportado nao exibe numero algum em vez de exibir zero. Nao acrescentar filtro, ordenacao, agrupamento por data nem grafico. Os testes novos entram nos arquivos ja existentes nomeados no comando de verificacao e devem cobrir linha com custo, linha sem custo e o rotulo correto. Fora de escopo: agregacao por configuracao, comparacao automatica, exportacao, orcamento e qualquer mudanca no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
