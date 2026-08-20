@@ -5,6 +5,7 @@ import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
+import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { RunStore, type RunEvent, type RunRecord } from '../../src/runtime/run-store.ts';
@@ -1106,6 +1107,39 @@ describe('releasing a failed run workspace', () => {
 		await runtime.stop();
 		runtime.close();
 	});
+
+	// GSHIP-659: the automatic review fix round the runtime drove above is the
+	// executor's own, not a decision the operator made -- exposed by
+	// getRunRoundOrigins from the same durable event log getRunCost reads.
+	test('attributes the automatic review fix round to the executor, exposed by getRunRoundOrigins', async () => {
+		const store = new RunStore(':memory:');
+		let reviewCall = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-round-origins',
+			newSessionId: () => 'session-round-origins',
+			executor: {
+				execute: async () => ({ outcome: 'completed' }),
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async () => {
+					reviewCall += 1;
+					return reviewCall === 1
+						? { verdict: 'findings', detail: '1. src/a.ts: fix this' }
+						: { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = runtime.startRun('CAM-71');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, decision: 0, indeterminate: 0 });
+		await runtime.stop();
+		runtime.close();
+	});
 });
 
 // GSHIP-658: a remote branch delete that fails must not go silently unretried
@@ -1276,6 +1310,67 @@ describe('selectOperatorDecisions', () => {
 		expect(selectOperatorDecisions([guidanceEvent(1, long)])).toEqual([
 			long.slice(0, OPERATOR_DECISION_LIMITS.text),
 		]);
+	});
+});
+
+// GSHIP-659: attributes each correction round to the executor's own automatic
+// fix or to the consequence of an operator decision, straight from the run's
+// own decision log -- never a guess when neither pattern matches.
+describe('selectRunRoundOrigins', () => {
+	function roundEvent(
+		seq: number,
+		kind: string,
+		fromState: RunEvent['fromState'] = 'working',
+	): RunEvent {
+		return {
+			seq,
+			runId: 'run-1',
+			kind,
+			fromState,
+			toState: 'working',
+			payload: {},
+			createdAt: `2026-08-19T10:${String(seq).padStart(2, '0')}:00Z`,
+			eventClass: 'decision',
+		};
+	}
+
+	test('a history with no round past the run\'s own launch reports zero of both', () => {
+		const events = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, indeterminate: 0 });
+	});
+
+	test('a round with no guidance -- born of a review or full-verify fix request -- counts as executor', () => {
+		const events = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.review-fix-requested', 'review'),
+			roundEvent(4, 'run.full-verify-fix-requested', 'full-verify'),
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, decision: 0, indeterminate: 0 });
+	});
+
+	test('a round that starts right after operator guidance counts as decision', () => {
+		const events = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.waiting-user', 'working'),
+			roundEvent(4, 'run.operator-guidance', 'waiting-user'),
+			roundEvent(5, 'run.started', 'waiting-user'),
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 1, indeterminate: 0 });
+	});
+
+	test('a resume with no guidance before it -- e.g. recovering an interrupted run -- is reported indeterminate, never attributed by guess', () => {
+		const events = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.cancelled', 'working'),
+			roundEvent(4, 'run.started', 'interrupted'),
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, indeterminate: 1 });
 	});
 });
 

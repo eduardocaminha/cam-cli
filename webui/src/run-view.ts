@@ -68,6 +68,17 @@ export interface RunCostView {
 	roles: readonly RunCostRoleUsage[];
 }
 
+/**
+ * Where a run's correction rounds came from, counted by origin (GSHIP-659).
+ * Mirrors RunRoundOrigins in src/runtime/round-origin.ts. `indeterminate` is a
+ * round the recorded history admits no pattern for -- never a guess.
+ */
+export interface RunRoundOriginsView {
+	executor: number;
+	decision: number;
+	indeterminate: number;
+}
+
 export interface RunView {
 	id: string;
 	issueId: string;
@@ -76,6 +87,7 @@ export interface RunView {
 	error: string | null;
 	updatedAt: string;
 	cost: RunCostView;
+	roundOrigins: RunRoundOriginsView;
 }
 
 /** A cost total plus exactly how many runs it spans (GSHIP-628). */

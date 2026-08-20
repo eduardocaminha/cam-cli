@@ -9,6 +9,7 @@ import type {
 } from './git-workspace.ts';
 import type { ModelSettings } from './model-settings.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
+import { selectRunRoundOrigins, type RunRoundOrigins } from './round-origin.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
@@ -417,6 +418,16 @@ export class RunRuntime {
 	 */
 	getRunCost(runId: string): RunCostSummary {
 		return this.#store.getRunCostSummary(runId);
+	}
+
+	/**
+	 * Where this run's correction rounds came from -- the executor's own
+	 * automatic fix or the consequence of an operator decision (GSHIP-659) --
+	 * derived from the same durable decision log `listRunDecisionEvents`
+	 * already exposes, unbounded by `listRunEvents`' display window.
+	 */
+	getRunRoundOrigins(runId: string): RunRoundOrigins {
+		return selectRunRoundOrigins(this.#store.listRunDecisionEvents(runId));
 	}
 
 	listWorkspaceNotices(): WorkspaceNotice[] {

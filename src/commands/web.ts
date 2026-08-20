@@ -1021,14 +1021,19 @@ function abandonDurableRun(
 }
 
 /**
- * The run list with each run's total cost attached (GSHIP-623), derived from
- * the complete event log rather than any display-bounded read, so the number
- * the card shows can never be shrunk by a read limit. The breakdown by role
- * and model rides along on the same read: the run the operator is looking at
- * is always `runs[0]`, so there is no separate route to keep in sync with it.
+ * The run list with each run's total cost (GSHIP-623) and correction-round
+ * origins (GSHIP-659) attached, both derived from the complete event log
+ * rather than any display-bounded read, so neither number the card shows can
+ * ever be shrunk by a read limit. Both ride along on the same read: the run
+ * the operator is looking at is always `runs[0]`, so there is no separate
+ * route to keep in sync with it.
  */
 function listRunsWithCost(runtime: RunRuntime): unknown[] {
-	return runtime.listRuns().map((run) => ({ ...run, cost: runtime.getRunCost(run.id) }));
+	return runtime.listRuns().map((run) => ({
+		...run,
+		cost: runtime.getRunCost(run.id),
+		roundOrigins: runtime.getRunRoundOrigins(run.id),
+	}));
 }
 
 function readRunEvents(runtime: RunRuntime, runId: string): Response {
