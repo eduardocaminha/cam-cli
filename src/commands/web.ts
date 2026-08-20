@@ -81,6 +81,7 @@ import {
 	RunStore,
 } from '../runtime/run-store.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
+import { ensureCodexHome } from '../runtime/provider-env.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { GSHIP_VERSION } from '../version.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
@@ -1544,6 +1545,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd }));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(options, ensureGitIdentityOnce);
+	// Only for the real NativeProviderAuth this process owns: an injected fake
+	// in tests has no reason to touch the filesystem, and CODEX_HOME is unset
+	// outside the container image anyway.
+	if (ownsProviderAuth) ensureCodexHome(process.env);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
 	const modelProber = options.modelProber ?? new NativeModelProber();
 	const projectBrief = options.projectBrief ?? {

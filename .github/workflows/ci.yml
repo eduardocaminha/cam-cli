@@ -24,3 +24,7 @@ jobs:
         run: bun run check:all
       - name: Build the container image
         run: docker build --build-arg GSHIP_BUILD_SHA="${{ github.sha }}" -t gateship:ci .
+      - name: Verify both agent CLIs respond inside the built image
+        run: |
+          docker run --rm --entrypoint claude gateship:ci --version
+          docker run --rm --entrypoint codex gateship:ci --version

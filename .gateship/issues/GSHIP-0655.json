@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-655",
   "title": "CLI do Codex na imagem de container",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T21:32:43.368Z",
-  "updatedAt": "2026-08-20T07:52:03.531Z",
+  "updatedAt": "2026-08-20T09:24:01.341Z",
   "description": "Acrescentar o CLI do Codex a imagem de container, para que o produto entregue os dois provedores que o runtime suporta e nao apenas um. Depende da GSHIP-654, que cria a imagem; nao aprovar antes dela shipar.\n\nPor que e necessario e nao cosmetico: src/runtime/agent-session.ts declara AgentProviderId como claude ou codex, e existem adaptadores completos de execucao e de revisao para os dois. A imagem da fatia anterior instala apenas o CLI da Claude, entao dentro do container o Codex fica selecionavel na interface e indisponivel na pratica. Um provedor que a tela oferece e a imagem nao tem e pior do que um provedor ausente.\n\nMedido agora, dentro de um container limpo da mesma imagem base oven/bun:1.3.14-slim, para que a implementacao nao precise descobrir: bun add -g @openai/codex instala e o binario responde em /usr/local/bin/codex como codex-cli 0.148.0. E o mesmo mecanismo que a GSHIP-654 ja usa para o CLI da Claude, entao a fatia e acrescentar uma instalacao ao lado da existente, nao inventar um caminho novo.\n\nA autenticacao segue a mesma regra ja registrada: acontece dentro do container, persiste no volume, e nunca e copiada do host. Nada de campo de chave de API.\n\nO teste que importa e o que a fatia anterior nao pode dar: a imagem construida contem os dois CLIs e os dois respondem. Cobrir isso no mesmo lugar em que a GSHIP-654 verificou o CLI da Claude.\n\nFora de escopo: escolher provedor padrao, mudar o roteamento entre adaptadores, versionar os CLIs de forma independente da imagem, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
