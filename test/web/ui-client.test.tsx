@@ -242,6 +242,17 @@ function panel(html: string, title: string): string {
 	return html.slice(start, end < 0 ? undefined : end);
 }
 
+/**
+ * One notification channel's own row, cut at its label so `buttonIsEnabled`
+ * finds that row's own "Enviar teste" button -- with two channels (GSHIP-653)
+ * the label is no longer unique across the whole panel, only within a row.
+ */
+function channelRow(html: string, label: string): string {
+	const start = html.indexOf(label);
+	if (start < 0) throw new Error(`channel row ${label} is not on the screen`);
+	return html.slice(start);
+}
+
 describe('conversation surface', () => {
 	test('the lateral is the compact inspector and nothing else', () => {
 		const html = home({
@@ -1097,7 +1108,7 @@ describe('settings surface', () => {
 	// GSHIP-652: the remote ntfy channel shows only whether it is configured,
 	// a real test-send action, and setup instructions -- never the secret,
 	// which the read-only `configured` boolean makes structurally impossible.
-	test('the remote channel shows its configured state, a test action, and setup instructions, never a secret', () => {
+	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
 		const unconfigured = panel(settingsPage(), 'Notificações locais');
 		expect(unconfigured).toContain('ntfy: não configurado');
 		expect(buttonIsEnabled(unconfigured, 'Enviar teste')).toBe(false);
@@ -1111,16 +1122,62 @@ describe('settings surface', () => {
 		expect(docLink).toContain('rel="noreferrer noopener"');
 
 		const configured = panel(
-			settingsPage({ notificationChannels: { ntfy: { configured: true } } }),
+			settingsPage({
+				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+			}),
 			'Notificações locais',
 		);
 		expect(configured).toContain('ntfy: configurado');
 		expect(buttonIsEnabled(configured, 'Enviar teste')).toBe(true);
 	});
 
+	// GSHIP-653: Resend needs three values, not one -- a partial configuration
+	// is off, and the panel names exactly which values are still missing, by
+	// name, never a value itself. Both the API-key and domain-verification
+	// pages are linked, since DNS verification happens outside Gateship, which
+	// is the part an operator following this panel actually gets stuck on.
+	test('the Resend channel names which values are missing, shows setup instructions and both doc links, never a secret', () => {
+		const partial = panel(
+			settingsPage({
+				notificationChannels: {
+					...EMPTY_NOTIFICATION_CHANNELS,
+					resend: { configured: false, missing: ['chave de API', 'destinatário'] },
+				},
+			}),
+			'Notificações locais',
+		);
+		expect(partial).toContain('email (Resend): não configurado (falta: chave de API, destinatário)');
+		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Enviar teste')).toBe(false);
+		expect(partial).toContain('.gship/resend-api-key');
+		expect(partial).toContain('permissão 600');
+		expect(partial).toContain('GATESHIP_RESEND_API_KEY');
+		expect(partial).toContain('GATESHIP_RESEND_FROM');
+		expect(partial).toContain('GATESHIP_RESEND_TO');
+
+		const apiKeysLink = openingTags(partial).find((tag) => tag.includes('resend.com/api-keys'));
+		const domainsLink = openingTags(partial).find((tag) => tag.includes('resend.com/domains'));
+		expect(apiKeysLink).toBeDefined();
+		expect(domainsLink).toBeDefined();
+		expect(apiKeysLink).toContain('target="_blank"');
+		expect(domainsLink).toContain('rel="noreferrer noopener"');
+
+		const configured = panel(
+			settingsPage({
+				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, resend: { configured: true, missing: [] } },
+			}),
+			'Notificações locais',
+		);
+		expect(configured).toContain('email (Resend): configurado');
+		expect(configured).not.toContain('falta:');
+		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Enviar teste')).toBe(true);
+	});
+
 	test('the remote channel test action is held while a command is in flight, like every other', () => {
 		const html = panel(
-			settingsPage({ notificationChannels: { ntfy: { configured: true } }, pending: true }),
+			settingsPage({
+				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+				pending: true,
+			}),
 			'Notificações locais',
 		);
 		expect(buttonIsEnabled(html, 'Enviar teste')).toBe(false);
@@ -2142,17 +2199,28 @@ describe('same-origin transport', () => {
 		});
 	});
 
-	// GSHIP-652: the read is a boolean per channel, and the client's own type
-	// (`configured: boolean`) makes it structurally impossible to carry the
-	// secret through even if a future server bug tried to include one.
+	// GSHIP-652, GSHIP-653: the read is a boolean plus named missing values per
+	// channel, and the client's own type (`configured: boolean`, `missing:
+	// string[]`) makes it structurally impossible to carry a secret through
+	// even if a future server bug tried to include one.
 	test('reads notification channel status and fires a real test on its own routes', async () => {
-		await withRecordedFetch({ channels: { ntfy: { configured: true } } }, 200, async (calls) => {
-			expect(await fetchNotificationChannels()).toEqual({ ntfy: { configured: true } });
-			expect(calls).toEqual([{ url: NOTIFICATIONS_PATH, method: 'GET', body: null }]);
-		});
-		// A payload missing the channel, or the field, reads as not configured.
+		await withRecordedFetch(
+			{ channels: { ntfy: { configured: true }, resend: { configured: false, missing: ['chave de API'] } } },
+			200,
+			async (calls) => {
+				expect(await fetchNotificationChannels()).toEqual({
+					ntfy: { configured: true, missing: [] },
+					resend: { configured: false, missing: ['chave de API'] },
+				});
+				expect(calls).toEqual([{ url: NOTIFICATIONS_PATH, method: 'GET', body: null }]);
+			},
+		);
+		// A payload missing a channel, or a field, reads as not configured.
 		await withRecordedFetch({}, 200, async () => {
-			expect(await fetchNotificationChannels()).toEqual({ ntfy: { configured: false } });
+			expect(await fetchNotificationChannels()).toEqual({
+				ntfy: { configured: false, missing: [] },
+				resend: { configured: false, missing: [] },
+			});
 		});
 		await withRecordedFetch(
 			{ ok: true, outcome: 'sent', message: 'Mensagem de teste entregue ao ntfy.' },
@@ -2173,6 +2241,19 @@ describe('same-origin transport', () => {
 			async () => {
 				expect(await sendNotificationTest('ntfy'))
 					.toBe('Canal ntfy não está configurado.');
+			},
+		);
+		await withRecordedFetch(
+			{ ok: true, outcome: 'sent', message: 'Mensagem de teste entregue por email.' },
+			200,
+			async (calls) => {
+				expect(await sendNotificationTest('resend'))
+					.toBe('Mensagem de teste entregue por email.');
+				expect(calls).toEqual([{
+					url: `${NOTIFICATIONS_PATH}/resend/test`,
+					method: 'POST',
+					body: null,
+				}]);
 			},
 		);
 	});

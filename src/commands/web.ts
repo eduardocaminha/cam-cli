@@ -56,7 +56,15 @@ import {
 	type ModelSlot,
 	type ModelSlotResolver,
 } from '../runtime/model-settings.ts';
-import { createRemoteNotifier, isNtfyConfigured, sendNtfyTestNotification } from '../runtime/remote-notifier.ts';
+import {
+	createRemoteNotifier,
+	isNtfyConfigured,
+	isResendConfigured,
+	RESEND_FIELD_LABELS,
+	resolveResendMissingFields,
+	sendNtfyTestNotification,
+	sendResendTestNotification,
+} from '../runtime/remote-notifier.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	type ChainPauseView,
@@ -384,31 +392,61 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 	return Response.json({ ok: true, ...chainRunsSnapshot(runtime) });
 }
 
-/** ntfy is the one remote channel today; the shape stays a record so GSHIP-653 can add another without reshaping this. */
-function notificationChannelsSnapshot(cwd: string): Record<string, { configured: boolean }> {
-	return { ntfy: { configured: isNtfyConfigured(cwd) } };
+/** ntfy and Resend (GSHIP-653): each channel resolves and reports on its own configuration, independent of the other. */
+function notificationChannelsSnapshot(cwd: string): Record<string, { configured: boolean; missing: string[] }> {
+	return {
+		ntfy: { configured: isNtfyConfigured(cwd), missing: [] },
+		resend: {
+			configured: isResendConfigured(cwd),
+			missing: resolveResendMissingFields(cwd).map((field) => RESEND_FIELD_LABELS[field]),
+		},
+	};
 }
+
+interface NotificationChannelTest {
+	send: (cwd: string) => Promise<{ outcome: string; detail?: string }>;
+	label: string;
+	sentMessage: string;
+}
+
+const NOTIFICATION_CHANNEL_TESTS: Readonly<Record<string, NotificationChannelTest>> = {
+	ntfy: {
+		send: (cwd) => sendNtfyTestNotification({ cwd }),
+		label: 'ntfy',
+		sentMessage: 'Mensagem de teste entregue ao ntfy.',
+	},
+	resend: {
+		send: (cwd) => sendResendTestNotification({ cwd }),
+		label: 'Resend',
+		sentMessage: 'Mensagem de teste entregue por email.',
+	},
+};
 
 /**
  * Fires a real delivery through the named channel and reports only whether it
- * was accepted (GSHIP-652): the secret itself never enters this response, on
- * any outcome.
+ * was accepted (GSHIP-652, GSHIP-653): the secret itself never enters this
+ * response, on any outcome -- a partial Resend configuration names which
+ * values are missing, never their values.
  */
 async function sendNotificationChannelTest(request: Request, cwd: string, channelId: string): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
-	if (channelId !== 'ntfy') {
+	// `Object.hasOwn` guards the lookup itself: `channelId` is attacker-controlled
+	// request input, and a plain `NOTIFICATION_CHANNEL_TESTS[channelId]` resolves
+	// inherited `Object.prototype` members (`toString`, `constructor`, `valueOf`,
+	// `__proto__`) to defined values, so `test === undefined` alone never catches
+	// them -- the request would fall through to `test.send is not a function`.
+	const test = Object.hasOwn(NOTIFICATION_CHANNEL_TESTS, channelId)
+		? NOTIFICATION_CHANNEL_TESTS[channelId]
+		: undefined;
+	if (test === undefined) {
 		return Response.json(
 			{ ok: false, code: 'unknown-channel', message: `Canal "${channelId}" desconhecido.` },
 			{ status: 404 },
 		);
 	}
-	const result = await sendNtfyTestNotification({ cwd });
+	const result = await test.send(cwd);
 	if (result.outcome === 'sent') {
-		return Response.json({
-			ok: true,
-			outcome: result.outcome,
-			message: 'Mensagem de teste entregue ao ntfy.',
-		});
+		return Response.json({ ok: true, outcome: result.outcome, message: test.sentMessage });
 	}
 	if (result.outcome === 'not-configured') {
 		return Response.json(
@@ -416,7 +454,8 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 				ok: false,
 				code: 'not-configured',
 				outcome: result.outcome,
-				message: 'Canal ntfy não está configurado.',
+				message: `Canal ${test.label} não está configurado`
+					+ `${result.detail === undefined ? '' : ` (falta: ${result.detail})`}.`,
 			},
 			{ status: 409 },
 		);
@@ -426,7 +465,7 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 			ok: false,
 			code: 'delivery-failed',
 			outcome: result.outcome,
-			message: `O ntfy recusou o teste${result.detail === undefined ? '' : ` (${result.detail})`}.`,
+			message: `${test.label} recusou o teste${result.detail === undefined ? '' : ` (${result.detail})`}.`,
 		},
 		{ status: 502 },
 	);
@@ -1610,12 +1649,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				GET: () => Response.json(chainRunsSnapshot(runRuntime)),
 				PUT: (request) => writeChainRuns(request, runRuntime),
 			},
-			// The remote notification channels (GSHIP-652): the read is unguarded
-			// like every other GET and returns a boolean per channel, never the
-			// secret itself, which lives only in `GATESHIP_NTFY_URL` or the
-			// project-local file `createRemoteNotifier` also reads. There is no
-			// write route here -- editing the secret from the screen is out of
-			// scope; the operator places the file themselves.
+			// The remote notification channels (GSHIP-652, GSHIP-653): the read is
+			// unguarded like every other GET and returns a boolean plus any named
+			// missing values per channel, never a secret itself -- those live only
+			// in the env vars or project-local files `createRemoteNotifier` also
+			// reads. There is no write route here -- editing a secret from the
+			// screen is out of scope; the operator places it themselves.
 			'/api/notifications': {
 				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd) }),
 			},

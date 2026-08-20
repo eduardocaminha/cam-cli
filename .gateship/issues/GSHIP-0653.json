@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-653",
   "title": "Email por Resend como segundo canal, independente do ntfy",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-19T20:50:06.089Z",
-  "updatedAt": "2026-08-20T07:51:56.255Z",
+  "updatedAt": "2026-08-20T08:51:09.516Z",
   "description": "Acrescentar email como segundo canal de notificacao, pelo Resend, ao lado do ntfy e independente dele: cada canal liga sozinho conforme sua propria configuracao esteja presente, os dois podem estar ligados ao mesmo tempo, e nenhum depende do outro para funcionar. Motivo: push exige aplicativo no celular, e email alcanca quem nao quer instalar nada.\n\nDepende da fatia anterior, que leva o segredo para o arquivo do projeto e cria o painel de estado em Ajustes. Esta fatia adiciona um canal aquele painel, nao um painel novo.\n\nO Resend precisa de tres valores e nao de um: a chave de API, o remetente em dominio verificado e o destinatario. Um canal com configuracao parcial esta desligado, e o painel diz qual valor falta, pelo nome, sem nunca exibir valor algum. A chave de API e um segredo forte, diferente da URL de topico do ntfy: quem a tem envia email em nome do dominio, entao ela segue as mesmas regras da fatia anterior, arquivo do projeto com permissao 600, nunca no SQLite, nunca em resposta ao navegador, nunca em log, nunca no ambiente de um filho agente.\n\nA instrucao no painel leva a pagina de chaves do Resend e a de verificacao de dominio, porque a verificacao de DNS acontece fora do Gateship e e a parte em que o operador trava.\n\nO envio usa fetch contra a API HTTP do Resend, sem SDK e sem dependencia nova, com o mesmo timeout curto e a mesma regra do ntfy: falha de entrega jamais altera estado de run, e os mesmos momentos que ja disparam push disparam email, sem notificar progresso.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: configuracao completa envia, configuracao parcial nao envia e nomeia o que falta, falha de rede nao propaga, os dois canais ligados enviam pelos dois, e a chave nao aparece em nenhuma saida observavel.\n\nFora de escopo: terceiro canal, barramento generico de integracao, modelo de mensagem configuravel, resumo periodico por email, anexos, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {

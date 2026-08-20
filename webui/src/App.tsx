@@ -907,20 +907,51 @@ function ChainRunsPanel({
 
 const NOTIFICATION_CHANNEL_LABELS: Readonly<Record<NotificationChannelId, string>> = {
 	ntfy: 'ntfy',
+	resend: 'email (Resend)',
 };
 
 /**
- * ntfy's own publish docs: the operator needs this to build the topic URL the
- * project file or GATESHIP_NTFY_URL carries, not just to browse ntfy itself.
+ * ntfy's own publish docs, and Resend's own API-key and domain-verification
+ * pages: DNS verification happens outside Gateship (GSHIP-653), which is the
+ * part an operator following this panel actually gets stuck on, so both of
+ * Resend's pages are linked, not just the key page.
  */
-const NOTIFICATION_CHANNEL_DOC_URLS: Readonly<Record<NotificationChannelId, string>> = {
-	ntfy: 'https://docs.ntfy.sh/publish/',
+const NOTIFICATION_CHANNEL_DOCS: Readonly<Record<NotificationChannelId, ReadonlyArray<{ label: string; href: string }>>> = {
+	ntfy: [{ label: 'Documentação do ntfy', href: 'https://docs.ntfy.sh/publish/' }],
+	resend: [
+		{ label: 'Chaves de API do Resend', href: 'https://resend.com/api-keys' },
+		{ label: 'Verificação de domínio no Resend', href: 'https://resend.com/domains' },
+	],
 };
 
+/** Setup instructions text, the one part of the row that differs enough per channel to branch on directly. */
+function NotificationChannelInstructions({ channelId }: { channelId: NotificationChannelId }): React.ReactElement {
+	if (channelId === 'resend') {
+		return (
+			<>
+				Grave a chave de API em <code className="break-all">.gship/resend-api-key</code>, na raiz do
+				projeto, com permissão 600, ou defina <code className="break-all">GATESHIP_RESEND_API_KEY</code>{' '}
+				-- que tem precedência sobre o arquivo. Defina também{' '}
+				<code className="break-all">GATESHIP_RESEND_FROM</code> (remetente em domínio verificado) e{' '}
+				<code className="break-all">GATESHIP_RESEND_TO</code> (destinatário).{' '}
+			</>
+		);
+	}
+	return (
+		<>
+			Grave a URL do tópico em <code className="break-all">.gship/ntfy-url</code>, na raiz do projeto, com
+			permissão 600, ou defina a variável de ambiente <code className="break-all">GATESHIP_NTFY_URL</code>{' '}
+			-- que tem precedência sobre o arquivo.{' '}
+		</>
+	);
+}
+
 /**
- * One remote channel's status, test button and setup instructions (GSHIP-652).
- * Never renders the secret, or any field that could carry it -- `channel` is
- * a boolean, and the instructions name the file and the env var, not a value.
+ * One remote channel's status, test button and setup instructions (GSHIP-652,
+ * GSHIP-653). Never renders a secret, or any field that could carry one --
+ * `channel.configured` is a boolean, `channel.missing` names only which
+ * values are absent, and the instructions name files and env vars, not
+ * values.
  */
 function NotificationChannelRow({
 	channelId,
@@ -939,6 +970,7 @@ function NotificationChannelRow({
 			<div className="flex items-center justify-between gap-3">
 				<p className="text-sm">
 					{label}: {channel.configured ? 'configurado' : 'não configurado'}
+					{!channel.configured && channel.missing.length > 0 ? ` (falta: ${channel.missing.join(', ')})` : null}
 				</p>
 				<ActionButton
 					enabled={channel.configured && !pending}
@@ -947,17 +979,15 @@ function NotificationChannelRow({
 				/>
 			</div>
 			<p className="text-muted-foreground text-sm">
-				Grave a URL do tópico em <code className="break-all">.gship/ntfy-url</code>, na raiz do projeto,
-				com permissão 600, ou defina a variável de ambiente{' '}
-				<code className="break-all">GATESHIP_NTFY_URL</code> -- que tem precedência sobre o arquivo.{' '}
-				<a
-					className={TEXT_LINK_CLASS}
-					href={NOTIFICATION_CHANNEL_DOC_URLS[channelId]}
-					rel="noreferrer noopener"
-					target="_blank"
-				>
-					Documentação do {label}
-				</a>
+				<NotificationChannelInstructions channelId={channelId} />
+				{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc, index) => (
+					<React.Fragment key={doc.href}>
+						{index > 0 ? ' ' : null}
+						<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
+							{doc.label}
+						</a>
+					</React.Fragment>
+				))}
 			</p>
 		</div>
 	);
