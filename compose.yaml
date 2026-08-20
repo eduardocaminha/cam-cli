@@ -10,6 +10,18 @@
 # image unable to say what commit it came from (see the Dockerfile and
 # resolveBootSourceSha in src/commands/web.ts, GSHIP-654).
 #
+# GATESHIP_IMAGE names the tag `image:` resolves to. Left unset it stays
+# `gateship:latest`, which nothing publishes, so Compose's default
+# pull-if-missing policy fails the pull and falls back to the `build:` below
+# -- the local, from-source path this file always had, kept as the
+# development default. Point it at a tag the release workflow published
+# instead -- `ghcr.io/gateship-dev/gateship:<version>` or `:<commit-sha>`,
+# both built with the same GSHIP_BUILD_SHA as the release binaries (see
+# .github/workflows/release.yml) -- and Compose pulls that image instead of
+# building:
+#
+#   GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3 docker compose up
+#
 # The named volume below is mounted over ./.gship inside that repository,
 # which is where the SQLite store, managed worktrees and (via
 # CLAUDE_CONFIG_DIR/CODEX_HOME/GH_CONFIG_DIR in the Dockerfile) the Claude,
@@ -22,7 +34,7 @@ services:
       context: .
       args:
         GSHIP_BUILD_SHA: ${GSHIP_BUILD_SHA:-}
-    image: gateship:latest
+    image: ${GATESHIP_IMAGE:-gateship:latest}
     init: true
     ports:
       - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"

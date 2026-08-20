@@ -119,6 +119,21 @@ what commit it came from, so the service stays silent about it rather than
 compare against a ref read that would belong to whatever project the
 container is managing, not to Gateship's own source.
 
+Every version tag push builds and publishes that same image, so installing a
+new version no longer requires a local build. `.github/workflows/release.yml`
+pushes it to the GitHub Container Registry tagged with both the version and
+the commit, each carrying its own baked-in `GSHIP_BUILD_SHA` and the same
+build provenance attestation the release binaries get:
+
+```bash
+GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3 GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+```
+
+Leaving `GATESHIP_IMAGE` unset keeps `docker compose up` building from the
+Dockerfile instead, exactly as before -- the local-build path stays available
+for development and is what the container image's own verification build
+uses.
+
 Provider and GitHub authentication happen inside the container, on first boot,
 and persist on the named volume `compose.yaml` mounts over that project's
 `.gship/` -- never copied from the host, since on macOS the Claude CLI keeps

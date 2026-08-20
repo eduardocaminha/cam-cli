@@ -101,3 +101,74 @@ describe('release.yml attest step (US-R1-002, CAM-495)', () => {
 		expect(permissionsBlock).toContain('contents: write');
 	});
 });
+
+// GSHIP-657: the release also builds and publishes the versioned container
+// image, from its own job so it can run on ubuntu-latest -- the macOS-hosted
+// runner used for the binaries above has no Docker daemon. Scoped the same
+// way as the job above: sliced from the job's own key to the end of the
+// file, since it is currently the last job.
+const releaseImageJobIdx = workflow.indexOf('\n  release-image:');
+const releaseImageJobBlock = workflow.slice(releaseImageJobIdx);
+
+describe('release.yml release-image job (GSHIP-657)', () => {
+	test('the job is present and runs on a Linux runner', () => {
+		expect(releaseImageJobIdx).toBeGreaterThan(-1);
+		expect(releaseImageJobBlock).toContain('runs-on: ubuntu-latest');
+	});
+
+	test('carries the permissions the registry push and attestation require', () => {
+		// A job-level `permissions:` block replaces the workflow-level one
+		// wholesale rather than adding to it, so this job has to repeat every
+		// permission actions/attest-build-provenance@v4 needs -- the same three
+		// the binaries' identical step gets from the workflow-level block above
+		// (artifact-metadata, attestations, id-token) -- plus packages: write
+		// for the registry push itself.
+		expect(releaseImageJobBlock).toContain('artifact-metadata: write');
+		expect(releaseImageJobBlock).toContain('attestations: write');
+		expect(releaseImageJobBlock).toContain('id-token: write');
+		expect(releaseImageJobBlock).toContain('packages: write');
+	});
+
+	test('bakes the release commit into the image via the same GSHIP_BUILD_SHA build-arg', () => {
+		// Same variable name the Dockerfile ARG and build-release.sh's --define
+		// both use, and the same value (github.sha) CI already passes when it
+		// builds the image -- so resolveBootSourceSha's stale-service warning
+		// behaves identically inside a released container.
+		expect(releaseImageJobBlock).toContain(
+			'GSHIP_BUILD_SHA=${{ github.sha }}',
+		);
+	});
+
+	test('tags the published image with both the version and the commit', () => {
+		const buildStepIdx = releaseImageJobBlock.indexOf(
+			'uses: docker/build-push-action@v6',
+		);
+		expect(buildStepIdx).toBeGreaterThan(-1);
+		const nextStepIdx = releaseImageJobBlock.indexOf(
+			'\n      - name:',
+			buildStepIdx,
+		);
+		const buildStepBlock = releaseImageJobBlock.slice(
+			buildStepIdx,
+			nextStepIdx === -1 ? releaseImageJobBlock.length : nextStepIdx,
+		);
+		expect(buildStepBlock).toContain('push: true');
+		expect(buildStepBlock).toContain(
+			'ghcr.io/${{ github.repository }}:${{ github.ref_name }}',
+		);
+		expect(buildStepBlock).toContain(
+			'ghcr.io/${{ github.repository }}:${{ github.sha }}',
+		);
+	});
+
+	test('attests build provenance for the pushed image digest', () => {
+		const attestIdx = releaseImageJobBlock.indexOf(
+			'uses: actions/attest-build-provenance@v4',
+		);
+		expect(attestIdx).toBeGreaterThan(-1);
+		const attestBlock = releaseImageJobBlock.slice(attestIdx);
+		expect(attestBlock).toContain('subject-name: ghcr.io/${{ github.repository }}');
+		expect(attestBlock).toContain('subject-digest: ${{ steps.build.outputs.digest }}');
+		expect(attestBlock).toContain('push-to-registry: true');
+	});
+});
