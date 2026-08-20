@@ -111,6 +111,7 @@ describe('diagnostics web API', () => {
 				scan: null,
 				findings: [],
 				analyzers: [{ id: 'react', version: '0.9.12' }],
+				stats: { total: 0, pending: 0, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
 			});
 
 			const forbidden = await post(
@@ -166,6 +167,14 @@ describe('diagnostics web API', () => {
 			const settled = await fetchDiagnostics(harness.origin);
 			expect(settled.findings).toEqual([]);
 			expect(settled.resolvedFindings).toHaveLength(2);
+			expect(settled.stats).toEqual({
+				total: 2,
+				pending: 0,
+				dismissed: 1,
+				promoted: 1,
+				cleared: 0,
+				recurring: 0,
+			});
 		} finally {
 			await harness.stop();
 		}

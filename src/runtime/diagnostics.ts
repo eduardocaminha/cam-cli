@@ -6,7 +6,7 @@ import process from 'node:process';
 import { buildAllowlistedEnv } from './child-env.ts';
 import type { DiagnosticDraft, DiagnosticFinding, DiagnosticScan } from './diagnostic-finding.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
-import type { RunStore } from './run-store.ts';
+import type { DiagnosticFindingStats, RunStore } from './run-store.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
 const REACT_DOCTOR_VERSION = '0.9.12';
@@ -55,6 +55,7 @@ export interface DiagnosticsSnapshot {
 	findings: DiagnosticFinding[];
 	resolvedFindings: DiagnosticFinding[];
 	resolvedFindingsOmittedCount: number;
+	stats: DiagnosticFindingStats;
 	workspaceNotices: string[];
 }
 
@@ -455,6 +456,7 @@ export class DiagnosticsRuntime {
 			findings: this.#store.listPendingDiagnosticFindings(),
 			resolvedFindings: resolved.findings,
 			resolvedFindingsOmittedCount: resolved.omittedCount,
+			stats: this.#store.getDiagnosticFindingStats(),
 			workspaceNotices: this.#workspace.listNotices(this.#active?.workspacePath),
 		};
 	}

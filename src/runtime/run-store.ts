@@ -4,13 +4,13 @@ import { dirname } from 'node:path';
 
 import type { AgentProviderId } from './agent-session.ts';
 import {
-	diagnosticFingerprint,
 	type DiagnosticDraft,
 	type DiagnosticFinding,
 	type DiagnosticFindingStatus,
 	type DiagnosticScan,
 	type DiagnosticScanState,
 	DiagnosticTransitionError,
+	diagnosticFingerprint,
 	isDiagnosticFindingStatus,
 	isDiagnosticScanState,
 	normalizeDiagnosticDrafts,
@@ -250,6 +250,16 @@ export interface RunCostSummary {
 	totalCostUsd: number | null;
 	breakdown: RunCostBreakdownEntry[];
 	roles: RunCostRoleUsage[];
+}
+
+/** Raw diagnostic outcomes; no disposition is reinterpreted as a quality score. */
+export interface DiagnosticFindingStats {
+	total: number;
+	pending: number;
+	dismissed: number;
+	promoted: number;
+	cleared: number;
+	recurring: number;
 }
 
 /** The two `.usage` event kinds `emitUsage` (claude-cli-process.ts) writes, keyed to their role. */
@@ -1225,6 +1235,24 @@ export class RunStore {
 			END, last_seen_at DESC, seq DESC LIMIT $limit
 		`).all({ limit }) as DiagnosticFindingRow[];
 		return rows.map(decodeDiagnosticFinding);
+	}
+
+	/**
+	 * Complete local disposition counts for diagnostics observability. A
+	 * dismissed finding is intentionally only dismissed: without an explicit
+	 * operator reason it is not evidence of a false positive.
+	 */
+	getDiagnosticFindingStats(): DiagnosticFindingStats {
+		return this.#db.query(`
+			SELECT
+				COUNT(*) AS total,
+				COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+				COALESCE(SUM(CASE WHEN status = 'dismissed' THEN 1 ELSE 0 END), 0) AS dismissed,
+				COALESCE(SUM(CASE WHEN status = 'promoted' THEN 1 ELSE 0 END), 0) AS promoted,
+				COALESCE(SUM(CASE WHEN status = 'cleared' THEN 1 ELSE 0 END), 0) AS cleared,
+				COALESCE(SUM(CASE WHEN occurrence_count > 1 THEN 1 ELSE 0 END), 0) AS recurring
+			FROM diagnostic_findings
+		`).get() as DiagnosticFindingStats;
 	}
 
 	listResolvedDiagnosticFindings(
