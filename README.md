@@ -143,6 +143,11 @@ Gateship also ships as one container image: the compiled binary, git, the
 GitHub CLI, the Claude Code CLI and the Codex CLI, with the port it already
 uses answering the same UI.
 
+The image pins both provider CLI releases. Gateship also disables Claude Code
+self-updates in child sessions, so a run cannot silently replace the executable
+behind its recorded workflow revision; rebuilding the image is the explicit
+upgrade boundary.
+
 ```bash
 GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
 # http://127.0.0.1:7777, published to loopback only
