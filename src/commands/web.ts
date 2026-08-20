@@ -1270,18 +1270,16 @@ function abandonDurableRun(
 }
 
 /**
- * The run list with each run's total cost (GSHIP-623) and correction-round
- * origins (GSHIP-659) attached, both derived from the complete event log
- * rather than any display-bounded read, so neither number the card shows can
- * ever be shrunk by a read limit. Both ride along on the same read: the run
- * the operator is looking at is always `runs[0]`, so there is no separate
- * route to keep in sync with it.
+ * The run list with cost, correction origins and replayable evaluation
+ * attached. All three derive from the complete event log rather than a
+ * display-bounded read, and ride on the same route the screen already owns.
  */
-function listRunsWithCost(runtime: RunRuntime): unknown[] {
+function listRunsWithInsights(runtime: RunRuntime): unknown[] {
 	return runtime.listRuns().map((run) => ({
 		...run,
 		cost: runtime.getRunCost(run.id),
 		roundOrigins: runtime.getRunRoundOrigins(run.id),
+		evaluation: runtime.getRunEvaluation(run.id),
 		providerWait: runtime.getRunProviderWait(run.id),
 	}));
 }
@@ -1418,6 +1416,14 @@ function readBuildSha(): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
+/** The Gateship checkout itself, used only by uncompiled development runs. */
+function readRuntimeSourceSha(): string | null {
+	const result = defaultRunGit(join(import.meta.dir, '..', '..'), ['rev-parse', '--verify', 'HEAD']);
+	if (result.exitCode !== 0) return null;
+	const sha = result.stdout.trim();
+	return sha.length === 0 ? null : sha;
+}
+
 /**
  * A second, unconditional define the Dockerfile always bakes in, regardless
  * of whether `GSHIP_BUILD_SHA` itself was supplied (see the Dockerfile). Its
@@ -1451,6 +1457,25 @@ export function resolveBootSourceSha(
 ): string | null {
 	if (buildSha !== null) return buildSha;
 	return isContainer ? null : readSourceShaOfCwd();
+}
+
+/**
+ * Identity of the Gateship workflow, never of the repository it manages.
+ * Release binaries carry a build SHA; source checkouts can read their own
+ * HEAD; an installed source package or unlabelled container falls back to the
+ * public version rather than inventing a commit identity.
+ */
+export function resolveWorkflowRevision(
+	buildSha: string | null,
+	isContainer: boolean,
+	readRuntimeSha: () => string | null,
+): string {
+	if (buildSha !== null) return buildSha;
+	if (!isContainer) {
+		const runtimeSha = readRuntimeSha();
+		if (runtimeSha !== null) return runtimeSha;
+	}
+	return `v${GSHIP_VERSION}`;
 }
 
 /**
@@ -1540,6 +1565,7 @@ function modelResolver(
 export function createDefaultRunRuntimeOptions(
 	cwd: string,
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
+	workflowRevision?: string,
 ): RunRuntimeOptions {
 	const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
@@ -1547,6 +1573,7 @@ export function createDefaultRunRuntimeOptions(
 	return {
 		cwd,
 		store,
+		workflowRevision,
 		executor: new AgentExecutorRouter({
 			claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor') }),
 			codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
@@ -1769,6 +1796,17 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsDiagnostics = options.diagnostics === undefined;
 	const ownsProviderAuth = options.providerAuth === undefined;
 	const ownsOrchestrator = options.orchestrator === undefined;
+	// Read once before constructing the runtime: every run this process creates
+	// records the same Gateship revision its stale-service notice uses. A
+	// container without a known build SHA falls back to the release version.
+	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
+	const containerBuild = isContainerBuild();
+	const bootSourceSha = resolveBootSourceSha(
+		buildSha,
+		containerBuild,
+		() => readSourceSha(options.cwd),
+	);
+	const workflowRevision = resolveWorkflowRevision(buildSha, containerBuild, readRuntimeSourceSha);
 	// Constructed before anything that might commit, and shared by the two
 	// commit paths alone -- the shipper's and issue intake's own writes, each
 	// calling this right before its write (GSHIP-654) -- never by the
@@ -1795,7 +1833,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		return gitIdentityEnsured;
 	};
 	const runRuntime = options.runRuntime
-		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd, ensureGitIdentityOnce));
+		?? new RunRuntime(createDefaultRunRuntimeOptions(
+			options.cwd,
+			ensureGitIdentityOnce,
+			workflowRevision,
+		));
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(options.cwd, '.gship', 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd),
@@ -1825,19 +1867,6 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const orchestrator = options.orchestrator?.(execute)
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
-	// Read once, at boot, and kept in memory: it is what this process loaded, so
-	// no later read of the ref can change it short of a restart. The compiled
-	// build sha (GSHIP-648) is preferred when the binary carries one, since it
-	// names the commit the executable actually came from rather than the ref
-	// this process happened to read at start; a source run falls back to the
-	// ref read exactly as before that sha existed, and a container image with
-	// no known sha falls back to nothing at all (resolveBootSourceSha).
-	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
-	const bootSourceSha = resolveBootSourceSha(
-		buildSha,
-		isContainerBuild(),
-		() => readSourceSha(options.cwd),
-	);
 	const server = Bun.serve({
 		hostname: resolveBindHostname(),
 		port: options.port,
@@ -1912,7 +1941,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				),
 			},
 			'/api/runs': {
-				GET: () => Response.json({ runs: listRunsWithCost(runRuntime) }),
+				GET: () => Response.json({ runs: listRunsWithInsights(runRuntime) }),
 				POST: (request) => startDurableRun(request, runRuntime),
 			},
 			'/api/providers': () => listProviders(providerAuth, runRuntime),

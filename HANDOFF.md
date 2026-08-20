@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `53d6db28` (derived workflow insights, PR #517)
-> Active implementation branch: `codex/diagnostic-schedules`
-> Current stage: local diagnostic-schedule slice verified; publication not yet authorized
+> Shipped baseline: `origin/main` at `8a1e4059` (bounded diagnostic schedules, PR #518)
+> Active implementation branch: `codex/eval-cohorts`
+> Current stage: local replayable-eval foundation focused-verified; publication not authorized
 
 ## How to use this file
 
@@ -64,6 +64,8 @@ The service:
   human dismisses or promotes them; promotion never approves or starts them;
 - runs optional diagnostics against an exact source SHA in an isolated
   checkout and keeps every finding advisory until a human settles it.
+- records the Gateship revision that created each new run and replays factual
+  workflow cohorts from the existing durable decision log.
 
 The browser conversation is the primary operator surface. Explicit controls
 remain deterministic fallbacks. The right architecture is a typed provider
@@ -72,33 +74,47 @@ logic.
 
 ## Active bounded slice
 
-The diagnostic-schedule slice is implemented locally on
-`codex/diagnostic-schedules` inside the existing `DiagnosticsRuntime`:
+The replayable-eval foundation is implemented locally on
+`codex/eval-cohorts` without a new evaluator agent or lifecycle:
 
-- the schedule is persisted in the existing `runtime_settings` table and is
-  off by default;
-- the only policy choices are daily or weekly for the installed React analyzer;
-- one in-process minute check starts at most one overdue scan, and only while
-  the project is idle;
-- creating any scan, manual or scheduled, resets the same cadence immediately;
-  failures therefore remain bounded and missed intervals never create a
-  catch-up backlog;
-- the existing scan path still fetches and resolves `origin/main`, creates a
-  detached exact-SHA worktree and preserves the advisory human-settled inbox;
-- `/settings` exposes the persisted state and next due instant through one
-  same-origin write. No host cron, daemon, queue, sidecar or new table exists.
+- every new run records the running Gateship source/build revision inside its
+  existing durable `run.created` decision event;
+- one pure replay derives outcome, creation-to-terminal wall time, human
+  attention requests and responses, provider holds and observed role/model/
+  effort configuration from the complete decision log;
+- the existing `/api/runs` response carries that derivation beside cost and
+  correction origins; there is no new endpoint, table, collector or queue;
+- `/runs` groups the existing recent 50-run window into immutable revision
+  cohorts and compares the newest observed cohort with the prior baseline;
+- terminal and incomplete sample sizes are explicit, legacy runs without a
+  recorded revision are excluded, unknown provider cost stays unknown, and the
+  UI states that the comparison is observational;
+- outcome, attention, corrections, holds, wall time, cost and configuration
+  remain separate. There is no composite score, causal claim, evaluator model
+  or automatic approval.
 
-Focused persistence, runtime, API and rendered-UI tests, both TypeScript
-projects and Biome pass. A production build was served on port 7799 and
-visually inspected at 1440 px: the panel is closed by default, opens without
-horizontal overflow and contains only enable, cadence, status and save. The
-isolated service was stopped; the stable merged service on port 7777 remains
-untouched and responds at `/settings`. The one full ship-boundary
-`bun run check:all` passed 761 tests and 3,064 assertions, both TypeScript
-projects, Biome and Knip; Knip reported only its two pre-existing configuration
-hints.
+Focused runtime, API and rendered-client tests pass together with both
+TypeScript projects and Biome. The production UI build passes. Automated visual
+inspection is unavailable in this Codex execution, so no visual assertion is
+claimed. PR #519 reproduced an upstream npm
+publication failure twice: mutable `@openai/codex` resolved `0.149.0` while its
+Linux artifact returned 404. The container now pins the last complete release,
+`0.148.0`, and a static regression test prevents returning to an unversioned
+install. After the correction, the full ship-boundary `bun run check:all`
+passes 768 tests and 3,088 assertions, both TypeScript projects, Biome and Knip;
+Knip reports only its two pre-existing configuration hints. A local container
+image builds successfully and both Claude Code and Codex respond inside it.
 
 ## Previously shipped bounded slices
+
+PR #518 shipped bounded diagnostic schedules as squash commit `8a1e4059`.
+The persisted schedule is off by default, offers only daily or weekly cadence,
+checks once per minute in the existing process and starts at most one overdue
+scan while the project is idle. Manual and scheduled scans share the exact-SHA
+isolated diagnostic path and reset one cadence without catch-up backlog. No
+host cron, daemon, queue, sidecar, new table or diagnostic score was added. The
+local and CI gates passed 761 tests and 3,064 assertions; the stable service was
+rebuilt and verified on all four routes.
 
 PR #517 shipped the first local telemetry/observability foundation as squash
 commit `53d6db28`. `/runs` derives raw outcomes, correction origins and known
@@ -301,9 +317,9 @@ the operator.
 
 ### Diagnostics and code intelligence
 
-- `Gateship Diagnostics` is provider-neutral and ad hoc on the shipped
-  baseline. The local schedule slice adds cadence inside the same service; do
-  not introduce host cron or a daemon.
+- `Gateship Diagnostics` is provider-neutral and supports manual or persisted
+  daily/weekly scans in the same service. Do not introduce host cron or a
+  daemon.
 - A scheduled scan runs once when overdue, without a catch-up storm, against an
   exact source SHA in an isolated workspace and at low priority while the
   project is idle.
@@ -346,7 +362,19 @@ the operator.
   retries, failures, provider/model/effort, verification cost and shipped
   outcome. Privacy-conscious local defaults come first.
 - Evals compare workflow changes against a baseline and must reward shipped
-  outcomes and reduced attention, not agent activity.
+  outcomes and reduced attention, not agent activity. The first foundation
+  records revision in `run.created` and replays separate observational signals
+  from durable events; it deliberately has no evaluator LLM or score.
+- Ratchets have two different authority levels. A deterministic defect that is
+  reproduced and fixed may become a permanent regression test or invariant
+  (`hard ratchet`). An observational cohort regression only creates a sourced
+  proposal after enough comparable evidence (`soft ratchet`); it never blocks
+  work or changes policy automatically. A human must approve promotion into a
+  rule or test, and the original evidence and workflow revision remain linked.
+- Never turn the soft ratchet into one composite score or require every metric
+  to improve: issue scope, provider, model and effort are confounders. The
+  ratchet preserves proven safety and proposes measured workflow improvement;
+  it does not optimize activity or accumulate policy by itself.
 - Self-improvement produces reviewable proposals from recurring measured
   failures. It never mutates local rules automatically.
 - Community input should enter the same proposal inbox with provenance and
@@ -364,17 +392,18 @@ Completed foundations:
 6. container packaging, published image and provider-failure recovery;
 7. per-role model/effort selection and usage accounting;
 8. ad hoc project diagnostics with a human-settled inbox;
-9. local derived workflow observability without scores or a collector.
+9. local derived workflow observability without scores or a collector;
+10. bounded daily/weekly diagnostics inside the existing service.
 
 Next product stages, in current order:
 
-1. finish and publish the persisted diagnostic schedule owned by the existing
-   service (active branch), only after explicit operator authorization;
-2. replayable evals and self-benchmarking;
-3. measured self-improvement and community proposal intake;
-4. internationalization, accessibility and beta readiness;
-5. multiproject selection and parallelism across independent repositories;
-6. external-user validation before Product Hunt or a YC-style launch push.
+1. finish and publish the replayable revision-cohort foundation on the active
+   branch, only after explicit operator authorization;
+2. add hard deterministic and soft observational ratchets over accumulated
+   cohorts, feeding measured self-improvement and community proposal intake;
+3. internationalization, accessibility and beta readiness;
+4. multiproject selection and parallelism across independent repositories;
+5. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -384,10 +413,10 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #517 is
-> present. If `codex/diagnostic-schedules` still contains unshipped work,
-> finish only the bounded schedule above; do not add cron syntax, a daemon,
-> sidecar, background queue, automatic fixes or a diagnostic score. Do not
+> `origin/main`, the latest commits and the running service. Confirm PR #518 is
+> present. If `codex/eval-cohorts` still contains unshipped work, finish only
+> the bounded replay contract above; do not add an evaluator LLM, synthetic
+> score, remote telemetry, new event pipeline, endpoint, table or queue. Do not
 > publish without explicit operator authorization. Do not start or reapprove
 > GSHIP-660/661/662. Preserve the one-service architecture. Run focused checks
 > while editing and `bun run check:all` once at the ship boundary.

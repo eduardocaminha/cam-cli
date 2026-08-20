@@ -90,6 +90,7 @@ import {
 	type RunState,
 	type RunView,
 	summarizeWorkflow,
+	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
 
 const BACKLOG = [
@@ -121,6 +122,24 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		cost: EMPTY_RUN_COST,
 		roundOrigins: EMPTY_ROUND_ORIGINS,
 		providerWait: null,
+		...overrides,
+	};
+}
+
+function evaluation(
+	workflowRevision: string,
+	outcome: NonNullable<RunView['evaluation']>['outcome'],
+	overrides: Partial<NonNullable<RunView['evaluation']>> = {},
+): NonNullable<RunView['evaluation']> {
+	return {
+		workflowRevision,
+		provider: 'claude',
+		outcome,
+		wallTimeMs: 10 * 60_000,
+		attentionRequests: 0,
+		operatorInterventions: 0,
+		providerHolds: 0,
+		roles: [],
 		...overrides,
 	};
 }
@@ -774,6 +793,77 @@ describe('runs surface', () => {
 		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2 });
 		expect(panel(runsPage({ runs }), 'Sinais do workflow'))
 			.toContain('Nenhum provider reportou custo nesta janela.');
+	});
+
+	test('replays adjacent workflow revisions as separate factual cohorts, never one score', () => {
+		const currentRoles = [{
+			role: 'executor' as const,
+			models: ['claude-sonnet-5'],
+			efforts: ['xhigh'],
+		}];
+		const runs = [
+			runIn('done', {
+				id: 'run-b2',
+				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				roundOrigins: { executor: 1, decision: 0, indeterminate: 0 },
+				evaluation: evaluation('revision-b', 'shipped', {
+					wallTimeMs: 12 * 60_000,
+					attentionRequests: 1,
+					operatorInterventions: 1,
+					roles: currentRoles,
+				}),
+			}),
+			runIn('failed', {
+				id: 'run-b1',
+				roundOrigins: { executor: 0, decision: 1, indeterminate: 0 },
+				evaluation: evaluation('revision-b', 'failed', {
+					wallTimeMs: 18 * 60_000,
+					attentionRequests: 2,
+					operatorInterventions: 1,
+					providerHolds: 1,
+					roles: currentRoles,
+				}),
+			}),
+			runIn('done', {
+				id: 'run-a1',
+				cost: { totalCostUsd: 0.2, breakdown: [], roles: [] },
+				evaluation: evaluation('revision-a', 'shipped', {
+					wallTimeMs: 30 * 60_000,
+					attentionRequests: 3,
+					operatorInterventions: 2,
+					providerHolds: 1,
+					roles: [{ role: 'executor', models: ['claude-opus-5'], efforts: ['high'] }],
+				}),
+			}),
+			runIn('done', { id: 'legacy-run' }),
+		];
+
+		const cohorts = summarizeWorkflowCohorts(runs);
+		expect(cohorts).toHaveLength(2);
+		expect(cohorts[0]).toMatchObject({
+			revision: 'revision-b',
+			terminalRunCount: 2,
+			outcomes: { shipped: 1, failed: 1, cancelled: 0 },
+			attention: { requests: 3, interventions: 2, runCount: 2 },
+			providerHolds: { count: 1, runCount: 1 },
+			corrections: { executor: 1, decision: 1, indeterminate: 0, runCount: 2 },
+			medianWallTimeMs: 15 * 60_000,
+			cost: { reportedRunCount: 1, runCount: 2 },
+			configurations: [{ provider: 'claude', runCount: 2 }],
+		});
+
+		const benchmark = panel(runsPage({ runs }), 'Benchmarks replayable');
+		expect(panelIsOpen(runsPage({ runs }), 'Benchmarks replayable')).toBe(false);
+		expect(benchmark).toContain('Coorte mais recente');
+		expect(benchmark).toContain('Baseline anterior');
+		expect(benchmark).toContain('revision-b');
+		expect(benchmark).toContain('revision-a');
+		expect(benchmark).toContain('3 pedido(s) em 2 run(s)');
+		expect(benchmark).toContain('claude-sonnet-5 (xhigh)');
+		expect(benchmark).toContain('Não existe score composto');
+
+		expect(panel(runsPage({ runs: [runIn('done')] }), 'Benchmarks replayable'))
+			.toContain('anteriores ao registro de revisão');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {

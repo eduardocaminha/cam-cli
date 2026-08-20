@@ -34,11 +34,16 @@ async function readStream(body: ReadableStream<Uint8Array>, until: string): Prom
 
 describe('web composition of the independent reviewer', () => {
 	test('the production runtime is composed with the real reviewer', () => {
-		const options = createDefaultRunRuntimeOptions(createTestTmpdir('gship-web-review-'));
+		const options = createDefaultRunRuntimeOptions(
+			createTestTmpdir('gship-web-review-'),
+			undefined,
+			'revision-production',
+		);
 		try {
 			expect(options.executor).toBeInstanceOf(AgentExecutorRouter);
 			expect(options.verifier).toBeInstanceOf(GitIssueVerifier);
 			expect(options.reviewer).toBeInstanceOf(AgentReviewerRouter);
+			expect(options.workflowRevision).toBe('revision-production');
 		} finally {
 			options.store.close();
 		}
