@@ -31,6 +31,7 @@ import {
 	fetchChat,
 	fetchNotificationChannels,
 	fetchProposals,
+	fetchProjectStatus,
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
@@ -38,6 +39,8 @@ import {
 	type NotificationChannelsView,
 	NOTIFICATIONS_PATH,
 	type ProjectBriefView,
+	type ProjectStatusView,
+	PROJECT_PATH,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
 	promoteProposal,
@@ -132,6 +135,14 @@ const EMPTY_BRIEF: ProjectBriefView = {
 	openItems: [],
 };
 
+const READY_PROJECT: ProjectStatusView = {
+	state: 'ready',
+	name: 'gateship',
+	repository: 'acme/gateship',
+	remoteUrl: 'git@github.com:acme/gateship.git',
+	sourceRef: 'origin/main',
+};
+
 function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
@@ -170,6 +181,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onStart={() => {}}
 			pending={false}
 			proposals={[]}
+			project={READY_PROJECT}
 			providers={[]}
 			resolvedProposals={[]}
 			resolvedProposalsOmittedCount={0}
@@ -256,6 +268,60 @@ function channelRow(html: string, label: string): string {
 	if (start < 0) throw new Error(`channel row ${label} is not on the screen`);
 	return html.slice(start);
 }
+
+describe('project onboarding', () => {
+	test('an empty cwd replaces operational surfaces with two honest setup paths', () => {
+		const project: ProjectStatusView = {
+			state: 'empty',
+			name: 'workspace',
+			detail: 'Esta pasta ainda não contém um projeto Git.',
+		};
+		for (const route of ['/', '/runs', '/work'] as const) {
+			const html = renderAt(route, { project });
+			expect(html).toContain('Conecte um projeto GitHub');
+			expect(html).toContain('Projeto existente');
+			expect(html).toContain('Projeto novo');
+			expect(html).toContain('cd /caminho/do/projeto &amp;&amp; gship');
+			expect(html).toContain('gh repo create OWNER/REPO --private --add-readme --clone');
+			expect(html).not.toContain('Conversa com o orquestrador');
+			expect(html).not.toContain('Backlog plannable');
+			expect(html).not.toContain('Último run');
+		}
+	});
+
+	test('a precise prerequisite failure shows its recovery command', () => {
+		const html = home({
+			project: {
+				state: 'needs-attention',
+				name: 'product',
+				reason: 'origin-main-missing',
+				detail: 'A referência local origin/main ainda não existe.',
+			},
+		});
+		expect(html).toContain('A referência local origin/main ainda não existe.');
+		expect(html).toContain('git fetch origin main');
+		expect(html).toContain('GATESHIP_PROJECT_DIR');
+	});
+
+	test('settings stay available and identify the derived ready project', () => {
+		const ready = settingsPage();
+		expect(ready).toContain('acme/gateship');
+		expect(ready).toContain('origin/main');
+		expect(ready).toContain('Agentes locais');
+
+		const blocked = settingsPage({
+			project: {
+				state: 'needs-attention',
+				name: 'product',
+				reason: 'origin-missing',
+				detail: 'O repositório não tem um remote chamado origin.',
+			},
+		});
+		expect(blocked).toContain('O repositório não tem um remote chamado origin.');
+		expect(blocked).toContain('Agentes locais');
+		expect(blocked).not.toContain('Conecte um projeto GitHub');
+	});
+});
 
 describe('conversation surface', () => {
 	test('the lateral is the compact inspector and nothing else', () => {
@@ -366,6 +432,8 @@ describe('conversation surface', () => {
 		});
 
 		expect(html).toContain('Conversa com o orquestrador');
+		expect(html).toContain('for="orchestrator-message"');
+		expect(html).toContain('>Mensagem para o orquestrador</label>');
 		expect(html).toContain('name="message"');
 		expect(html).toContain('Investigue o core.');
 		expect(html).toContain('Retomei o contexto e encontrei o loop.');
@@ -1893,6 +1961,7 @@ describe('same-origin transport', () => {
 
 	test('reads and writes stay on the routes the server already exposes', () => {
 		expect(SNAPSHOT_PATH).toBe('/api/snapshot');
+		expect(PROJECT_PATH).toBe('/api/project');
 		expect(RUNS_PATH).toBe('/api/runs');
 		expect(EVENTS_PATH).toBe('/api/events');
 		expect(ISSUES_PATH).toBe('/api/issues');
@@ -1903,6 +1972,28 @@ describe('same-origin transport', () => {
 		expect(RESOLVED_PROPOSALS_PATH).toBe('/api/proposals/resolved');
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
 		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
+	});
+
+	test('project readiness is read defensively from its same-origin route', async () => {
+		const project: ProjectStatusView = {
+			state: 'ready',
+			name: 'product',
+			repository: 'acme/product',
+			remoteUrl: 'https://github.com/acme/product.git',
+			sourceRef: 'origin/main',
+		};
+		await withRecordedFetch({ project }, 200, async (calls) => {
+			expect(await fetchProjectStatus()).toEqual(project);
+			expect(calls).toEqual([{ url: PROJECT_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchProjectStatus()).toEqual({
+				state: 'needs-attention',
+				name: '',
+				reason: 'not-repository',
+				detail: 'O serviço não informou um estado de projeto válido.',
+			});
+		});
 	});
 
 	test('the inbox is read and decided on the proposal-scoped routes', async () => {

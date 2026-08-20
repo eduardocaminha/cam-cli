@@ -73,13 +73,29 @@ always this explicit command.
 
 ## Quick start
 
-Start the local control surface from any GitHub repository:
+For an existing project, start the local control surface from its GitHub clone:
 
 ```bash
 cd /path/to/project
 gship
 # prints http://127.0.0.1:7777
 ```
+
+For a new project, create a repository with `main`, then start Gateship inside
+the clone:
+
+```bash
+gh repo create OWNER/REPO --private --add-readme --clone
+cd REPO
+gship
+```
+
+On first load the web interface checks only local Git metadata: the `origin`
+URL and the local `origin/main` ref. It never fetches or creates a repository
+implicitly. If the directory is empty or incomplete, the operational surfaces
+show the exact recovery command while `/settings` remains available for agent
+subscription setup. A running process cannot switch its own working directory;
+after changing the project path, restart Gateship from the intended clone.
 
 `gship --port 8080` selects another port. Runtime configuration and provider
 sign-in belong in the web interface rather than separate CLI subcommands.

@@ -13,6 +13,7 @@ import type {
 } from './run-view.ts';
 
 export const SNAPSHOT_PATH = '/api/snapshot';
+export const PROJECT_PATH = '/api/project';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
@@ -91,6 +92,23 @@ export interface StaleServiceView {
 export interface GitIdentityView {
 	detail: string;
 }
+
+export type ProjectStatusView =
+	| { state: 'checking'; name: string; detail: string }
+	| {
+		state: 'ready';
+		name: string;
+		repository: string;
+		remoteUrl: string;
+		sourceRef: 'origin/main';
+	}
+	| { state: 'empty'; name: string; detail: string }
+	| {
+		state: 'needs-attention';
+		name: string;
+		reason: 'not-repository' | 'origin-missing' | 'github-origin-required' | 'origin-main-missing';
+		detail: string;
+	};
 
 export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
 	state: 'draft' | 'approved' | 'stale';
@@ -244,6 +262,10 @@ interface SnapshotPayload {
 	version?: string;
 }
 
+interface ProjectPayload {
+	project?: Record<string, unknown>;
+}
+
 interface RunsPayload {
 	runs: RunView[];
 }
@@ -330,6 +352,41 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 		gitIdentity: gitIdentityRecord(payload.gitIdentity),
 		version: payload.version ?? '',
 	};
+}
+
+/**
+ * The project status blocks commands, so a malformed payload fails closed and
+ * explains itself instead of rendering the operational screen optimistically.
+ */
+function projectRecord(record: Record<string, unknown> | undefined): ProjectStatusView {
+	const name = typeof record?.['name'] === 'string' ? record['name'] : '';
+	const detail = typeof record?.['detail'] === 'string'
+		? record['detail']
+		: 'O serviço não informou um estado de projeto válido.';
+	if (record?.['state'] === 'ready') {
+		const repository = record['repository'];
+		const remoteUrl = record['remoteUrl'];
+		if (typeof repository === 'string' && typeof remoteUrl === 'string') {
+			return { state: 'ready', name, repository, remoteUrl, sourceRef: 'origin/main' };
+		}
+	}
+	if (record?.['state'] === 'empty') return { state: 'empty', name, detail };
+	const reason = record?.['reason'];
+	if (
+		record?.['state'] === 'needs-attention'
+		&& (reason === 'not-repository'
+			|| reason === 'origin-missing'
+			|| reason === 'github-origin-required'
+			|| reason === 'origin-main-missing')
+	) {
+		return { state: 'needs-attention', name, reason, detail };
+	}
+	return { state: 'needs-attention', name, reason: 'not-repository', detail };
+}
+
+export async function fetchProjectStatus(): Promise<ProjectStatusView> {
+	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Projeto');
+	return projectRecord(payload.project);
 }
 
 /**

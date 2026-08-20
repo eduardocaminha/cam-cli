@@ -44,7 +44,7 @@ export function Progress({
 				data-slot="progress-track"
 			>
 				<div
-					className="h-full bg-primary transition-all duration-500"
+					className="h-full bg-primary transition-[width] duration-500"
 					data-slot="progress-indicator"
 					style={{ width: percent }}
 				/>
