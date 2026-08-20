@@ -65,6 +65,27 @@ interface FakeRepo {
 	behindWhileUpdatesBelow: number;
 	/** Times `gh pr update-branch` has been called. */
 	branchUpdates: number;
+	/**
+	 * `gh pr view` calls after a `gh pr update-branch` before its new head
+	 * becomes visible on `prHeadRefOid` (GSHIP-656): 0 means the very first
+	 * post-update view already sees it, matching a same-tick apply; a higher
+	 * number simulates the update landing asynchronously, a poll or more after
+	 * `gh` reported the request accepted.
+	 */
+	branchUpdateDelayViews: number;
+	/** Head an outstanding `gh pr update-branch` will apply once its delay elapses, or null once applied. */
+	pendingHeadSha: string | null;
+	/** `views` count at the moment the outstanding update was requested. */
+	pendingHeadSinceView: number;
+	/**
+	 * `mergeStateStatus` `gh pr view` reports while an update is pending and
+	 * unapplied (GSHIP-656). Real GitHub invalidates and recomputes
+	 * mergeability as soon as `update-branch` is requested and reports
+	 * UNKNOWN while it does — defaults to 'BEHIND' to match that in every
+	 * other test, but a test can set 'UNKNOWN' to prove a status leaving
+	 * BEHIND is not read as confirmation while the head is still unchanged.
+	 */
+	mergeStateWhilePending: string;
 	/** Arming take-downs GitHub accepted or refused (GSHIP-616). */
 	disarms: number;
 	disarmFails: boolean;
@@ -104,6 +125,10 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		closedOnView: Number.MAX_SAFE_INTEGER,
 		behindWhileUpdatesBelow: 0,
 		branchUpdates: 0,
+		branchUpdateDelayViews: 0,
+		pendingHeadSha: null,
+		pendingHeadSinceView: 0,
+		mergeStateWhilePending: 'BEHIND',
 		disarms: 0,
 		disarmFails: false,
 		pushFails: false,
@@ -185,7 +210,12 @@ function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
 
 function ghUpdateBranch(repo: FakeRepo): CommandResult {
 	repo.branchUpdates += 1;
-	repo.prHeadRefOid = UPDATED_SHAS[repo.branchUpdates - 1] ?? FOREIGN_SHA;
+	// The new head is not applied here: `gh pr update-branch` only reports
+	// GitHub accepted the request. `ghView` applies it once `branchUpdateDelayViews`
+	// worth of rereads have passed, simulating the asynchronous apply GSHIP-656
+	// exists to wait out.
+	repo.pendingHeadSha = UPDATED_SHAS[repo.branchUpdates - 1] ?? FOREIGN_SHA;
+	repo.pendingHeadSinceView = repo.views;
 	return result(0, `✓ Updated branch ${repo.branch}\n`);
 }
 
@@ -203,6 +233,13 @@ function resolvePullRequestState(repo: FakeRepo): { state: string; mergeStateSta
 		repo.prState = 'CLOSED';
 		return { state: 'CLOSED', mergeStateStatus: 'UNKNOWN' };
 	}
+	// An update whose new head has not become visible yet (GSHIP-656) reports
+	// `mergeStateWhilePending` regardless of `behindWhileUpdatesBelow` — real
+	// GitHub itself may already report something other than BEHIND (UNKNOWN,
+	// while it recomputes mergeability) before the merge has actually landed.
+	if (repo.pendingHeadSha !== null) {
+		return { state: 'OPEN', mergeStateStatus: repo.mergeStateWhilePending };
+	}
 	const behind = repo.branchUpdates < repo.behindWhileUpdatesBelow;
 	return { state: 'OPEN', mergeStateStatus: behind ? 'BEHIND' : 'BLOCKED' };
 }
@@ -211,6 +248,16 @@ function ghView(repo: FakeRepo): CommandResult {
 	repo.views += 1;
 	if (repo.viewUnavailableAlways || repo.views >= repo.viewUnavailableFromView) {
 		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+	}
+	// The head an outstanding `gh pr update-branch` produced only becomes
+	// visible once `branchUpdateDelayViews` worth of rereads have passed
+	// (GSHIP-656) — a read fired too soon must still see the pre-update head.
+	if (
+		repo.pendingHeadSha !== null &&
+		repo.views - repo.pendingHeadSinceView > repo.branchUpdateDelayViews
+	) {
+		repo.prHeadRefOid = repo.pendingHeadSha;
+		repo.pendingHeadSha = null;
 	}
 	// A force-push from outside the service is durable too: the pull
 	// request carries the foreign head from this poll onwards.
@@ -1010,6 +1057,188 @@ describe('the GitHub shipper', () => {
 		expect(events.filter((kind) => kind === 'ship.branch-updated')).toHaveLength(2);
 		// Giving up on BEHIND is not a divergence: nothing is disarmed.
 		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(armCalls(calls)).toHaveLength(1);
+	});
+
+	test('a branch update whose head only becomes visible after rereads registers the confirmed head, not a stale one (GSHIP-656)', async () => {
+		// `gh pr update-branch` returns as soon as GitHub accepts the request;
+		// the real evidence for GSHIP-656 was a `gh pr view` fired immediately
+		// after that still returned the head this ship had already published.
+		// Here the new head only becomes visible on the third reread, and the
+		// confirm loop has to wait for it — the previous head must never be
+		// registered as though it were the result of the update.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: 5,
+			branchUpdateDelayViews: 2,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			branchUpdateConfirmAttempts: 5,
+			branchUpdateConfirmDelayMs: 0,
+		});
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.branchUpdates).toBe(1);
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		// Two stale rereads (still the previous head, still BEHIND) before the
+		// third confirms the new one.
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(5);
+		expect(payloads.get('ship.branch-updated')).toEqual({
+			prNumber: 385,
+			previousHead: HEAD_SHA,
+			headSha: UPDATED_SHAS[0],
+		});
+		expect(events).toEqual([
+			'ship.issue-closed',
+			'ship.committed',
+			'ship.pushed',
+			'ship.pr-opened',
+			'ship.automerge-armed',
+			'ship.branch-updated',
+			'ship.source-synced',
+			'ship.merged',
+		]);
+		expect(events).not.toContain('ship.head-diverged');
+		expect(events).not.toContain('ship.branch-update-stalled');
+		expect(findCall(calls, 'git', 'reset')[0]?.args).toEqual(['reset', '--hard', UPDATED_SHAS[0] as string]);
+	});
+
+	test('a pull request that stops reporting BEHIND before its head changes is not read as confirmation (GSHIP-656)', async () => {
+		// Real GitHub invalidates and recomputes mergeability the moment
+		// `update-branch` is requested and reports UNKNOWN while it does, so a
+		// reread fired in that window can already read as "not BEHIND" while the
+		// head has not moved at all. Trusting that alone reproduces the
+		// GSHIP-656 bug exactly: it would register the head this ship already
+		// published as though it were the update's result. The confirm loop
+		// must keep rereading through that window and only accept the head once
+		// it actually changes.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: 5,
+			branchUpdateDelayViews: 2,
+			mergeStateWhilePending: 'UNKNOWN',
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			branchUpdateConfirmAttempts: 5,
+			branchUpdateConfirmDelayMs: 0,
+		});
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.branchUpdates).toBe(1);
+		// Two rereads see the previous head under a non-BEHIND status (UNKNOWN)
+		// before the third confirms the new head — a buggy confirm loop would
+		// have stopped, and registered, on the very first of these.
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(5);
+		expect(payloads.get('ship.branch-updated')).toEqual({
+			prNumber: 385,
+			previousHead: HEAD_SHA,
+			headSha: UPDATED_SHAS[0],
+		});
+		expect(events).not.toContain('ship.head-diverged');
+		expect(events).not.toContain('ship.branch-update-stalled');
+	});
+
+	test('exhausting the branch-update confirmation attempts without a change ends the ship with its own reason, not a registered head (GSHIP-656)', async () => {
+		// The update never visibly lands within the attempts this ship allots:
+		// the head this ship still recognises as published must stay exactly
+		// what it was, and the ship must end with a reason of its own instead
+		// of registering the still-unconfirmed, stale head.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			branchUpdateDelayViews: 1000,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			branchUpdateConfirmAttempts: 3,
+			branchUpdateConfirmDelayMs: 0,
+		});
+
+		const failed = await shipper.ship(
+			createShipInput(cwd, events, new AbortController().signal, payloads),
+		);
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		const detail = (failed as { detail: string }).detail;
+		expect(detail).toContain('branch update did not complete');
+		expect(detail).toContain(HEAD_SHA);
+		expect(events.at(-1)).toBe('ship.branch-update-stalled');
+		expect(payloads.get('ship.branch-update-stalled')).toMatchObject({
+			prNumber: 385,
+			headSha: HEAD_SHA,
+		});
+		expect(events).not.toContain('ship.branch-updated');
+		expect(events).not.toContain('ship.head-diverged');
+		// `gh pr update-branch` itself succeeded and is not retried: only its
+		// unconfirmed result ends the ship.
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		// One read right after the update, plus the confirmation attempts.
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(4);
+		// Without a confirmed new head, the worktree is never synced, and
+		// nothing this ship never confirmed producing gets disarmed either —
+		// same as GSHIP-625's unconfirmed ending, a retry may find it landed.
+		expect(findCall(calls, 'git', 'reset')).toHaveLength(0);
+		expect(disarmCalls(calls)).toHaveLength(0);
+		expect(armCalls(calls)).toHaveLength(1);
+	});
+
+	test('a head moved outside the service right after a delayed branch-update confirmation still fails with a disarm (GSHIP-656)', async () => {
+		// GSHIP-615's guard must keep refusing a head this ship did not confirm
+		// producing itself, even once confirming its own update takes more than
+		// one reread: the baseline for the next poll is the head this ship
+		// actually confirmed, not the one it started with.
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			branchUpdateDelayViews: 1,
+			headMovedOnView: 4,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			branchUpdateConfirmAttempts: 5,
+			branchUpdateConfirmDelayMs: 0,
+		});
+
+		const failed = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toMatchObject({ outcome: 'failed' });
+		const detail = (failed as { detail: string }).detail;
+		expect(detail).toContain(FOREIGN_SHA);
+		expect(detail).toContain(`not the head ${UPDATED_SHAS[0]}`);
+		expect(detail).not.toContain(`not the head ${HEAD_SHA}`);
+		expect(detail).toContain('moved outside the service');
+		expect(repo.branchUpdates).toBe(1);
+		expect(disarmCalls(calls)).toHaveLength(1);
+		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.head-diverged']);
 		expect(armCalls(calls)).toHaveLength(1);
 	});
 
