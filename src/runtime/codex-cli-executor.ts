@@ -8,7 +8,8 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { runAgentProcess } from './agent-process.ts';
 import {
-	ProviderRefusalError,
+	ProviderCallError,
+	providerErrorFromMessage,
 	type AgentSession,
 	type AgentSessionInput,
 	type AgentSessionResult,
@@ -128,10 +129,10 @@ function errorText(value: unknown): string | undefined {
 
 interface CodexStreamState {
 	terminal: boolean;
-	/** A clean protocol-reported turn failure -- e.g. the model was refused. */
-	turnFailed: string | undefined;
-	/** A generic transport-style error event, not a clean application refusal. */
-	transportFailed: string | undefined;
+	/** A clean protocol-reported turn failure, classified from its own detail. */
+	turnFailed: ProviderCallError | undefined;
+	/** A generic transport-style error event, classified conservatively. */
+	transportFailed: ProviderCallError | undefined;
 	summary: string;
 	structuredOutput: unknown;
 }
@@ -207,11 +208,19 @@ function consumeCodexEvent(
 		return;
 	}
 	if (type === 'turn.failed') {
-		state.turnFailed = errorText(event['error']) ?? 'Codex turn failed.';
+		state.turnFailed = providerErrorFromMessage(
+			'codex',
+			errorText(event['error']) ?? 'Codex turn failed.',
+			'model-refused',
+		);
 		return;
 	}
 	if (type === 'error') {
-		state.transportFailed = errorText(event['message']) ?? errorText(event['error']) ?? 'Codex error.';
+		state.transportFailed = providerErrorFromMessage(
+			'codex',
+			errorText(event['message']) ?? errorText(event['error']) ?? 'Codex error.',
+			'transport-unavailable',
+		);
 		return;
 	}
 	if (type === 'turn.completed') {
@@ -249,13 +258,21 @@ async function runCodexTurn(
 	// Only a clean turn.failed is a protocol-reported refusal; a generic error
 	// event reads the same whether the model was rejected or the process just
 	// died mid-stream, so it is never mistaken for a clean CLI refusal.
-	if (state.turnFailed !== undefined) throw new ProviderRefusalError(state.turnFailed);
-	if (state.transportFailed !== undefined) throw new Error(state.transportFailed);
+	if (state.turnFailed !== undefined) throw state.turnFailed;
+	if (state.transportFailed !== undefined) throw state.transportFailed;
 	if (result.exitCode !== 0) {
-		throw new Error(`Codex CLI exited with ${result.exitCode}: ${result.stderr.trim().slice(-1_000)}`);
+		throw providerErrorFromMessage(
+			'codex',
+			`Codex CLI exited with ${result.exitCode}: ${result.stderr.trim().slice(-1_000)}`,
+			'unknown',
+		);
 	}
-	if (!state.terminal) throw new Error('Codex CLI exited without a turn.completed event.');
-	if (state.summary.length === 0) throw new Error('Codex CLI completed without an agent message.');
+	if (!state.terminal) {
+		throw new ProviderCallError('codex', 'protocol-invalid', 'Codex CLI exited without a turn.completed event.');
+	}
+	if (state.summary.length === 0) {
+		throw new ProviderCallError('codex', 'protocol-invalid', 'Codex CLI completed without an agent message.');
+	}
 	return {
 		summary: state.summary,
 		...(state.structuredOutput === undefined ? {} : { structuredOutput: state.structuredOutput }),
@@ -351,7 +368,9 @@ export async function probeCodexModel(
 		});
 		return { outcome: 'accepted' };
 	} catch (error) {
-		if (error instanceof ProviderRefusalError) return { outcome: 'refused', message: error.message };
+		if (error instanceof ProviderCallError && error.kind === 'model-refused') {
+			return { outcome: 'refused', message: error.message };
+		}
 		return {
 			outcome: 'inconclusive',
 			message: error instanceof Error ? error.message : String(error),

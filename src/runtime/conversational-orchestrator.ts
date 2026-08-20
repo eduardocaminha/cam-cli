@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ProviderCallError } from './agent-session.ts';
 
 import type {
 	AgentProviderId,
@@ -378,7 +379,12 @@ export class ConversationalOrchestrator {
 		try {
 			result = await run(existingSessionId !== null);
 		} catch (error) {
-			if (existingSessionId === null || signal.aborted) throw error;
+			// A usage, auth, overload or transport failure is about provider
+			// availability, not a corrupt resume. Starting a fresh turn would spend
+			// another call and discard the semantic cause without improving it.
+			if (existingSessionId === null || signal.aborted || error instanceof ProviderCallError) {
+				throw error;
+			}
 			sessionId = this.#newSessionId();
 			result = await run(false);
 		}

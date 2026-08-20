@@ -26,6 +26,11 @@ if (mode === 'wait') {
 } else if (mode === 'structured-error-exit') {
 	process.stdout.write(`${JSON.stringify({ type: 'error', message: 'structured fixture diagnostic' })}\n`);
 	process.exitCode = 7;
+} else if (mode === 'usage-limit') {
+	process.stdout.write(`${JSON.stringify({
+		type: 'turn.failed',
+		error: { message: 'You have hit your usage limit. Try again later.' },
+	})}\n`);
 } else {
 	process.stdout.write(`${JSON.stringify({
 		type: 'item.completed',

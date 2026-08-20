@@ -7,7 +7,10 @@
 // whole process group to the service on cancellation. Keeping one lifecycle
 // here is what lets the reviewer be a second role instead of a second engine.
 
-import { ProviderRefusalError } from './agent-session.ts';
+import {
+	ProviderCallError,
+	providerErrorFromMessage,
+} from './agent-session.ts';
 import {
 	type ClaudeModelUsage,
 	type ClaudeResultUsage,
@@ -86,6 +89,101 @@ function compact(record: object): Record<string, unknown> {
 	);
 }
 
+interface ClaudeRateLimitInfo {
+	status: 'allowed' | 'allowed_warning' | 'rejected';
+	rateLimitType?: string;
+	retryAt?: string;
+}
+
+function readClaudeRateLimit(raw: Record<string, unknown>): ClaudeRateLimitInfo | null {
+	const value = raw['rate_limit_info'];
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+	const info = value as Record<string, unknown>;
+	const status = info['status'];
+	if (status !== 'allowed' && status !== 'allowed_warning' && status !== 'rejected') return null;
+	const rateLimitType = typeof info['rateLimitType'] === 'string'
+		? info['rateLimitType']
+		: undefined;
+	const resetsAt = info['resetsAt'];
+	const retryAt = typeof resetsAt === 'number' && Number.isFinite(resetsAt)
+		? new Date(resetsAt * 1_000).toISOString()
+		: undefined;
+	return {
+		status,
+		...(rateLimitType === undefined ? {} : { rateLimitType }),
+		...(retryAt === undefined ? {} : { retryAt }),
+	};
+}
+
+function claudeUsageLimitError(info: ClaudeRateLimitInfo): ProviderCallError {
+	const window = info.rateLimitType?.replaceAll('_', ' ') ?? 'subscription';
+	const reset = info.retryAt === undefined ? '' : ` until ${info.retryAt}`;
+	return new ProviderCallError(
+		'claude',
+		'usage-limit',
+		`Claude ${window} usage limit reached${reset}.`,
+		info.retryAt === undefined ? {} : { retryAt: info.retryAt },
+	);
+}
+
+interface ClaudeStreamState {
+	resultSeen: boolean;
+	resultIsError: boolean;
+	summary: string;
+	structuredOutput: unknown;
+	rateLimitFailure?: ProviderCallError;
+}
+
+function consumeClaudeLine(
+	line: string,
+	input: ClaudeCliRunInput,
+	state: ClaudeStreamState,
+): void {
+	const event = classifyHeadlessStreamLine(line);
+	// Only system and assistant are activity (GSHIP-627). The provider's
+	// result and availability signals remain durable decisions.
+	switch (event.kind) {
+		case 'system':
+			input.emit(
+				`${input.eventPrefix}.system`,
+				{ subtype: event.subtype ?? 'unknown' },
+				'activity',
+			);
+			return;
+		case 'assistant':
+			input.emit(
+				`${input.eventPrefix}.activity`,
+				projectAssistantActivity(event.raw),
+				'activity',
+			);
+			return;
+		case 'rate_limit_event': {
+			const info = readClaudeRateLimit(event.raw);
+			input.emit(`${input.eventPrefix}.rate-limit`, info === null ? {} : {
+				status: info.status,
+				...(info.rateLimitType === undefined ? {} : { limit: info.rateLimitType }),
+				...(info.retryAt === undefined ? {} : { retryAt: info.retryAt }),
+			});
+			if (info?.status === 'rejected') state.rateLimitFailure = claudeUsageLimitError(info);
+			return;
+		}
+		case 'result':
+			state.resultSeen = true;
+			state.resultIsError = event.raw.is_error === true;
+			if (typeof event.raw.result === 'string') state.summary = event.raw.result;
+			state.structuredOutput = event.raw['structured_output'];
+			input.emit(`${input.eventPrefix}.result`);
+			emitUsage(input.emit, input.eventPrefix, input.slot, {
+				totalCostUsd: event.totalCostUsd,
+				usage: event.usage,
+				modelUsage: event.modelUsage,
+			});
+			return;
+		default:
+			return;
+	}
+}
+
 /**
  * One durable event per provider invocation carrying what the CLI reported
  * for it (GSHIP-623): the resolved model/effort pair beside the cost and
@@ -127,10 +225,12 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		type: 'user',
 		message: { role: 'user', content: input.prompt },
 	});
-	let resultSeen = false;
-	let resultIsError = false;
-	let summary = '';
-	let structuredOutput: unknown;
+	const state: ClaudeStreamState = {
+		resultSeen: false,
+		resultIsError: false,
+		summary: '',
+		structuredOutput: undefined,
+	};
 	const processResult = await runAgentProcess({
 		argv: input.argv,
 		cwd: input.cwd,
@@ -139,40 +239,28 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		signal: input.signal,
 		terminationGraceMs: input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
 		...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
-		onLine: (line) => {
-		const event = classifyHeadlessStreamLine(line);
-		// Only these two stream kinds are declared activity (GSHIP-627): they are
-		// the CLI's raw provider/review output, never a decision the run made.
-		// Everything else below stays undeclared and defaults to decision.
-		if (event.kind === 'system') {
-			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' }, 'activity');
-		} else if (event.kind === 'assistant') {
-			input.emit(`${input.eventPrefix}.activity`, projectAssistantActivity(event.raw), 'activity');
-		} else if (event.kind === 'rate_limit_event') {
-			input.emit(`${input.eventPrefix}.rate-limit`);
-		} else if (event.kind === 'result') {
-			resultSeen = true;
-			resultIsError = event.raw.is_error === true;
-			if (typeof event.raw.result === 'string') summary = event.raw.result;
-			structuredOutput = event.raw['structured_output'];
-			input.emit(`${input.eventPrefix}.result`);
-			emitUsage(input.emit, input.eventPrefix, input.slot, {
-				totalCostUsd: event.totalCostUsd,
-				usage: event.usage,
-				modelUsage: event.modelUsage,
-			});
-		}
-		},
+		onLine: (line) => consumeClaudeLine(line, input, state),
 	});
+	if (state.rateLimitFailure !== undefined) throw state.rateLimitFailure;
 	if (processResult.exitCode !== 0) {
-		throw new Error(
+		throw providerErrorFromMessage(
+			'claude',
 			`Claude CLI exited with ${processResult.exitCode}: ${processResult.stderr.trim().slice(-1_000)}`,
+			'unknown',
 		);
 	}
-	if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
-	if (resultIsError) throw new ProviderRefusalError(summary || 'Claude CLI returned an error result.');
+	if (!state.resultSeen) {
+		throw new ProviderCallError('claude', 'protocol-invalid', 'Claude CLI exited without a result event.');
+	}
+	if (state.resultIsError) {
+		throw providerErrorFromMessage(
+			'claude',
+			state.summary || 'Claude CLI returned an error result.',
+			'model-refused',
+		);
+	}
 	return {
-		summary,
-		...(structuredOutput === undefined ? {} : { structuredOutput }),
+		summary: state.summary,
+		...(state.structuredOutput === undefined ? {} : { structuredOutput: state.structuredOutput }),
 	};
 }

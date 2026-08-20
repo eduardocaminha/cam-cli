@@ -4,7 +4,7 @@ import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import {
-	ProviderRefusalError,
+	ProviderCallError,
 	type AgentSession,
 	type AgentSessionInput,
 	type AgentSessionResult,
@@ -310,7 +310,9 @@ export async function probeClaudeModel(
 		});
 		return { outcome: 'accepted' };
 	} catch (error) {
-		if (error instanceof ProviderRefusalError) return { outcome: 'refused', message: error.message };
+		if (error instanceof ProviderCallError && error.kind === 'model-refused') {
+			return { outcome: 'refused', message: error.message };
+		}
 		return {
 			outcome: 'inconclusive',
 			message: error instanceof Error ? error.message : String(error),
