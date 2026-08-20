@@ -719,6 +719,9 @@ type ProviderPanelProps = Pick<
 >;
 
 function providerDescription(provider: ProviderStatusView): string {
+	if (provider.availability !== undefined) {
+		return `Assinatura conectada, mas indisponível agora: ${PROVIDER_WAIT_LABELS[provider.availability.kind]}.`;
+	}
 	if (provider.subscription) {
 		return `Assinatura conectada${provider.plan === undefined ? '' : ` · ${provider.plan}`}`;
 	}

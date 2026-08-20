@@ -529,8 +529,15 @@ async function listProviders(
 	runtime: RunRuntime,
 ): Promise<Response> {
 	try {
+		const providers = (await providerAuth.list()).map((provider) => {
+			const availability = runtime.getProviderWait(provider.id);
+			return {
+				...provider,
+				...(availability === null ? {} : { availability }),
+			};
+		});
 		return Response.json({
-			providers: await providerAuth.list(),
+			providers,
 			selected: runtime.getSelectedProvider(),
 		});
 	} catch (error) {

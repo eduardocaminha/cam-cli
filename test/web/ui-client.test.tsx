@@ -1142,6 +1142,29 @@ describe('settings surface', () => {
 		expect(html).not.toMatch(/api key|oauth token/i);
 	});
 
+	test('distinguishes a connected subscription from an observed provider hold', () => {
+		const html = settingsPage({
+			providers: [{
+				id: 'claude',
+				installed: true,
+				subscription: true,
+				label: 'Claude Code',
+				plan: 'max',
+				login: 'external',
+				availability: {
+					provider: 'claude',
+					kind: 'usage-limit',
+					message: 'Claude usage limit reached.',
+					phase: 'working',
+					retryAt: '2026-08-20T12:10:00.000Z',
+				},
+			}],
+		});
+
+		expect(html).toContain('Assinatura conectada, mas indisponível agora');
+		expect(html).toContain('Limite da assinatura atingido');
+	});
+
 	test('local notifications show the browser permission state without a secret field', () => {
 		expect(buttonIsEnabled(settingsPage(), 'Ativar notificações')).toBe(true);
 

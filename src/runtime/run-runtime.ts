@@ -477,6 +477,15 @@ export class RunRuntime {
 		};
 	}
 
+	/** An observed active hold for this provider; absence never claims a quota balance. */
+	getProviderWait(providerId: AgentProviderId): RunProviderWait | null {
+		for (const run of this.#store.listRuns(10_000)) {
+			const wait = this.getRunProviderWait(run.id);
+			if (wait?.provider === providerId) return wait;
+		}
+		return null;
+	}
+
 	listWorkspaceNotices(): WorkspaceNotice[] {
 		return [...this.#workspaceNotices];
 	}
