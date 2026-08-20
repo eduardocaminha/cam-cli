@@ -32,6 +32,7 @@ describe('child-process environment boundary', () => {
 			HOME: '/operator',
 			LANG: 'pt_BR.UTF-8',
 			CLAUDE_CONFIG_DIR: '/operator/claude',
+			DISABLE_UPDATES: '1',
 		});
 		expect(buildCodexEnv({ ...SOURCE, CODEX_HOME: '/operator/codex' })).toEqual({
 			PATH: '/usr/local/bin:/usr/bin',

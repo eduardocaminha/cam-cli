@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `8a1e4059` (bounded diagnostic schedules, PR #518)
-> Active implementation branch: `codex/eval-cohorts`
-> Current stage: local replayable-eval foundation focused-verified; publication not authorized
+> Shipped baseline: `origin/main` at `a5ec156e` (replayable workflow cohorts, PR #519)
+> Active implementation branch: `codex/workflow-ratchets`
+> Current stage: provider-CLI identity ratchet verified and authorized for publication
 
 ## How to use this file
 
@@ -74,38 +74,48 @@ logic.
 
 ## Active bounded slice
 
-The replayable-eval foundation is implemented locally on
-`codex/eval-cohorts` without a new evaluator agent or lifecycle:
+The provider-CLI identity hard ratchet is implemented locally on
+`codex/workflow-ratchets`:
 
-- every new run records the running Gateship source/build revision inside its
-  existing durable `run.created` decision event;
-- one pure replay derives outcome, creation-to-terminal wall time, human
-  attention requests and responses, provider holds and observed role/model/
-  effort configuration from the complete decision log;
-- the existing `/api/runs` response carries that derivation beside cost and
-  correction origins; there is no new endpoint, table, collector or queue;
-- `/runs` groups the existing recent 50-run window into immutable revision
-  cohorts and compares the newest observed cohort with the prior baseline;
-- terminal and incomplete sample sizes are explicit, legacy runs without a
-  recorded revision are excluded, unknown provider cost stays unknown, and the
-  UI states that the comparison is observational;
-- outcome, attention, corrections, holds, wall time, cost and configuration
-  remain separate. There is no composite score, causal claim, evaluator model
-  or automatic approval.
+- a real Gateship diagnostic scan ran against exact shipped SHA `a5ec156e` and
+  completed with 15 advisory findings, no accessibility findings and no
+  workspace notices;
+- the micro-performance suggestions and two context-dependent React warnings
+  remain advisory. Gateship will not edit code merely to improve an analyzer
+  score;
+- the relevant supply-chain finding showed that the image still installed
+  Claude Code through a mutable command. The image now requests exact Claude
+  Code `2.1.238`; Codex remains pinned to the verified complete release
+  `0.148.0`;
+- every Claude child receives `DISABLE_UPDATES=1`, so a provider invocation
+  cannot replace its own CLI behind the recorded Gateship workflow revision.
+  CLI upgrades remain an explicit image or host maintenance boundary;
+- deterministic configuration and child-environment tests prevent either
+  provider install from returning to a mutable version.
 
-Focused runtime, API and rendered-client tests pass together with both
-TypeScript projects and Biome. The production UI build passes. Automated visual
-inspection is unavailable in this Codex execution, so no visual assertion is
-claimed. PR #519 reproduced an upstream npm
-publication failure twice: mutable `@openai/codex` resolved `0.149.0` while its
-Linux artifact returned 404. The container now pins the last complete release,
-`0.148.0`, and a static regression test prevents returning to an unversioned
-install. After the correction, the full ship-boundary `bun run check:all`
-passes 768 tests and 3,088 assertions, both TypeScript projects, Biome and Knip;
-Knip reports only its two pre-existing configuration hints. A local container
-image builds successfully and both Claude Code and Codex respond inside it.
+Focused provider/runtime tests pass: 48 tests, 215 expectations. Both
+TypeScript projects, Biome and `git diff --check` pass. A fresh local container
+image builds, Claude reports `2.1.238` and Codex reports `0.148.0`. The 15
+diagnostic findings remain pending in the real inbox for human settlement; none
+was silently dismissed or promoted. The soft ratchet remains dormant because
+legacy runs provide zero recorded workflow revisions and therefore no two
+comparable terminal cohorts. The full ship-boundary gate passes 768 tests and
+3,090 assertions, both TypeScript projects, Biome and Knip; Knip reports only
+its two pre-existing configuration hints. The operator authorized publication
+of this exact bounded slice on 2026-08-20.
 
 ## Previously shipped bounded slices
+
+PR #519 shipped replayable workflow cohorts as squash commit `a5ec156e`. Every
+new run records its Gateship build/source revision, and one pure event replay
+derives factual outcome, wall time, human attention, provider holds and observed
+provider/model/effort. `/runs` compares the latest two observed revision cohorts
+inside its existing bounded read. It adds no endpoint, table, collector, queue,
+evaluator model, score, causal claim or automatic policy. CI initially exposed
+an incomplete mutable Codex npm release; the image now pins verified release
+`0.148.0` and a static regression test guards the pin. The final local and CI
+gates passed 768 tests and 3,088 assertions. The stable service was rebuilt and
+verified on all four routes.
 
 PR #518 shipped bounded diagnostic schedules as squash commit `8a1e4059`.
 The persisted schedule is off by default, offers only daily or weekly cadence,
@@ -375,6 +385,10 @@ the operator.
   to improve: issue scope, provider, model and effort are confounders. The
   ratchet preserves proven safety and proposes measured workflow improvement;
   it does not optimize activity or accumulate policy by itself.
+- Keep the soft ratchet dormant until at least two revisions have comparable
+  terminal cohorts. Do not invent a minimum sample or attach cohort evidence
+  to one arbitrary run merely to reuse the current run-derived proposal row.
+  Generalize proposal provenance only when real cohort evidence requires it.
 - Self-improvement produces reviewable proposals from recurring measured
   failures. It never mutates local rules automatically.
 - Community input should enter the same proposal inbox with provenance and
@@ -393,17 +407,20 @@ Completed foundations:
 7. per-role model/effort selection and usage accounting;
 8. ad hoc project diagnostics with a human-settled inbox;
 9. local derived workflow observability without scores or a collector;
-10. bounded daily/weekly diagnostics inside the existing service.
+10. bounded daily/weekly diagnostics inside the existing service;
+11. replayable revision cohorts without an evaluator model or composite score.
 
 Next product stages, in current order:
 
-1. finish and publish the replayable revision-cohort foundation on the active
+1. finish and publish the provider-CLI identity hard ratchet on the active
    branch, only after explicit operator authorization;
-2. add hard deterministic and soft observational ratchets over accumulated
-   cohorts, feeding measured self-improvement and community proposal intake;
-3. internationalization, accessibility and beta readiness;
-4. multiproject selection and parallelism across independent repositories;
-5. external-user validation before Product Hunt or a YC-style launch push.
+2. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
+   until two comparable cohorts exist;
+3. add measured self-improvement and community proposal intake without
+   automatic rule mutation;
+4. internationalization, accessibility and beta readiness;
+5. multiproject selection and parallelism across independent repositories;
+6. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -413,10 +430,14 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #518 is
-> present. If `codex/eval-cohorts` still contains unshipped work, finish only
-> the bounded replay contract above; do not add an evaluator LLM, synthetic
-> score, remote telemetry, new event pipeline, endpoint, table or queue. Do not
-> publish without explicit operator authorization. Do not start or reapprove
-> GSHIP-660/661/662. Preserve the one-service architecture. Run focused checks
-> while editing and `bun run check:all` once at the ship boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #519 is
+> present. If `codex/workflow-ratchets` still contains unshipped work, finish
+> only the provider-CLI identity ratchet above: exact provider versions,
+> immutable Claude child updates and their deterministic tests. Do not dismiss
+> or promote the 15 real diagnostic findings without operator action. Keep the
+> soft ratchet dormant until two comparable recorded cohorts exist. Do not add
+> an evaluator LLM, synthetic score, remote telemetry, new event pipeline,
+> endpoint, table or queue. Do not publish without explicit operator
+> authorization. Do not start or reapprove GSHIP-660/661/662. Preserve the
+> one-service architecture. Run focused checks while editing and
+> `bun run check:all` once at the ship boundary.

@@ -41,7 +41,11 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 });
 
 describe('container provider CLI installation', () => {
-	test('pins Codex to a complete published release instead of mutable latest', () => {
+	test('pins both provider CLIs to complete releases instead of mutable latest', () => {
+		expect(dockerfile).toMatch(
+			/https:\/\/claude\.ai\/install\.sh \| bash -s \d+\.\d+\.\d+\n/,
+		);
+		expect(dockerfile).not.toContain('https://claude.ai/install.sh | bash\n');
 		expect(dockerfile).toMatch(/RUN bun add -g @openai\/codex@\d+\.\d+\.\d+\n/);
 		expect(dockerfile).not.toContain('RUN bun add -g @openai/codex\n');
 	});

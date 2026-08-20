@@ -54,7 +54,12 @@ export interface ClaudeCliResult {
 export function buildClaudeEnv(
 	source: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-	return buildAllowlistedEnv(source, ['CLAUDE_CONFIG_DIR']);
+	return {
+		...buildAllowlistedEnv(source, ['CLAUDE_CONFIG_DIR']),
+		// Gateship owns the provider process identity for the whole run. A child
+		// may not replace the CLI behind the recorded workflow revision.
+		DISABLE_UPDATES: '1',
+	};
 }
 
 /** Persist only operator-visible prose and tool names from an assistant event. */

@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/root/.local/bin:${PATH}"
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.238
 RUN bun add -g @openai/codex@0.148.0
 
 COPY --from=builder /out/gateship /usr/local/bin/gateship
