@@ -57,6 +57,11 @@ import {
 	type ModelSlotResolver,
 } from '../runtime/model-settings.ts';
 import {
+	canonicalTimeZone,
+	OPERATOR_PROFILE_LIMITS,
+	type OperatorProfile,
+} from '../runtime/operator-profile.ts';
+import {
 	createRemoteNotifier,
 	isNtfyConfigured,
 	isResendConfigured,
@@ -216,6 +221,34 @@ export function parseProjectBriefInput(value: unknown): ProjectBrief {
 		constraints: briefList(input['constraints'], 'Restrições'),
 		openItems: briefList(input['openItems'], 'Itens em aberto'),
 	};
+}
+
+export function parseOperatorProfileInput(value: unknown): OperatorProfile {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+	}
+	const input = value as Record<string, unknown>;
+	const name = input['name'];
+	const timezoneInput = input['timezone'];
+	if (typeof name !== 'string' || typeof timezoneInput !== 'string') {
+		throw new IssueIntakeError('invalid-request', 'Nome e timezone devem ser textos.', 400);
+	}
+	if (name.length > OPERATOR_PROFILE_LIMITS.name || /[\u0000-\u001f\u007f]/.test(name)) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Nome aceita até ${OPERATOR_PROFILE_LIMITS.name} caracteres em uma linha.`,
+			400,
+		);
+	}
+	const timezone = canonicalTimeZone(timezoneInput);
+	if (timezone === null) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			'Timezone deve ser um identificador IANA válido, como America/Sao_Paulo.',
+			400,
+		);
+	}
+	return { name: name.trim(), timezone };
 }
 
 function jsonObjectInput(value: unknown, label: string): Record<string, unknown> {
@@ -490,6 +523,29 @@ async function writeProjectBrief(
 	try {
 		projectBrief.set(parseProjectBriefInput(body));
 		return Response.json({ ok: true, brief: projectBrief.get() });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+async function writeOperatorProfile(request: Request, runtime: RunRuntime): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		runtime.setOperatorProfile(parseOperatorProfileInput(body));
+		return Response.json({ ok: true, profile: runtime.getOperatorProfile() });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -1473,6 +1529,7 @@ export function buildOrchestratorContext(cwd: string, runtime: RunRuntime) {
 	const pendingProposals = readPendingProposalsContext(runtime);
 	return {
 		provider: runtime.getSelectedProvider(),
+		operatorProfile: runtime.getOperatorProfile(),
 		backlog: readIdleSnapshotState(cwd).backlog,
 		runs: runtime.listRuns(10),
 		workspaceNotices: runtime.listWorkspaceNotices(),
@@ -1648,6 +1705,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(snapshot);
 			},
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/operator-profile': {
+				GET: () => Response.json({ profile: runRuntime.getOperatorProfile() }),
+				PUT: (request) => writeOperatorProfile(request, runRuntime),
+			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: listRunsWithCost(runRuntime) }),
 				POST: (request) => startDurableRun(request, runRuntime),

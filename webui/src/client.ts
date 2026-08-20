@@ -14,6 +14,7 @@ import type {
 
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const PROJECT_PATH = '/api/project';
+export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
@@ -109,6 +110,11 @@ export type ProjectStatusView =
 		reason: 'not-repository' | 'origin-missing' | 'github-origin-required' | 'origin-main-missing';
 		detail: string;
 	};
+
+export interface OperatorProfileView {
+	name: string;
+	timezone: string;
+}
 
 export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
 	state: 'draft' | 'approved' | 'stale';
@@ -266,6 +272,10 @@ interface ProjectPayload {
 	project?: Record<string, unknown>;
 }
 
+interface OperatorProfilePayload extends CommandPayload {
+	profile?: Partial<OperatorProfileView>;
+}
+
 interface RunsPayload {
 	runs: RunView[];
 }
@@ -387,6 +397,34 @@ function projectRecord(record: Record<string, unknown> | undefined): ProjectStat
 export async function fetchProjectStatus(): Promise<ProjectStatusView> {
 	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Projeto');
 	return projectRecord(payload.project);
+}
+
+function operatorProfileRecord(record: Partial<OperatorProfileView> | undefined): OperatorProfileView {
+	return {
+		name: typeof record?.name === 'string' ? record.name : '',
+		timezone: typeof record?.timezone === 'string' ? record.timezone : '',
+	};
+}
+
+export async function fetchOperatorProfile(): Promise<OperatorProfileView> {
+	const payload = await readJson<OperatorProfilePayload>(
+		await fetch(OPERATOR_PROFILE_PATH),
+		'Perfil do operador',
+	);
+	return operatorProfileRecord(payload.profile);
+}
+
+export async function saveOperatorProfile(profile: OperatorProfileView): Promise<string> {
+	const response = await fetch(OPERATOR_PROFILE_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(profile),
+	});
+	const payload = (await response.json()) as OperatorProfilePayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Perfil recusado (${response.status}).`);
+	}
+	return 'Perfil do operador atualizado.';
 }
 
 /**

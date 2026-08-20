@@ -48,6 +48,7 @@ import {
 	type NotificationChannelId,
 	type NotificationChannelView,
 	type NotificationChannelsView,
+	type OperatorProfileView,
 	type OperatorIssueDraft,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
@@ -122,6 +123,10 @@ export interface AppProps {
 	brief: ProjectBriefView;
 	/** Read-only readiness of the cwd this process owns. */
 	project: ProjectStatusView;
+	/** Human-owned identity and timezone, empty until explicitly saved. */
+	operatorProfile: OperatorProfileView;
+	/** Browser-derived suggestion; it is never persisted without a save. */
+	suggestedTimezone: string;
 	/** What the orchestrator recorded about the session; read-only. */
 	handoff: ProjectBriefView;
 	/** Model and effort per (provider, role); empty text keeps the CLI default. */
@@ -174,6 +179,7 @@ export interface AppProps {
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
+	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
 	onSetChainRuns: (enabled: boolean) => void;
 }
 
@@ -2208,6 +2214,65 @@ function ProjectPanel({ project }: Pick<AppProps, 'project'>): React.ReactElemen
 	);
 }
 
+function OperatorProfilePanel({
+	operatorProfile,
+	pending,
+	suggestedTimezone,
+	onSaveOperatorProfile,
+}: Pick<
+	AppProps,
+	'operatorProfile' | 'pending' | 'suggestedTimezone' | 'onSaveOperatorProfile'
+>): React.ReactElement {
+	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
+	return (
+		<ContextPanel
+			description="Identidade humana e timezone usados como contexto não autoritativo na conversa."
+			open
+			title="Operador"
+		>
+			<form
+				className="flex flex-col gap-4"
+				key={JSON.stringify([operatorProfile, suggestedTimezone])}
+				onSubmit={(event) => {
+					event.preventDefault();
+					const value = fieldReader(event.currentTarget);
+					onSaveOperatorProfile({
+						name: value('operator-name'),
+						timezone: value('operator-timezone'),
+					});
+				}}
+			>
+				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
+					<span className="font-medium">Nome</span>
+					<input
+						className={FIELD_CLASS}
+						defaultValue={operatorProfile.name}
+						id="operator-name"
+						name="operator-name"
+						placeholder="Como o orquestrador deve chamar você"
+					/>
+				</label>
+				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
+					<span className="font-medium">Timezone</span>
+					<input
+						className={FIELD_CLASS}
+						defaultValue={initialTimezone}
+						id="operator-timezone"
+						name="operator-timezone"
+						placeholder="America/Sao_Paulo"
+					/>
+					<span className="text-muted-foreground text-xs">
+						Identificador IANA. A sugestão do navegador só é salva quando você confirma.
+					</span>
+				</label>
+				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					Salvar perfil
+				</button>
+			</form>
+		</ContextPanel>
+	);
+}
+
 const PROJECT_RECOVERY_COMMAND: Readonly<Record<
 	Exclude<ProjectStatusView, { state: 'ready' | 'empty' | 'checking' }>['reason'],
 	string
@@ -2294,6 +2359,12 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 	return (
 		<SurfaceColumn label="Ajustes" status={props.status}>
 			<ProjectPanel project={props.project} />
+			<OperatorProfilePanel
+				onSaveOperatorProfile={props.onSaveOperatorProfile}
+				operatorProfile={props.operatorProfile}
+				pending={props.pending}
+				suggestedTimezone={props.suggestedTimezone}
+			/>
 			<ProvidersPanel
 				onConnectCodex={props.onConnectCodex}
 				onSelectProvider={props.onSelectProvider}

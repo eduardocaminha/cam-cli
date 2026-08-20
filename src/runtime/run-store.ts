@@ -10,6 +10,12 @@ import {
 	normalizeModelSettings,
 } from './model-settings.ts';
 import {
+	emptyOperatorProfile,
+	normalizeOperatorProfile,
+	OPERATOR_PROFILE_KEY,
+	type OperatorProfile,
+} from './operator-profile.ts';
+import {
 	isProposalRelationship,
 	isProposalStatus,
 	normalizeProposalDrafts,
@@ -988,6 +994,29 @@ export class RunStore {
 		`).run({
 			key: MODEL_SETTINGS_KEY,
 			value: JSON.stringify(normalizeModelSettings(settings)),
+		});
+	}
+
+	/** One optional human profile beside the other process-wide runtime settings. */
+	getOperatorProfile(): OperatorProfile {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: OPERATOR_PROFILE_KEY }) as { value: string } | null;
+		if (row === null) return emptyOperatorProfile();
+		try {
+			return normalizeOperatorProfile(JSON.parse(row.value) as unknown);
+		} catch {
+			return emptyOperatorProfile();
+		}
+	}
+
+	setOperatorProfile(profile: OperatorProfile): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({
+			key: OPERATOR_PROFILE_KEY,
+			value: JSON.stringify(normalizeOperatorProfile(profile)),
 		});
 	}
 

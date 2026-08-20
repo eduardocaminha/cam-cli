@@ -643,6 +643,49 @@ describe('chain runs switch', () => {
 	});
 });
 
+describe('operator profile', () => {
+	test('round-trips as one runtime setting and survives reopen', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-operator-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		expect(store.getOperatorProfile()).toEqual({ name: '', timezone: '' });
+		store.setOperatorProfile({ name: ' Eduardo ', timezone: 'America/Sao_Paulo' });
+		store.close();
+
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getOperatorProfile()).toEqual({
+			name: 'Eduardo',
+			timezone: 'America/Sao_Paulo',
+		});
+		reopened.close();
+
+		const rows = new Database(dbPath);
+		const stored = rows.query("SELECT value FROM runtime_settings WHERE key = 'operator-profile'")
+			.get() as { value: string };
+		expect(JSON.parse(stored.value)).toEqual({
+			name: 'Eduardo',
+			timezone: 'America/Sao_Paulo',
+		});
+		rows.close();
+	});
+
+	test('a corrupt row reads as empty instead of blocking the service', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-operator-corrupt-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.setOperatorProfile({ name: 'Eduardo', timezone: 'UTC' });
+		store.close();
+
+		const corrupted = new Database(dbPath);
+		corrupted.exec(
+			"UPDATE runtime_settings SET value = '{not json' WHERE key = 'operator-profile';",
+		);
+		corrupted.close();
+
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getOperatorProfile()).toEqual({ name: '', timezone: '' });
+		reopened.close();
+	});
+});
+
 describe('project brief', () => {
 	test('round-trips the four fields as a single overwritten record', () => {
 		const store = new RunStore(':memory:');

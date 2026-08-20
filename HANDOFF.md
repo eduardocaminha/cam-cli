@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `70cc334e` (handoff checkpoint, PR #513)
-> Active implementation branch: `codex/ui-audit-fixes`
-> Current stage: onboarding slice verified; publication pending
+> Shipped baseline: `origin/main` at `65414f46` (onboarding, PR #514)
+> Active implementation branch: `codex/operator-profile`
+> Current stage: operator identity/timezone verified; publication pending
 
 ## How to use this file
 
@@ -70,30 +70,31 @@ logic.
 
 ## Active bounded slice
 
-The first onboarding slice is verified on `codex/ui-audit-fixes`; merge and
-live-service validation are the remaining publication steps. It deliberately
-does not add a project picker, host supervisor or second service:
+The minimal operator profile is implemented on `codex/operator-profile`:
 
-- `/api/project` derives readiness from the process cwd, its GitHub `origin`
-  and the locally available `origin/main` ref without network access;
-- empty folders and four deterministic prerequisite failures replace `/`,
-  `/runs` and `/work` with recovery guidance;
-- `/settings` stays available and reports the derived project facts;
-- existing and new-project paths both end by starting `gship` inside a local
-  clone; a browser never pretends it can remount a host path;
-- README, runtime, transport, component and API coverage are included.
+- one optional `{ name, timezone }` record lives in existing
+  `runtime_settings`; no table, account or remote identity was added;
+- `/api/operator-profile` exposes a same-origin-protected whole-record write;
+- the web suggests the browser timezone but persists nothing until the operator
+  explicitly saves; the runtime validates and canonicalizes IANA identifiers;
+- every orchestrator turn receives the profile as non-authoritative context,
+  using the name naturally and timezone only to interpret dates;
+- malformed persisted data degrades to an empty profile rather than blocking
+  boot or conversation.
 
-The same branch also contains four small UI-audit fixes: an associated chat
-label, keyed editable draft state, width-only progress transition and a native
-separator. React Doctor's remaining findings were reviewed and rejected as
-non-defects: tiny-list micro-optimizations, one stable read-only index key and
-intentional parsing of error JSON before checking `response.ok`.
-
-Focused verification passed 120 tests, both TypeScript projects and Biome lint.
-The ship-boundary `bun run check:all` then passed: 735 tests, both typechecks,
-Biome and Knip, with only Knip's two pre-existing configuration hints.
+Focused verification passed 187 tests, both TypeScript projects and Biome lint.
+The one ship-boundary `bun run check:all` passed 743 tests, both typechecks,
+Biome and Knip; Knip reported only its two pre-existing configuration hints.
 
 ## Previously shipped bounded slice
+
+PR #514 shipped deterministic project onboarding as squash commit `65414f46`.
+It derives readiness from local Git metadata without fetching, guides existing
+and new projects, keeps Settings available for incomplete projects, and adds no
+project picker, host supervisor or second service. The same PR carried four
+evidence-backed UI audit repairs without adding React Doctor as a dependency or
+score gate. CI and the local 735-test gate passed; the restarted service reports
+the real repository ready, no stale-service warning and all four routes at 200.
 
 PR #512 shipped six implementation changes as squash commit `ba1004ec`:
 
@@ -331,19 +332,17 @@ Completed foundations:
 
 Next product stages, in current order:
 
-1. finish and ship onboarding for existing repository versus new project
-   (active branch; deterministic readiness and guidance implemented);
-2. minimal operator settings: identity and timezone (repository facts landed
-   with onboarding);
-3. ad hoc diagnostics foundation and project-aware LSP availability;
-4. coherent telemetry and operator-facing observability, including diagnostic
+1. finish and ship minimal operator identity/timezone (active branch;
+   repository facts already shipped with onboarding);
+2. ad hoc diagnostics foundation and project-aware LSP availability;
+3. coherent telemetry and operator-facing observability, including diagnostic
    usefulness and false-positive measurements;
-5. persisted diagnostic schedules owned by the existing service;
-6. replayable evals and self-benchmarking;
-7. measured self-improvement and community proposal intake;
-8. internationalization, accessibility and beta readiness;
-9. multiproject selection and parallelism across independent repositories;
-10. external-user validation before Product Hunt or a YC-style launch push.
+4. persisted diagnostic schedules owned by the existing service;
+5. replayable evals and self-benchmarking;
+6. measured self-improvement and community proposal intake;
+7. internationalization, accessibility and beta readiness;
+8. multiproject selection and parallelism across independent repositories;
+9. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -353,9 +352,9 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #513 is
-> present. If `codex/ui-audit-fixes` still exists, finish its onboarding slice
-> from the active-section evidence above; do not restart provider recovery. Do
-> not start GSHIP-660/661/662 or reapprove them. Preserve the simple one-service
-> architecture. Run focused checks while editing and `bun run check:all` once
-> at the ship boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #514 is
+> present. If `codex/operator-profile` still contains unshipped work, finish
+> only the active profile slice from the evidence above; do not restart
+> onboarding or provider recovery. Do not start GSHIP-660/661/662 or reapprove
+> them. Preserve the simple one-service architecture. Run focused checks while
+> editing and `bun run check:all` once at the ship boundary.
