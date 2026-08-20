@@ -30,6 +30,7 @@ import {
 	fetchChainRuns,
 	fetchChat,
 	fetchNotificationChannels,
+	fetchOperatorProfile,
 	fetchProposals,
 	fetchProjectStatus,
 	fetchProviders,
@@ -38,6 +39,8 @@ import {
 	fetchRuns,
 	type NotificationChannelsView,
 	NOTIFICATIONS_PATH,
+	type OperatorProfileView,
+	OPERATOR_PROFILE_PATH,
 	type ProjectBriefView,
 	type ProjectStatusView,
 	PROJECT_PATH,
@@ -54,6 +57,7 @@ import {
 	saveChainRuns,
 	fetchModelSettings,
 	saveModelSettings,
+	saveOperatorProfile,
 	sendNotificationTest,
 	emptyModelSettings,
 	selectProvider,
@@ -143,6 +147,8 @@ const READY_PROJECT: ProjectStatusView = {
 	sourceRef: 'origin/main',
 };
 
+const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
+
 function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
@@ -158,6 +164,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			modelSettings={EMPTY_MODEL_SETTINGS}
 			notificationChannels={EMPTY_NOTIFICATION_CHANNELS}
 			notificationPermission="default"
+			onSaveOperatorProfile={() => {}}
 			onAbandon={() => {}}
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
@@ -182,6 +189,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			pending={false}
 			proposals={[]}
 			project={READY_PROJECT}
+			operatorProfile={EMPTY_OPERATOR_PROFILE}
 			providers={[]}
 			resolvedProposals={[]}
 			resolvedProposalsOmittedCount={0}
@@ -191,6 +199,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			selectedProvider="claude"
 			staleService={null}
 			status={null}
+			suggestedTimezone="America/Sao_Paulo"
 			version=""
 			workspaceNotices={[]}
 			{...overrides}
@@ -1194,6 +1203,23 @@ describe('work surface', () => {
 });
 
 describe('settings surface', () => {
+	test('edits the operator identity and suggests browser timezone without silently saving it', () => {
+		const empty = panel(settingsPage(), 'Operador');
+		expect(empty).toContain('name="operator-name"');
+		expect(empty).toContain('name="operator-timezone"');
+		expect(empty).toContain('value="America/Sao_Paulo"');
+		expect(empty).toContain('só é salva quando você confirma');
+		expect(buttonIsEnabled(empty, 'Salvar perfil')).toBe(true);
+
+		const stored = panel(settingsPage({
+			operatorProfile: { name: 'Eduardo', timezone: 'Europe/Lisbon' },
+		}), 'Operador');
+		expect(stored).toContain('value="Eduardo"');
+		expect(stored).toContain('value="Europe/Lisbon"');
+		expect(stored).not.toContain('value="America/Sao_Paulo"');
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar perfil')).toBe(false);
+	});
+
 	test('shows subscription state without any credential field', () => {
 		const html = settingsPage({
 			providers: [
@@ -1962,6 +1988,7 @@ describe('same-origin transport', () => {
 	test('reads and writes stay on the routes the server already exposes', () => {
 		expect(SNAPSHOT_PATH).toBe('/api/snapshot');
 		expect(PROJECT_PATH).toBe('/api/project');
+		expect(OPERATOR_PROFILE_PATH).toBe('/api/operator-profile');
 		expect(RUNS_PATH).toBe('/api/runs');
 		expect(EVENTS_PATH).toBe('/api/events');
 		expect(ISSUES_PATH).toBe('/api/issues');
@@ -1972,6 +1999,28 @@ describe('same-origin transport', () => {
 		expect(RESOLVED_PROPOSALS_PATH).toBe('/api/proposals/resolved');
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
 		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
+	});
+
+	test('operator profile is read and saved on its own same-origin route', async () => {
+		const profile = { name: 'Eduardo', timezone: 'America/Sao_Paulo' };
+		await withRecordedFetch({ profile }, 200, async (calls) => {
+			expect(await fetchOperatorProfile()).toEqual(profile);
+			expect(calls).toEqual([{ url: OPERATOR_PROFILE_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchOperatorProfile()).toEqual(EMPTY_OPERATOR_PROFILE);
+		});
+		await withRecordedFetch({ ok: true, profile }, 200, async (calls) => {
+			expect(await saveOperatorProfile(profile)).toBe('Perfil do operador atualizado.');
+			expect(calls).toEqual([{
+				url: OPERATOR_PROFILE_PATH,
+				method: 'PUT',
+				body: JSON.stringify(profile),
+			}]);
+		});
+		await withRecordedFetch({ ok: false, message: 'Timezone inválido.' }, 400, async () => {
+			await expect(saveOperatorProfile(profile)).rejects.toThrow('Timezone inválido.');
+		});
 	});
 
 	test('project readiness is read defensively from its same-origin route', async () => {

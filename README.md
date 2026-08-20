@@ -99,6 +99,8 @@ after changing the project path, restart Gateship from the intended clone.
 
 `gship --port 8080` selects another port. Runtime configuration and provider
 sign-in belong in the web interface rather than separate CLI subcommands.
+The operator name and IANA timezone are optional settings: the browser suggests
+its timezone, but Gateship stores it only after an explicit save.
 
 From the browser you can:
 

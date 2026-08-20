@@ -13,6 +13,7 @@ import type {
 	WorkspaceRunReference,
 } from './git-workspace.ts';
 import type { ModelSettings } from './model-settings.ts';
+import type { OperatorProfile } from './operator-profile.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
 import { selectRunRoundOrigins, type RunRoundOrigins } from './round-origin.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
@@ -620,6 +621,14 @@ export class RunRuntime {
 
 	setProjectBrief(brief: ProjectBrief): void {
 		this.#store.setProjectBrief(brief, this.#now());
+	}
+
+	getOperatorProfile(): OperatorProfile {
+		return this.#store.getOperatorProfile();
+	}
+
+	setOperatorProfile(profile: OperatorProfile): void {
+		this.#store.setOperatorProfile(profile);
 	}
 
 	appendOrchestratorMessage(

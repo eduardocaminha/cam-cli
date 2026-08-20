@@ -564,10 +564,21 @@ describe('orchestrator context pending proposals', () => {
 	test('with no pending proposals the context matches today\'s snapshot', () => {
 		const cwd = createTestTmpdir('gship-orchestrator-context-idle-');
 		const runtime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
+		runtime.setOperatorProfile({ name: 'Eduardo', timezone: 'America/Sao_Paulo' });
 		const context = buildOrchestratorContext(cwd, runtime) as Record<string, unknown>;
 
-		expect(Object.keys(context)).toEqual(['provider', 'backlog', 'runs', 'workspaceNotices']);
+		expect(Object.keys(context)).toEqual([
+			'provider',
+			'operatorProfile',
+			'backlog',
+			'runs',
+			'workspaceNotices',
+		]);
 		expect(context.provider).toBe(runtime.getSelectedProvider());
+		expect(context.operatorProfile).toEqual({
+			name: 'Eduardo',
+			timezone: 'America/Sao_Paulo',
+		});
 		expect(context.runs).toEqual(runtime.listRuns(10));
 		expect(context.workspaceNotices).toEqual(runtime.listWorkspaceNotices());
 		expect(context.pendingProposals).toBeUndefined();

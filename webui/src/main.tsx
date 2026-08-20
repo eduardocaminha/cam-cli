@@ -27,6 +27,7 @@ import {
 	fetchChat,
 	fetchModelSettings,
 	fetchNotificationChannels,
+	fetchOperatorProfile,
 	fetchProposals,
 	fetchProjectStatus,
 	fetchProviders,
@@ -35,6 +36,7 @@ import {
 	fetchRuns,
 	type GitIdentityView,
 	type NotificationChannelsView,
+	type OperatorProfileView,
 	promoteProposal,
 	type RunAction,
 	type ChatMessageView,
@@ -49,6 +51,7 @@ import {
 	saveBrief,
 	saveChainRuns,
 	saveModelSettings,
+	saveOperatorProfile,
 	sendChat,
 	sendNotificationTest,
 	selectProvider,
@@ -89,6 +92,16 @@ const CHECKING_PROJECT: ProjectStatusView = {
 	detail: 'Verificando o projeto local…',
 };
 
+const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
+
+function browserTimeZone(): string {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+	} catch {
+		return '';
+	}
+}
+
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
@@ -111,6 +124,7 @@ function useOperationalRun(): {
 	chainRuns: ChainRunsView;
 	notificationChannels: NotificationChannelsView;
 	project: ProjectStatusView;
+	operatorProfile: OperatorProfileView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -142,6 +156,9 @@ function useOperationalRun(): {
 		emptyNotificationChannels,
 	);
 	const [project, setProject] = useState<ProjectStatusView>(CHECKING_PROJECT);
+	const [operatorProfile, setOperatorProfile] = useState<OperatorProfileView>(
+		EMPTY_OPERATOR_PROFILE,
+	);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -159,6 +176,7 @@ function useOperationalRun(): {
 			fetchChainRuns(),
 			fetchNotificationChannels(),
 			fetchProjectStatus(),
+			fetchOperatorProfile(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -172,6 +190,7 @@ function useOperationalRun(): {
 				chainRunsSnapshot,
 				notificationChannelsSnapshot,
 				projectSnapshot,
+				operatorProfileSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -195,6 +214,7 @@ function useOperationalRun(): {
 				setChainRuns(chainRunsSnapshot);
 				setNotificationChannels(notificationChannelsSnapshot);
 				setProject(projectSnapshot);
+				setOperatorProfile(operatorProfileSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -265,6 +285,7 @@ function useOperationalRun(): {
 		chainRuns,
 		notificationChannels,
 		project,
+		operatorProfile,
 		version,
 		status,
 		pending,
@@ -296,6 +317,7 @@ function Screen(): ReactElement {
 		chainRuns,
 		notificationChannels,
 		project,
+		operatorProfile,
 		version,
 		status,
 		pending,
@@ -373,9 +395,11 @@ function Screen(): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
 			modelSettings={modelSettings}
+			onSaveOperatorProfile={(profile) => send(() => saveOperatorProfile(profile))}
 			pending={pending}
 			proposals={proposals}
 			project={project}
+			operatorProfile={operatorProfile}
 			providers={providers}
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
@@ -385,6 +409,7 @@ function Screen(): ReactElement {
 			selectedProvider={selectedProvider}
 			staleService={staleService}
 			status={status}
+			suggestedTimezone={browserTimeZone()}
 			version={version}
 			workspaceNotices={workspaceNotices}
 		/>
