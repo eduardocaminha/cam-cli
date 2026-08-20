@@ -171,20 +171,44 @@ export interface RemoteNotifierOptions {
 	cwd?: string;
 }
 
+/** One ntfy delivery; swallowed after being counted against the request itself (a settled, failed fetch) rather than left an unhandled rejection -- the channel is optional, so its own failure carries no further consequence. */
+function sendNtfyDelivery(
+	topicUrl: URL,
+	notification: RemoteNotification,
+	fetchImpl: typeof fetch,
+	timeoutMs: number,
+): void {
+	const target = new URL(topicUrl);
+	target.searchParams.set('title', notification.title);
+	fetchImpl(target, {
+		method: 'POST',
+		body: notification.body,
+		signal: AbortSignal.timeout(timeoutMs),
+	}).catch(() => {
+		// Swallowed after being counted against the request itself (a settled,
+		// failed fetch) rather than left an unhandled rejection: the channel is
+		// optional, so its own failure carries no further consequence.
+	});
+}
+
 /**
- * Builds the event-log listener that pushes ntfy alerts (GSHIP-651). Meant to
- * be handed straight to `RunRuntime.subscribe`, the same durable event log
- * the browser's SSE stream already reads -- no separate trigger, no polling.
- * The secret is resolved fresh on every qualifying event rather than once
- * here at construction time (GSHIP-652 review): `createRemoteNotifier` runs
- * once at service boot, long before an operator who just read the panel's own
- * instructions gets around to creating `.gship/ntfy-url` -- a value baked in
- * at boot would leave that operator's file permanently invisible to a
- * subscriber built before it existed, silently off until a restart nobody
- * told them to do. A missing or unparseable URL degrades to no delivery
- * attempt rather than an error, since the channel is optional by definition;
- * a running one still never lets a delivery failure reach the caller, because
- * an alert missing its page must never be able to affect a run's own state.
+ * Builds the event-log listener that pushes remote alerts through every
+ * configured channel (GSHIP-651, GSHIP-653). Meant to be handed straight to
+ * `RunRuntime.subscribe`, the same durable event log the browser's SSE stream
+ * already reads -- no separate trigger, no polling. Each channel's own
+ * configuration is resolved fresh on every qualifying event rather than once
+ * here at construction time (GSHIP-652 review): this function runs once at
+ * service boot, long before an operator who just read the panel's own
+ * instructions gets around to creating `.gship/ntfy-url` or
+ * `.gship/resend-api-key` -- a value baked in at boot would leave that
+ * operator's file permanently invisible to a subscriber built before it
+ * existed, silently off until a restart nobody told them to do. A missing or
+ * incomplete configuration degrades to no delivery attempt rather than an
+ * error, since each channel is optional by definition; ntfy and Resend are
+ * resolved and fired independently, so either, both or neither can be on at
+ * once and neither's delivery (or failure) touches the other's. A running
+ * channel still never lets a delivery failure reach the caller, because an
+ * alert missing its page must never be able to affect a run's own state.
  */
 export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (event: RunEvent) => void {
 	const env = options.env ?? process.env;
@@ -195,19 +219,12 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 	return (event: RunEvent) => {
 		const notification = remoteNotificationForRunEvent(event);
 		if (notification === null) return;
+
 		const topicUrl = resolveNtfyTopicUrl(cwd, env);
-		if (topicUrl === null) return;
-		const target = new URL(topicUrl);
-		target.searchParams.set('title', notification.title);
-		fetchImpl(target, {
-			method: 'POST',
-			body: notification.body,
-			signal: AbortSignal.timeout(timeoutMs),
-		}).catch(() => {
-			// Swallowed after being counted against the request itself (a settled,
-			// failed fetch) rather than left an unhandled rejection: the channel is
-			// optional, so its own failure carries no further consequence.
-		});
+		if (topicUrl !== null) sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs);
+
+		const { config } = resolveResendConfig(cwd, env);
+		if (config !== null) sendResendDelivery(config, notification, fetchImpl, timeoutMs);
 	};
 }
 
@@ -254,6 +271,194 @@ export async function sendNtfyTestNotification(options: NtfyTestOptions): Promis
 		// The error's own `name` only, never its `message`: fetch's own network
 		// and timeout errors sometimes embed the request URL in the message, and
 		// that URL carries the secret this function must never leak.
+		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'falha de rede' };
+	}
+}
+
+/**
+ * Resend as a second, independent remote channel (GSHIP-653): unlike ntfy's
+ * single topic URL, delivery needs three values at once -- the API key, a
+ * sender on a verified domain, and a recipient. Neither remote channel
+ * depends on the other; each resolves and fires on its own configuration,
+ * and both can be on at the same time. The API key is the "segredo forte"
+ * here (whoever holds it can send mail as the domain), so it follows the
+ * exact same rules as ntfy's topic URL: an env var that wins over a project
+ * file requiring mode 600, never SQLite, never a browser response, never a
+ * log line, and never named in `child-env.ts`'s allowlists so a spawned
+ * agent or `gh` child never inherits it. `from` and `to` are ordinary
+ * configuration, not secrets, so they are read from the environment only.
+ */
+export const RESEND_API_KEY_ENV_VAR = 'GATESHIP_RESEND_API_KEY';
+
+/** Project-relative home of the file-backed API key, mirroring `NTFY_URL_FILE_PATH`. */
+export const RESEND_API_KEY_FILE_PATH = join('.gship', 'resend-api-key');
+
+export const RESEND_FROM_ENV_VAR = 'GATESHIP_RESEND_FROM';
+export const RESEND_TO_ENV_VAR = 'GATESHIP_RESEND_TO';
+
+const RESEND_API_URL = 'https://api.resend.com/emails';
+
+interface ResendConfig {
+	apiKey: string;
+	from: string;
+	to: string;
+}
+
+/** The three values Resend needs. Ajustes names a missing one by this field, never by the value itself. */
+export type ResendConfigField = 'apiKey' | 'from' | 'to';
+
+export const RESEND_FIELD_LABELS: Readonly<Record<ResendConfigField, string>> = {
+	apiKey: 'chave de API',
+	from: 'remetente',
+	to: 'destinatário',
+};
+
+/** Same refusal as `readNtfyUrlFile`: absent, empty, or looser than 600 all read as no file. */
+function readResendApiKeyFile(cwd: string): string | null {
+	const path = join(cwd, RESEND_API_KEY_FILE_PATH);
+	try {
+		if ((statSync(path).mode & 0o077) !== 0) return null;
+		const raw = readFileSync(path, 'utf8').trim();
+		return raw.length === 0 ? null : raw;
+	} catch {
+		return null;
+	}
+}
+
+/** The env var wins over the project file, the same precedence `resolveNtfyUrl` gives ntfy. */
+export function resolveResendApiKey(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+): string | null {
+	const fromEnv = env[RESEND_API_KEY_ENV_VAR];
+	const trimmedEnv = typeof fromEnv === 'string' ? fromEnv.trim() : '';
+	if (trimmedEnv.length > 0) return trimmedEnv;
+	return readResendApiKeyFile(cwd);
+}
+
+function trimmedEnvValue(env: Record<string, string | undefined>, key: string): string | null {
+	const raw = env[key];
+	const trimmed = typeof raw === 'string' ? raw.trim() : '';
+	return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The one place "is Resend usable" is decided, the same role
+ * `resolveNtfyTopicUrl` plays for ntfy: every other Resend function below
+ * reads through this instead of re-checking the three values its own way, so
+ * a config missing any one of them reads the same everywhere -- off, and
+ * naming exactly what is missing.
+ */
+function resolveResendConfig(
+	cwd: string,
+	env: Record<string, string | undefined>,
+): { config: ResendConfig | null; missing: ResendConfigField[] } {
+	const apiKey = resolveResendApiKey(cwd, env);
+	const from = trimmedEnvValue(env, RESEND_FROM_ENV_VAR);
+	const to = trimmedEnvValue(env, RESEND_TO_ENV_VAR);
+	const missing: ResendConfigField[] = [];
+	if (apiKey === null) missing.push('apiKey');
+	if (from === null) missing.push('from');
+	if (to === null) missing.push('to');
+	if (apiKey === null || from === null || to === null) return { config: null, missing };
+	return { config: { apiKey, from, to }, missing: [] };
+}
+
+/** Never the three values -- only whether Resend resolved all of them (GSHIP-653). */
+export function isResendConfigured(cwd: string, env: Record<string, string | undefined> = process.env): boolean {
+	return resolveResendConfig(cwd, env).config !== null;
+}
+
+/** What Ajustes names, by field, when Resend is off because of a partial configuration. */
+export function resolveResendMissingFields(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+): ResendConfigField[] {
+	return resolveResendConfig(cwd, env).missing;
+}
+
+/** One Resend HTTP API delivery; swallowed exactly like ntfy's own -- the channel is optional, so its failure carries no further consequence. */
+function sendResendDelivery(
+	config: ResendConfig,
+	notification: RemoteNotification,
+	fetchImpl: typeof fetch,
+	timeoutMs: number,
+): void {
+	fetchImpl(RESEND_API_URL, {
+		method: 'POST',
+		headers: {
+			authorization: `Bearer ${config.apiKey}`,
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			from: config.from,
+			to: [config.to],
+			subject: notification.title,
+			text: notification.body,
+		}),
+		signal: AbortSignal.timeout(timeoutMs),
+	}).catch(() => {
+		// Swallowed for the same reason as ntfy's own delivery above.
+	});
+}
+
+/** What Ajustes' "send test" button reports for Resend; never carries the API key, on any outcome. */
+export type ResendTestOutcome = 'sent' | 'not-configured' | 'rejected' | 'unreachable';
+
+export interface ResendTestResult {
+	outcome: ResendTestOutcome;
+	/**
+	 * The missing fields joined by name (`not-configured`), the endpoint's own
+	 * status (`rejected`), or the network failure's name (`unreachable`);
+	 * absent when `sent`.
+	 */
+	detail?: string;
+}
+
+export interface ResendTestOptions {
+	cwd: string;
+	/** Defaults to `process.env`; a test supplies its own map instead of mutating the real process. */
+	env?: Record<string, string | undefined>;
+	/** Defaults to the global `fetch`; a test injects a stub to observe or fail a delivery. */
+	fetchImpl?: typeof fetch;
+	timeoutMs?: number;
+}
+
+/**
+ * Fires one real Resend delivery so Ajustes can report whether the channel
+ * actually accepts a message, not just whether it is configured -- mirrors
+ * `sendNtfyTestNotification`. A partial configuration reports which values
+ * are missing by name instead of attempting a delivery; the result never
+ * carries the API key, the sender, or the recipient, on any outcome.
+ */
+export async function sendResendTestNotification(options: ResendTestOptions): Promise<ResendTestResult> {
+	const env = options.env ?? process.env;
+	const { config, missing } = resolveResendConfig(options.cwd, env);
+	if (config === null) {
+		return { outcome: 'not-configured', detail: missing.map((field) => RESEND_FIELD_LABELS[field]).join(', ') };
+	}
+
+	const fetchImpl = options.fetchImpl ?? fetch;
+	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	try {
+		const response = await fetchImpl(RESEND_API_URL, {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${config.apiKey}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				from: config.from,
+				to: [config.to],
+				subject: 'Teste do Gateship',
+				text: 'Mensagem de teste enviada pelo painel de Ajustes.',
+			}),
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+		return response.ok ? { outcome: 'sent' } : { outcome: 'rejected', detail: `HTTP ${response.status}` };
+	} catch (error) {
+		// The error's own `name` only, never its `message`, mirroring
+		// `sendNtfyTestNotification`'s own rationale.
 		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'falha de rede' };
 	}
 }

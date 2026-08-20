@@ -6,11 +6,21 @@ import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import {
 	createRemoteNotifier,
 	isNtfyConfigured,
+	isResendConfigured,
 	NTFY_URL_ENV_VAR,
 	NTFY_URL_FILE_PATH,
 	remoteNotificationForRunEvent,
+	RESEND_API_KEY_ENV_VAR,
+	RESEND_API_KEY_FILE_PATH,
+	RESEND_FIELD_LABELS,
+	RESEND_FROM_ENV_VAR,
+	RESEND_TO_ENV_VAR,
 	resolveNtfyUrl,
+	resolveResendApiKey,
+	resolveResendMissingFields,
+	type ResendConfigField,
 	sendNtfyTestNotification,
+	sendResendTestNotification,
 } from '../../src/runtime/remote-notifier.ts';
 import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
 import type { RunState } from '../../src/runtime/run-state.ts';
@@ -458,5 +468,218 @@ describe('sendNtfyTestNotification', () => {
 
 		expect(result.outcome).toBe('unreachable');
 		expect(JSON.stringify(result)).not.toContain(TOPIC_URL);
+	});
+});
+
+const RESEND_API_KEY = 'resend-secret-live-abcDEF123456';
+const RESEND_FROM = 'Gateship <ops@example.com>';
+const RESEND_TO = 'operator@example.com';
+
+const RESEND_FIELD_ENV_VARS: Record<ResendConfigField, string> = {
+	apiKey: RESEND_API_KEY_ENV_VAR,
+	from: RESEND_FROM_ENV_VAR,
+	to: RESEND_TO_ENV_VAR,
+};
+
+/** A complete Resend environment, with named fields deletable to build a partial one. */
+function resendEnv(omit: readonly ResendConfigField[] = []): Record<string, string> {
+	const env: Record<string, string> = {
+		[RESEND_API_KEY_ENV_VAR]: RESEND_API_KEY,
+		[RESEND_FROM_ENV_VAR]: RESEND_FROM,
+		[RESEND_TO_ENV_VAR]: RESEND_TO,
+	};
+	for (const field of omit) delete env[RESEND_FIELD_ENV_VARS[field]];
+	return env;
+}
+
+/** What an operator's own shell command (`... > .gship/resend-api-key && chmod 600 ...`) produces. */
+function writeResendApiKeyFile(cwd: string, apiKey: string): void {
+	mkdirSync(join(cwd, '.gship'), { recursive: true });
+	writeFileSync(join(cwd, RESEND_API_KEY_FILE_PATH), `${apiKey}\n`, { mode: 0o600 });
+}
+
+describe('the Resend channel (GSHIP-653)', () => {
+	test('a complete configuration sends, carrying the three values to the Resend HTTP API', async () => {
+		const cwd = createTestTmpdir('gship-resend-');
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }));
+		await flush();
+
+		const call = onlyCall(calls);
+		expect(call.url).toBe('https://api.resend.com/emails');
+		expect(call.init?.method).toBe('POST');
+		const headers = new Headers(call.init?.headers);
+		expect(headers.get('authorization')).toBe(`Bearer ${RESEND_API_KEY}`);
+		expect(headers.get('content-type')).toBe('application/json');
+		expect(JSON.parse(String(call.init?.body))).toEqual({
+			from: RESEND_FROM,
+			to: [RESEND_TO],
+			subject: 'Gateship precisa de você',
+			text: 'Escolha o seam.',
+		});
+	});
+
+	test('a partial configuration sends nothing and names exactly what is missing', async () => {
+		const cwd = createTestTmpdir('gship-resend-');
+		expect(isResendConfigured(cwd, resendEnv(['to']))).toBe(false);
+		expect(resolveResendMissingFields(cwd, resendEnv(['to']))).toEqual(['to']);
+		expect(resolveResendMissingFields(cwd, resendEnv(['apiKey', 'from']))).toEqual(['apiKey', 'from']);
+		expect(resolveResendMissingFields(cwd, {})).toEqual(['apiKey', 'from', 'to']);
+
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: resendEnv(['to']), fetchImpl });
+		notifier(event('waiting-user', 'run.waiting-user'));
+		await flush();
+		expect(calls).toHaveLength(0);
+
+		const result = await sendResendTestNotification({ cwd, env: resendEnv(['to']), fetchImpl });
+		expect(result).toEqual({ outcome: 'not-configured', detail: RESEND_FIELD_LABELS.to });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('a network failure is swallowed and never propagates', async () => {
+		const cwd = createTestTmpdir('gship-resend-');
+		const { fetchImpl, calls } = stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`)));
+		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+		expect(() => notifier(event('failed', 'run.verification-failed', { error: 'boom' }))).not.toThrow();
+		await flush();
+
+		expect(calls).toHaveLength(1);
+	});
+
+	test('both channels configured at once send through both, neither depending on the other', async () => {
+		const cwd = createTestTmpdir('gship-resend-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+		notifier(event('failed', 'run.verification-failed', { error: 'checks red' }));
+		await flush();
+
+		expect(calls).toHaveLength(2);
+		expect(calls.some((call) => call.url.startsWith(TOPIC_URL))).toBe(true);
+		expect(calls.some((call) => call.url === 'https://api.resend.com/emails')).toBe(true);
+	});
+
+	test('Resend alone -- with no ntfy topic URL anywhere -- still delivers on its own', async () => {
+		const cwd = createTestTmpdir('gship-resend-');
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+		notifier(event('waiting-user', 'run.waiting-user'));
+		await flush();
+
+		expect(onlyCall(calls).url).toBe('https://api.resend.com/emails');
+	});
+
+	describe('the API key never appears in any observable output', () => {
+		afterEach(() => {
+			for (const spy of installedSpies.splice(0)) spy.mockRestore();
+		});
+		const installedSpies: ReturnType<typeof spyOn>[] = [];
+
+		test('a failed delivery throws nothing and logs nothing', async () => {
+			const logSpy = spyOn(console, 'log');
+			const warnSpy = spyOn(console, 'warn');
+			const errorSpy = spyOn(console, 'error');
+			installedSpies.push(logSpy, warnSpy, errorSpy);
+
+			const cwd = createTestTmpdir('gship-resend-');
+			const { fetchImpl } = stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`)));
+			const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+			let thrown: unknown;
+			try {
+				notifier(event('failed', 'run.verification-failed', { error: 'boom' }));
+			} catch (error) {
+				thrown = error;
+			}
+			await flush();
+
+			expect(thrown).toBeUndefined();
+			expect(logSpy).not.toHaveBeenCalled();
+			expect(warnSpy).not.toHaveBeenCalled();
+			expect(errorSpy).not.toHaveBeenCalled();
+		});
+
+		test('the request itself carries the key in its header, but nothing returned or thrown does', async () => {
+			const cwd = createTestTmpdir('gship-resend-');
+			const { fetchImpl, calls } = stubFetch();
+			const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+
+			const result = notifier(event('waiting-user', 'run.waiting-user'));
+			await flush();
+
+			const headers = new Headers(calls[0]?.init?.headers);
+			expect(headers.get('authorization')).toContain(RESEND_API_KEY);
+			expect(JSON.stringify(result ?? null)).not.toContain(RESEND_API_KEY);
+		});
+
+		test('sendResendTestNotification never leaks the key on a rejection or an unreachable network', async () => {
+			const cwd = createTestTmpdir('gship-resend-');
+			const rejected = await sendResendTestNotification({
+				cwd,
+				env: resendEnv(),
+				fetchImpl: stubFetch(() => Promise.resolve(new Response(null, { status: 403 }))).fetchImpl,
+			});
+			expect(rejected.outcome).toBe('rejected');
+			expect(JSON.stringify(rejected)).not.toContain(RESEND_API_KEY);
+
+			const unreachable = await sendResendTestNotification({
+				cwd,
+				env: resendEnv(),
+				fetchImpl: stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`))).fetchImpl,
+			});
+			expect(unreachable.outcome).toBe('unreachable');
+			expect(JSON.stringify(unreachable)).not.toContain(RESEND_API_KEY);
+		});
+	});
+});
+
+describe('the project-local Resend API key file (GSHIP-653)', () => {
+	test('reads the API key from the project file when no environment variable is set', () => {
+		const cwd = createTestTmpdir('gship-resend-file-');
+		writeResendApiKeyFile(cwd, RESEND_API_KEY);
+
+		expect(resolveResendApiKey(cwd, {})).toBe(RESEND_API_KEY);
+		expect(isResendConfigured(cwd, { [RESEND_FROM_ENV_VAR]: RESEND_FROM, [RESEND_TO_ENV_VAR]: RESEND_TO }))
+			.toBe(true);
+	});
+
+	test('the environment variable takes precedence over the file, so an operator already using it is undisturbed', () => {
+		const cwd = createTestTmpdir('gship-resend-file-');
+		writeResendApiKeyFile(cwd, 'from-file-not-this-one');
+
+		expect(resolveResendApiKey(cwd, { [RESEND_API_KEY_ENV_VAR]: RESEND_API_KEY })).toBe(RESEND_API_KEY);
+	});
+
+	test('the file is created with permission 600, and is read correctly at that permission', () => {
+		const cwd = createTestTmpdir('gship-resend-file-');
+		writeResendApiKeyFile(cwd, RESEND_API_KEY);
+
+		expect(statSync(join(cwd, RESEND_API_KEY_FILE_PATH)).mode & 0o777).toBe(0o600);
+		expect(resolveResendApiKey(cwd, {})).toBe(RESEND_API_KEY);
+	});
+
+	test('a file readable or writable by group or other is refused, not trusted', () => {
+		const cwd = createTestTmpdir('gship-resend-file-');
+		mkdirSync(join(cwd, '.gship'), { recursive: true });
+		writeFileSync(join(cwd, RESEND_API_KEY_FILE_PATH), `${RESEND_API_KEY}\n`, { mode: 0o644 });
+
+		expect(resolveResendApiKey(cwd, {})).toBeNull();
+		expect(isResendConfigured(cwd, { [RESEND_FROM_ENV_VAR]: RESEND_FROM, [RESEND_TO_ENV_VAR]: RESEND_TO }))
+			.toBe(false);
+	});
+
+	test('the absence of both the environment variable and the file leaves apiKey missing, without error', () => {
+		const cwd = createTestTmpdir('gship-resend-file-');
+
+		expect(() => resolveResendApiKey(cwd, {})).not.toThrow();
+		expect(resolveResendApiKey(cwd, {})).toBeNull();
+		expect(resolveResendMissingFields(cwd, { [RESEND_FROM_ENV_VAR]: RESEND_FROM, [RESEND_TO_ENV_VAR]: RESEND_TO }))
+			.toEqual(['apiKey']);
 	});
 });

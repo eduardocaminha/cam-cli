@@ -549,20 +549,25 @@ export async function saveChainRuns(enabled: boolean): Promise<string> {
 	return enabled ? 'Encadeamento automático ativado.' : 'Encadeamento automático desativado.';
 }
 
-/** The one remote channel today; a record so GSHIP-653 can add another without reshaping this. */
-export const NOTIFICATION_CHANNEL_IDS = ['ntfy'] as const;
+/** ntfy and Resend (GSHIP-653), neither depending on the other for the panel to show it. */
+export const NOTIFICATION_CHANNEL_IDS = ['ntfy', 'resend'] as const;
 
 export type NotificationChannelId = (typeof NOTIFICATION_CHANNEL_IDS)[number];
 
-/** Never the secret itself -- only whether the channel resolved one (GSHIP-652). */
+/**
+ * Never a secret itself -- only whether the channel resolved a complete
+ * configuration (GSHIP-652), and, for a channel needing more than one value,
+ * which ones are still missing, named, never valued (GSHIP-653).
+ */
 export interface NotificationChannelView {
 	configured: boolean;
+	missing: string[];
 }
 
 export type NotificationChannelsView = Record<NotificationChannelId, NotificationChannelView>;
 
 export function emptyNotificationChannels(): NotificationChannelsView {
-	return { ntfy: { configured: false } };
+	return { ntfy: { configured: false, missing: [] }, resend: { configured: false, missing: [] } };
 }
 
 interface NotificationChannelsPayload {
@@ -577,7 +582,11 @@ export async function fetchNotificationChannels(): Promise<NotificationChannelsV
 	);
 	const channels = emptyNotificationChannels();
 	for (const id of NOTIFICATION_CHANNEL_IDS) {
-		channels[id] = { configured: payload.channels?.[id]?.configured === true };
+		const raw = payload.channels?.[id];
+		channels[id] = {
+			configured: raw?.configured === true,
+			missing: Array.isArray(raw?.missing) ? raw.missing.filter((item) => typeof item === 'string') : [],
+		};
 	}
 	return channels;
 }
