@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `a5ec156e` (replayable workflow cohorts, PR #519)
-> Active implementation branch: `codex/workflow-ratchets`
-> Current stage: provider-CLI identity ratchet verified and authorized for publication
+> Shipped baseline: `origin/main` at `9faa57b6` (provider-CLI identity ratchet, PR #520)
+> Active implementation branch: `codex/beta-readiness`
+> Current stage: local beta navigation/accessibility repair verified and authorized for publication
 
 ## How to use this file
 
@@ -74,37 +74,47 @@ logic.
 
 ## Active bounded slice
 
-The provider-CLI identity hard ratchet is implemented locally on
-`codex/workflow-ratchets`:
+The first beta-readiness repair is implemented locally on
+`codex/beta-readiness`:
 
-- a real Gateship diagnostic scan ran against exact shipped SHA `a5ec156e` and
-  completed with 15 advisory findings, no accessibility findings and no
-  workspace notices;
-- the micro-performance suggestions and two context-dependent React warnings
-  remain advisory. Gateship will not edit code merely to improve an analyzer
-  score;
-- the relevant supply-chain finding showed that the image still installed
-  Claude Code through a mutable command. The image now requests exact Claude
-  Code `2.1.238`; Codex remains pinned to the verified complete release
-  `0.148.0`;
-- every Claude child receives `DISABLE_UPDATES=1`, so a provider invocation
-  cannot replace its own CLI behind the recorded Gateship workflow revision.
-  CLI upgrades remain an explicit image or host maintenance boundary;
-- deterministic configuration and child-environment tests prevent either
-  provider install from returning to a mutable version.
+- a real browser inspection covered the accessibility trees of `/`, `/runs`,
+  `/work` and `/settings`. Labels, landmarks and native disclosures were
+  coherent, but the first keyboard focus landed in repeated navigation with no
+  path to skip it;
+- one shell-level skip link now targets the single focusable `<main>` on every
+  route. Browser verification confirms that the first `Tab` reaches the link
+  and `Enter` transfers focus to the route content;
+- the document has a Gateship-authored inline SVG favicon and correctly cased
+  title. This removes the only reproduced browser-console error without adding
+  an asset route or another embedding path;
+- the active logo source now describes the mark as Gateship-owned and contains
+  no provenance reference to the retired UI kit. Immutable shipped issues and
+  superseded ADRs remain historical evidence, not active product source;
+- no localization framework or locale switch was added. The current UI is one
+  coherent `pt-BR` surface with hundreds of coupled copy sites. A partial
+  catalog would add architecture while producing a mixed-language product.
+  Before external beta, make one explicit product decision: convert the whole
+  beta UI to English, or fund two complete catalogs. Do not land an incomplete
+  middle state.
 
-Focused provider/runtime tests pass: 48 tests, 215 expectations. Both
-TypeScript projects, Biome and `git diff --check` pass. A fresh local container
-image builds, Claude reports `2.1.238` and Codex reports `0.148.0`. The 15
-diagnostic findings remain pending in the real inbox for human settlement; none
-was silently dismissed or promoted. The soft ratchet remains dormant because
-legacy runs provide zero recorded workflow revisions and therefore no two
-comparable terminal cohorts. The full ship-boundary gate passes 768 tests and
-3,090 assertions, both TypeScript projects, Biome and Knip; Knip reports only
+Focused rendered-client and embedded-bundle tests pass: 123 tests and 912
+expectations. Both TypeScript projects, Biome, the production UI build and
+`git diff --check` pass. Real-browser validation reports zero console errors or
+warnings after the repair. The full ship-boundary gate passes 769 tests and
+3,112 assertions, both TypeScript projects, Biome and Knip; Knip reports only
 its two pre-existing configuration hints. The operator authorized publication
 of this exact bounded slice on 2026-08-20.
 
 ## Previously shipped bounded slices
+
+PR #520 shipped the provider-CLI identity hard ratchet as squash commit
+`9faa57b6`. The image requests exact Claude Code `2.1.238` and Codex `0.148.0`,
+and every Claude child receives `DISABLE_UPDATES=1`, so a run cannot replace the
+provider executable behind its recorded workflow revision. Static tests guard
+both version pins and the child environment. The final local gate passed 768
+tests and 3,090 assertions; CI passed in 52 seconds, the branch was removed and
+the stable service was rebuilt and verified on all four routes. The 15 real
+diagnostic findings remain pending for human settlement.
 
 PR #519 shipped replayable workflow cohorts as squash commit `a5ec156e`. Every
 new run records its Gateship build/source revision, and one pure event replay
@@ -408,17 +418,19 @@ Completed foundations:
 8. ad hoc project diagnostics with a human-settled inbox;
 9. local derived workflow observability without scores or a collector;
 10. bounded daily/weekly diagnostics inside the existing service;
-11. replayable revision cohorts without an evaluator model or composite score.
+11. replayable revision cohorts without an evaluator model or composite score;
+12. immutable provider-CLI identity during a recorded workflow revision.
 
 Next product stages, in current order:
 
-1. finish and publish the provider-CLI identity hard ratchet on the active
+1. finish and publish the beta navigation/accessibility repair on the active
    branch, only after explicit operator authorization;
-2. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
+2. choose the complete external-beta language strategy; do not ship a partial
+   locale switch or empty localization framework;
+3. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
    until two comparable cohorts exist;
-3. add measured self-improvement and community proposal intake without
+4. add measured self-improvement and community proposal intake without
    automatic rule mutation;
-4. internationalization, accessibility and beta readiness;
 5. multiproject selection and parallelism across independent repositories;
 6. external-user validation before Product Hunt or a YC-style launch push.
 
@@ -430,14 +442,14 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #519 is
-> present. If `codex/workflow-ratchets` still contains unshipped work, finish
-> only the provider-CLI identity ratchet above: exact provider versions,
-> immutable Claude child updates and their deterministic tests. Do not dismiss
-> or promote the 15 real diagnostic findings without operator action. Keep the
-> soft ratchet dormant until two comparable recorded cohorts exist. Do not add
-> an evaluator LLM, synthetic score, remote telemetry, new event pipeline,
-> endpoint, table or queue. Do not publish without explicit operator
-> authorization. Do not start or reapprove GSHIP-660/661/662. Preserve the
-> one-service architecture. Run focused checks while editing and
-> `bun run check:all` once at the ship boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #520 is
+> present. If `codex/beta-readiness` still contains unshipped work, finish only
+> the skip-link, document-branding and active-source ownership repair above.
+> Do not introduce a partial locale switch, rewrite immutable issue history or
+> dismiss/promote the 15 real diagnostic findings. Keep the soft ratchet
+> dormant until two comparable recorded cohorts exist. Do not add an evaluator
+> LLM, synthetic score, remote telemetry, new event pipeline, endpoint, table
+> or queue. Do not publish without explicit operator authorization. Do not
+> start or reapprove GSHIP-660/661/662. Preserve the one-service architecture.
+> Run focused checks while editing and `bun run check:all` once at the ship
+> boundary.

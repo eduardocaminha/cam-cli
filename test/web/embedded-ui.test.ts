@@ -33,6 +33,8 @@ describe('embedded web bundle', () => {
 			expect(html).toContain('/app.js');
 			expect(html).toContain('/app.css');
 			expect(html).toContain('id="root"');
+			expect(html).toContain('<title>Gateship</title>');
+			expect(html).toContain('rel="icon" href="data:image/svg+xml,');
 			// The inline diagnostic page is gone: no script body, no raw JSON dump.
 			expect(html).not.toContain('JSON.stringify');
 			expect(html).not.toContain('Loading snapshot...');
