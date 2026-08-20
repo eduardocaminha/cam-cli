@@ -10,7 +10,11 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { resolveBootSourceSha, startWebServer } from '../../src/commands/web.ts';
+import {
+	resolveBootSourceSha,
+	resolveWorkflowRevision,
+	startWebServer,
+} from '../../src/commands/web.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { GSHIP_VERSION } from '../../src/version.ts';
@@ -612,5 +616,30 @@ describe('resolveBootSourceSha (GSHIP-654)', () => {
 
 		expect(resolveBootSourceSha(null, true, readSourceShaOfCwd)).toBeNull();
 		expect(calls).toBe(0);
+	});
+});
+
+describe('resolveWorkflowRevision', () => {
+	test('prefers the embedded build over any source checkout', () => {
+		let reads = 0;
+		expect(resolveWorkflowRevision('build-sha', false, () => {
+			reads += 1;
+			return 'runtime-sha';
+		})).toBe('build-sha');
+		expect(reads).toBe(0);
+	});
+
+	test('a development run reads Gateship itself, never the managed project ref', () => {
+		expect(resolveWorkflowRevision(null, false, () => 'runtime-sha')).toBe('runtime-sha');
+	});
+
+	test('an unidentified package or container falls back to the public version', () => {
+		let containerReads = 0;
+		expect(resolveWorkflowRevision(null, false, () => null)).toBe(`v${GSHIP_VERSION}`);
+		expect(resolveWorkflowRevision(null, true, () => {
+			containerReads += 1;
+			return 'managed-project-sha';
+		})).toBe(`v${GSHIP_VERSION}`);
+		expect(containerReads).toBe(0);
 	});
 });

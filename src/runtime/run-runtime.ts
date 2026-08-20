@@ -16,6 +16,7 @@ import type { ModelSettings } from './model-settings.ts';
 import type { OperatorProfile } from './operator-profile.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
 import { selectRunRoundOrigins, type RunRoundOrigins } from './round-origin.ts';
+import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
@@ -139,6 +140,8 @@ export interface RuntimeShipper {
 export interface RunRuntimeOptions {
 	cwd: string;
 	store: RunStore;
+	/** Gateship build/source revision that owns every run this process creates. */
+	workflowRevision?: string;
 	executor?: RuntimeExecutor;
 	verifier?: RuntimeVerifier;
 	reviewer?: RuntimeReviewer;
@@ -257,6 +260,7 @@ function errorMessage(error: unknown): string {
 export class RunRuntime {
 	readonly #cwd: string;
 	readonly #store: RunStore;
+	readonly #workflowRevision: string | undefined;
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
@@ -276,6 +280,10 @@ export class RunRuntime {
 	constructor(options: RunRuntimeOptions) {
 		this.#cwd = options.cwd;
 		this.#store = options.store;
+		const workflowRevision = options.workflowRevision?.trim();
+		this.#workflowRevision = workflowRevision === undefined || workflowRevision.length === 0
+			? undefined
+			: workflowRevision.slice(0, 200);
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
@@ -316,6 +324,7 @@ export class RunRuntime {
 			issueId: normalizedIssueId,
 			sessionId: this.#newSessionId(),
 			providerId: this.#store.getSelectedProvider(),
+			workflowRevision: this.#workflowRevision,
 			workspacePath,
 			createdAt: this.#now(),
 		});
@@ -453,6 +462,12 @@ export class RunRuntime {
 	 */
 	getRunRoundOrigins(runId: string): RunRoundOrigins {
 		return selectRunRoundOrigins(this.#store.listRunDecisionEvents(runId));
+	}
+
+	/** Replay the run's objective evaluation from its unbounded decision log. */
+	getRunEvaluation(runId: string): RunEvaluation | null {
+		const run = this.#store.getRun(runId);
+		return run === null ? null : evaluateRun(run, this.#store.listRunDecisionEvents(runId));
 	}
 
 	/** Latest structured provider hold, present only while that run is resting on it. */

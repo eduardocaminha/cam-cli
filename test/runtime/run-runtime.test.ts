@@ -31,6 +31,7 @@ describe('durable run runtime', () => {
 			id: 'run-1',
 			issueId: 'CAM-1',
 			sessionId: 'session-1',
+			workflowRevision: 'revision-1',
 			workspacePath: '/workspaces/run-1',
 			createdAt: '2026-08-15T10:00:00Z',
 		});
@@ -61,6 +62,7 @@ describe('durable run runtime', () => {
 			'run.started',
 			'executor.output',
 		]);
+		expect(reopened.listEvents()[0]?.payload).toEqual({ workflowRevision: 'revision-1' });
 		expect(reopened.listEvents()[2]?.payload).toEqual({ text: 'working' });
 		reopened.close();
 	});

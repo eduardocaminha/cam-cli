@@ -43,6 +43,7 @@ describe('durable web run API', () => {
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store,
+			workflowRevision: 'revision-web',
 			newId: () => 'run-http',
 			newSessionId: () => 'session-http',
 			executor: {
@@ -83,11 +84,16 @@ describe('durable web run API', () => {
 			await waitForReady(runtime, started.run.id);
 			const listResponse = await fetch(`${origin}/api/runs`);
 			expect(await listResponse.json()).toMatchObject({
-				runs: [{
-					id: 'run-http',
-					issueId: 'GSHIP-12',
-					state: 'ready-to-ship',
-					providerWait: null,
+					runs: [{
+						id: 'run-http',
+						issueId: 'GSHIP-12',
+						state: 'ready-to-ship',
+						evaluation: {
+							workflowRevision: 'revision-web',
+							outcome: 'incomplete',
+							wallTimeMs: null,
+						},
+						providerWait: null,
 				}],
 			});
 			const historyResponse = await fetch(`${origin}/api/runs/run-http/events`);

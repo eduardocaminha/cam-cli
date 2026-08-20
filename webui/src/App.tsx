@@ -77,7 +77,9 @@ import {
 	type RunEventView,
 	type RunProviderWaitView,
 	type RunView,
+	type WorkflowCohort,
 	summarizeWorkflow,
+	summarizeWorkflowCohorts,
 	toneOf,
 } from './run-view.ts';
 
@@ -725,6 +727,113 @@ function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEle
 					Custo esperado equivale ao uso reportado pela API; não é cobrança da assinatura.
 				</p>
 			)}
+		</ContextPanel>
+	);
+}
+
+function formatWallTime(milliseconds: number | null): string {
+	if (milliseconds === null) return 'não registrada';
+	const minutes = Math.round(milliseconds / 60_000);
+	if (minutes < 1) return 'menos de 1 min';
+	if (minutes < 60) return `${minutes} min`;
+	const hours = minutes / 60;
+	return `${hours < 10 ? hours.toFixed(1) : Math.round(hours)} h`;
+}
+
+function configurationLabel(configuration: WorkflowCohort['configurations'][number]): string {
+	const roles = configuration.roles.map(({ role, models, efforts }) => {
+		const model = models.length === 0 ? 'modelo não registrado' : models.join(' + ');
+		const effort = efforts.length === 0 ? '' : ` (${efforts.join(' + ')})`;
+		return `${COST_ROLE_LABEL[role]}: ${model}${effort}`;
+	});
+	return [configuration.provider, ...roles].join(' · ');
+}
+
+function WorkflowCohortCard({ cohort, label }: { cohort: WorkflowCohort; label: string }): React.ReactElement {
+	const correctionCount = cohort.corrections.executor
+		+ cohort.corrections.decision
+		+ cohort.corrections.indeterminate;
+	return (
+		<section className="rounded-lg border p-4">
+			<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+				<h4 className="font-medium">{label}</h4>
+				<code className="break-all text-muted-foreground text-xs">{cohort.revision}</code>
+			</div>
+			<dl className="grid gap-2 text-sm sm:grid-cols-[9rem_1fr]">
+				<dt className="text-muted-foreground">Amostra terminal</dt>
+				<dd>
+					{cohort.terminalRunCount} run(s)
+					{cohort.incompleteRunCount === 0 ? null : ` · ${cohort.incompleteRunCount} ainda incompleta(s)`}
+				</dd>
+				<dt className="text-muted-foreground">Resultados</dt>
+				<dd>
+					{cohort.outcomes.shipped} entregues · {cohort.outcomes.failed} falhas ·{' '}
+					{cohort.outcomes.cancelled} canceladas
+				</dd>
+				<dt className="text-muted-foreground">Atenção humana</dt>
+				<dd>
+					{cohort.attention.requests} pedido(s) em {cohort.attention.runCount} run(s) ·{' '}
+					{cohort.attention.interventions} resposta(s)
+				</dd>
+				<dt className="text-muted-foreground">Correções</dt>
+				<dd>{correctionCount} rodada(s) em {cohort.corrections.runCount} run(s)</dd>
+				<dt className="text-muted-foreground">Holds do provider</dt>
+				<dd>{cohort.providerHolds.count} em {cohort.providerHolds.runCount} run(s)</dd>
+				<dt className="text-muted-foreground">Tempo mediano</dt>
+				<dd>{formatWallTime(cohort.medianWallTimeMs)} de criação ao estado terminal</dd>
+				<dt className="text-muted-foreground">Custo conhecido</dt>
+				<dd>
+					{cohort.cost.totalCostUsd === null
+						? 'nenhum custo reportado'
+						: `${formatCostUsd(cohort.cost.totalCostUsd)} em ${cohort.cost.reportedRunCount} run(s)`}
+				</dd>
+			</dl>
+			<div className="mt-3 flex flex-col gap-1 text-muted-foreground text-xs">
+				{cohort.configurations.length === 0 ? (
+					<span>Provider/model/effort ainda não observados em run terminal.</span>
+				) : cohort.configurations.map((configuration) => (
+					<span key={configurationLabel(configuration)}>
+						{configuration.runCount}× {configurationLabel(configuration)}
+					</span>
+				))}
+			</div>
+		</section>
+	);
+}
+
+/** Adjacent immutable revision cohorts, never one synthetic score. */
+function WorkflowBenchmarkPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+	if (runs.length === 0) return null;
+	const cohorts = summarizeWorkflowCohorts(runs).slice(0, 2);
+	return (
+		<ContextPanel
+			description="Reprocessa a janela durável de até 50 runs e compara revisões sem chamar outro agente."
+			title="Benchmarks replayable"
+		>
+			{cohorts.length === 0 ? (
+				<p className="text-muted-foreground text-sm">
+					As runs existentes são anteriores ao registro de revisão. A próxima run inicia a primeira coorte.
+				</p>
+			) : (
+				<div className="grid gap-3 xl:grid-cols-2">
+					{cohorts.map((cohort, index) => (
+						<WorkflowCohortCard
+							cohort={cohort}
+							key={cohort.revision}
+							label={index === 0 ? 'Coorte mais recente' : 'Baseline anterior'}
+						/>
+					))}
+				</div>
+			)}
+			{cohorts.length === 1 ? (
+				<p className="mt-3 text-muted-foreground text-xs">
+					A comparação começa quando outra revisão acumular uma run terminal.
+				</p>
+			) : null}
+			<p className="mt-3 text-muted-foreground text-xs">
+				Comparação observacional: escopo, provider, modelo e effort também podem mudar os resultados.
+				 Não existe score composto nem aprovação automática.
+			</p>
 		</ContextPanel>
 	);
 }
@@ -1922,6 +2031,7 @@ function RunsSurface(props: AppProps): React.ReactElement {
 			{run === null ? null : <RunReport run={run} />}
 			{run === null ? null : <RunCostPanel run={run} />}
 			<WorkflowInsightsPanel runs={props.runs} />
+			<WorkflowBenchmarkPanel runs={props.runs} />
 			<RunActivity events={props.events} run={run} />
 			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
 			<PreviousRunsPanel runs={props.runs} />

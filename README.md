@@ -129,6 +129,14 @@ The schedule is off by default and belongs to the same Gateship process. A
 manual scan resets the same cadence; no host cron, daemon or background queue
 is required.
 
+Every newly created run also records the Gateship source/build revision in its
+durable creation event. The closed-by-default benchmark panel on `/runs`
+replays the recent 50-run window into revision cohorts and keeps outcomes,
+human attention, correction rounds, provider holds, wall time, known cost and
+provider/model/effort visible as separate facts. Legacy runs without a recorded
+revision stay in ordinary history but are excluded from cohort comparison.
+There is no evaluator model, synthetic score or automatic approval.
+
 ## Container
 
 Gateship also ships as one container image: the compiled binary, git, the

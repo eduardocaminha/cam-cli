@@ -97,6 +97,22 @@ export interface RunProviderWaitView {
 	retryAt?: string;
 }
 
+/** Mirrors the provider-neutral replay derived in src/runtime/run-evaluation.ts. */
+export interface RunEvaluationView {
+	workflowRevision: string | null;
+	provider: 'claude' | 'codex';
+	outcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete';
+	wallTimeMs: number | null;
+	attentionRequests: number;
+	operatorInterventions: number;
+	providerHolds: number;
+	roles: Array<{
+		role: RunCostRole;
+		models: string[];
+		efforts: string[];
+	}>;
+}
+
 export interface RunView {
 	id: string;
 	issueId: string;
@@ -106,6 +122,7 @@ export interface RunView {
 	updatedAt: string;
 	cost: RunCostView;
 	roundOrigins: RunRoundOriginsView;
+	evaluation?: RunEvaluationView | null;
 	providerWait: RunProviderWaitView | null;
 }
 
@@ -184,6 +201,125 @@ export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
 			reportedRunCount: runs.filter((run) => run.cost.totalCostUsd !== null).length,
 		},
 	};
+}
+
+export interface WorkflowConfiguration {
+	provider: RunEvaluationView['provider'];
+	roles: RunEvaluationView['roles'];
+	runCount: number;
+}
+
+/** One immutable cohort: terminal runs started by the same Gateship revision. */
+export interface WorkflowCohort {
+	revision: string;
+	trackedRunCount: number;
+	terminalRunCount: number;
+	incompleteRunCount: number;
+	outcomes: { shipped: number; failed: number; cancelled: number };
+	attention: { requests: number; interventions: number; runCount: number };
+	providerHolds: { count: number; runCount: number };
+	corrections: RunRoundOriginsView & { runCount: number };
+	medianWallTimeMs: number | null;
+	cost: RunCostAggregate & { reportedRunCount: number };
+	configurations: WorkflowConfiguration[];
+}
+
+function median(values: readonly number[]): number | null {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 1
+		? sorted[middle] ?? null
+		: ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function configurationKey(evaluation: RunEvaluationView): string {
+	return JSON.stringify({ provider: evaluation.provider, roles: evaluation.roles });
+}
+
+type RecordedRun = RunView & {
+	evaluation: RunEvaluationView & { workflowRevision: string };
+};
+
+function hasRecordedRevision(run: RunView): run is RecordedRun {
+	return run.evaluation?.workflowRevision !== null
+		&& run.evaluation?.workflowRevision !== undefined;
+}
+
+function configurationsOf(runs: readonly RecordedRun[]): WorkflowConfiguration[] {
+	const configurations = new Map<string, WorkflowConfiguration>();
+	for (const { evaluation } of runs) {
+		const key = configurationKey(evaluation);
+		const current = configurations.get(key);
+		configurations.set(key, current === undefined
+			? { provider: evaluation.provider, roles: evaluation.roles, runCount: 1 }
+			: { ...current, runCount: current.runCount + 1 });
+	}
+	return [...configurations.values()];
+}
+
+function observationsOf(runs: readonly RecordedRun[]): Pick<
+	WorkflowCohort,
+	'outcomes' | 'attention' | 'providerHolds' | 'corrections'
+> {
+	const outcomes = { shipped: 0, failed: 0, cancelled: 0 };
+	const attention = { requests: 0, interventions: 0, runCount: 0 };
+	const providerHolds = { count: 0, runCount: 0 };
+	const corrections = { executor: 0, decision: 0, indeterminate: 0, runCount: 0 };
+	for (const run of runs) {
+		const { evaluation } = run;
+		if (evaluation.outcome === 'incomplete') continue;
+		outcomes[evaluation.outcome] += 1;
+		attention.requests += evaluation.attentionRequests;
+		attention.interventions += evaluation.operatorInterventions;
+		if (evaluation.attentionRequests > 0) attention.runCount += 1;
+		providerHolds.count += evaluation.providerHolds;
+		if (evaluation.providerHolds > 0) providerHolds.runCount += 1;
+		const correctionCount = run.roundOrigins.executor
+			+ run.roundOrigins.decision
+			+ run.roundOrigins.indeterminate;
+		if (correctionCount > 0) corrections.runCount += 1;
+		corrections.executor += run.roundOrigins.executor;
+		corrections.decision += run.roundOrigins.decision;
+		corrections.indeterminate += run.roundOrigins.indeterminate;
+	}
+	return { outcomes, attention, providerHolds, corrections };
+}
+
+function summarizeCohort(revision: string, tracked: readonly RecordedRun[]): WorkflowCohort {
+	const terminal = tracked.filter((run) => run.evaluation.outcome !== 'incomplete');
+	const cost = aggregateRunCosts(terminal);
+	return {
+		revision,
+		trackedRunCount: tracked.length,
+		terminalRunCount: terminal.length,
+		incompleteRunCount: tracked.length - terminal.length,
+		...observationsOf(terminal),
+		medianWallTimeMs: median(terminal.flatMap(({ evaluation }) =>
+			evaluation.wallTimeMs === null ? [] : [evaluation.wallTimeMs])),
+		cost: {
+			...cost,
+			reportedRunCount: terminal.filter((run) => run.cost.totalCostUsd !== null).length,
+		},
+		configurations: configurationsOf(terminal),
+	};
+}
+
+/**
+ * Replays comparable cohorts from the same bounded run window the screen
+ * already reads. Legacy runs without a recorded revision remain visible in
+ * the ordinary workflow summary but cannot be assigned to a benchmark.
+ */
+export function summarizeWorkflowCohorts(runs: readonly RunView[]): WorkflowCohort[] {
+	const revisions: string[] = [];
+	const grouped = new Map<string, RecordedRun[]>();
+	for (const run of runs) {
+		if (!hasRecordedRevision(run)) continue;
+		const revision = run.evaluation.workflowRevision;
+		if (!grouped.has(revision)) revisions.push(revision);
+		grouped.set(revision, [...(grouped.get(revision) ?? []), run]);
+	}
+	return revisions.map((revision) => summarizeCohort(revision, grouped.get(revision) ?? []));
 }
 
 export interface RunEventView {

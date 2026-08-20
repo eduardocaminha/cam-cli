@@ -188,6 +188,7 @@ export interface CreateRunInput {
 	issueId: string;
 	sessionId: string;
 	providerId?: AgentProviderId;
+	workflowRevision?: string;
 	workspacePath: string;
 	createdAt: string;
 }
@@ -859,6 +860,10 @@ export class RunStore {
 	}
 
 	createRun(input: CreateRunInput): { run: RunRecord; event: RunEvent } {
+		const workflowRevision = input.workflowRevision?.trim();
+		const createdPayload = workflowRevision === undefined || workflowRevision.length === 0
+			? {}
+			: { workflowRevision: workflowRevision.slice(0, 200) };
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
 				INSERT INTO runs (
@@ -875,9 +880,13 @@ export class RunStore {
 			const inserted = this.#db.query(`
 				INSERT INTO run_events (
 					run_id, kind, from_state, to_state, payload_json, created_at, event_class
-				) VALUES ($runId, 'run.created', NULL, 'queued', '{}', $createdAt, 'decision')
+				) VALUES ($runId, 'run.created', NULL, 'queued', $payloadJson, $createdAt, 'decision')
 				RETURNING *
-			`).get({ runId: input.id, createdAt: input.createdAt }) as EventRow;
+			`).get({
+				runId: input.id,
+				payloadJson: JSON.stringify(createdPayload),
+				createdAt: input.createdAt,
+			}) as EventRow;
 			return inserted;
 		});
 		const event = create();
