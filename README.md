@@ -114,7 +114,16 @@ From the browser you can:
 5. enable local browser notifications, so a decision, a failure, or the
    completed run reaches you outside the tab;
 6. switch between Claude and Codex without losing the durable conversation;
-7. use the explicit controls as a deterministic fallback.
+7. run an optional advisory React diagnostic against an isolated exact-SHA
+   checkout, then dismiss a finding or promote it into an unapproved task;
+8. use the explicit controls as a deterministic fallback.
+
+Diagnostics are deliberately outside the delivery gate. They do not auto-fix,
+approve or start work, and no diagnostic score can block shipping. The initial
+React adapter is version-pinned, requests structured output with telemetry and
+scoring disabled, and keeps its download cache under `.gship/diagnostics`
+instead of installing anything into the project. A complete scan may clear a
+pending finding that no longer appears; a partial scan never claims absence.
 
 ## Container
 

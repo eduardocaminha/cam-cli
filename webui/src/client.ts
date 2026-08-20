@@ -15,6 +15,8 @@ import type {
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const PROJECT_PATH = '/api/project';
 export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
+export const DIAGNOSTICS_PATH = '/api/diagnostics';
+export const DIAGNOSTIC_FINDINGS_PATH = '/api/diagnostic-findings';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
@@ -114,6 +116,67 @@ export type ProjectStatusView =
 export interface OperatorProfileView {
 	name: string;
 	timezone: string;
+}
+
+export type DiagnosticScanStateView = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface DiagnosticScanView {
+	id: string;
+	analyzer: string;
+	analyzerVersion: string | null;
+	sourceSha: string | null;
+	state: DiagnosticScanStateView;
+	coverageComplete: boolean;
+	findingCount: number;
+	error: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface DiagnosticFindingView {
+	id: string;
+	analyzer: string;
+	rule: string;
+	severity: 'error' | 'warning' | 'info';
+	file: string;
+	evidence: string;
+	line?: number;
+	column?: number;
+	toolVersion: string;
+	sourceSha: string;
+	status: 'pending' | 'dismissed' | 'promoted' | 'cleared';
+	promotedIssueId: string | null;
+	occurrenceCount: number;
+	firstSeenAt: string;
+	lastSeenAt: string;
+	updatedAt: string;
+}
+
+export interface DiagnosticAnalyzerView {
+	id: string;
+	label: string;
+	version: string;
+	description: string;
+}
+
+export interface DiagnosticsView {
+	analyzers: DiagnosticAnalyzerView[];
+	scan: DiagnosticScanView | null;
+	findings: DiagnosticFindingView[];
+	resolvedFindings: DiagnosticFindingView[];
+	resolvedFindingsOmittedCount: number;
+	workspaceNotices: string[];
+}
+
+export function emptyDiagnostics(): DiagnosticsView {
+	return {
+		analyzers: [],
+		scan: null,
+		findings: [],
+		resolvedFindings: [],
+		resolvedFindingsOmittedCount: 0,
+		workspaceNotices: [],
+	};
 }
 
 export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
@@ -276,6 +339,10 @@ interface OperatorProfilePayload extends CommandPayload {
 	profile?: Partial<OperatorProfileView>;
 }
 
+interface DiagnosticsPayload extends CommandPayload, Partial<DiagnosticsView> {
+	scan?: DiagnosticScanView | null;
+}
+
 interface RunsPayload {
 	runs: RunView[];
 }
@@ -425,6 +492,68 @@ export async function saveOperatorProfile(profile: OperatorProfileView): Promise
 		throw new Error(payload.message ?? `Perfil recusado (${response.status}).`);
 	}
 	return 'Perfil do operador atualizado.';
+}
+
+export async function fetchDiagnostics(): Promise<DiagnosticsView> {
+	const payload = await readJson<DiagnosticsPayload>(await fetch(DIAGNOSTICS_PATH), 'Diagnósticos');
+	return {
+		analyzers: payload.analyzers ?? [],
+		scan: payload.scan ?? null,
+		findings: payload.findings ?? [],
+		resolvedFindings: payload.resolvedFindings ?? [],
+		resolvedFindingsOmittedCount: payload.resolvedFindingsOmittedCount ?? 0,
+		workspaceNotices: payload.workspaceNotices ?? [],
+	};
+}
+
+export async function startDiagnostic(analyzer: string): Promise<string> {
+	const response = await fetch(DIAGNOSTICS_PATH, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ analyzer }),
+	});
+	const payload = (await response.json()) as DiagnosticsPayload;
+	if (!response.ok) throw new Error(payload.message ?? `Diagnóstico recusado (${response.status}).`);
+	return 'Diagnóstico iniciado em um checkout isolado.';
+}
+
+export async function cancelDiagnostic(scanId: string): Promise<string> {
+	const response = await fetch(`${DIAGNOSTICS_PATH}/${encodeURIComponent(scanId)}/cancel`, {
+		method: 'POST',
+	});
+	const payload = (await response.json()) as DiagnosticsPayload;
+	if (!response.ok) throw new Error(payload.message ?? `Cancelamento recusado (${response.status}).`);
+	return 'Diagnóstico cancelado.';
+}
+
+export async function dismissDiagnosticFinding(id: string): Promise<string> {
+	const response = await fetch(
+		`${DIAGNOSTIC_FINDINGS_PATH}/${encodeURIComponent(id)}/dismiss`,
+		{ method: 'POST' },
+	);
+	const payload = (await response.json()) as CommandPayload;
+	if (!response.ok) throw new Error(payload.message ?? `Descarte recusado (${response.status}).`);
+	return 'Achado diagnóstico descartado.';
+}
+
+export async function promoteDiagnosticFinding(
+	id: string,
+	input: OperatorIssueDraft,
+): Promise<CreatedIssue> {
+	const response = await fetch(
+		`${DIAGNOSTIC_FINDINGS_PATH}/${encodeURIComponent(id)}/promote`,
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(input),
+		},
+	);
+	const payload = (await response.json()) as CreateIssuePayload;
+	if (!response.ok) throw new Error(payload.message ?? `Promoção recusada (${response.status}).`);
+	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
+		throw new Error('O servidor não devolveu a tarefa criada.');
+	}
+	return payload.issue;
 }
 
 /**
