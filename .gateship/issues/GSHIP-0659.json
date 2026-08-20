@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-20T09:27:43.274Z",
-  "updatedAt": "2026-08-20T09:27:43.274Z",
+  "updatedAt": "2026-08-20T09:43:19.960Z",
   "description": "Registrar e mostrar de onde veio cada round de correcao de uma run, separando erro do executor de consequencia de decisao do operador. Hoje a run conta rounds e custo, mas nao atribui causa, entao uma issue com muitos rounds parece a mesma coisa quer o executor esteja errando, quer o operador esteja redesenhando algo que a especificacao nao previa.\n\nEvidencia real: a GSHIP-654 precisou de nove rodadas de revisao, e reconstruindo a mao depois descobriu-se que seis vinham de um unico subsistema que a especificacao nao continha, desenhado por decisoes incrementais durante a run. Esse diagnostico so apareceu no fim. Com a atribuicao visivel, ele estaria disponivel na terceira rodada, que e quando ainda daria para cortar a fatia.\n\nO dado ja existe no log de eventos e nao precisa de captura nova: um round que nasce de run.review-fix-requested ou de run.full-verify-fix-requested sem decisao do operador entre eles e do executor; um round que nasce depois de run.operator-guidance e consequencia da decisao. A fatia e derivar isso do historico ja gravado e expor por run, com a contagem de cada origem.\n\nMostrar no card da run, ao lado do custo que ja aparece, sem tela nova e sem grafico. Um round cuja origem nao pode ser determinada e reportado como indeterminado, nunca atribuido por suposicao.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: round apos guidance do operador conta como decisao, round sem guidance conta como executor, historico sem rounds reporta zero de ambos, e origem indeterminada nao e atribuida.\n\nFora de escopo: julgar se a decisao foi boa, agregar entre runs, comparar issues, qualquer painel novo, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "1"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "063675d939757efa5420caf571ffffbfc71d7f7ef78f1a2985f4a3396b430149",
+    "approvedAt": "2026-08-20T09:43:19.960Z"
   }
 }
