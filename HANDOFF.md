@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `65414f46` (onboarding, PR #514)
-> Active implementation branch: `codex/operator-profile`
-> Current stage: operator identity/timezone verified; publication pending
+> Shipped baseline: `origin/main` at `238ae4f5` (operator profile, PR #515)
+> Active implementation branch: `codex/diagnostics-foundation`
+> Current stage: ad hoc diagnostics verified; publication pending
 
 ## How to use this file
 
@@ -70,23 +70,40 @@ logic.
 
 ## Active bounded slice
 
-The minimal operator profile is implemented on `codex/operator-profile`:
+The ad hoc diagnostics foundation is implemented locally on
+`codex/diagnostics-foundation`:
 
-- one optional `{ name, timezone }` record lives in existing
-  `runtime_settings`; no table, account or remote identity was added;
-- `/api/operator-profile` exposes a same-origin-protected whole-record write;
-- the web suggests the browser timezone but persists nothing until the operator
-  explicitly saves; the runtime validates and canonicalizes IANA identifiers;
-- every orchestrator turn receives the profile as non-authoritative context,
-  using the name naturally and timezone only to interpret dates;
-- malformed persisted data degrades to an empty profile rather than blocking
-  boot or conversation.
+- one provider-neutral in-process runtime admits at most one scan and only
+  while the same project has no active run;
+- a scan refreshes `origin/main`, resolves its exact SHA and creates a detached
+  worktree under `.gship/diagnostics/worktrees`; it creates no branch and
+  installs no project dependencies;
+- the first optional adapter pins React Doctor `0.9.12`, requests schema-v3
+  compact JSON, disables telemetry and scores, bounds execution and keeps its
+  download cache in Gateship state rather than the project;
+- normalized findings persist in the existing SQLite database with analyzer,
+  rule, severity, file, evidence, tool version and source SHA;
+- recurring findings deduplicate across scans. Only a complete report may mark
+  an absent pending finding cleared; partial reports never claim absence;
+- `/work` shows a compact advisory inbox. The operator may dismiss a finding
+  or promote it into an unapproved issue; diagnostics never fix, approve, start
+  or block a ship;
+- cancellation owns the analyzer process group, timeouts fail durably, crashes
+  recover unfinished scan rows, and an analyzer-dirtied workspace is preserved
+  instead of force-deleted.
 
-Focused verification passed 187 tests, both TypeScript projects and Biome lint.
-The one ship-boundary `bun run check:all` passed 743 tests, both typechecks,
-Biome and Knip; Knip reported only its two pre-existing configuration hints.
+Focused runtime, API and rendered-UI tests pass together with both TypeScript
+projects and Biome lint. The one ship-boundary `bun run check:all` passed 753
+tests, both TypeScript projects, Biome and Knip; Knip reported only its two
+pre-existing configuration hints.
 
-## Previously shipped bounded slice
+## Previously shipped bounded slices
+
+PR #515 shipped the optional operator profile as squash commit `238ae4f5`.
+Name and IANA timezone live in existing settings, are persisted only by an
+explicit same-origin write, and reach orchestrator turns as non-authoritative
+context. The local and required CI gates passed and the restarted service was
+verified on all four routes.
 
 PR #514 shipped deterministic project onboarding as squash commit `65414f46`.
 It derives readiness from local Git metadata without fetching, guides existing
@@ -170,7 +187,7 @@ specs with evidence become stale and require an explicit new approval. This
 correctly removes GSHIP-660, GSHIP-661 and GSHIP-662 from the executable queue
 without inventing a new `deferred` state or editing issue JSON by hand.
 
-## Verification already completed on this branch
+## Earlier shipped verification record
 
 - Focused provider, runtime, web API, UI, notification, approval and container
   configuration tests pass.
@@ -276,7 +293,7 @@ the operator.
   and source SHA. Deduplicate recurring findings and send them to a diagnostic
   inbox; a human may dismiss or promote one into the existing issue workflow.
   Findings never auto-fix code, auto-approve work or block ship through a score.
-- React Doctor is the first candidate adapter for React projects, invoked with
+- React Doctor is the first implemented adapter for React projects, invoked with
   a pinned version, structured output and telemetry disabled. It is optional,
   not part of `check:all`, and must not silently install into or edit the
   operator's project. Shadscan remains deferred as a narrower optional adapter.
@@ -332,9 +349,9 @@ Completed foundations:
 
 Next product stages, in current order:
 
-1. finish and ship minimal operator identity/timezone (active branch;
-   repository facts already shipped with onboarding);
-2. ad hoc diagnostics foundation and project-aware LSP availability;
+1. finish and ship the ad hoc diagnostics foundation (active branch);
+2. add project-aware LSP availability without pretending Gateship controls a
+   third-party agent client's use of it;
 3. coherent telemetry and operator-facing observability, including diagnostic
    usefulness and false-positive measurements;
 4. persisted diagnostic schedules owned by the existing service;
@@ -352,9 +369,10 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #514 is
-> present. If `codex/operator-profile` still contains unshipped work, finish
-> only the active profile slice from the evidence above; do not restart
-> onboarding or provider recovery. Do not start GSHIP-660/661/662 or reapprove
-> them. Preserve the simple one-service architecture. Run focused checks while
-> editing and `bun run check:all` once at the ship boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #515 is
+> present. If `codex/diagnostics-foundation` still contains unshipped work,
+> finish only the active advisory diagnostics slice from the evidence above;
+> do not add schedules, LSP, auto-fixes or score gates to it. Do not start
+> GSHIP-660/661/662 or reapprove them. Preserve the simple one-service
+> architecture. Run focused checks while editing and `bun run check:all` once
+> at the ship boundary.

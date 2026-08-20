@@ -4,6 +4,18 @@ import { dirname } from 'node:path';
 
 import type { AgentProviderId } from './agent-session.ts';
 import {
+	diagnosticFingerprint,
+	type DiagnosticDraft,
+	type DiagnosticFinding,
+	type DiagnosticFindingStatus,
+	type DiagnosticScan,
+	type DiagnosticScanState,
+	DiagnosticTransitionError,
+	isDiagnosticFindingStatus,
+	isDiagnosticScanState,
+	normalizeDiagnosticDrafts,
+} from './diagnostic-finding.ts';
+import {
 	emptyModelSettings,
 	MODEL_SETTINGS_KEY,
 	type ModelSettings,
@@ -448,6 +460,39 @@ interface ProposalRow {
 	updated_at: string;
 }
 
+interface DiagnosticScanRow {
+	id: string;
+	analyzer: string;
+	analyzer_version: string | null;
+	source_sha: string | null;
+	state: string;
+	coverage_complete: number;
+	finding_count: number;
+	error: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+interface DiagnosticFindingRow {
+	id: string;
+	fingerprint: string;
+	analyzer: string;
+	rule: string;
+	severity: string;
+	file: string;
+	line: number | null;
+	column: number | null;
+	evidence: string;
+	tool_version: string;
+	source_sha: string;
+	status: string;
+	promoted_issue_id: string | null;
+	occurrence_count: number;
+	first_seen_at: string;
+	last_seen_at: string;
+	status_updated_at: string;
+}
+
 interface OrchestratorMessageRow {
 	seq: number;
 	provider_id: string;
@@ -551,6 +596,51 @@ function decodeProposal(row: ProposalRow): RunProposal {
 	};
 }
 
+function decodeDiagnosticScan(row: DiagnosticScanRow): DiagnosticScan {
+	if (!isDiagnosticScanState(row.state)) {
+		throw new Error(`invalid persisted diagnostic scan state: ${row.state}`);
+	}
+	return {
+		id: row.id,
+		analyzer: row.analyzer,
+		analyzerVersion: row.analyzer_version,
+		sourceSha: row.source_sha,
+		state: row.state,
+		coverageComplete: row.coverage_complete === 1,
+		findingCount: row.finding_count,
+		error: row.error,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function decodeDiagnosticFinding(row: DiagnosticFindingRow): DiagnosticFinding {
+	if (!isDiagnosticFindingStatus(row.status)) {
+		throw new Error(`invalid persisted diagnostic finding status: ${row.status}`);
+	}
+	const severity = row.severity === 'error' || row.severity === 'warning'
+		? row.severity
+		: 'info';
+	return {
+		id: row.id,
+		analyzer: row.analyzer,
+		rule: row.rule,
+		severity,
+		file: row.file,
+		evidence: row.evidence,
+		...(row.line === null ? {} : { line: row.line }),
+		...(row.column === null ? {} : { column: row.column }),
+		toolVersion: row.tool_version,
+		sourceSha: row.source_sha,
+		status: row.status,
+		promotedIssueId: row.promoted_issue_id,
+		occurrenceCount: row.occurrence_count,
+		firstSeenAt: row.first_seen_at,
+		lastSeenAt: row.last_seen_at,
+		updatedAt: row.status_updated_at,
+	};
+}
+
 /** Absence over a fabricated zero: a column the row never had reads as no usage at all, never as a free turn. */
 function decodeOrchestratorMessageUsage(row: OrchestratorMessageRow): OrchestratorMessageUsage | undefined {
 	const usage: OrchestratorMessageUsage = {
@@ -630,6 +720,41 @@ export class RunStore {
 				updated_at TEXT NOT NULL
 			);
 			CREATE INDEX IF NOT EXISTS run_proposals_run_seq ON run_proposals(run_id, seq);
+			CREATE TABLE IF NOT EXISTS diagnostic_scans (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				id TEXT NOT NULL UNIQUE,
+				analyzer TEXT NOT NULL,
+				analyzer_version TEXT,
+				source_sha TEXT,
+				state TEXT NOT NULL,
+				coverage_complete INTEGER NOT NULL DEFAULT 0,
+				finding_count INTEGER NOT NULL DEFAULT 0,
+				error TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS diagnostic_findings (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				id TEXT NOT NULL UNIQUE,
+				fingerprint TEXT NOT NULL UNIQUE,
+				analyzer TEXT NOT NULL,
+				rule TEXT NOT NULL,
+				severity TEXT NOT NULL,
+				file TEXT NOT NULL,
+				line INTEGER,
+				column INTEGER,
+				evidence TEXT NOT NULL,
+				tool_version TEXT NOT NULL,
+				source_sha TEXT NOT NULL,
+				status TEXT NOT NULL,
+				promoted_issue_id TEXT,
+				occurrence_count INTEGER NOT NULL DEFAULT 1,
+				first_seen_at TEXT NOT NULL,
+				last_seen_at TEXT NOT NULL,
+				status_updated_at TEXT NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS diagnostic_findings_status_seq
+				ON diagnostic_findings(status, seq);
 			CREATE TABLE IF NOT EXISTS runtime_settings (
 				key TEXT PRIMARY KEY,
 				value TEXT NOT NULL
@@ -925,6 +1050,237 @@ export class RunStore {
 		throw new ProposalTransitionError(
 			'proposal-not-pending',
 			`Proposta ${id} já está ${current.status}.`,
+			409,
+		);
+	}
+
+	createDiagnosticScan(input: { id: string; analyzer: string; createdAt: string }): DiagnosticScan {
+		const row = this.#db.query(`
+			INSERT INTO diagnostic_scans (id, analyzer, state, created_at, updated_at)
+			VALUES ($id, $analyzer, 'queued', $createdAt, $createdAt)
+			RETURNING *
+		`).get(input) as DiagnosticScanRow;
+		return decodeDiagnosticScan(row);
+	}
+
+	beginDiagnosticScan(input: {
+		id: string;
+		analyzerVersion: string;
+		sourceSha: string;
+		updatedAt: string;
+	}): DiagnosticScan {
+		const row = this.#db.query(`
+			UPDATE diagnostic_scans
+			SET state = 'running', analyzer_version = $analyzerVersion,
+				source_sha = $sourceSha, updated_at = $updatedAt
+			WHERE id = $id AND state = 'queued'
+			RETURNING *
+		`).get(input) as DiagnosticScanRow | null;
+		if (row === null) throw new Error(`diagnostic scan cannot start: ${input.id}`);
+		return decodeDiagnosticScan(row);
+	}
+
+	/**
+	 * One successful analyzer report and its inbox projection. A complete report
+	 * clears older pending findings it no longer observes; a partial report never
+	 * claims absence. Dismissed/promoted findings stay settled when they recur.
+	 */
+	completeDiagnosticScan(input: {
+		id: string;
+		analyzerVersion: string;
+		sourceSha: string;
+		coverageComplete: boolean;
+		findings: readonly DiagnosticDraft[];
+		updatedAt: string;
+	}): { scan: DiagnosticScan; findings: DiagnosticFinding[] } {
+		const drafts = normalizeDiagnosticDrafts(input.findings);
+		const apply = this.#db.transaction(() => {
+			const scan = this.getDiagnosticScan(input.id);
+			if (scan === null || scan.state !== 'running') {
+				throw new Error(`diagnostic scan cannot complete: ${input.id}`);
+			}
+			if (input.coverageComplete) {
+				this.#db.query(`
+					UPDATE diagnostic_findings
+					SET status = 'cleared', status_updated_at = $updatedAt
+					WHERE analyzer = $analyzer AND status = 'pending'
+				`).run({ analyzer: scan.analyzer, updatedAt: input.updatedAt });
+			}
+
+			const findings = drafts.map((draft) => {
+				const fingerprint = diagnosticFingerprint(scan.analyzer, draft);
+				return this.#db.query(`
+					INSERT INTO diagnostic_findings (
+						id, fingerprint, analyzer, rule, severity, file, line, column,
+						evidence, tool_version, source_sha, status, occurrence_count,
+						first_seen_at, last_seen_at, status_updated_at
+					) VALUES (
+						$id, $fingerprint, $analyzer, $rule, $severity, $file, $line, $column,
+						$evidence, $toolVersion, $sourceSha, 'pending', 1,
+						$updatedAt, $updatedAt, $updatedAt
+					)
+					ON CONFLICT(fingerprint) DO UPDATE SET
+						severity = excluded.severity,
+						line = excluded.line,
+						column = excluded.column,
+						evidence = excluded.evidence,
+						tool_version = excluded.tool_version,
+						source_sha = excluded.source_sha,
+						status = CASE
+							WHEN diagnostic_findings.status = 'cleared' THEN 'pending'
+							ELSE diagnostic_findings.status
+						END,
+						occurrence_count = diagnostic_findings.occurrence_count + 1,
+						last_seen_at = excluded.last_seen_at,
+						status_updated_at = CASE
+							WHEN diagnostic_findings.status = 'cleared' THEN excluded.status_updated_at
+							ELSE diagnostic_findings.status_updated_at
+						END
+					RETURNING *
+				`).get({
+					id: `diagnostic-${fingerprint}`,
+					fingerprint,
+					analyzer: scan.analyzer,
+					rule: draft.rule,
+					severity: draft.severity,
+					file: draft.file,
+					line: draft.line ?? null,
+					column: draft.column ?? null,
+					evidence: draft.evidence,
+					toolVersion: input.analyzerVersion,
+					sourceSha: input.sourceSha,
+					updatedAt: input.updatedAt,
+				}) as DiagnosticFindingRow;
+			});
+
+			const completed = this.#db.query(`
+				UPDATE diagnostic_scans
+				SET state = 'completed', analyzer_version = $analyzerVersion,
+					source_sha = $sourceSha, coverage_complete = $coverageComplete,
+					finding_count = $findingCount, error = NULL, updated_at = $updatedAt
+				WHERE id = $id AND state = 'running'
+				RETURNING *
+			`).get({
+				id: input.id,
+				analyzerVersion: input.analyzerVersion,
+				sourceSha: input.sourceSha,
+				coverageComplete: input.coverageComplete ? 1 : 0,
+				findingCount: drafts.length,
+				updatedAt: input.updatedAt,
+			}) as DiagnosticScanRow;
+			return { scan: completed, findings };
+		});
+		const result = apply();
+		return {
+			scan: decodeDiagnosticScan(result.scan),
+			findings: result.findings.map(decodeDiagnosticFinding),
+		};
+	}
+
+	finishDiagnosticScan(
+		id: string,
+		state: Extract<DiagnosticScanState, 'failed' | 'cancelled'>,
+		error: string,
+		updatedAt: string,
+	): DiagnosticScan {
+		const row = this.#db.query(`
+			UPDATE diagnostic_scans SET state = $state, error = $error, updated_at = $updatedAt
+			WHERE id = $id AND state IN ('queued', 'running')
+			RETURNING *
+		`).get({ id, state, error, updatedAt }) as DiagnosticScanRow | null;
+		if (row === null) throw new Error(`diagnostic scan cannot finish: ${id}`);
+		return decodeDiagnosticScan(row);
+	}
+
+	/** A crashed service cannot still own the process a queued/running row described. */
+	recoverDiagnosticScans(updatedAt: string): number {
+		return this.#db.query(`
+			UPDATE diagnostic_scans
+			SET state = 'failed', error = 'Service restarted before the diagnostic finished.',
+				updated_at = $updatedAt
+			WHERE state IN ('queued', 'running')
+		`).run({ updatedAt }).changes;
+	}
+
+	getDiagnosticScan(id: string): DiagnosticScan | null {
+		const row = this.#db.query('SELECT * FROM diagnostic_scans WHERE id = $id')
+			.get({ id }) as DiagnosticScanRow | null;
+		return row === null ? null : decodeDiagnosticScan(row);
+	}
+
+	listDiagnosticScans(limit = 20): DiagnosticScan[] {
+		const rows = this.#db.query(`
+			SELECT * FROM diagnostic_scans ORDER BY seq DESC LIMIT $limit
+		`).all({ limit }) as DiagnosticScanRow[];
+		return rows.map(decodeDiagnosticScan);
+	}
+
+	listPendingDiagnosticFindings(limit = 200): DiagnosticFinding[] {
+		const rows = this.#db.query(`
+			SELECT * FROM diagnostic_findings WHERE status = 'pending'
+			ORDER BY CASE severity
+				WHEN 'error' THEN 0
+				WHEN 'warning' THEN 1
+				ELSE 2
+			END, last_seen_at DESC, seq DESC LIMIT $limit
+		`).all({ limit }) as DiagnosticFindingRow[];
+		return rows.map(decodeDiagnosticFinding);
+	}
+
+	listResolvedDiagnosticFindings(
+		limit = 20,
+	): { findings: DiagnosticFinding[]; omittedCount: number } {
+		const { total } = this.#db.query(`
+			SELECT COUNT(*) AS total FROM diagnostic_findings WHERE status != 'pending'
+		`).get() as { total: number };
+		const rows = this.#db.query(`
+			SELECT * FROM diagnostic_findings WHERE status != 'pending'
+			ORDER BY status_updated_at DESC, seq DESC LIMIT $limit
+		`).all({ limit }) as DiagnosticFindingRow[];
+		return { findings: rows.map(decodeDiagnosticFinding), omittedCount: total - rows.length };
+	}
+
+	getDiagnosticFinding(id: string): DiagnosticFinding | null {
+		const row = this.#db.query('SELECT * FROM diagnostic_findings WHERE id = $id')
+			.get({ id }) as DiagnosticFindingRow | null;
+		return row === null ? null : decodeDiagnosticFinding(row);
+	}
+
+	dismissDiagnosticFinding(id: string, updatedAt: string): DiagnosticFinding {
+		return this.#settleDiagnosticFinding(id, 'dismissed', null, updatedAt);
+	}
+
+	promoteDiagnosticFinding(id: string, issueId: string, updatedAt: string): DiagnosticFinding {
+		const promotedIssueId = issueId.trim();
+		if (promotedIssueId.length === 0) throw new Error('promoted issueId is required');
+		return this.#settleDiagnosticFinding(id, 'promoted', promotedIssueId, updatedAt);
+	}
+
+	#settleDiagnosticFinding(
+		id: string,
+		status: Extract<DiagnosticFindingStatus, 'dismissed' | 'promoted'>,
+		promotedIssueId: string | null,
+		updatedAt: string,
+	): DiagnosticFinding {
+		const row = this.#db.query(`
+			UPDATE diagnostic_findings
+			SET status = $status, promoted_issue_id = $promotedIssueId,
+				status_updated_at = $updatedAt
+			WHERE id = $id AND status = 'pending'
+			RETURNING *
+		`).get({ id, status, promotedIssueId, updatedAt }) as DiagnosticFindingRow | null;
+		if (row !== null) return decodeDiagnosticFinding(row);
+		const current = this.getDiagnosticFinding(id);
+		if (current === null) {
+			throw new DiagnosticTransitionError(
+				'diagnostic-finding-not-found',
+				`Achado diagnóstico ${id} não existe.`,
+				404,
+			);
+		}
+		throw new DiagnosticTransitionError(
+			'diagnostic-finding-not-pending',
+			`Achado diagnóstico ${id} já está ${current.status}.`,
 			409,
 		);
 	}

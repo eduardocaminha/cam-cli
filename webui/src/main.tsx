@@ -2,8 +2,8 @@
 //
 // The only impure module of the client: it owns the local state, mounts the
 // pure screen, and subscribes to the server's event stream. There is no
-// polling loop -- /api/events pushes every run transition, and the two GET
-// routes are re-read only when an event or a command says something changed.
+// general polling loop -- /api/events pushes run transitions. The one bounded
+// exception polls only while an external diagnostic process is active.
 //
 // Which surface to show is read from the browser path once, at mount: every
 // link in the shell is a real navigation, so the document is rebuilt whenever
@@ -15,16 +15,20 @@ import { App, routeOf } from './App.tsx';
 import {
 	abandonIssue,
 	approveIssue,
+	cancelDiagnostic,
 	type ChainRunsView,
 	commandRun,
 	createIssue,
+	dismissDiagnosticFinding,
 	dismissProposal,
+	emptyDiagnostics,
 	emptyNotificationChannels,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
+	fetchDiagnostics,
 	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
@@ -35,9 +39,11 @@ import {
 	fetchRunEvents,
 	fetchRuns,
 	type GitIdentityView,
+	type DiagnosticsView,
 	type NotificationChannelsView,
 	type OperatorProfileView,
 	promoteProposal,
+	promoteDiagnosticFinding,
 	type RunAction,
 	type ChatMessageView,
 	type IssueReviewDraft,
@@ -57,6 +63,7 @@ import {
 	selectProvider,
 	specifyIssue,
 	startCodexLogin,
+	startDiagnostic,
 	startRun,
 	type StaleServiceView,
 	type WorkspaceNoticeView,
@@ -125,6 +132,7 @@ function useOperationalRun(): {
 	notificationChannels: NotificationChannelsView;
 	project: ProjectStatusView;
 	operatorProfile: OperatorProfileView;
+	diagnostics: DiagnosticsView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -159,6 +167,7 @@ function useOperationalRun(): {
 	const [operatorProfile, setOperatorProfile] = useState<OperatorProfileView>(
 		EMPTY_OPERATOR_PROFILE,
 	);
+	const [diagnostics, setDiagnostics] = useState<DiagnosticsView>(emptyDiagnostics);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -177,6 +186,7 @@ function useOperationalRun(): {
 			fetchNotificationChannels(),
 			fetchProjectStatus(),
 			fetchOperatorProfile(),
+			fetchDiagnostics(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -191,6 +201,7 @@ function useOperationalRun(): {
 				notificationChannelsSnapshot,
 				projectSnapshot,
 				operatorProfileSnapshot,
+				diagnosticsSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -215,6 +226,7 @@ function useOperationalRun(): {
 				setNotificationChannels(notificationChannelsSnapshot);
 				setProject(projectSnapshot);
 				setOperatorProfile(operatorProfileSnapshot);
+				setDiagnostics(diagnosticsSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -263,6 +275,17 @@ function useOperationalRun(): {
 		return () => source.close();
 	}, [refresh]);
 
+	useEffect(() => {
+		const state = diagnostics.scan?.state;
+		if (state !== 'queued' && state !== 'running') return;
+		const interval = setInterval(() => {
+			void fetchDiagnostics()
+				.then(setDiagnostics)
+				.catch((error: unknown) => setStatus(String(error)));
+		}, 1_500);
+		return () => clearInterval(interval);
+	}, [diagnostics.scan?.state]);
+
 	return {
 		backlog,
 		ideas,
@@ -286,6 +309,7 @@ function useOperationalRun(): {
 		notificationChannels,
 		project,
 		operatorProfile,
+		diagnostics,
 		version,
 		status,
 		pending,
@@ -318,6 +342,7 @@ function Screen(): ReactElement {
 		notificationChannels,
 		project,
 		operatorProfile,
+		diagnostics,
 		version,
 		status,
 		pending,
@@ -334,6 +359,7 @@ function Screen(): ReactElement {
 		<App
 			backlog={backlog}
 			chainRuns={chainRuns}
+			diagnostics={diagnostics}
 			drafts={drafts}
 			brief={brief}
 			chatMessages={chatMessages}
@@ -352,6 +378,14 @@ function Screen(): ReactElement {
 				}));
 			}}
 			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId))}
+			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId))}
+			onDismissDiagnosticFinding={(findingId) =>
+				send(() => dismissDiagnosticFinding(findingId))}
+			onPromoteDiagnosticFinding={(findingId, draft) => {
+				send(() => promoteDiagnosticFinding(findingId, draft).then((created) =>
+					`${created.id} criada a partir do diagnóstico.`));
+			}}
+			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer))}
 			onPromoteProposal={(proposalId, draft) => {
 				// The created issue is a draft to review, not the next run: it is
 				// filed unapproved, so it is not selected to start either.

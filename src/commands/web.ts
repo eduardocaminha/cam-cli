@@ -23,6 +23,13 @@ import {
 	OrchestratorBusyError,
 	type OrchestratorTurnResult,
 } from '../runtime/conversational-orchestrator.ts';
+import { DiagnosticTransitionError } from '../runtime/diagnostic-finding.ts';
+import {
+	DiagnosticsRuntime,
+	DiagnosticRuntimeError,
+	GitDiagnosticWorkspace,
+	ReactDoctorAdapter,
+} from '../runtime/diagnostics.ts';
 import { checkGitIdentity, ensureGitIdentity, type GitIdentityResult } from '../runtime/git-identity.ts';
 import {
 	createGitRuntimePreflight,
@@ -85,6 +92,7 @@ import {
 	type RunEvent,
 	RunStore,
 } from '../runtime/run-store.ts';
+import { isTerminalRunState } from '../runtime/run-state.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { ensureCodexHome } from '../runtime/provider-env.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
@@ -113,6 +121,8 @@ export interface WebServerOptions {
 	cwd: string;
 	/** Injectable durable run runtime. Production defaults to .gship/runtime.sqlite. */
 	runRuntime?: RunRuntime;
+	/** Injectable in-process diagnostic owner. Production uses the same SQLite file. */
+	diagnostics?: DiagnosticsRuntime;
 	/** Test seam for the remote-main operator issue writer. */
 	issueIntake?: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
@@ -808,12 +818,128 @@ async function abandonIssueFromOperator(
 	}
 }
 
-/** Both operator refusals already carry the code, message and status to answer. */
-function refusalResponse(error: IssueIntakeError | ProposalTransitionError): Response {
+/** Operator refusals already carry the code, message and status to answer. */
+function refusalResponse(
+	error:
+		| IssueIntakeError
+		| ProposalTransitionError
+		| DiagnosticTransitionError
+		| DiagnosticRuntimeError,
+): Response {
 	return Response.json(
 		{ ok: false, code: error.code, message: error.message },
 		{ status: error.status },
 	);
+}
+
+async function startDiagnosticFromOperator(
+	request: Request,
+	diagnostics: DiagnosticsRuntime,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	const analyzer = (body as Record<string, unknown>)['analyzer'];
+	if (typeof analyzer !== 'string' || analyzer.trim().length === 0) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Analyzer é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		return Response.json({ ok: true, scan: diagnostics.start(analyzer.trim()) }, { status: 202 });
+	} catch (error) {
+		if (!(error instanceof DiagnosticRuntimeError)) throw error;
+		return refusalResponse(error);
+	}
+}
+
+async function cancelDiagnosticFromOperator(
+	request: Request,
+	diagnostics: DiagnosticsRuntime,
+	scanId: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({ ok: true, scan: await diagnostics.cancel(scanId) });
+	} catch (error) {
+		if (!(error instanceof DiagnosticRuntimeError)) throw error;
+		return refusalResponse(error);
+	}
+}
+
+function dismissDiagnosticFindingFromOperator(
+	request: Request,
+	diagnostics: DiagnosticsRuntime,
+	findingId: string,
+): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({ ok: true, finding: diagnostics.dismissFinding(findingId) });
+	} catch (error) {
+		if (!(error instanceof DiagnosticTransitionError)) throw error;
+		return refusalResponse(error);
+	}
+}
+
+async function promoteDiagnosticFindingFromOperator(
+	request: Request,
+	diagnostics: DiagnosticsRuntime,
+	findingId: string,
+	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const input = parseOperatorIssueInput(body);
+		const finding = diagnostics.getFinding(findingId);
+		if (finding === null) {
+			throw new DiagnosticTransitionError(
+				'diagnostic-finding-not-found',
+				`Achado diagnóstico ${findingId} não existe.`,
+				404,
+			);
+		}
+		if (finding.status !== 'pending') {
+			throw new DiagnosticTransitionError(
+				'diagnostic-finding-not-pending',
+				`Achado diagnóstico ${findingId} já está ${finding.status}.`,
+				409,
+			);
+		}
+		const issue = issueIntake(input, { approve: false });
+		return Response.json({
+			ok: true,
+			issue,
+			finding: diagnostics.promoteFinding(findingId, issue.id),
+		});
+	} catch (error) {
+		if (error instanceof IssueIntakeError || error instanceof DiagnosticTransitionError) {
+			return refusalResponse(error);
+		}
+		throw error;
+	}
 }
 
 /**
@@ -1600,6 +1726,7 @@ export function resolveBindHostname(env: Record<string, string | undefined> = pr
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
+	const ownsDiagnostics = options.diagnostics === undefined;
 	const ownsProviderAuth = options.providerAuth === undefined;
 	const ownsOrchestrator = options.orchestrator === undefined;
 	// Constructed before anything that might commit, and shared by the two
@@ -1629,6 +1756,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	};
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd, ensureGitIdentityOnce));
+	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
+		store: new RunStore(ownsRunRuntime ? join(options.cwd, '.gship', 'runtime.sqlite') : ':memory:'),
+		workspace: new GitDiagnosticWorkspace(options.cwd),
+		adapters: [new ReactDoctorAdapter(options.cwd)],
+		isProjectIdle: () => runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state)),
+	});
 	// The same durable event log the SSE stream below reads per-connection
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
 	// makes this a no-op subscriber.
@@ -1708,6 +1841,32 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/operator-profile': {
 				GET: () => Response.json({ profile: runRuntime.getOperatorProfile() }),
 				PUT: (request) => writeOperatorProfile(request, runRuntime),
+			},
+			'/api/diagnostics': {
+				GET: () => Response.json(diagnostics.snapshot()),
+				POST: (request) => startDiagnosticFromOperator(request, diagnostics),
+			},
+			'/api/diagnostics/:scanId/cancel': {
+				POST: (request) => cancelDiagnosticFromOperator(
+					request,
+					diagnostics,
+					request.params.scanId,
+				),
+			},
+			'/api/diagnostic-findings/:findingId/dismiss': {
+				POST: (request) => dismissDiagnosticFindingFromOperator(
+					request,
+					diagnostics,
+					request.params.findingId,
+				),
+			},
+			'/api/diagnostic-findings/:findingId/promote': {
+				POST: (request) => promoteDiagnosticFindingFromOperator(
+					request,
+					diagnostics,
+					request.params.findingId,
+					issueIntake,
+				),
 			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: listRunsWithCost(runRuntime) }),
@@ -1867,9 +2026,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			stopped = true;
 			unsubscribeRemoteNotifier();
 			if (ownsOrchestrator) await orchestrator.stop();
+			await diagnostics.stop();
 			await runRuntime.stop();
 			if (ownsProviderAuth) await providerAuth.close();
 			await server.stop(true);
+			if (ownsDiagnostics) diagnostics.close();
 			if (ownsRunRuntime) runRuntime.close();
 		},
 	};

@@ -22,13 +22,19 @@ import {
 	commandRun,
 	createIssue,
 	CHAT_PATH,
+	cancelDiagnostic,
 	dismissProposal,
+	dismissDiagnosticFinding,
+	DIAGNOSTIC_FINDINGS_PATH,
+	DIAGNOSTICS_PATH,
+	emptyDiagnostics,
 	emptyNotificationChannels,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
+	fetchDiagnostics,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
 	fetchProposals,
@@ -47,6 +53,7 @@ import {
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
 	promoteProposal,
+	promoteDiagnosticFinding,
 	PROPOSALS_PATH,
 	RESOLVED_PROPOSALS_PATH,
 	type ResolvedProposalView,
@@ -65,6 +72,7 @@ import {
 	SNAPSHOT_PATH,
 	specifyIssue,
 	startCodexLogin,
+	startDiagnostic,
 	startRun,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
@@ -154,6 +162,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 		<App
 			backlog={BACKLOG}
 			chainRuns={EMPTY_CHAIN_RUNS}
+			diagnostics={emptyDiagnostics()}
 			drafts={[]}
 			brief={EMPTY_BRIEF}
 			chatMessages={[]}
@@ -172,9 +181,11 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onApproveIssue={() => {}}
 			onAbandonIssue={() => {}}
 			onDismissProposal={() => {}}
+			onDismissDiagnosticFinding={() => {}}
 			onEnableNotifications={() => {}}
 			onSendNotificationTest={() => {}}
 			onPromoteProposal={() => {}}
+			onPromoteDiagnosticFinding={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
 			onSaveModelSettings={() => {}}
@@ -186,6 +197,8 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSpecifyIssue={() => {}}
 			onReviewIssue={() => {}}
 			onStart={() => {}}
+			onStartDiagnostic={() => {}}
+			onCancelDiagnostic={() => {}}
 			pending={false}
 			proposals={[]}
 			project={READY_PROJECT}
@@ -1039,6 +1052,80 @@ describe('work surface', () => {
 		expect(html).toContain('name="verificationCommand"');
 		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
 		expect(buttonIsEnabled(workPage({ pending: true }), 'Criar tarefa')).toBe(false);
+	});
+
+	test('keeps diagnostics advisory, compact and human-settled on the work surface', () => {
+		const timestamp = '2026-08-20T12:00:00.000Z';
+		const finding = {
+			id: 'diagnostic-1',
+			analyzer: 'react',
+			rule: 'no-transition-all',
+			severity: 'warning' as const,
+			file: 'webui/src/App.tsx',
+			evidence: 'Avoid animating every CSS property.',
+			line: 42,
+			toolVersion: '0.9.12',
+			sourceSha: 'a'.repeat(40),
+			status: 'pending' as const,
+			promotedIssueId: null,
+			occurrenceCount: 2,
+			firstSeenAt: timestamp,
+			lastSeenAt: timestamp,
+			updatedAt: timestamp,
+		};
+		const diagnostics: AppProps['diagnostics'] = {
+			analyzers: [{
+				id: 'react',
+				label: 'React',
+				version: '0.9.12',
+				description: 'Erros e problemas em projetos React.',
+			}],
+			scan: {
+				id: 'scan-1',
+				analyzer: 'react',
+				analyzerVersion: '0.9.12',
+				sourceSha: 'a'.repeat(40),
+				state: 'completed',
+				coverageComplete: true,
+				findingCount: 1,
+				error: null,
+				createdAt: timestamp,
+				updatedAt: timestamp,
+			},
+			findings: [finding],
+			resolvedFindings: [{
+				...finding,
+				id: 'diagnostic-2',
+				rule: 'old-rule',
+				status: 'promoted',
+				promotedIssueId: 'GSHIP-900',
+			}],
+			resolvedFindingsOmittedCount: 3,
+			workspaceNotices: [],
+		};
+		const html = workPage({ diagnostics });
+
+		expect(panelIsOpen(html, 'Gateship Diagnostics')).toBe(false);
+		expect(html).toContain('Consultivo: nunca corrige, aprova ou bloqueia ship.');
+		expect(html).toContain('no-transition-all');
+		expect(html).toContain('webui/src/App.tsx:42');
+		expect(html).toContain('Avoid animating every CSS property.');
+		expect(buttonIsEnabled(html, 'Executar agora')).toBe(true);
+		expect(buttonIsEnabled(html, 'Descartar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Promover')).toBe(true);
+		expect(html).toContain('Resolvidos (1)');
+		expect(html).toContain('GSHIP-900');
+		expect(html).toContain('+3 não exibido(s).');
+		expect(html).not.toContain('Pontuação');
+
+		const active = workPage({
+			diagnostics: {
+				...diagnostics,
+				scan: { ...diagnostics.scan!, state: 'running' },
+			},
+		});
+		expect(hasButton(active, 'Executar agora')).toBe(false);
+		expect(buttonIsEnabled(active, 'Cancelar diagnóstico')).toBe(true);
 	});
 
 	// GSHIP-613: the third card of /work, disclosed like the drafts one.
@@ -2611,6 +2698,42 @@ describe('same-origin transport', () => {
 		// A notice missing its detail is not one the screen is willing to show.
 		await withRecordedFetch({ gitIdentity: {} }, 200, async () => {
 			expect((await fetchBacklog()).gitIdentity).toBeNull();
+		});
+	});
+
+	test('diagnostics use their own read, execution and human-decision routes', async () => {
+		await withRecordedFetch({ analyzers: [{ id: 'react', label: 'React', version: '0.9.12', description: 'React' }] }, 200, async (calls) => {
+			expect((await fetchDiagnostics()).analyzers[0]?.id).toBe('react');
+			expect(calls).toEqual([{ url: DIAGNOSTICS_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({ ok: true }, 202, async (calls) => {
+			expect(await startDiagnostic('react')).toContain('checkout isolado');
+			expect(calls).toEqual([{
+				url: DIAGNOSTICS_PATH,
+				method: 'POST',
+				body: JSON.stringify({ analyzer: 'react' }),
+			}]);
+		});
+		await withRecordedFetch({ ok: true }, 200, async (calls) => {
+			expect(await cancelDiagnostic('scan / 1')).toBe('Diagnóstico cancelado.');
+			expect(calls[0]?.url).toBe(`${DIAGNOSTICS_PATH}/scan%20%2F%201/cancel`);
+		});
+		await withRecordedFetch({ ok: true }, 200, async (calls) => {
+			expect(await dismissDiagnosticFinding('finding / 1')).toContain('descartado');
+			expect(calls[0]?.url).toBe(`${DIAGNOSTIC_FINDINGS_PATH}/finding%20%2F%201/dismiss`);
+		});
+		const issueDraft = {
+			title: 'Promote diagnostic',
+			scope: 'Fix the verified defect.',
+			verificationCommand: 'bun test',
+		};
+		await withRecordedFetch({ issue: { id: 'GSHIP-900', title: issueDraft.title } }, 200, async (calls) => {
+			expect((await promoteDiagnosticFinding('finding-2', issueDraft)).id).toBe('GSHIP-900');
+			expect(calls).toEqual([{
+				url: `${DIAGNOSTIC_FINDINGS_PATH}/finding-2/promote`,
+				method: 'POST',
+				body: JSON.stringify(issueDraft),
+			}]);
 		});
 	});
 

@@ -16,7 +16,7 @@
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
 import React, { useState } from 'react';
-import { Badge } from './components/ui/badge.tsx';
+import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
 import { GateshipLockup } from './components/gateship-logo.tsx';
 import {
 	Card,
@@ -36,6 +36,8 @@ import {
 	type ChainPauseReason,
 	type ChainRunsView,
 	type ChatMessageView,
+	type DiagnosticFindingView,
+	type DiagnosticsView,
 	emptyModelSettings,
 	type GitIdentityView,
 	type IssueReviewDraft,
@@ -107,6 +109,8 @@ export interface AppProps {
 	drafts: readonly IssueReviewDraft[];
 	/** Ideas captured by executed runs, still awaiting an operator decision. */
 	proposals: readonly ProposalView[];
+	/** Ad hoc analyzer state and its human-decided inbox. */
+	diagnostics: DiagnosticsView;
 	/**
 	 * Proposals already settled -- dismissed or promoted -- newest decision
 	 * first, plus how many more exist beyond that window (GSHIP-643). Kept
@@ -167,6 +171,10 @@ export interface AppProps {
 	onAbandonIssue: (issueId: string, reason: string) => void;
 	onDismissProposal: (proposalId: string) => void;
 	onPromoteProposal: (proposalId: string, input: OperatorIssueDraft) => void;
+	onStartDiagnostic: (analyzer: string) => void;
+	onCancelDiagnostic: (scanId: string) => void;
+	onDismissDiagnosticFinding: (findingId: string) => void;
+	onPromoteDiagnosticFinding: (findingId: string, input: OperatorIssueDraft) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
 	onAbandon: () => void;
@@ -1974,6 +1982,238 @@ function IssueReviewPanel({
 	);
 }
 
+function diagnosticFindingLocation(finding: DiagnosticFindingView): string {
+	if (finding.line === undefined) return finding.file;
+	return `${finding.file}:${finding.line}${finding.column === undefined ? '' : `:${finding.column}`}`;
+}
+
+function diagnosticStatusLabel(status: DiagnosticFindingView['status']): string {
+	if (status === 'promoted') return 'Promovido';
+	if (status === 'dismissed') return 'Descartado';
+	if (status === 'cleared') return 'Não reapareceu';
+	return 'Pendente';
+}
+
+function diagnosticSeverityVariant(severity: DiagnosticFindingView['severity']): BadgeVariant {
+	if (severity === 'error') return 'error';
+	if (severity === 'warning') return 'warning';
+	return 'info';
+}
+
+function diagnosticScanVariant(
+	state: NonNullable<DiagnosticsView['scan']>['state'],
+): BadgeVariant {
+	if (state === 'completed') return 'success';
+	if (state === 'failed') return 'error';
+	if (state === 'queued' || state === 'running') return 'info';
+	return 'secondary';
+}
+
+function DiagnosticScanSummary({
+	scan,
+}: Pick<DiagnosticsView, 'scan'>): React.ReactElement | null {
+	if (scan === null) return null;
+	return (
+		<div className="flex flex-col gap-1 text-sm">
+			<div className="flex flex-wrap items-center gap-2">
+				<Badge variant={diagnosticScanVariant(scan.state)}>{scan.state}</Badge>
+				{scan.sourceSha === null ? null : <code className="text-xs">{scan.sourceSha.slice(0, 12)}</code>}
+				{scan.state === 'completed' && !scan.coverageComplete ? <Badge variant="warning">parcial</Badge> : null}
+			</div>
+			{scan.error === null ? null : <p className="text-destructive-foreground">{scan.error}</p>}
+		</div>
+	);
+}
+
+function DiagnosticFindingCard({
+	finding,
+	pending,
+	onDismiss,
+	onPromote,
+}: {
+	finding: DiagnosticFindingView;
+	pending: boolean;
+	onDismiss: AppProps['onDismissDiagnosticFinding'];
+	onPromote: AppProps['onPromoteDiagnosticFinding'];
+}): React.ReactElement {
+	return (
+		<details className="rounded-md border border-border p-3 text-sm">
+			<summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
+				<Badge variant={diagnosticSeverityVariant(finding.severity)}>{finding.severity}</Badge>
+				<span className="font-medium">{finding.rule}</span>
+				<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
+				{finding.occurrenceCount > 1 ? <Badge variant="outline">×{finding.occurrenceCount}</Badge> : null}
+			</summary>
+			<div className="mt-4 flex flex-col gap-4">
+				<p className="whitespace-pre-wrap break-words text-muted-foreground">{finding.evidence}</p>
+				<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+					<span>tool {finding.toolVersion}</span>
+					<code>{finding.sourceSha.slice(0, 12)}</code>
+				</div>
+				<ActionButton enabled={!pending} label="Descartar" onClick={() => onDismiss(finding.id)} />
+				<form
+					className="flex flex-col gap-3"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const value = fieldReader(event.currentTarget);
+						onPromote(finding.id, {
+							title: value('diagnosticTitle'),
+							scope: value('diagnosticScope'),
+							verificationCommand: value('diagnosticVerificationCommand'),
+						});
+					}}
+				>
+					<label className="flex flex-col gap-1">
+						<span className="font-medium">Título</span>
+						<input className={FIELD_CLASS} defaultValue={`${finding.rule} em ${finding.file}`.slice(0, 120)} name="diagnosticTitle" required />
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-medium">Escopo e resultado esperado</span>
+						<textarea className={cn(FIELD_CLASS, 'min-h-24')} name="diagnosticScope" required />
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-medium">Comando de verificação</span>
+						<input className={cn(FIELD_CLASS, 'font-mono')} name="diagnosticVerificationCommand" placeholder="bun test" required />
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">Promover</button>
+				</form>
+			</div>
+		</details>
+	);
+}
+
+function PendingDiagnosticFindings({
+	findings,
+	pending,
+	onDismiss,
+	onPromote,
+}: {
+	findings: readonly DiagnosticFindingView[];
+	pending: boolean;
+	onDismiss: AppProps['onDismissDiagnosticFinding'];
+	onPromote: AppProps['onPromoteDiagnosticFinding'];
+}): React.ReactElement {
+	if (findings.length === 0) {
+		return <p className="text-muted-foreground text-sm">Nenhum achado pendente.</p>;
+	}
+	return (
+		<ul className="flex flex-col gap-3">
+			{findings.map((finding) => (
+				<li key={finding.id}>
+					<DiagnosticFindingCard finding={finding} onDismiss={onDismiss} onPromote={onPromote} pending={pending} />
+				</li>
+			))}
+		</ul>
+	);
+}
+
+function ResolvedDiagnosticFindings({
+	findings,
+	omittedCount,
+}: {
+	findings: readonly DiagnosticFindingView[];
+	omittedCount: number;
+}): React.ReactElement {
+	return (
+		<details className="text-sm">
+			<summary className="cursor-pointer text-muted-foreground">Resolvidos ({findings.length})</summary>
+			<ul className="mt-3 flex flex-col gap-2">
+				{findings.map((finding) => (
+					<li className="flex flex-wrap items-center gap-2" key={finding.id}>
+						<Badge variant="secondary">{diagnosticStatusLabel(finding.status)}</Badge>
+						<span>{finding.rule}</span>
+						<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
+						{finding.promotedIssueId === null ? null : <Badge variant="info">{finding.promotedIssueId}</Badge>}
+					</li>
+				))}
+			</ul>
+			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">+{omittedCount} não exibido(s).</p> : null}
+		</details>
+	);
+}
+
+/**
+ * One optional, advisory analyzer at a time. The summary stays compact; raw
+ * evidence and issue promotion live behind per-finding disclosure.
+ */
+function DiagnosticsPanel({
+	diagnostics,
+	pending,
+	onStartDiagnostic,
+	onCancelDiagnostic,
+	onDismissDiagnosticFinding,
+	onPromoteDiagnosticFinding,
+}: Pick<
+	AppProps,
+	| 'diagnostics'
+	| 'pending'
+	| 'onStartDiagnostic'
+	| 'onCancelDiagnostic'
+	| 'onDismissDiagnosticFinding'
+	| 'onPromoteDiagnosticFinding'
+>): React.ReactElement {
+	const scan = diagnostics.scan;
+	const active = scan?.state === 'queued' || scan?.state === 'running';
+	const analyzer = diagnostics.analyzers[0];
+	return (
+		<CardDisclosure className="group">
+			<CardSummary>
+				<CardTitle>Gateship Diagnostics</CardTitle>
+				<CardDescription>
+					{active ? 'Analisando um checkout isolado…' : `${diagnostics.findings.length} achado(s) pendente(s).`}
+				</CardDescription>
+				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? 'rodando' : diagnostics.findings.length}</Badge></CardAction>
+			</CardSummary>
+			<CardPanel className="flex flex-col gap-4">
+				<div className="flex flex-col gap-2 text-sm">
+					<p className="text-muted-foreground">
+						Consultivo: nunca corrige, aprova ou bloqueia ship. A primeira execução baixa o
+						analyzer pinado apenas no estado local do Gateship.
+					</p>
+					{analyzer === undefined ? null : (
+						<div className="flex flex-wrap items-center gap-2">
+							<Badge variant="outline">{analyzer.label}</Badge>
+							<code className="text-xs">v{analyzer.version}</code>
+							<span className="text-muted-foreground">{analyzer.description}</span>
+						</div>
+					)}
+				</div>
+				<DiagnosticScanSummary scan={scan} />
+				<div className="flex flex-wrap gap-2">
+					{!active && analyzer !== undefined ? (
+						<ActionButton
+							enabled={!pending}
+							label="Executar agora"
+							onClick={() => onStartDiagnostic(analyzer.id)}
+						/>
+					) : null}
+					{active && scan !== null ? (
+						<ActionButton
+							enabled={!pending}
+							label="Cancelar diagnóstico"
+							onClick={() => onCancelDiagnostic(scan.id)}
+						/>
+					) : null}
+				</div>
+				{diagnostics.workspaceNotices.map((notice) => (
+					<p className="text-warning-foreground text-sm" key={notice}>{notice}</p>
+				))}
+				<Separator />
+				<PendingDiagnosticFindings
+					findings={diagnostics.findings}
+					onDismiss={onDismissDiagnosticFinding}
+					onPromote={onPromoteDiagnosticFinding}
+					pending={pending}
+				/>
+				<ResolvedDiagnosticFindings
+					findings={diagnostics.resolvedFindings}
+					omittedCount={diagnostics.resolvedFindingsOmittedCount}
+				/>
+			</CardPanel>
+		</CardDisclosure>
+	);
+}
+
 /**
  * The inbox of ideas the runs found outside their issue: the evidence exactly
  * as it was captured, and the two decisions it admits. Discarding writes
@@ -2162,6 +2402,14 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onSelectIssue={props.onSelectIssue}
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
+			/>
+			<DiagnosticsPanel
+				diagnostics={props.diagnostics}
+				onCancelDiagnostic={props.onCancelDiagnostic}
+				onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
+				onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
+				onStartDiagnostic={props.onStartDiagnostic}
+				pending={props.pending}
 			/>
 			<IssueReviewPanel drafts={props.drafts} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
 			<ProposalsPanel
