@@ -1,16 +1,11 @@
 // webui/src/components/gateship-logo.tsx
 //
-// Vendored from cam-dss's components/dss/dashboard/gateship-logo.tsx: the
-// authorial Gateship mark, an arched gate with a stair descending inside it,
-// plus the offset block that gives the gate its depth. Rendered in
-// `currentColor` so the logo inverts with the panel's polarity instead of
-// staying a fixed colour on a dark screen.
+// The Gateship mark: an arched gate with a stair descending inside it, plus the
+// offset block that gives the gate its depth. Rendered in `currentColor` so the
+// logo follows the panel's polarity instead of staying a fixed colour.
 //
-// The source draws the mark on -- gate traces itself, fill fades in -- via
-// the `logo`/`logo-gate`/`logo-fill` classes and CSS that lives in cam-dss,
-// not here. Vendoring the animation without its CSS would leave those class
-// names pointing at nothing, so this copy drops them; the mark renders
-// static.
+// The operator shell uses the static mark. Motion is deliberately absent: the
+// logo identifies the product and does not need to compete with run state.
 //
 // Two exports because the lockup is unusable small: `GateshipMark` is the
 // square gate on its own, `GateshipLockup` is gate + wordmark.

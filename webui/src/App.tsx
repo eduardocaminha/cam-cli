@@ -86,6 +86,8 @@ import {
 /** The four paths the server answers with this document, and nothing else. */
 export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
 
+const MAIN_CONTENT_ID = 'main-content';
+
 const SURFACES: readonly { path: OperatorRoute; label: string }[] = [
 	{ path: '/', label: 'Conversa' },
 	{ path: '/runs', label: 'Runs' },
@@ -1481,7 +1483,11 @@ function ConversationColumn({
 	run: RunView | null;
 }): React.ReactElement {
 	return (
-		<main className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6">
+		<main
+			className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6"
+			id={MAIN_CONTENT_ID}
+			tabIndex={-1}
+		>
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
 					<CardTitle>Conversa com o orquestrador</CardTitle>
@@ -1973,6 +1979,8 @@ function SurfaceColumn({
 		<main
 			aria-label={label}
 			className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6 xl:overflow-y-auto"
+			id={MAIN_CONTENT_ID}
+			tabIndex={-1}
 		>
 			<StatusOutput status={status} />
 			{children}
@@ -2900,6 +2908,12 @@ export function App(props: AppProps): React.ReactElement {
 	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
+			<a
+				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
+				href={`#${MAIN_CONTENT_ID}`}
+			>
+				Pular para o conteúdo
+			</a>
 			<ShellSidebar
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}

@@ -1795,8 +1795,24 @@ describe('operator shell', () => {
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
 			expect(active).toContain('aria-current="page"');
 			expect(nav.split('aria-current="page"')).toHaveLength(2);
-			// Plain links to served paths: no in-page anchor navigation is left.
-			expect(html).not.toContain('href="#');
+			// Navigation itself stays on served paths. The shell-level skip link is
+			// the one deliberate in-page anchor.
+			expect(nav).not.toContain('href="#');
+		}
+	});
+
+	test('keyboard navigation starts with one skip link targeting the route main', () => {
+		for (const route of SURFACE_PATHS) {
+			const html = renderAt(route);
+			const tags = openingTags(html);
+			const skip = tags.find((tag) => tag.includes('href="#main-content"'));
+			const main = tags.filter((tag) => tag.startsWith('<main'));
+
+			expect(skip).toBe(tags.find((tag) => tag.startsWith('<a')));
+			expect(html).toContain('>Pular para o conteúdo</a>');
+			expect(main).toHaveLength(1);
+			expect(main[0]).toContain('id="main-content"');
+			expect(main[0]).toContain('tabindex="-1"');
 		}
 	});
 
