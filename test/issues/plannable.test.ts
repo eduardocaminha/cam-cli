@@ -74,6 +74,21 @@ describe("isPlannable — executable spec", () => {
 		expect(isPlannable(stale, [stale])).toBe(false);
 	});
 
+	test("invalidates approval when an evidence command is added or changed", () => {
+		const approvedWithoutEvidence = approve(makeIssue({
+			id: "CAM-evidence",
+			spec: { verify: ["bun test"], scope: "s" },
+		}));
+		const changed = {
+			...approvedWithoutEvidence,
+			spec: {
+				...approvedWithoutEvidence.spec!,
+				evidence: [{ command: "git status", output: "clean" }],
+			},
+		};
+		expect(isPlannable(changed, [changed])).toBe(false);
+	});
+
 	test("still rejects a blocked entry even with non-empty verification", () => {
 		const dep = makeIssue({ id: "CAM-4", stage: "idea" });
 		const entry = approve(makeIssue({

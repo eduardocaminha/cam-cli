@@ -104,13 +104,25 @@ describe('direct issue spec', () => {
 			})).toMatchObject({ ok: false });
 		});
 
-		test('does not affect the approval fingerprint, only scope and verify do', () => {
+		test('is part of the approved executable fingerprint', () => {
 			const base = { scope: 'Outcome.', verify: ['bun test'] };
 			const withEvidence = {
 				...base,
 				evidence: [{ command: 'ls', output: 'a\nb' }],
 			};
-			expect(fingerprintSpec(withEvidence)).toBe(fingerprintSpec(base));
+			expect(fingerprintSpec(withEvidence)).not.toBe(fingerprintSpec(base));
+			expect(fingerprintSpec({
+				...withEvidence,
+				evidence: [{ command: ' ls ', output: ' a\nb ' }],
+			})).toBe(fingerprintSpec(withEvidence));
+			expect(fingerprintSpec({
+				...withEvidence,
+				evidence: [{ command: 'pwd', output: 'a\nb' }],
+			})).not.toBe(fingerprintSpec(withEvidence));
+			expect(fingerprintSpec({
+				...withEvidence,
+				evidence: [{ command: 'ls', output: 'changed' }],
+			})).not.toBe(fingerprintSpec(withEvidence));
 		});
 	});
 });

@@ -34,11 +34,16 @@ export interface ValidationResult {
 	errors: string[];
 }
 
-/** Fingerprint only the normalized contract that an executor will run. */
+/** Fingerprint every normalized command the operator authorizes the runtime to execute. */
 export function fingerprintSpec(spec: Spec): string {
+	const evidence = (spec.evidence ?? []).map((item) => ({
+		command: item.command.trim(),
+		output: item.output.trim(),
+	}));
 	const canonical = JSON.stringify({
 		scope: spec.scope.trim(),
 		verify: (spec.verify ?? []).map((command) => command.trim()),
+		...(evidence.length === 0 ? {} : { evidence }),
 	});
 	return createHash('sha256').update(canonical).digest('hex');
 }
