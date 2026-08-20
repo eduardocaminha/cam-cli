@@ -1085,19 +1085,33 @@ export class RunRuntime {
 	/**
 	 * Cleanup is deliberately outside the run state machine: a merged, cancelled
 	 * or failed run keeps its terminal state even when local resource release
-	 * needs operator attention or a later startup retry. `failed` additionally
-	 * only releases once its branch has no commit missing from the base ref, so
-	 * a commit made before the failure is preserved next to the notice.
+	 * needs operator attention or a later startup retry. Abandoned and failed
+	 * releases additionally only proceed once the branch has no commit missing
+	 * from the base ref (GSHIP-658), because nothing else guarantees that work
+	 * exists anywhere but that branch -- it stays preserved on both the local
+	 * and the remote side, next to the notice, instead of being thrown away.
+	 * The merge path never gates on that check: `ship` merges with
+	 * `--squash` (github-shipper.ts), which lands a brand-new commit on the
+	 * base ref, so a merged branch's own commits are never reachable from it
+	 * -- the check would misreport every merge as carrying a missing commit.
+	 * The merge itself, not commit reachability, is the merge path's own proof
+	 * that the work landed elsewhere. A remote-delete failure never preserves
+	 * the release itself (the local side is already gone): it is instead
+	 * recorded durably by `#hasPendingRemoteDelete` and retried on every later
+	 * call for this run, e.g. the next service startup, until it succeeds or
+	 * the branch turns out already gone.
 	 */
 	#releaseFinishedWorkspace(run: RunRecord, reconciled: boolean, refresh = true): void {
 		if (this.#workspace?.release === undefined || run.workspacePath.length === 0) return;
+		const hadPendingRemoteDelete = this.#hasPendingRemoteDelete(run.id);
 		let result: ReturnType<NonNullable<RuntimeWorkspace['release']>>;
 		try {
 			result = this.#workspace.release({
 				runId: run.id,
 				issueId: run.issueId,
 				workspacePath: run.workspacePath,
-				...(run.state === 'failed' ? { requireUpstream: true } : {}),
+				requireUpstream: run.state !== 'done',
+				...(hadPendingRemoteDelete ? { retryRemoteDelete: true } : {}),
 			});
 		} catch (error) {
 			this.#emitWorkspaceCleanupWarning(run.id, errorMessage(error));
@@ -1107,13 +1121,21 @@ export class RunRuntime {
 
 		if (result.outcome === 'preserved') {
 			this.#emitWorkspaceCleanupWarning(run.id, result.detail);
-		} else if (!this.#store.listRunEvents(run.id)
-			.some((event) => event.kind === 'workspace.released')) {
-			this.#emit(run.id, 'workspace.released', {
-				branch: result.branch,
-				outcome: result.outcome,
-				reconciled,
-			});
+		} else {
+			if (!this.#store.listRunEvents(run.id)
+				.some((event) => event.kind === 'workspace.released')) {
+				this.#emit(run.id, 'workspace.released', {
+					branch: result.branch,
+					outcome: result.outcome,
+					reconciled,
+				});
+			}
+			if (result.remoteWarning !== undefined) {
+				this.#emitWorkspaceCleanupWarning(run.id, result.remoteWarning);
+				this.#markPendingRemoteDelete(run.id, result.remoteWarning);
+			} else if (hadPendingRemoteDelete) {
+				this.#resolvePendingRemoteDelete(run.id);
+			}
 		}
 		if (refresh) this.#refreshWorkspaceNotices();
 	}
@@ -1122,6 +1144,33 @@ export class RunRuntime {
 		const last = this.#store.listRunEvents(runId).at(-1);
 		if (last?.kind === 'workspace.cleanup-warning' && last.payload['detail'] === detail) return;
 		this.#emit(runId, 'workspace.cleanup-warning', { detail });
+	}
+
+	/**
+	 * Durable, unbounded by `listRunEvents`' display window (GSHIP-658): a run
+	 * whose remote branch delete failed long ago must still be found the next
+	 * time this is checked, however many events it has accumulated since.
+	 */
+	#hasPendingRemoteDelete(runId: string): boolean {
+		const last = this.#store.listRunDecisionEvents(runId)
+			.filter((event) => event.kind === 'workspace.remote-delete-pending'
+				|| event.kind === 'workspace.remote-delete-resolved')
+			.at(-1);
+		return last?.kind === 'workspace.remote-delete-pending';
+	}
+
+	/**
+	 * Recorded once per failure streak, not on every retry: the visible
+	 * `workspace.cleanup-warning` above already dedupes on the detail text, so
+	 * this only needs to track whether the streak is still open.
+	 */
+	#markPendingRemoteDelete(runId: string, detail: string): void {
+		if (this.#hasPendingRemoteDelete(runId)) return;
+		this.#emit(runId, 'workspace.remote-delete-pending', { detail });
+	}
+
+	#resolvePendingRemoteDelete(runId: string): void {
+		this.#emit(runId, 'workspace.remote-delete-resolved');
 	}
 
 	#refreshWorkspaceNotices(): void {
