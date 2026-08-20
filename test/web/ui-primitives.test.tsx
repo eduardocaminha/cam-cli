@@ -17,6 +17,7 @@ import {
 	CardTitle,
 } from '../../webui/src/components/ui/card.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
+import { Separator } from '../../webui/src/components/ui/separator.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
 
 describe('ui primitives', () => {
@@ -56,6 +57,13 @@ describe('ui primitives', () => {
 		expect(renderToStaticMarkup(<Badge variant="warning">waiting-user</Badge>))
 			.toContain('bg-warning/8');
 		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
+	});
+
+	test('the visual separator uses the native horizontal-rule semantic', () => {
+		const html = renderToStaticMarkup(<Separator />);
+
+		expect(html.startsWith('<hr')).toBe(true);
+		expect(html).not.toContain('role="separator"');
 	});
 
 	test('cn keeps the declared order and drops the branches that produced nothing', () => {

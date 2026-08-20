@@ -15,7 +15,7 @@
 // transcript is scrolled, which no prop can describe; it lives in
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Badge } from './components/ui/badge.tsx';
 import { GateshipLockup } from './components/gateship-logo.tsx';
 import {
@@ -51,6 +51,7 @@ import {
 	type OperatorIssueDraft,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
+	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
 	type ResolvedProposalView,
@@ -119,6 +120,8 @@ export interface AppProps {
 	chatMessages: readonly ChatMessageView[];
 	/** The operator's own context, editable here and nowhere else. */
 	brief: ProjectBriefView;
+	/** Read-only readiness of the cwd this process owns. */
+	project: ProjectStatusView;
 	/** What the orchestrator recorded about the session; read-only. */
 	handoff: ProjectBriefView;
 	/** Model and effort per (provider, role); empty text keeps the CLI default. */
@@ -1277,9 +1280,13 @@ function ConversationColumn({
 							}
 						}}
 					>
+						<label className="sr-only" htmlFor="orchestrator-message">
+							Mensagem para o orquestrador
+						</label>
 						<input
 							className={cn(FIELD_CLASS, 'min-w-0')}
 							disabled={pending}
+							id="orchestrator-message"
 							name="message"
 							placeholder="O que você quer fazer agora?"
 							required
@@ -1831,14 +1838,6 @@ function IssueReviewForm({
 	const [abandonReason, setAbandonReason] = useState('');
 	const [abandonConfirmed, setAbandonConfirmed] = useState(false);
 
-	useEffect(() => {
-		setScope(draft.scope);
-		setVerificationCommand(draft.verificationCommand);
-		setConfirmed(false);
-		setAbandonReason('');
-		setAbandonConfirmed(false);
-	}, [draft.id, draft.scope, draft.verificationCommand]);
-
 	const dirty = draftChanged(draft, scope, verificationCommand);
 
 	return (
@@ -1957,6 +1956,7 @@ function IssueReviewPanel({
 				{selected === null || ownedByRun ? null : (
 					<IssueReviewForm
 						draft={selected}
+						key={JSON.stringify([selected.id, selected.scope, selected.verificationCommand])}
 						onAbandonIssue={onAbandonIssue}
 						onApproveIssue={onApproveIssue}
 						onReviewIssue={onReviewIssue}
@@ -2178,9 +2178,122 @@ function WorkSurface(props: AppProps): React.ReactElement {
 	);
 }
 
+function ProjectPanel({ project }: Pick<AppProps, 'project'>): React.ReactElement {
+	const ready = project.state === 'ready';
+	return (
+		<ContextPanel
+			description="O processo opera um projeto local por vez; este vínculo é derivado do Git e não é uma configuração oculta."
+			open
+			title="Projeto"
+		>
+			<div className="flex flex-col gap-3 text-sm">
+				<div className="flex flex-wrap items-center gap-2">
+					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'secondary' : 'warning'}>
+						{ready ? 'pronto' : project.state === 'checking' ? 'verificando' : 'atenção'}
+					</Badge>
+					<span className="font-medium">{project.name === '' ? 'Projeto local' : project.name}</span>
+				</div>
+				{ready ? (
+					<dl className="grid gap-2 sm:grid-cols-[8rem_1fr]">
+						<dt className="text-muted-foreground">Repositório</dt>
+						<dd><code className="break-all">{project.repository}</code></dd>
+						<dt className="text-muted-foreground">Fonte dos runs</dt>
+						<dd><code className="break-all">{project.sourceRef}</code></dd>
+					</dl>
+				) : (
+					<p className="text-muted-foreground">{project.detail}</p>
+				)}
+			</div>
+		</ContextPanel>
+	);
+}
+
+const PROJECT_RECOVERY_COMMAND: Readonly<Record<
+	Exclude<ProjectStatusView, { state: 'ready' | 'empty' | 'checking' }>['reason'],
+	string
+>> = {
+	'not-repository': 'cd /caminho/do/projeto && gship',
+	'origin-missing': 'git remote add origin git@github.com:OWNER/REPO.git && git fetch origin main',
+	'github-origin-required': 'git remote set-url origin git@github.com:OWNER/REPO.git',
+	'origin-main-missing': 'git fetch origin main',
+};
+
+function CommandLine({ children }: { children: string }): React.ReactElement {
+	return (
+		<code className="block overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
+			{children}
+		</code>
+	);
+}
+
+/**
+ * First-run guidance, not a project manager: a browser cannot change the cwd
+ * of this process or a container mount, so every path ends by restarting
+ * Gateship from the intended local clone.
+ */
+function OnboardingSurface({
+	project,
+	status,
+}: Pick<AppProps, 'project' | 'status'>): React.ReactElement {
+	return (
+		<SurfaceColumn label="Preparar projeto" status={status}>
+			<Card>
+				<CardHeader>
+					<CardTitle>Conecte um projeto GitHub</CardTitle>
+					<CardDescription>
+						Gateship executa dentro de um clone local e usa origin/main como fonte determinística.
+					</CardDescription>
+				</CardHeader>
+				<CardPanel className="flex flex-col gap-5">
+					{project.state === 'checking' ? (
+						<p className="text-muted-foreground text-sm">{project.detail}</p>
+					) : null}
+					{project.state === 'empty' ? (
+						<>
+							<p className="text-muted-foreground text-sm">{project.detail}</p>
+							<section className="flex flex-col gap-2">
+								<h3 className="font-medium text-sm">Projeto existente</h3>
+								<p className="text-muted-foreground text-sm">
+									Encerre este processo e inicie o Gateship dentro do clone.
+								</p>
+								<CommandLine>cd /caminho/do/projeto && gship</CommandLine>
+							</section>
+							<Separator />
+							<section className="flex flex-col gap-2">
+								<h3 className="font-medium text-sm">Projeto novo</h3>
+								<p className="text-muted-foreground text-sm">
+									Crie o repositório com uma branch main, entre no clone e inicie o Gateship.
+								</p>
+								<CommandLine>gh repo create OWNER/REPO --private --add-readme --clone</CommandLine>
+								<CommandLine>cd REPO && gship</CommandLine>
+							</section>
+						</>
+					) : null}
+					{project.state === 'needs-attention' ? (
+						<>
+							<div className="flex flex-col gap-2">
+								<Badge variant="warning">configuração incompleta</Badge>
+								<p className="text-sm">{project.detail}</p>
+							</div>
+							<CommandLine>{PROJECT_RECOVERY_COMMAND[project.reason]}</CommandLine>
+							<p className="text-muted-foreground text-sm">
+								Depois da correção, reinicie o Gateship. Em container, atualize GATESHIP_PROJECT_DIR e recrie o serviço.
+							</p>
+						</>
+					) : null}
+					<p className="text-muted-foreground text-sm">
+						Ajustes de agentes e assinaturas continuam disponíveis em <a className={TEXT_LINK_CLASS} href="/settings">Ajustes</a>.
+					</p>
+				</CardPanel>
+			</Card>
+		</SurfaceColumn>
+	);
+}
+
 function SettingsSurface(props: AppProps): React.ReactElement {
 	return (
 		<SurfaceColumn label="Ajustes" status={props.status}>
+			<ProjectPanel project={props.project} />
 			<ProvidersPanel
 				onConnectCodex={props.onConnectCodex}
 				onSelectProvider={props.onSelectProvider}
@@ -2219,6 +2332,7 @@ export function App(props: AppProps): React.ReactElement {
 	// The array arrives newest first, so the operable run is its head and the
 	// history below it is the same array, read once.
 	const run = props.runs[0] ?? null;
+	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<ShellSidebar
@@ -2230,10 +2344,11 @@ export function App(props: AppProps): React.ReactElement {
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
 			/>
-			{props.route === '/runs' ? <RunsSurface {...props} /> : null}
-			{props.route === '/work' ? <WorkSurface {...props} /> : null}
+			{projectBlocksSurface ? <OnboardingSurface project={props.project} status={props.status} /> : null}
+			{!projectBlocksSurface && props.route === '/runs' ? <RunsSurface {...props} /> : null}
+			{!projectBlocksSurface && props.route === '/work' ? <WorkSurface {...props} /> : null}
 			{props.route === '/settings' ? <SettingsSurface {...props} /> : null}
-			{props.route === '/' ? <HomeSurface {...props} /> : null}
+			{!projectBlocksSurface && props.route === '/' ? <HomeSurface {...props} /> : null}
 		</div>
 	);
 }

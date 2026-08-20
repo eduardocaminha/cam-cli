@@ -7,5 +7,5 @@
 import type React from 'react';
 
 export function Separator(): React.ReactElement {
-	return <div className="h-px w-full shrink-0 bg-border" data-slot="separator" role="separator" />;
+	return <hr className="h-px w-full shrink-0 border-0 bg-border" data-slot="separator" />;
 }

@@ -82,6 +82,7 @@ import {
 } from '../runtime/run-store.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { ensureCodexHome } from '../runtime/provider-env.ts';
+import { inspectProject } from '../runtime/project-readiness.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { GSHIP_VERSION } from '../version.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
@@ -1646,6 +1647,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				if (gitIdentity.outcome === 'missing') snapshot['gitIdentity'] = { detail: gitIdentity.detail };
 				return Response.json(snapshot);
 			},
+			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
 			'/api/runs': {
 				GET: () => Response.json({ runs: listRunsWithCost(runRuntime) }),
 				POST: (request) => startDurableRun(request, runRuntime),

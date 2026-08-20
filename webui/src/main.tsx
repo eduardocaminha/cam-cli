@@ -28,6 +28,7 @@ import {
 	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchProposals,
+	fetchProjectStatus,
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
@@ -41,6 +42,7 @@ import {
 	emptyModelSettings,
 	type ModelSettingsView,
 	type ProjectBriefView,
+	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
 	type ResolvedProposalView,
@@ -81,6 +83,12 @@ const EMPTY_BRIEF: ProjectBriefView = {
 /** Off by default, same as a fresh install that never toggled it (GSHIP-638). */
 const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
 
+const CHECKING_PROJECT: ProjectStatusView = {
+	state: 'checking',
+	name: '',
+	detail: 'Verificando o projeto local…',
+};
+
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
@@ -102,6 +110,7 @@ function useOperationalRun(): {
 	modelSettings: ModelSettingsView;
 	chainRuns: ChainRunsView;
 	notificationChannels: NotificationChannelsView;
+	project: ProjectStatusView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -132,6 +141,7 @@ function useOperationalRun(): {
 	const [notificationChannels, setNotificationChannels] = useState<NotificationChannelsView>(
 		emptyNotificationChannels,
 	);
+	const [project, setProject] = useState<ProjectStatusView>(CHECKING_PROJECT);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -148,6 +158,7 @@ function useOperationalRun(): {
 			fetchModelSettings(),
 			fetchChainRuns(),
 			fetchNotificationChannels(),
+			fetchProjectStatus(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -160,6 +171,7 @@ function useOperationalRun(): {
 				modelSnapshot,
 				chainRunsSnapshot,
 				notificationChannelsSnapshot,
+				projectSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -182,6 +194,7 @@ function useOperationalRun(): {
 				setModelSettings(modelSnapshot);
 				setChainRuns(chainRunsSnapshot);
 				setNotificationChannels(notificationChannelsSnapshot);
+				setProject(projectSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -251,6 +264,7 @@ function useOperationalRun(): {
 		modelSettings,
 		chainRuns,
 		notificationChannels,
+		project,
 		version,
 		status,
 		pending,
@@ -281,6 +295,7 @@ function Screen(): ReactElement {
 		modelSettings,
 		chainRuns,
 		notificationChannels,
+		project,
 		version,
 		status,
 		pending,
@@ -360,6 +375,7 @@ function Screen(): ReactElement {
 			modelSettings={modelSettings}
 			pending={pending}
 			proposals={proposals}
+			project={project}
 			providers={providers}
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}

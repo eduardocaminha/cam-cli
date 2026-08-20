@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `ba1004ec` (provider recovery, PR #512)
-> Active implementation branch: none
-> Current stage: recovery/security slice shipped; next stage not started
+> Shipped baseline: `origin/main` at `70cc334e` (handoff checkpoint, PR #513)
+> Active implementation branch: `codex/ui-audit-fixes`
+> Current stage: onboarding slice verified; publication pending
 
 ## How to use this file
 
@@ -68,7 +68,32 @@ remain deterministic fallbacks. The right architecture is a typed provider
 adapter plus one runtime, not a second orchestration server duplicating domain
 logic.
 
-## Shipped bounded slice
+## Active bounded slice
+
+The first onboarding slice is verified on `codex/ui-audit-fixes`; merge and
+live-service validation are the remaining publication steps. It deliberately
+does not add a project picker, host supervisor or second service:
+
+- `/api/project` derives readiness from the process cwd, its GitHub `origin`
+  and the locally available `origin/main` ref without network access;
+- empty folders and four deterministic prerequisite failures replace `/`,
+  `/runs` and `/work` with recovery guidance;
+- `/settings` stays available and reports the derived project facts;
+- existing and new-project paths both end by starting `gship` inside a local
+  clone; a browser never pretends it can remount a host path;
+- README, runtime, transport, component and API coverage are included.
+
+The same branch also contains four small UI-audit fixes: an associated chat
+label, keyed editable draft state, width-only progress transition and a native
+separator. React Doctor's remaining findings were reviewed and rejected as
+non-defects: tiny-list micro-optimizations, one stable read-only index key and
+intentional parsing of error JSON before checking `response.ok`.
+
+Focused verification passed 120 tests, both TypeScript projects and Biome lint.
+The ship-boundary `bun run check:all` then passed: 735 tests, both typechecks,
+Biome and Knip, with only Knip's two pre-existing configuration hints.
+
+## Previously shipped bounded slice
 
 PR #512 shipped six implementation changes as squash commit `ba1004ec`:
 
@@ -238,6 +263,32 @@ the operator.
 - Add tests for observable behavior, destructive boundaries and reproduced
   failures, not every branch introduced by implementation style.
 
+### Diagnostics and code intelligence
+
+- Build a provider-neutral `Gateship Diagnostics` capability after onboarding
+  and operator identity/timezone. It runs ad hoc first and later on a schedule
+  persisted by the existing service; do not introduce host cron or a daemon.
+- A scheduled scan runs once when overdue, without a catch-up storm, against an
+  exact source SHA in an isolated workspace and at low priority while the
+  project is idle.
+- Normalize analyzer output into rule, severity, file, evidence, tool version
+  and source SHA. Deduplicate recurring findings and send them to a diagnostic
+  inbox; a human may dismiss or promote one into the existing issue workflow.
+  Findings never auto-fix code, auto-approve work or block ship through a score.
+- React Doctor is the first candidate adapter for React projects, invoked with
+  a pinned version, structured output and telemetry disabled. It is optional,
+  not part of `check:all`, and must not silently install into or edit the
+  operator's project. Shadscan remains deferred as a narrower optional adapter.
+- LSP is the other strong direction: detect and expose language servers by
+  project profile, beginning with TypeScript where appropriate. Do not install
+  every language server in one universal image or pretend Gateship controls
+  whether a third-party agent client actually uses one.
+- `loss-function-development` is a design reference for the future eval system,
+  not a dependency. Reconsider `code-review-graph` only if telemetry shows
+  context retrieval, rather than review rounds and human decisions, became the
+  measured bottleneck. Do not adopt `better-result`; native discriminated
+  results and typed errors already cover the observed need.
+
 ### UI and product surface
 
 - `/` is the conversation and current attention surface.
@@ -278,16 +329,21 @@ Completed foundations:
 6. container packaging, published image and provider-failure recovery;
 7. per-role model/effort selection and usage accounting.
 
-Next product stages, in current order and not yet started:
+Next product stages, in current order:
 
-1. onboarding for existing repository versus new project;
-2. minimal project/operator settings: identity, timezone and repository facts;
-3. coherent telemetry and operator-facing observability;
-4. replayable evals and self-benchmarking;
-5. measured self-improvement and community proposal intake;
-6. internationalization, accessibility and beta readiness;
-7. multiproject selection and parallelism across independent repositories;
-8. external-user validation before Product Hunt or a YC-style launch push.
+1. finish and ship onboarding for existing repository versus new project
+   (active branch; deterministic readiness and guidance implemented);
+2. minimal operator settings: identity and timezone (repository facts landed
+   with onboarding);
+3. ad hoc diagnostics foundation and project-aware LSP availability;
+4. coherent telemetry and operator-facing observability, including diagnostic
+   usefulness and false-positive measurements;
+5. persisted diagnostic schedules owned by the existing service;
+6. replayable evals and self-benchmarking;
+7. measured self-improvement and community proposal intake;
+8. internationalization, accessibility and beta readiness;
+9. multiproject selection and parallelism across independent repositories;
+10. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -297,9 +353,9 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #512 is
-> present. Do not restart its completed slice. Do not start GSHIP-660/661/662
-> or reapprove them. Preserve the simple one-service architecture. Ask the
-> operator before starting the next roadmap stage; once a bounded slice is
-> approved, run focused checks while editing and `bun run check:all` once at
-> its ship boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #513 is
+> present. If `codex/ui-audit-fixes` still exists, finish its onboarding slice
+> from the active-section evidence above; do not restart provider recovery. Do
+> not start GSHIP-660/661/662 or reapprove them. Preserve the simple one-service
+> architecture. Run focused checks while editing and `bun run check:all` once
+> at the ship boundary.
