@@ -237,6 +237,23 @@ const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], stri
 	reviewer: 'Revisor',
 };
 
+/**
+ * The round-origin line beside the cost: how many of this run's correction
+ * rounds came from the executor's own automatic fix, how many from an
+ * operator decision, and -- only when it happened -- how many the recorded
+ * history could not tell apart (GSHIP-659). Never a fabricated attribution.
+ */
+function formatRoundOrigins(origins: RunView['roundOrigins']): string {
+	const parts = [`${origins.executor} do executor`, `${origins.decision} de decisão do operador`];
+	if (origins.indeterminate > 0) parts.push(`${origins.indeterminate} indeterminado(s)`);
+	return `Rounds de correção: ${parts.join(', ')}`;
+}
+
+/** No correction round yet: nothing to report, not a fabricated zero line. */
+function hasNoRounds(origins: RunView['roundOrigins']): boolean {
+	return origins.executor + origins.decision + origins.indeterminate === 0;
+}
+
 /** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
 function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string | null {
 	const parts: string[] = [];
@@ -461,6 +478,9 @@ function RunCard({
 						<p className="text-muted-foreground text-sm">
 							Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
 						</p>
+					)}
+					{run === null || hasNoRounds(run.roundOrigins) ? null : (
+						<p className="text-muted-foreground text-sm">{formatRoundOrigins(run.roundOrigins)}</p>
 					)}
 					<RunCommands
 						onAbandon={onAbandon}

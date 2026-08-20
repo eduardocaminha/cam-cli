@@ -69,6 +69,7 @@ import {
 	progressOf,
 	type RunCostView,
 	type RunEventView,
+	type RunRoundOriginsView,
 	type RunState,
 	type RunView,
 } from '../../webui/src/run-view.ts';
@@ -89,6 +90,7 @@ const NOTICES: AppProps['workspaceNotices'] = [{
 }];
 
 const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, breakdown: [], roles: [] };
+const EMPTY_ROUND_ORIGINS: RunRoundOriginsView = { executor: 0, decision: 0, indeterminate: 0 };
 
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	return {
@@ -99,6 +101,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		error: null,
 		updatedAt: '2026-08-16T00:00:00.000Z',
 		cost: EMPTY_RUN_COST,
+		roundOrigins: EMPTY_ROUND_ORIGINS,
 		...overrides,
 	};
 }
@@ -521,6 +524,29 @@ describe('runs surface', () => {
 		// about cost rather than showing a fabricated zero.
 		const withoutCost = runsPage({ runs: [runIn('done')] });
 		expect(withoutCost).not.toContain('Custo esperado');
+	});
+
+	// GSHIP-659: the card shows where the run's correction rounds came from,
+	// beside the cost it already shows -- no new screen, no chart. A round the
+	// server could not attribute is only named when it happened.
+	test('the card shows the round origins beside the cost, an indeterminate count only when it happened', () => {
+		const attributed = runsPage({
+			runs: [runIn('done', { roundOrigins: { executor: 2, decision: 1, indeterminate: 0 } })],
+		});
+		expect(attributed).toContain('Rounds de correção');
+		expect(attributed).toContain('2 do executor');
+		expect(attributed).toContain('1 de decisão do operador');
+		expect(attributed).not.toContain('indeterminado');
+
+		const withIndeterminate = runsPage({
+			runs: [runIn('done', { roundOrigins: { executor: 0, decision: 0, indeterminate: 1 } })],
+		});
+		expect(withIndeterminate).toContain('1 indeterminado(s)');
+
+		// No correction round happened at all: nothing to report, not a
+		// fabricated zero line.
+		const withoutRounds = runsPage({ runs: [runIn('done')] });
+		expect(withoutRounds).not.toContain('Rounds de correção');
 	});
 
 	test('the detail breaks the total down by role and model, with the token counts each reported', () => {
