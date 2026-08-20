@@ -95,6 +95,12 @@ interface ClaudeRateLimitInfo {
 	retryAt?: string;
 }
 
+function retryAtFromUnixSeconds(value: unknown): string | undefined {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+	const date = new Date(value * 1_000);
+	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 function readClaudeRateLimit(raw: Record<string, unknown>): ClaudeRateLimitInfo | null {
 	const value = raw['rate_limit_info'];
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -104,10 +110,7 @@ function readClaudeRateLimit(raw: Record<string, unknown>): ClaudeRateLimitInfo 
 	const rateLimitType = typeof info['rateLimitType'] === 'string'
 		? info['rateLimitType']
 		: undefined;
-	const resetsAt = info['resetsAt'];
-	const retryAt = typeof resetsAt === 'number' && Number.isFinite(resetsAt)
-		? new Date(resetsAt * 1_000).toISOString()
-		: undefined;
+	const retryAt = retryAtFromUnixSeconds(info['resetsAt']);
 	return {
 		status,
 		...(rateLimitType === undefined ? {} : { rateLimitType }),
@@ -256,7 +259,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		throw providerErrorFromMessage(
 			'claude',
 			state.summary || 'Claude CLI returned an error result.',
-			'model-refused',
+			'unknown',
 		);
 	}
 	return {

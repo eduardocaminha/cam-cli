@@ -480,6 +480,7 @@ export class RunRuntime {
 	/** An observed active hold for this provider; absence never claims a quota balance. */
 	getProviderWait(providerId: AgentProviderId): RunProviderWait | null {
 		for (const run of this.#store.listRuns(10_000)) {
+			if (run.state !== 'waiting-provider') continue;
 			const wait = this.getRunProviderWait(run.id);
 			if (wait?.provider === providerId) return wait;
 		}

@@ -23,13 +23,13 @@ if (mode === 'wait') {
 		is_error: true,
 		result: `model "${flagValue('--model')}" effort "${flagValue('--effort')}" not found`,
 	})}\n`);
-} else if (mode === 'usage-limit') {
+} else if (mode === 'usage-limit' || mode === 'usage-limit-invalid-reset') {
 	process.stdout.write(`${JSON.stringify({
 		type: 'rate_limit_event',
 		rate_limit_info: {
 			status: 'rejected',
 			rateLimitType: 'five_hour',
-			resetsAt: 1_800_000_000,
+			resetsAt: mode === 'usage-limit' ? 1_800_000_000 : Number.MAX_VALUE,
 		},
 	})}\n`);
 	process.stdout.write(`${JSON.stringify({

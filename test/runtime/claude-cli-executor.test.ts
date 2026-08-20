@@ -142,6 +142,30 @@ describe('Claude CLI runtime executor', () => {
 		});
 	});
 
+	test('ignores an invalid provider reset timestamp without losing the limit', async () => {
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=usage-limit-invalid-reset'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'session-invalid-reset',
+				resume: true,
+				cwd: createTestTmpdir('gship-claude-invalid-reset-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'claude', kind: 'usage-limit' });
+		expect((failure as ProviderCallError).retryAt).toBeUndefined();
+	});
+
 	// GSHIP-617: the operator's per-role choice, pushed as flags only when set.
 	test('pushes --model and --effort only when the slot is configured', () => {
 		const invocation = {

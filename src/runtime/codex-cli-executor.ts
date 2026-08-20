@@ -211,7 +211,7 @@ function consumeCodexEvent(
 		state.turnFailed = providerErrorFromMessage(
 			'codex',
 			errorText(event['error']) ?? 'Codex turn failed.',
-			'model-refused',
+			'unknown',
 		);
 		return;
 	}

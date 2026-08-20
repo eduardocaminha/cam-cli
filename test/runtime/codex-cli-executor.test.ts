@@ -177,6 +177,29 @@ describe('Codex CLI runtime executor', () => {
 		expect(failure).toMatchObject({ provider: 'codex', kind: 'usage-limit' });
 	});
 
+	test('keeps an unrecognized turn failure unknown instead of calling it a model refusal', async () => {
+		const session = new CodexAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=failed'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'codex-session-unknown',
+				resume: true,
+				cwd: createTestTmpdir('gship-codex-unknown-failure-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'codex', kind: 'unknown' });
+	});
+
 	test('binds the provider thread, projects activity, and removes the temporary schema', async () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		let providerSession = '';

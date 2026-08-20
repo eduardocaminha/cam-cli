@@ -1144,25 +1144,41 @@ describe('settings surface', () => {
 
 	test('distinguishes a connected subscription from an observed provider hold', () => {
 		const html = settingsPage({
-			providers: [{
-				id: 'claude',
-				installed: true,
-				subscription: true,
-				label: 'Claude Code',
-				plan: 'max',
-				login: 'external',
-				availability: {
-					provider: 'claude',
-					kind: 'usage-limit',
-					message: 'Claude usage limit reached.',
-					phase: 'working',
-					retryAt: '2026-08-20T12:10:00.000Z',
+			providers: [
+				{
+					id: 'claude',
+					installed: true,
+					subscription: true,
+					label: 'Claude Code',
+					plan: 'max',
+					login: 'external',
+					availability: {
+						provider: 'claude',
+						kind: 'usage-limit',
+						message: 'Claude usage limit reached.',
+						phase: 'working',
+						retryAt: '2026-08-20T12:10:00.000Z',
+					},
 				},
-			}],
+				{
+					id: 'codex',
+					installed: true,
+					subscription: false,
+					label: 'Codex',
+					login: 'web',
+					availability: {
+						provider: 'codex',
+						kind: 'auth-required',
+						message: 'Sign in required.',
+						phase: 'working',
+					},
+				},
+			],
 		});
 
 		expect(html).toContain('Assinatura conectada, mas indisponível agora');
 		expect(html).toContain('Limite da assinatura atingido');
+		expect(html).toContain('Indisponível agora: Autenticação necessária');
 	});
 
 	test('local notifications show the browser permission state without a secret field', () => {
