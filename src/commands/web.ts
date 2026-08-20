@@ -25,6 +25,10 @@ import {
 } from '../runtime/conversational-orchestrator.ts';
 import { DiagnosticTransitionError } from '../runtime/diagnostic-finding.ts';
 import {
+	DIAGNOSTIC_CADENCES,
+	type DiagnosticCadence,
+} from '../runtime/diagnostic-schedule.ts';
+import {
 	DiagnosticsRuntime,
 	DiagnosticRuntimeError,
 	GitDiagnosticWorkspace,
@@ -865,6 +869,42 @@ async function startDiagnosticFromOperator(
 		if (!(error instanceof DiagnosticRuntimeError)) throw error;
 		return refusalResponse(error);
 	}
+}
+
+async function writeDiagnosticSchedule(
+	request: Request,
+	diagnostics: DiagnosticsRuntime,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	const record = body !== null && typeof body === 'object' && !Array.isArray(body)
+		? body as Record<string, unknown>
+		: {};
+	const enabled = record['enabled'];
+	const cadence = record['cadence'];
+	if (typeof enabled !== 'boolean'
+		|| typeof cadence !== 'string'
+		|| !DIAGNOSTIC_CADENCES.includes(cadence as DiagnosticCadence)) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'invalid-request',
+				message: 'A agenda exige "enabled" booleano e cadence daily ou weekly.',
+			},
+			{ status: 400 },
+		);
+	}
+	diagnostics.setSchedule({ enabled, cadence: cadence as DiagnosticCadence });
+	const outcome = diagnostics.runScheduledIfDue();
+	return Response.json({ ok: true, schedule: diagnostics.getSchedule(), outcome });
 }
 
 async function cancelDiagnosticFromOperator(
@@ -1846,6 +1886,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				GET: () => Response.json(diagnostics.snapshot()),
 				POST: (request) => startDiagnosticFromOperator(request, diagnostics),
 			},
+			'/api/diagnostics/schedule': {
+				PUT: (request) => writeDiagnosticSchedule(request, diagnostics),
+			},
 			'/api/diagnostics/:scanId/cancel': {
 				POST: (request) => cancelDiagnosticFromOperator(
 					request,
@@ -2016,6 +2059,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	if (hostname === undefined || port === undefined) {
 		throw new Error('Bun.serve did not report its resolved TCP address');
 	}
+	diagnostics.startScheduler();
 
 	let stopped = false;
 	return {

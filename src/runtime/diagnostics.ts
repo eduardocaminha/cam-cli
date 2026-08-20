@@ -5,6 +5,11 @@ import process from 'node:process';
 
 import { buildAllowlistedEnv } from './child-env.ts';
 import type { DiagnosticDraft, DiagnosticFinding, DiagnosticScan } from './diagnostic-finding.ts';
+import {
+	type DiagnosticCadence,
+	type DiagnosticScheduleStatus,
+	diagnosticScheduleStatus,
+} from './diagnostic-schedule.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
 import type { DiagnosticFindingStats, RunStore } from './run-store.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
@@ -15,6 +20,7 @@ const REACT_DOCTOR_MAX_SECONDS = 60;
 const DEFAULT_SCAN_TIMEOUT_MS = 75_000;
 const MAX_REPORT_BYTES = 20 * 1024 * 1024;
 const CLEANUP_TIMEOUT_MS = 10_000;
+const SCHEDULE_CHECK_MS = 60_000;
 
 export interface DiagnosticAdapterResult {
 	version: string;
@@ -56,8 +62,17 @@ export interface DiagnosticsSnapshot {
 	resolvedFindings: DiagnosticFinding[];
 	resolvedFindingsOmittedCount: number;
 	stats: DiagnosticFindingStats;
+	schedule: DiagnosticScheduleStatus;
 	workspaceNotices: string[];
 }
+
+export type ScheduledDiagnosticOutcome =
+	| 'disabled'
+	| 'not-due'
+	| 'diagnostic-busy'
+	| 'project-busy'
+	| 'analyzer-unavailable'
+	| 'started';
 
 export class DiagnosticRuntimeError extends Error {
 	constructor(readonly code: string, message: string, readonly status: number) {
@@ -375,6 +390,7 @@ export class DiagnosticsRuntime {
 	readonly #newId: () => string;
 	readonly #scanTimeoutMs: number;
 	#active: ActiveDiagnostic | null = null;
+	#scheduleTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(options: DiagnosticsRuntimeOptions) {
 		this.#store = options.store;
@@ -457,8 +473,47 @@ export class DiagnosticsRuntime {
 			resolvedFindings: resolved.findings,
 			resolvedFindingsOmittedCount: resolved.omittedCount,
 			stats: this.#store.getDiagnosticFindingStats(),
+			schedule: this.getSchedule(),
 			workspaceNotices: this.#workspace.listNotices(this.#active?.workspacePath),
 		};
+	}
+
+	getSchedule(): DiagnosticScheduleStatus {
+		const latest = this.#store.listDiagnosticScans(1)[0];
+		return diagnosticScheduleStatus(
+			this.#store.getDiagnosticSchedule(),
+			latest?.createdAt ?? null,
+			this.#now(),
+		);
+	}
+
+	setSchedule(input: { enabled: boolean; cadence: DiagnosticCadence }): DiagnosticScheduleStatus {
+		const current = this.#store.getDiagnosticSchedule();
+		this.#store.setDiagnosticSchedule({
+			enabled: input.enabled,
+			cadence: input.cadence,
+			analyzer: current.analyzer,
+		});
+		return this.getSchedule();
+	}
+
+	/** One due scan at most; a created scan immediately advances the next due instant. */
+	runScheduledIfDue(): ScheduledDiagnosticOutcome {
+		const schedule = this.getSchedule();
+		if (!schedule.enabled) return 'disabled';
+		if (!schedule.overdue) return 'not-due';
+		if (this.#active !== null) return 'diagnostic-busy';
+		if (!this.#isProjectIdle()) return 'project-busy';
+		if (!this.#adapters.has(schedule.analyzer)) return 'analyzer-unavailable';
+		this.start(schedule.analyzer);
+		return 'started';
+	}
+
+	/** The existing process owns the cadence; no host cron or second lifecycle owner. */
+	startScheduler(): void {
+		if (this.#scheduleTimer !== null) return;
+		this.runScheduledIfDue();
+		this.#scheduleTimer = setInterval(() => this.runScheduledIfDue(), SCHEDULE_CHECK_MS);
 	}
 
 	getFinding(id: string): DiagnosticFinding | null {
@@ -474,12 +529,17 @@ export class DiagnosticsRuntime {
 	}
 
 	async stop(): Promise<void> {
+		if (this.#scheduleTimer !== null) {
+			clearInterval(this.#scheduleTimer);
+			this.#scheduleTimer = null;
+		}
 		if (this.#active === null) return;
 		this.#active.controller.abort();
 		await this.#active.promise;
 	}
 
 	close(): void {
+		if (this.#scheduleTimer !== null) throw new Error('cannot close diagnostics while scheduler is active');
 		if (this.#active !== null) throw new Error('cannot close diagnostics while a scan is active');
 		this.#store.close();
 	}

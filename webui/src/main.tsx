@@ -56,6 +56,7 @@ import {
 	type ResolvedProposalView,
 	saveBrief,
 	saveChainRuns,
+	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
 	sendChat,
@@ -407,6 +408,8 @@ function Screen(): ReactElement {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}
 			onSaveBrief={(draft) => send(() => saveBrief(draft))}
+			onSaveDiagnosticSchedule={(enabled, cadence) =>
+				send(() => saveDiagnosticSchedule(enabled, cadence))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
 			onSelectIssue={setSelectedIssueId}

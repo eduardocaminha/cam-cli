@@ -24,6 +24,7 @@ import {
 	commandRun,
 	createIssue,
 	DIAGNOSTIC_FINDINGS_PATH,
+	DIAGNOSTIC_SCHEDULE_PATH,
 	DIAGNOSTICS_PATH,
 	dismissDiagnosticFinding,
 	dismissProposal,
@@ -65,6 +66,7 @@ import {
 	SNAPSHOT_PATH,
 	saveBrief,
 	saveChainRuns,
+	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
 	selectProvider,
@@ -189,6 +191,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onPromoteDiagnosticFinding={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
+			onSaveDiagnosticSchedule={() => {}}
 			onSaveModelSettings={() => {}}
 			onSetChainRuns={() => {}}
 			onSelectIssue={() => {}}
@@ -1121,6 +1124,14 @@ describe('work surface', () => {
 				cleared: 2,
 				recurring: 1,
 			},
+			schedule: {
+				enabled: false,
+				analyzer: 'react',
+				cadence: 'weekly',
+				lastScanAt: timestamp,
+				nextRunAt: null,
+				overdue: false,
+			},
 			workspaceNotices: [],
 		};
 		const html = workPage({ diagnostics });
@@ -1637,6 +1648,41 @@ describe('settings surface', () => {
 		expect(checkbox).toContain('disabled=""');
 	});
 
+	test('the diagnostic schedule is bounded, off by default and closed by default', () => {
+		const html = settingsPage();
+		const schedule = panel(html, 'Agenda de diagnósticos');
+
+		expect(panelIsOpen(html, 'Agenda de diagnósticos')).toBe(false);
+		expect(schedule).toContain('no máximo um diagnóstico vencido');
+		expect(schedule).toContain('name="diagnostic-schedule-enabled"');
+		expect(schedule).not.toContain('checked=""');
+		expect(schedule).toContain('<option value="weekly" selected="">Semanal</option>');
+		expect(schedule).toContain('Períodos perdidos não geram catch-up.');
+		expect(schedule).not.toMatch(/cron/i);
+		expect(buttonIsEnabled(schedule, 'Salvar agenda')).toBe(true);
+	});
+
+	test('the diagnostic schedule shows its due state and holds every control during a command', () => {
+		const diagnostics = emptyDiagnostics();
+		diagnostics.schedule = {
+			enabled: true,
+			analyzer: 'react',
+			cadence: 'daily',
+			lastScanAt: '2026-08-19T12:00:00.000Z',
+			nextRunAt: '2026-08-20T12:00:00.000Z',
+			overdue: true,
+		};
+		const due = panel(settingsPage({ diagnostics }), 'Agenda de diagnósticos');
+		expect(due).toContain('checked=""');
+		expect(due).toContain('<option value="daily" selected="">Diária</option>');
+		expect(due).toContain('vencida');
+
+		const held = panel(settingsPage({ diagnostics, pending: true }), 'Agenda de diagnósticos');
+		expect(elementWith(held, 'name="diagnostic-schedule-enabled"')).toContain('disabled=""');
+		expect(elementWith(held, 'name="diagnostic-schedule-cadence"')).toContain('disabled=""');
+		expect(buttonIsEnabled(held, 'Salvar agenda')).toBe(false);
+	});
+
 	// GSHIP-650: a stopped queue asks for attention in the shell header now,
 	// never buried as a secondary line next to the toggle that turned it on.
 	test('a stopped queue is never reported inside the chaining switch\'s own panel', () => {
@@ -2107,6 +2153,7 @@ describe('same-origin transport', () => {
 		expect(PROPOSALS_PATH).toBe('/api/proposals');
 		expect(RESOLVED_PROPOSALS_PATH).toBe('/api/proposals/resolved');
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
+		expect(DIAGNOSTIC_SCHEDULE_PATH).toBe('/api/diagnostics/schedule');
 		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
 	});
 
@@ -2756,6 +2803,17 @@ describe('same-origin transport', () => {
 				method: 'POST',
 				body: JSON.stringify(issueDraft),
 			}]);
+		});
+		await withRecordedFetch({ ok: true, outcome: 'started' }, 200, async (calls) => {
+			expect(await saveDiagnosticSchedule(true, 'daily')).toContain('vencido iniciado');
+			expect(calls).toEqual([{
+				url: DIAGNOSTIC_SCHEDULE_PATH,
+				method: 'PUT',
+				body: JSON.stringify({ enabled: true, cadence: 'daily' }),
+			}]);
+		});
+		await withRecordedFetch({ ok: false, message: 'cadência recusada' }, 400, async () => {
+			await expect(saveDiagnosticSchedule(true, 'weekly')).rejects.toThrow('cadência recusada');
 		});
 	});
 

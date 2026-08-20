@@ -643,6 +643,47 @@ describe('chain runs switch', () => {
 	});
 });
 
+describe('diagnostic schedule settings', () => {
+	test('is off by default and survives a restart as one normalized settings row', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-diagnostic-schedule-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		expect(store.getDiagnosticSchedule()).toEqual({
+			enabled: false,
+			analyzer: 'react',
+			cadence: 'weekly',
+		});
+		store.setDiagnosticSchedule({ enabled: true, analyzer: 'react', cadence: 'daily' });
+		store.close();
+
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getDiagnosticSchedule()).toEqual({
+			enabled: true,
+			analyzer: 'react',
+			cadence: 'daily',
+		});
+		reopened.close();
+
+		const rows = new Database(dbPath);
+		expect(rows.query("SELECT value FROM runtime_settings WHERE key = 'diagnostic-schedule'")
+			.get()).toEqual({ value: '{"enabled":true,"analyzer":"react","cadence":"daily"}' });
+		rows.close();
+	});
+
+	test('a corrupt row fails closed instead of enabling background work', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-bad-diagnostic-schedule-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.setDiagnosticSchedule({ enabled: true, analyzer: 'react', cadence: 'daily' });
+		store.close();
+
+		const rows = new Database(dbPath);
+		rows.exec("UPDATE runtime_settings SET value = '{not json' WHERE key = 'diagnostic-schedule';");
+		rows.close();
+		const reopened = new RunStore(dbPath);
+		expect(reopened.getDiagnosticSchedule().enabled).toBe(false);
+		reopened.close();
+	});
+});
+
 describe('operator profile', () => {
 	test('round-trips as one runtime setting and survives reopen', () => {
 		const dbPath = join(createTestTmpdir('gship-run-store-operator-'), 'runtime.sqlite');

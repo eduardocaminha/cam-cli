@@ -226,6 +226,61 @@ describe('diagnostic checkout ownership', () => {
 });
 
 describe('diagnostics runtime and inbox', () => {
+	test('runs one overdue schedule only while idle and never catches up missed intervals', async () => {
+		const store = new RunStore(':memory:');
+		let idle = false;
+		let now = '2026-08-20T00:00:00.000Z';
+		let nextId = 0;
+		const runtime = new DiagnosticsRuntime({
+			store,
+			workspace: new FakeWorkspace(),
+			adapters: [new QueueAdapter([
+				{ version: '0.9.12', coverageComplete: true, findings: [] },
+				{ version: '0.9.12', coverageComplete: true, findings: [] },
+			])],
+			isProjectIdle: () => idle,
+			newId: () => `scheduled-${++nextId}`,
+			now: () => now,
+		});
+
+		expect(runtime.runScheduledIfDue()).toBe('disabled');
+		expect(runtime.setSchedule({ enabled: true, cadence: 'daily' })).toMatchObject({
+			enabled: true,
+			overdue: true,
+			nextRunAt: now,
+		});
+		expect(runtime.runScheduledIfDue()).toBe('project-busy');
+		expect(store.listDiagnosticScans()).toEqual([]);
+
+		idle = true;
+		expect(runtime.runScheduledIfDue()).toBe('started');
+		// Creating the scan advances the single due instant immediately, so the
+		// minute poll cannot enqueue a duplicate while the scan is still running.
+		expect(runtime.runScheduledIfDue()).toBe('not-due');
+		await waitForScan(runtime, 'completed');
+		expect(runtime.getSchedule()).toMatchObject({
+			lastScanAt: '2026-08-20T00:00:00.000Z',
+			nextRunAt: '2026-08-21T00:00:00.000Z',
+			overdue: false,
+		});
+
+		// Missing two daily instants still creates only one new scan when the
+		// project becomes idle; there is no per-interval backlog to drain.
+		now = '2026-08-23T00:00:00.000Z';
+		idle = false;
+		expect(runtime.runScheduledIfDue()).toBe('project-busy');
+		idle = true;
+		expect(runtime.runScheduledIfDue()).toBe('started');
+		expect(runtime.runScheduledIfDue()).toBe('not-due');
+		await waitForScan(runtime, 'completed');
+		expect(store.listDiagnosticScans()).toHaveLength(2);
+		expect(runtime.getSchedule()).toMatchObject({
+			nextRunAt: '2026-08-24T00:00:00.000Z',
+			overdue: false,
+		});
+		runtime.close();
+	});
+
 	test('deduplicates recurrence, clears only on complete coverage and preserves human decisions', async () => {
 		const store = new RunStore(':memory:');
 		const workspace = new FakeWorkspace();

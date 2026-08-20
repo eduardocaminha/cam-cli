@@ -16,6 +16,7 @@ export const SNAPSHOT_PATH = '/api/snapshot';
 export const PROJECT_PATH = '/api/project';
 export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
 export const DIAGNOSTICS_PATH = '/api/diagnostics';
+export const DIAGNOSTIC_SCHEDULE_PATH = '/api/diagnostics/schedule';
 export const DIAGNOSTIC_FINDINGS_PATH = '/api/diagnostic-findings';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
@@ -168,6 +169,17 @@ export interface DiagnosticFindingStatsView {
 	recurring: number;
 }
 
+export type DiagnosticCadenceView = 'daily' | 'weekly';
+
+export interface DiagnosticScheduleView {
+	enabled: boolean;
+	analyzer: string;
+	cadence: DiagnosticCadenceView;
+	lastScanAt: string | null;
+	nextRunAt: string | null;
+	overdue: boolean;
+}
+
 export interface DiagnosticsView {
 	analyzers: DiagnosticAnalyzerView[];
 	scan: DiagnosticScanView | null;
@@ -175,6 +187,7 @@ export interface DiagnosticsView {
 	resolvedFindings: DiagnosticFindingView[];
 	resolvedFindingsOmittedCount: number;
 	stats: DiagnosticFindingStatsView;
+	schedule: DiagnosticScheduleView;
 	workspaceNotices: string[];
 }
 
@@ -186,6 +199,14 @@ export function emptyDiagnostics(): DiagnosticsView {
 		resolvedFindings: [],
 		resolvedFindingsOmittedCount: 0,
 		stats: { total: 0, pending: 0, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
+		schedule: {
+			enabled: false,
+			analyzer: 'react',
+			cadence: 'weekly',
+			lastScanAt: null,
+			nextRunAt: null,
+			overdue: false,
+		},
 		workspaceNotices: [],
 	};
 }
@@ -352,6 +373,7 @@ interface OperatorProfilePayload extends CommandPayload {
 
 interface DiagnosticsPayload extends CommandPayload, Partial<DiagnosticsView> {
 	scan?: DiagnosticScanView | null;
+	outcome?: string;
 }
 
 interface RunsPayload {
@@ -521,8 +543,28 @@ export async function fetchDiagnostics(): Promise<DiagnosticsView> {
 			cleared: 0,
 			recurring: 0,
 		},
+		schedule: payload.schedule ?? emptyDiagnostics().schedule,
 		workspaceNotices: payload.workspaceNotices ?? [],
 	};
+}
+
+export async function saveDiagnosticSchedule(
+	enabled: boolean,
+	cadence: DiagnosticCadenceView,
+): Promise<string> {
+	const response = await fetch(DIAGNOSTIC_SCHEDULE_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ enabled, cadence }),
+	});
+	const payload = (await response.json()) as DiagnosticsPayload;
+	if (!response.ok) throw new Error(payload.message ?? `Agenda recusada (${response.status}).`);
+	if (!enabled) return 'Agenda de diagnósticos desativada.';
+	if (payload.outcome === 'started') return 'Agenda salva; diagnóstico vencido iniciado.';
+	if (payload.outcome === 'project-busy') {
+		return 'Agenda salva; o diagnóstico rodará quando o projeto estiver ocioso.';
+	}
+	return 'Agenda de diagnósticos salva.';
 }
 
 export async function startDiagnostic(analyzer: string): Promise<string> {

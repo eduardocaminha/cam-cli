@@ -115,7 +115,8 @@ From the browser you can:
    completed run reaches you outside the tab;
 6. switch between Claude and Codex without losing the durable conversation;
 7. run an optional advisory React diagnostic against an isolated exact-SHA
-   checkout, then dismiss a finding or promote it into an unapproved task;
+   checkout, manually or on a daily/weekly schedule while the project is idle,
+   then dismiss a finding or promote it into an unapproved task;
 8. use the explicit controls as a deterministic fallback.
 
 Diagnostics are deliberately outside the delivery gate. They do not auto-fix,
@@ -124,6 +125,9 @@ React adapter is version-pinned, requests structured output with telemetry and
 scoring disabled, and keeps its download cache under `.gship/diagnostics`
 instead of installing anything into the project. A complete scan may clear a
 pending finding that no longer appears; a partial scan never claims absence.
+The schedule is off by default and belongs to the same Gateship process. A
+manual scan resets the same cadence; no host cron, daemon or background queue
+is required.
 
 ## Container
 

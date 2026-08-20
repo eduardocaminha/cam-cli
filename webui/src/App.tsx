@@ -22,6 +22,7 @@ import {
 	type ChainRunsView,
 	type ChatMessageView,
 	type DiagnosticFindingView,
+	type DiagnosticCadenceView,
 	type DiagnosticsView,
 	emptyModelSettings,
 	type GitIdentityView,
@@ -175,6 +176,7 @@ export interface AppProps {
 	onCancelDiagnostic: (scanId: string) => void;
 	onDismissDiagnosticFinding: (findingId: string) => void;
 	onPromoteDiagnosticFinding: (findingId: string, input: OperatorIssueDraft) => void;
+	onSaveDiagnosticSchedule: (enabled: boolean, cadence: DiagnosticCadenceView) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
 	onAbandon: () => void;
@@ -1012,6 +1014,79 @@ function ChainRunsPanel({
 				/>
 				<span className="font-medium">Encadear runs aprovadas automaticamente</span>
 			</label>
+		</ContextPanel>
+	);
+}
+
+function DiagnosticSchedulePanel({
+	diagnostics,
+	pending,
+	onSaveDiagnosticSchedule,
+}: Pick<
+	AppProps,
+	'diagnostics' | 'pending' | 'onSaveDiagnosticSchedule'
+>): React.ReactElement {
+	const { schedule } = diagnostics;
+	return (
+		<ContextPanel
+			description="Executa no máximo um diagnóstico vencido e somente quando este projeto estiver ocioso."
+			title="Agenda de diagnósticos"
+		>
+			<form
+				className="flex flex-col gap-4"
+				key={JSON.stringify(schedule)}
+				onSubmit={(event) => {
+					event.preventDefault();
+					const form = event.currentTarget as unknown as {
+						elements: { namedItem: (name: string) => { checked?: unknown; value?: unknown } | null };
+					};
+					const enabled = form.elements.namedItem('diagnostic-schedule-enabled')?.checked === true;
+					const cadenceValue = form.elements.namedItem('diagnostic-schedule-cadence')?.value;
+					const cadence: DiagnosticCadenceView = cadenceValue === 'daily' ? 'daily' : 'weekly';
+					onSaveDiagnosticSchedule(enabled, cadence);
+				}}
+			>
+				<label className="flex items-center gap-2 text-sm">
+					<input
+						defaultChecked={schedule.enabled}
+						disabled={pending}
+						name="diagnostic-schedule-enabled"
+						type="checkbox"
+					/>
+					<span className="font-medium">Executar diagnósticos periodicamente</span>
+				</label>
+				<label className="flex max-w-sm flex-col gap-1 text-sm" htmlFor="diagnostic-schedule-cadence">
+					<span className="font-medium">Cadência</span>
+					<select
+						className={FIELD_CLASS}
+						defaultValue={schedule.cadence}
+						disabled={pending}
+						id="diagnostic-schedule-cadence"
+						name="diagnostic-schedule-cadence"
+					>
+						<option value="daily">Diária</option>
+						<option value="weekly">Semanal</option>
+					</select>
+				</label>
+				<div className="flex flex-wrap items-center gap-2 text-sm">
+					<Badge variant="outline">{schedule.analyzer}</Badge>
+					{!schedule.enabled ? (
+						<span className="text-muted-foreground">Desativada.</span>
+					) : schedule.overdue ? (
+						<Badge variant="warning">vencida</Badge>
+					) : (
+						<span className="text-muted-foreground">
+							Próxima execução: {schedule.nextRunAt ?? 'a calcular'}
+						</span>
+					)}
+				</div>
+				<p className="text-muted-foreground text-xs">
+					Um scan manual também reinicia a janela. Períodos perdidos não geram catch-up.
+				</p>
+				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					Salvar agenda
+				</button>
+			</form>
 		</ContextPanel>
 	);
 }
@@ -2684,6 +2759,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 			<ChainRunsPanel
 				chainRuns={props.chainRuns}
 				onSetChainRuns={props.onSetChainRuns}
+				pending={props.pending}
+			/>
+			<DiagnosticSchedulePanel
+				diagnostics={props.diagnostics}
+				onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
 				pending={props.pending}
 			/>
 			<NotificationsPanel

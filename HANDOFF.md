@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `2af5cb42` (ad hoc diagnostics, PR #516)
-> Active implementation branch: `codex/telemetry-foundation`
-> Current stage: local telemetry slice verified; publication not yet authorized
+> Shipped baseline: `origin/main` at `53d6db28` (derived workflow insights, PR #517)
+> Active implementation branch: `codex/diagnostic-schedules`
+> Current stage: local diagnostic-schedule slice verified; publication not yet authorized
 
 ## How to use this file
 
@@ -72,40 +72,43 @@ logic.
 
 ## Active bounded slice
 
-The first telemetry/observability slice is implemented locally on
-`codex/telemetry-foundation` without a new collector, table, endpoint or score:
+The diagnostic-schedule slice is implemented locally on
+`codex/diagnostic-schedules` inside the existing `DiagnosticsRuntime`:
 
-- `/runs` derives one compact workflow summary from the existing 50-run read:
-  raw outcomes, correction rounds by executor/human/indeterminate origin, and
-  provider-reported cost with the number of runs that actually reported it;
-- the summary replaces the narrower aggregate-cost footnote and appears before
-  the activity log, behind progressive disclosure;
-- diagnostic usefulness is exposed as complete SQLite counts of pending,
-  promoted, dismissed, cleared and recurring findings;
-- dismissed findings are explicitly not called false positives. Gateship will
-  only measure that classification if real usage justifies asking the operator
-  for a reason;
-- all data stays local and derived from the existing durable run and diagnostic
-  records. No remote telemetry, synthetic score or extra lifecycle owner was
-  introduced.
+- the schedule is persisted in the existing `runtime_settings` table and is
+  off by default;
+- the only policy choices are daily or weekly for the installed React analyzer;
+- one in-process minute check starts at most one overdue scan, and only while
+  the project is idle;
+- creating any scan, manual or scheduled, resets the same cadence immediately;
+  failures therefore remain bounded and missed intervals never create a
+  catch-up backlog;
+- the existing scan path still fetches and resolves `origin/main`, creates a
+  detached exact-SHA worktree and preserves the advisory human-settled inbox;
+- `/settings` exposes the persisted state and next due instant through one
+  same-origin write. No host cron, daemon, queue, sidecar or new table exists.
 
-Focused runtime, API and rendered-UI tests, both TypeScript projects and Biome
-pass. A production build was served on an isolated port and visually inspected
-at 1440 px: the summary has no horizontal overflow and precedes the activity
-log; the diagnostics history remains compact on `/work`. The isolated service
-was stopped and the stable service on port 7777 was not changed. The one
-ship-boundary `bun run check:all` passed 754 tests, both TypeScript projects,
-Biome and Knip; Knip reported only its two pre-existing configuration hints.
-
-LSP was investigated and intentionally not implemented. Claude Code can expose
-LSP only through a separately installed plugin and binary, while current Codex
-has no native LSP surface. Installing a language server alone would therefore
-be inert; making it universal would require an MCP/client/sidecar and recreate
-the complexity Gateship is removing. Reconsider only when both providers offer
-a simple native seam or telemetry demonstrates a concrete code-navigation
-failure worth the asymmetry.
+Focused persistence, runtime, API and rendered-UI tests, both TypeScript
+projects and Biome pass. A production build was served on port 7799 and
+visually inspected at 1440 px: the panel is closed by default, opens without
+horizontal overflow and contains only enable, cadence, status and save. The
+isolated service was stopped; the stable merged service on port 7777 remains
+untouched and responds at `/settings`. The one full ship-boundary
+`bun run check:all` passed 761 tests and 3,064 assertions, both TypeScript
+projects, Biome and Knip; Knip reported only its two pre-existing configuration
+hints.
 
 ## Previously shipped bounded slices
+
+PR #517 shipped the first local telemetry/observability foundation as squash
+commit `53d6db28`. `/runs` derives raw outcomes, correction origins and known
+provider-reported cost from its existing bounded run read, without a score,
+collector or new endpoint. Diagnostics expose complete pending, dismissed,
+promoted, cleared and recurring counts, and explicitly avoid equating dismissal
+with false-positive classification. The final local and CI gates passed. LSP
+was investigated and deferred: making it available to both current provider
+CLIs would require an asymmetric plugin or a new MCP/client/sidecar before a
+measured navigation failure justifies that complexity.
 
 PR #516 shipped ad hoc Gateship Diagnostics as squash commit `2af5cb42`. One
 in-process runtime scans an exact `origin/main` SHA in an isolated detached
@@ -298,8 +301,9 @@ the operator.
 
 ### Diagnostics and code intelligence
 
-- `Gateship Diagnostics` is provider-neutral and ad hoc today. Add schedules
-  later inside the existing service; do not introduce host cron or a daemon.
+- `Gateship Diagnostics` is provider-neutral and ad hoc on the shipped
+  baseline. The local schedule slice adds cadence inside the same service; do
+  not introduce host cron or a daemon.
 - A scheduled scan runs once when overdue, without a catch-up storm, against an
   exact source SHA in an isolated workspace and at low priority while the
   project is idle.
@@ -359,18 +363,18 @@ Completed foundations:
 5. serial approved-run scheduler and pause visibility;
 6. container packaging, published image and provider-failure recovery;
 7. per-role model/effort selection and usage accounting;
-8. ad hoc project diagnostics with a human-settled inbox.
+8. ad hoc project diagnostics with a human-settled inbox;
+9. local derived workflow observability without scores or a collector.
 
 Next product stages, in current order:
 
-1. finish and publish the local telemetry/observability foundation (active
-   branch), only after explicit operator authorization;
-2. persisted diagnostic schedules owned by the existing service;
-3. replayable evals and self-benchmarking;
-4. measured self-improvement and community proposal intake;
-5. internationalization, accessibility and beta readiness;
-6. multiproject selection and parallelism across independent repositories;
-7. external-user validation before Product Hunt or a YC-style launch push.
+1. finish and publish the persisted diagnostic schedule owned by the existing
+   service (active branch), only after explicit operator authorization;
+2. replayable evals and self-benchmarking;
+3. measured self-improvement and community proposal intake;
+4. internationalization, accessibility and beta readiness;
+5. multiproject selection and parallelism across independent repositories;
+6. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -380,11 +384,10 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #516 is
-> present. If `codex/telemetry-foundation` still contains unshipped work,
-> finish only the active derived-observability slice from the evidence above;
-> do not add remote telemetry, a score, an event pipeline, LSP or schedules to
-> it. Do not publish without explicit operator authorization. Do not start or
-> reapprove GSHIP-660/661/662. Preserve the one-service architecture. Run
-> focused checks while editing and `bun run check:all` once at the ship
-> boundary.
+> `origin/main`, the latest commits and the running service. Confirm PR #517 is
+> present. If `codex/diagnostic-schedules` still contains unshipped work,
+> finish only the bounded schedule above; do not add cron syntax, a daemon,
+> sidecar, background queue, automatic fixes or a diagnostic score. Do not
+> publish without explicit operator authorization. Do not start or reapprove
+> GSHIP-660/661/662. Preserve the one-service architecture. Run focused checks
+> while editing and `bun run check:all` once at the ship boundary.
