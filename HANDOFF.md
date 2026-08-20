@@ -1,8 +1,8 @@
 # Gateship project handoff
 
-> Last operator checkpoint: 2026-08-16
+> Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `e13855f8` (GSHIP-638 shipped through PR #480)
+> Product baseline: `main` at `8d7afb48` (GSHIP-654 shipped through PR #503)
 > Active provider: Claude Code. Codex exhausted its subscription credit on
 > 2026-08-16 mid-stage, so continuation moved provider without changing scope,
 > direction or stage. This file is the resume point if the Claude side degrades.
@@ -25,18 +25,30 @@ problem so it can be fixed in the product, rather than as a rule to follow.
 
 ## Current stage
 
-**Stage 5 of 15 — started. GSHIP-638 chains approved runs in series behind a
-switch that is off by default, and two of the four capabilities the roadmap
-listed for this stage turned out to already exist: `isPlannable` refuses an issue
-blocked by an unshipped dependency, and GSHIP-629 revalidates each specification's
-premise at run start. Stage 9 closed before it, with per-role model and effort
-live and validated against the CLI, the operator running Opus 5 at `high` for the
-orchestrator and the reviewer and Sonnet 5 at `xhigh` for the executor, and cost
-recorded for every role including the orchestrator's own turns. Twenty-five slices
-shipped in this cycle, GSHIP-614 through GSHIP-638, twelve of them measured: from
-about two expected dollars to about forty-seven, and the difference is rounds
-rather than model. No draft is open, the backlog holds only GSHIP issues, and
-seven triaged proposals wait in the inbox.**
+**Stage 6 of 15 — started, and the product's packaging changed with it. The
+service now ships as one container image with one volume, and the rule that
+forbade container workers was revoked deliberately rather than by omission. Three
+problems this cycle shared a root the local-process design could not fix: the
+executor runs with no sandbox, so no secret on the machine is beyond its reach;
+Windows has no supported path, since the release builds only darwin and linux and
+verification shells out to `/bin/sh`; and an installed binary can be arbitrarily
+older than the repository while saying nothing. GSHIP-654 shipped the image with
+git, `gh` and the Claude CLI inside it, authenticating on first boot and
+persisting on the volume, so the subscription login is kept and API-key billing
+is not adopted.
+
+Stage 5 delivered its scheduler and its first two capabilities. GSHIP-638 chains
+approved runs behind a switch, and two of the four capabilities the roadmap listed
+already existed. GSHIP-650 makes a stopped queue name the issue that stopped it,
+and GSHIP-651 sends push through ntfy so an unattended queue does not depend on an
+open browser tab. Stage 9 closed earlier, with per-role model and effort validated
+against the CLI and cost recorded for every role. What Stage 5 still owes is
+whether a failed run should offer anything beyond stopping, which has one
+occurrence and is not worth specifying yet.
+
+The chain proved itself: six approved runs executed in series with no attention at
+all, 641 through 646, and stopped honestly on 647, whose evidence had diverged.
+Four issues wait unapproved: GSHIP-652, 653, 655 and 656.**
 
 Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
 generated cross-provider handoff plus the separate operator-maintained project
@@ -270,10 +282,21 @@ operator already approved.
 
 ### Proposed next bounded slice
 
-Stage 5's next capabilities, once the chain has been exercised on real work: what
-the operator wants to see while a queue runs unattended, and whether a failed run
-should offer anything beyond stopping. Neither is worth specifying before the
-switch has been on for a night.
+GSHIP-656 comes first, because it breaks every ship that meets a moving base: the
+branch update records the head it replaced instead of the head it produced, so the
+service reports its own update as an intrusion. Filing or approving an issue
+commits to `main`, so using the product during a run is what usually triggers it.
+
+Then the container work already identified: GSHIP-655 puts the Codex CLI in the
+image, since the runtime declares two providers and the image installs one, and
+GSHIP-652 and GSHIP-653 move notification secrets into the project and add Resend
+beside ntfy. Those two were written against a local filesystem and deserve a
+reread now that the volume is the place secrets live.
+
+What Stage 5 still owes is whether a failed run should offer anything beyond
+stopping. GSHIP-647 stopped six runs of approved work, which argues for skipping a
+diverged issue and recording the skip, but one occurrence does not separate skip
+from stop.
 
 Two smaller slices remain identified and unfiled: classifying provider errors at
 their source in each adapter, following the shape GSHIP-625 settled, and wiring
@@ -471,6 +494,46 @@ turn goes stale while its fingerprint still matches.
   clean checkout, CI and release, and the run worktree the runtime installs. A
   gate that only fires after the run that broke it has finished cannot be the
   mechanism, because nothing carries its verdict back to the executor.
+- The same blind spot then killed GSHIP-641 twice on a lint rule its verify did
+  not name, which is why GSHIP-649 makes the ship run the project's whole
+  verification manifest before committing, reading the command from the `verify`
+  script `package.json` already declares. It fired on the very first run that had
+  it and turned that lint failure into a fix round the executor owned.
+- A fix merged is not a fix running. GSHIP-649 landed and the next run still
+  shipped without the gate, because the service in use was a binary compiled
+  before it. Two attempts were burned before anyone thought to look at the
+  binary's age, which is what GSHIP-648 now answers by baking the build commit
+  into the image and the binary.
+- The chain then ran six approved issues end to end with no attention, and stopped
+  on GSHIP-647 because its recorded evidence no longer matched the repository. The
+  premise had died the same day it was written: the bundle gate it depended on was
+  deleted, and the decision it forbade was the one GSHIP-649 shipped. The run
+  ended before any provider work, so the cost was near zero, and it is the first
+  obsolete specification caught by mechanism rather than by someone remembering.
+- GSHIP-654 needed nine review rounds, and that is the shape worth reading, not
+  the count. Severity fell monotonically and nothing repeated: a server-stalling
+  synchronous probe on a polled route, a gate refusing commits git would have
+  made, then a wrong count in a comment. Five of the nine came from operator
+  decisions or their side effects rather than from executor error, which is what a
+  slice this wide costs.
+- Two of those rounds were decided by measurement rather than by reading. `git
+  config user.name` reports nothing on a host whose identity comes from
+  `GIT_AUTHOR_NAME`, while `git var GIT_AUTHOR_IDENT` reports what git would
+  actually use and fails inside a container with no identity. That one command
+  replaced a gate that had started refusing work git would have accepted.
+- The reviewer now argues with decisions instead of reopening them. On GSHIP-654
+  it opened a finding by saying the derive-on-commit split was the operator's
+  decision and criticised only the message that split had orphaned. That is
+  GSHIP-630 working: before it, the same ratified deviation was reported twice and
+  cost a round each time.
+- GSHIP-654 shipped and its run could not say so. `gh pr update-branch` returns
+  before GitHub applies the update, so the `gh pr view` that follows still reports
+  the old head, and that stale value became the head the service considered its
+  own. Seconds later its own merge commit read as an intrusion, the auto-merge was
+  disarmed and the ship ended as diverged; the retry then failed on a push that
+  was no longer fast-forward, and reconciling the merged pull request was refused
+  for the same reason. The protection was right every time, which is why GSHIP-656
+  fixes what the service records and not what it checks.
 
 ## Product objective
 
@@ -704,7 +767,11 @@ For a fresh Claude Code or Codex session:
 > latest commits, then summarize the current stage and any mismatch you find.
 > Do not implement the full roadmap. Continue only the next operator-approved
 > bounded slice. Stages 1 through 4 are complete, Stage 9 shipped ahead of Stage 5
-> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-638 followed. No
-> draft is open, Stage 5 has started, and the chain switch is off by default.
+> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-651 followed. Stage 5
+> delivered its scheduler and its visibility, and Stage 6 started: the product now
+> ships as a container image, and the rule that forbade that was revoked with its
+> reasons recorded. The chain switch is on. Four issues are filed and unapproved,
+> GSHIP-652, 653, 655 and 656, and GSHIP-656 should go first, because until it
+> lands any pull request that falls behind its base turns into a failed ship.
 > Report the current state, including the pending proposals in the inbox, and wait
 > for the operator's explicit approval before starting anything.
