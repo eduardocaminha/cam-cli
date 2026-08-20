@@ -19,18 +19,21 @@ import {
 	commandRun,
 	createIssue,
 	dismissProposal,
+	emptyNotificationChannels,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
 	fetchModelSettings,
+	fetchNotificationChannels,
 	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
 	type GitIdentityView,
+	type NotificationChannelsView,
 	promoteProposal,
 	type RunAction,
 	type ChatMessageView,
@@ -45,6 +48,7 @@ import {
 	saveChainRuns,
 	saveModelSettings,
 	sendChat,
+	sendNotificationTest,
 	selectProvider,
 	specifyIssue,
 	startCodexLogin,
@@ -97,6 +101,7 @@ function useOperationalRun(): {
 	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
 	chainRuns: ChainRunsView;
+	notificationChannels: NotificationChannelsView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -124,6 +129,9 @@ function useOperationalRun(): {
 	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
 	const [chainRuns, setChainRuns] = useState<ChainRunsView>(EMPTY_CHAIN_RUNS);
+	const [notificationChannels, setNotificationChannels] = useState<NotificationChannelsView>(
+		emptyNotificationChannels,
+	);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -139,6 +147,7 @@ function useOperationalRun(): {
 			fetchResolvedProposals(),
 			fetchModelSettings(),
 			fetchChainRuns(),
+			fetchNotificationChannels(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -150,6 +159,7 @@ function useOperationalRun(): {
 				resolvedProposalSnapshot,
 				modelSnapshot,
 				chainRunsSnapshot,
+				notificationChannelsSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -171,6 +181,7 @@ function useOperationalRun(): {
 				setHandoff(briefSnapshot.handoff);
 				setModelSettings(modelSnapshot);
 				setChainRuns(chainRunsSnapshot);
+				setNotificationChannels(notificationChannelsSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -239,6 +250,7 @@ function useOperationalRun(): {
 		handoff,
 		modelSettings,
 		chainRuns,
+		notificationChannels,
 		version,
 		status,
 		pending,
@@ -268,6 +280,7 @@ function Screen(): ReactElement {
 		handoff,
 		modelSettings,
 		chainRuns,
+		notificationChannels,
 		version,
 		status,
 		pending,
@@ -291,6 +304,7 @@ function Screen(): ReactElement {
 			gitIdentity={gitIdentity}
 			handoff={handoff}
 			ideas={ideas}
+			notificationChannels={notificationChannels}
 			notificationPermission={notificationPermission}
 			onAbandon={command('abandon')}
 			onCancel={command('cancel')}
@@ -317,6 +331,7 @@ function Screen(): ReactElement {
 				}));
 			}}
 			onEnableNotifications={enableNotifications}
+			onSendNotificationTest={(channelId) => send(() => sendNotificationTest(channelId))}
 			onResume={(operatorGuidance) => {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}

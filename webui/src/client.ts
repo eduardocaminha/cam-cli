@@ -18,6 +18,7 @@ export const PROPOSALS_PATH = '/api/proposals';
 export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
 export const CHAIN_RUNS_PATH = '/api/chain-runs';
+export const NOTIFICATIONS_PATH = '/api/notifications';
 
 /**
  * One command run while specifying, and the output observed then -- the
@@ -546,6 +547,51 @@ export async function saveChainRuns(enabled: boolean): Promise<string> {
 	const payload = (await response.json()) as ChainRunsPayload;
 	if (!response.ok) return payload.message ?? `Encadeamento recusado (${response.status}).`;
 	return enabled ? 'Encadeamento automático ativado.' : 'Encadeamento automático desativado.';
+}
+
+/** The one remote channel today; a record so GSHIP-653 can add another without reshaping this. */
+export const NOTIFICATION_CHANNEL_IDS = ['ntfy'] as const;
+
+export type NotificationChannelId = (typeof NOTIFICATION_CHANNEL_IDS)[number];
+
+/** Never the secret itself -- only whether the channel resolved one (GSHIP-652). */
+export interface NotificationChannelView {
+	configured: boolean;
+}
+
+export type NotificationChannelsView = Record<NotificationChannelId, NotificationChannelView>;
+
+export function emptyNotificationChannels(): NotificationChannelsView {
+	return { ntfy: { configured: false } };
+}
+
+interface NotificationChannelsPayload {
+	channels?: Partial<Record<NotificationChannelId, Partial<NotificationChannelView>>>;
+}
+
+/** A channel absent from the payload, or missing its own field, reads as not configured -- never a hole. */
+export async function fetchNotificationChannels(): Promise<NotificationChannelsView> {
+	const payload = await readJson<NotificationChannelsPayload>(
+		await fetch(NOTIFICATIONS_PATH),
+		'Notificações',
+	);
+	const channels = emptyNotificationChannels();
+	for (const id of NOTIFICATION_CHANNEL_IDS) {
+		channels[id] = { configured: payload.channels?.[id]?.configured === true };
+	}
+	return channels;
+}
+
+interface NotificationTestPayload extends CommandPayload {
+	outcome?: string;
+}
+
+/** Fires a real delivery through the channel and reports whether it was accepted, never the secret. */
+export async function sendNotificationTest(channelId: NotificationChannelId): Promise<string> {
+	const response = await fetch(`${NOTIFICATIONS_PATH}/${channelId}/test`, { method: 'POST' });
+	const payload = (await response.json()) as NotificationTestPayload;
+	if (response.ok) return payload.message ?? 'Mensagem de teste entregue.';
+	return payload.message ?? `Teste recusado (${response.status}).`;
 }
 
 export async function startCodexLogin(): Promise<string> {

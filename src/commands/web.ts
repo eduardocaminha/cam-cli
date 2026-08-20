@@ -56,7 +56,7 @@ import {
 	type ModelSlot,
 	type ModelSlotResolver,
 } from '../runtime/model-settings.ts';
-import { createRemoteNotifier } from '../runtime/remote-notifier.ts';
+import { createRemoteNotifier, isNtfyConfigured, sendNtfyTestNotification } from '../runtime/remote-notifier.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	type ChainPauseView,
@@ -382,6 +382,54 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 	}
 	runtime.setChainRuns(enabled);
 	return Response.json({ ok: true, ...chainRunsSnapshot(runtime) });
+}
+
+/** ntfy is the one remote channel today; the shape stays a record so GSHIP-653 can add another without reshaping this. */
+function notificationChannelsSnapshot(cwd: string): Record<string, { configured: boolean }> {
+	return { ntfy: { configured: isNtfyConfigured(cwd) } };
+}
+
+/**
+ * Fires a real delivery through the named channel and reports only whether it
+ * was accepted (GSHIP-652): the secret itself never enters this response, on
+ * any outcome.
+ */
+async function sendNotificationChannelTest(request: Request, cwd: string, channelId: string): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (channelId !== 'ntfy') {
+		return Response.json(
+			{ ok: false, code: 'unknown-channel', message: `Canal "${channelId}" desconhecido.` },
+			{ status: 404 },
+		);
+	}
+	const result = await sendNtfyTestNotification({ cwd });
+	if (result.outcome === 'sent') {
+		return Response.json({
+			ok: true,
+			outcome: result.outcome,
+			message: 'Mensagem de teste entregue ao ntfy.',
+		});
+	}
+	if (result.outcome === 'not-configured') {
+		return Response.json(
+			{
+				ok: false,
+				code: 'not-configured',
+				outcome: result.outcome,
+				message: 'Canal ntfy não está configurado.',
+			},
+			{ status: 409 },
+		);
+	}
+	return Response.json(
+		{
+			ok: false,
+			code: 'delivery-failed',
+			outcome: result.outcome,
+			message: `O ntfy recusou o teste${result.detail === undefined ? '' : ` (${result.detail})`}.`,
+		},
+		{ status: 502 },
+	);
 }
 
 async function writeProjectBrief(
@@ -1452,8 +1500,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd, ensureGitIdentityOnce));
 	// The same durable event log the SSE stream below reads per-connection
-	// (GSHIP-651); a missing GATESHIP_NTFY_URL makes this a no-op subscriber.
-	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier());
+	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
+	// makes this a no-op subscriber.
+	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd }));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(options, ensureGitIdentityOnce);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
@@ -1560,6 +1609,18 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/chain-runs': {
 				GET: () => Response.json(chainRunsSnapshot(runRuntime)),
 				PUT: (request) => writeChainRuns(request, runRuntime),
+			},
+			// The remote notification channels (GSHIP-652): the read is unguarded
+			// like every other GET and returns a boolean per channel, never the
+			// secret itself, which lives only in `GATESHIP_NTFY_URL` or the
+			// project-local file `createRemoteNotifier` also reads. There is no
+			// write route here -- editing the secret from the screen is out of
+			// scope; the operator places the file themselves.
+			'/api/notifications': {
+				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd) }),
+			},
+			'/api/notifications/:channelId/test': {
+				POST: (request) => sendNotificationChannelTest(request, options.cwd, request.params.channelId),
 			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),

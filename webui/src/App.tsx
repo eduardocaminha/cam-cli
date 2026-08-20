@@ -44,6 +44,10 @@ import {
 	type ModelRoleName,
 	type ModelSettingsView,
 	type ModelSlotView,
+	NOTIFICATION_CHANNEL_IDS,
+	type NotificationChannelId,
+	type NotificationChannelView,
+	type NotificationChannelsView,
 	type OperatorIssueDraft,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
@@ -122,6 +126,8 @@ export interface AppProps {
 	chainRuns: ChainRunsView;
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
+	/** Whether each remote channel resolved a secret; never the secret itself (GSHIP-652). */
+	notificationChannels: NotificationChannelsView;
 	/** Newest first, exactly as /api/runs returned it. */
 	runs: readonly RunView[];
 	selectedIssueId: string | null;
@@ -159,6 +165,7 @@ export interface AppProps {
 	onShip: () => void;
 	onConnectCodex: () => void;
 	onEnableNotifications: () => void;
+	onSendNotificationTest: (channelId: NotificationChannelId) => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
@@ -898,10 +905,74 @@ function ChainRunsPanel({
 	);
 }
 
+const NOTIFICATION_CHANNEL_LABELS: Readonly<Record<NotificationChannelId, string>> = {
+	ntfy: 'ntfy',
+};
+
+/**
+ * ntfy's own publish docs: the operator needs this to build the topic URL the
+ * project file or GATESHIP_NTFY_URL carries, not just to browse ntfy itself.
+ */
+const NOTIFICATION_CHANNEL_DOC_URLS: Readonly<Record<NotificationChannelId, string>> = {
+	ntfy: 'https://docs.ntfy.sh/publish/',
+};
+
+/**
+ * One remote channel's status, test button and setup instructions (GSHIP-652).
+ * Never renders the secret, or any field that could carry it -- `channel` is
+ * a boolean, and the instructions name the file and the env var, not a value.
+ */
+function NotificationChannelRow({
+	channelId,
+	channel,
+	pending,
+	onSendNotificationTest,
+}: {
+	channelId: NotificationChannelId;
+	channel: NotificationChannelView;
+	pending: boolean;
+	onSendNotificationTest: (channelId: NotificationChannelId) => void;
+}): React.ReactElement {
+	const label = NOTIFICATION_CHANNEL_LABELS[channelId];
+	return (
+		<div className="flex flex-col gap-2">
+			<div className="flex items-center justify-between gap-3">
+				<p className="text-sm">
+					{label}: {channel.configured ? 'configurado' : 'não configurado'}
+				</p>
+				<ActionButton
+					enabled={channel.configured && !pending}
+					label="Enviar teste"
+					onClick={() => onSendNotificationTest(channelId)}
+				/>
+			</div>
+			<p className="text-muted-foreground text-sm">
+				Grave a URL do tópico em <code className="break-all">.gship/ntfy-url</code>, na raiz do projeto,
+				com permissão 600, ou defina a variável de ambiente{' '}
+				<code className="break-all">GATESHIP_NTFY_URL</code> -- que tem precedência sobre o arquivo.{' '}
+				<a
+					className={TEXT_LINK_CLASS}
+					href={NOTIFICATION_CHANNEL_DOC_URLS[channelId]}
+					rel="noreferrer noopener"
+					target="_blank"
+				>
+					Documentação do {label}
+				</a>
+			</p>
+		</div>
+	);
+}
+
 function NotificationsPanel({
+	notificationChannels,
 	notificationPermission,
 	onEnableNotifications,
-}: Pick<AppProps, 'notificationPermission' | 'onEnableNotifications'>): React.ReactElement {
+	onSendNotificationTest,
+	pending,
+}: Pick<
+	AppProps,
+	'notificationChannels' | 'notificationPermission' | 'onEnableNotifications' | 'onSendNotificationTest' | 'pending'
+>): React.ReactElement {
 	const active = notificationPermission === 'granted';
 	const unavailable = notificationPermission === 'unsupported';
 	const denied = notificationPermission === 'denied';
@@ -914,22 +985,35 @@ function NotificationsPanel({
 				: 'Ativar notificações';
 	return (
 		<ContextPanel
-			description="O navegador avisa quando um run precisa de você ou termina, sem conta ou token."
+			description="O navegador avisa quando um run precisa de você ou termina; o canal remoto avisa mesmo com a aba fechada."
 			open
 			title="Notificações locais"
 		>
-			<div className="flex items-center justify-between gap-3">
-				<p className="text-muted-foreground text-sm">
-					{active ? 'Ativas neste navegador.' : null}
-					{denied ? 'Bloqueadas nas permissões deste navegador.' : null}
-					{unavailable ? 'Indisponíveis neste navegador.' : null}
-					{notificationPermission === 'default' ? 'Permissão ainda não solicitada.' : null}
-				</p>
-				<ActionButton
-					enabled={notificationPermission === 'default'}
-					label={actionLabel}
-					onClick={onEnableNotifications}
-				/>
+			<div className="flex flex-col gap-4">
+				<div className="flex items-center justify-between gap-3">
+					<p className="text-muted-foreground text-sm">
+						{active ? 'Ativas neste navegador.' : null}
+						{denied ? 'Bloqueadas nas permissões deste navegador.' : null}
+						{unavailable ? 'Indisponíveis neste navegador.' : null}
+						{notificationPermission === 'default' ? 'Permissão ainda não solicitada.' : null}
+					</p>
+					<ActionButton
+						enabled={notificationPermission === 'default'}
+						label={actionLabel}
+						onClick={onEnableNotifications}
+					/>
+				</div>
+				<div className="flex flex-col gap-3 border-border border-t pt-4">
+					{NOTIFICATION_CHANNEL_IDS.map((channelId) => (
+						<NotificationChannelRow
+							channel={notificationChannels[channelId]}
+							channelId={channelId}
+							key={channelId}
+							onSendNotificationTest={onSendNotificationTest}
+							pending={pending}
+						/>
+					))}
+				</div>
 			</div>
 		</ContextPanel>
 	);
@@ -2019,8 +2103,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				pending={props.pending}
 			/>
 			<NotificationsPanel
+				notificationChannels={props.notificationChannels}
 				notificationPermission={props.notificationPermission}
 				onEnableNotifications={props.onEnableNotifications}
+				onSendNotificationTest={props.onSendNotificationTest}
+				pending={props.pending}
 			/>
 			<ProjectBriefPanel
 				brief={props.brief}

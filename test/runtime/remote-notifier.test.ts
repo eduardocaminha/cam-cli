@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import {
 	createRemoteNotifier,
+	isNtfyConfigured,
 	NTFY_URL_ENV_VAR,
+	NTFY_URL_FILE_PATH,
 	remoteNotificationForRunEvent,
+	resolveNtfyUrl,
+	sendNtfyTestNotification,
 } from '../../src/runtime/remote-notifier.ts';
 import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
 import type { RunState } from '../../src/runtime/run-state.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
@@ -114,7 +121,10 @@ function onlyCall(calls: readonly FetchCall[]): FetchCall {
 describe('createRemoteNotifier', () => {
 	test('a missing topic URL sends nothing and never throws', async () => {
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ env: {}, fetchImpl });
+		// An explicit, empty cwd -- never `process.cwd()` -- so this stays true
+		// regardless of whatever `.gship/ntfy-url` an operator's own checkout
+		// might carry (GSHIP-652).
+		const notifier = createRemoteNotifier({ cwd: createTestTmpdir('gship-ntfy-missing-'), env: {}, fetchImpl });
 
 		expect(() => notifier(event('waiting-user', 'run.waiting-user'))).not.toThrow();
 		await flush();
@@ -276,5 +286,177 @@ describe('createRemoteNotifier', () => {
 			expect(calls[0]?.url).toContain(TOPIC_URL);
 			expect(JSON.stringify(result ?? null)).not.toContain(TOPIC_URL);
 		});
+	});
+});
+
+/** What an operator's own shell command (`... > .gship/ntfy-url && chmod 600 ...`) produces. */
+function writeNtfyUrlFile(cwd: string, url: string): void {
+	mkdirSync(join(cwd, '.gship'), { recursive: true });
+	writeFileSync(join(cwd, NTFY_URL_FILE_PATH), `${url}\n`, { mode: 0o600 });
+}
+
+describe('the project-local secret file (GSHIP-652)', () => {
+	test('reads the topic URL from the project file when no environment variable is set', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+
+		expect(resolveNtfyUrl(cwd, {})).toBe(TOPIC_URL);
+		expect(isNtfyConfigured(cwd, {})).toBe(true);
+	});
+
+	test('the environment variable takes precedence over the file, so an operator already using it is undisturbed', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, 'https://ntfy.sh/from-file-not-this-one');
+
+		expect(resolveNtfyUrl(cwd, { [NTFY_URL_ENV_VAR]: TOPIC_URL })).toBe(TOPIC_URL);
+		expect(isNtfyConfigured(cwd, { [NTFY_URL_ENV_VAR]: TOPIC_URL })).toBe(true);
+	});
+
+	test('the file is created with permission 600, and is read correctly at that permission', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+
+		expect(statSync(join(cwd, NTFY_URL_FILE_PATH)).mode & 0o777).toBe(0o600);
+		expect(resolveNtfyUrl(cwd, {})).toBe(TOPIC_URL);
+	});
+
+	// GSHIP-652 review: Gateship never edits or chmods this file (editing the
+	// secret from the screen is out of scope), so the 600 decision is only
+	// real if the read path itself refuses a looser file rather than trusting
+	// it anyway -- `readNtfyUrlFile`'s own `statSync` mode check, exercised
+	// here, not just the test fixture's own `writeFileSync(..., { mode })`.
+	test('a file readable or writable by group or other is refused, not trusted', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		mkdirSync(join(cwd, '.gship'), { recursive: true });
+		writeFileSync(join(cwd, NTFY_URL_FILE_PATH), `${TOPIC_URL}\n`, { mode: 0o644 });
+
+		expect(resolveNtfyUrl(cwd, {})).toBeNull();
+		expect(isNtfyConfigured(cwd, {})).toBe(false);
+	});
+
+	test('the absence of both the environment variable and the file leaves the channel off without error', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+
+		expect(() => resolveNtfyUrl(cwd, {})).not.toThrow();
+		expect(resolveNtfyUrl(cwd, {})).toBeNull();
+		expect(isNtfyConfigured(cwd, {})).toBe(false);
+
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		expect(() => notifier(event('waiting-user', 'run.waiting-user'))).not.toThrow();
+		expect(calls).toHaveLength(0);
+	});
+
+	test('createRemoteNotifier reads the project file too, not only the environment variable', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+
+		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }));
+		await flush();
+
+		const call = onlyCall(calls);
+		const url = new URL(call.url);
+		expect(`${url.origin}${url.pathname}`).toBe(TOPIC_URL);
+	});
+
+	test('the configured check answers only a boolean, never the URL itself', () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+
+		const configured = isNtfyConfigured(cwd, {});
+
+		expect(configured).toBe(true);
+		expect(typeof configured).toBe('boolean');
+		expect(JSON.stringify(configured)).not.toContain(TOPIC_URL);
+	});
+
+	// GSHIP-652 review: a notifier built at service boot, before the file
+	// existed, must still deliver once the operator follows the panel's own
+	// instructions and creates it -- the whole point of moving the secret to a
+	// project file was to stop it silently going dark; a subscriber that
+	// baked the boot-time absence in forever would recreate exactly that.
+	test('a notifier built before the file existed still delivers once the file is created, with no restart', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+
+		notifier(event('waiting-user', 'run.waiting-user'));
+		await flush();
+		expect(calls).toHaveLength(0);
+
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		notifier(event('failed', 'run.verification-failed', { error: 'boom' }));
+		await flush();
+
+		const call = onlyCall(calls);
+		expect(new URL(call.url).searchParams.get('title')).toBe('Run falhou');
+	});
+
+	// GSHIP-652 review: one stored value must answer the same everywhere --
+	// `isNtfyConfigured`, `createRemoteNotifier` and `sendNtfyTestNotification`
+	// all resolve through the same parse-and-validate step, so a value that
+	// fails to parse as a URL reads as off on all three, never "configurado"
+	// on the boolean while the other two refuse it.
+	test('a stored value that fails to parse as a URL reads as unconfigured everywhere, not just on delivery', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-file-');
+		writeNtfyUrlFile(cwd, 'not a valid url');
+
+		expect(isNtfyConfigured(cwd, {})).toBe(false);
+
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		notifier(event('waiting-user', 'run.waiting-user'));
+		await flush();
+		expect(calls).toHaveLength(0);
+
+		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		expect(result).toEqual({ outcome: 'not-configured' });
+	});
+});
+
+describe('sendNtfyTestNotification', () => {
+	test('reports not-configured without ever attempting a delivery', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-test-');
+		const { fetchImpl, calls } = stubFetch();
+
+		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+
+		expect(result).toEqual({ outcome: 'not-configured' });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('sends a real request to the configured topic and reports acceptance', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-test-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		const { fetchImpl, calls } = stubFetch();
+
+		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+
+		expect(result).toEqual({ outcome: 'sent' });
+		expect(onlyCall(calls).url).toContain(TOPIC_URL);
+	});
+
+	test('reports a rejection without leaking the topic URL in the result', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-test-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		const { fetchImpl } = stubFetch(() => Promise.resolve(new Response(null, { status: 403 })));
+
+		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+
+		expect(result.outcome).toBe('rejected');
+		expect(JSON.stringify(result)).not.toContain(TOPIC_URL);
+	});
+
+	test('reports unreachable, and never throws, when the delivery itself fails', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-test-');
+		writeNtfyUrlFile(cwd, TOPIC_URL);
+		const { fetchImpl } = stubFetch(() => Promise.reject(new Error(`network down: ${TOPIC_URL}`)));
+
+		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+
+		expect(result.outcome).toBe('unreachable');
+		expect(JSON.stringify(result)).not.toContain(TOPIC_URL);
 	});
 });
