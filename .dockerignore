@@ -1,0 +1,15 @@
+.git/
+node_modules/
+dist/
+coverage/
+.gship/
+.claude/
+.gship-test-tmp/
+webui/dist/
+webui/node_modules/
+*.log
+*.tsbuildinfo
+.cache/
+.idea/
+.cursor/
+.DS_Store

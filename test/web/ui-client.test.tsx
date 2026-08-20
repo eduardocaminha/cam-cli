@@ -130,6 +130,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			brief={EMPTY_BRIEF}
 			chatMessages={[]}
 			events={[]}
+			gitIdentity={null}
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
 			modelSettings={EMPTY_MODEL_SETTINGS}
@@ -1358,6 +1359,34 @@ describe('operator shell', () => {
 		)).toBe(true);
 	});
 
+	test('a missing git identity is reported wherever the operator is (GSHIP-654)', () => {
+		const gitIdentity = { detail: 'no git author identity is configured' };
+
+		// The ordinary case says nothing at all, on any surface.
+		for (const route of SURFACE_PATHS) {
+			expect(shellHeader(renderAt(route))).not.toContain('Identidade de git ausente');
+		}
+		// While it lasts it is on every surface, with the detail, and it stays:
+		// there is no button to acknowledge it away.
+		for (const route of SURFACE_PATHS) {
+			const header = shellHeader(renderAt(route, { gitIdentity }));
+
+			expect(header).toContain('Identidade de git ausente');
+			expect(header).toContain(gitIdentity.detail);
+			expect(hasButton(header, 'Dispensar')).toBe(false);
+		}
+	});
+
+	test('a missing git identity reports, and holds no operator command back', () => {
+		const gitIdentity = { detail: 'no git author identity is configured' };
+		const html = runsPage({ runs: [runIn('ready-to-ship')], gitIdentity });
+
+		expect(shellHeader(html)).toContain('Identidade de git ausente');
+		// The human state is the run's own, and every command it admits is offered.
+		expect(shellHeader(html)).toContain('Precisa de você');
+		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
+	});
+
 	test('a preserved workspace asks for the operator whatever the run is doing', () => {
 		expect(shellHeader(runsPage({ runs: [runIn('done')], workspaceNotices: NOTICES })))
 			.toContain('Precisa de você');
@@ -2138,6 +2167,7 @@ describe('same-origin transport', () => {
 					drafts: [],
 				workspaceNotices: [],
 				staleService: null,
+				gitIdentity: null,
 				version: '',
 			});
 		});
@@ -2151,6 +2181,7 @@ describe('same-origin transport', () => {
 					drafts: [],
 				workspaceNotices: [],
 				staleService: null,
+				gitIdentity: null,
 				version: '0.292.0',
 			});
 		});
@@ -2173,6 +2204,22 @@ describe('same-origin transport', () => {
 		});
 		await withRecordedFetch({ staleService: { bootSha: '1'.repeat(40) } }, 200, async () => {
 			expect((await fetchBacklog()).staleService).toBeNull();
+		});
+	});
+
+	test('the missing git identity notice is read from its own snapshot field (GSHIP-654)', async () => {
+		const gitIdentity = { detail: 'no git author identity is configured' };
+		await withRecordedFetch({ gitIdentity }, 200, async (calls) => {
+			expect((await fetchBacklog()).gitIdentity).toEqual(gitIdentity);
+			expect(calls).toEqual([{ url: SNAPSHOT_PATH, method: 'GET', body: null }]);
+		});
+		// The absent field is the ordinary case: an identity is configured.
+		await withRecordedFetch({ workspaceNotices: [] }, 200, async () => {
+			expect((await fetchBacklog()).gitIdentity).toBeNull();
+		});
+		// A notice missing its detail is not one the screen is willing to show.
+		await withRecordedFetch({ gitIdentity: {} }, 200, async () => {
+			expect((await fetchBacklog()).gitIdentity).toBeNull();
 		});
 	});
 

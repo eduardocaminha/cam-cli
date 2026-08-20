@@ -26,6 +26,16 @@ CLI gives `GH_TOKEN` and `GITHUB_TOKEN` precedence over credentials stored by
 command. See the official [`gh` environment documentation](https://cli.github.com/manual/gh_help_environment)
 and [`gh auth login`](https://cli.github.com/manual/gh_auth_login).
 
+Running the [container image](../README.md#container) does not change any of
+this. `CLAUDE_CONFIG_DIR`, `GH_CONFIG_DIR` and `GIT_CONFIG_GLOBAL` point at the
+named volume instead of `$HOME`, so `claude auth login` and `gh auth login`
+(with the git credential helper `gh auth setup-git`/`gh auth login` wires into
+global git config) still write to the store each tool already owns; Gateship
+still never reads it. The image carries no credential of its own, and the
+operator authenticates inside the container on first boot, never by copying a
+host credential file -- on macOS the Claude CLI keeps its credential in the
+Keychain, and there is no such file to copy in the first place.
+
 ## Environment boundary
 
 Agent, review, auth-probe and GitHub CLI children receive a small allowlist:

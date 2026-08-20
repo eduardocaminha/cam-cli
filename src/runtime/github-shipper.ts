@@ -101,6 +101,7 @@ import process from 'node:process';
 import { issueFilePath } from '../issues/backlog.ts';
 import { buildGithubCliEnv } from './child-env.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
+import type { GitIdentityResult } from './git-identity.ts';
 import type { RuntimeShipInput, RuntimeShipper, RuntimeShipResult } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
@@ -158,6 +159,17 @@ export interface GithubShipperOptions {
 	unavailableRetryDelaysMs?: number[];
 	/** Ceiling on branch updates one ship triggers to clear BEHIND before giving up. */
 	maxBranchUpdates?: number;
+	/**
+	 * Called right before this ship's own commit (GSHIP-654): a fresh
+	 * container's global git config has no author identity, and this is the
+	 * commit `git` would otherwise refuse with "Author identity unknown".
+	 * Defaults to assuming one already exists -- unchanged from before this
+	 * option existed -- since a caller that does not wire this in (this
+	 * class's own tests, which never touch real git) has no way to answer it
+	 * safely. Production always supplies the real, shared check
+	 * (createDefaultRunRuntimeOptions in src/commands/web.ts).
+	 */
+	ensureIdentity?: () => GitIdentityResult;
 }
 
 interface WorkspaceIssue {
@@ -326,6 +338,7 @@ export class GithubShipper implements RuntimeShipper {
 	readonly #mergeTimeoutMs: number;
 	readonly #unavailableRetryDelaysMs: number[];
 	readonly #maxBranchUpdates: number;
+	readonly #ensureIdentity: () => GitIdentityResult;
 
 	constructor(options: GithubShipperOptions = {}) {
 		this.#runCommand = options.runCommand ?? defaultShipCommand;
@@ -334,6 +347,7 @@ export class GithubShipper implements RuntimeShipper {
 		this.#unavailableRetryDelaysMs =
 			options.unavailableRetryDelaysMs ?? DEFAULT_UNAVAILABLE_RETRY_DELAYS_MS;
 		this.#maxBranchUpdates = options.maxBranchUpdates ?? DEFAULT_MAX_BRANCH_UPDATES;
+		this.#ensureIdentity = options.ensureIdentity ?? (() => ({ outcome: 'already-configured' }));
 	}
 
 	async ship(input: RuntimeShipInput): Promise<RuntimeShipResult> {
@@ -359,6 +373,14 @@ export class GithubShipper implements RuntimeShipper {
 		await this.#checked(input, 'git', ['add', '--all']);
 		const staged = await this.#run(input, 'git', ['diff', '--cached', '--quiet']);
 		if (staged.exitCode === 1) {
+			// Right before the write it protects (GSHIP-654): a missing identity
+			// fails clearly here, on a retryable ship the run's diff survives,
+			// instead of surfacing later as git's own opaque "Author identity
+			// unknown" once the commit below is already attempted.
+			const identity = this.#ensureIdentity();
+			if (identity.outcome === 'missing') {
+				throw new Error(`cannot commit: ${identity.detail}`);
+			}
 			const subject = `${input.issueId}: ${issue.title}`;
 			await this.#checked(input, 'git', ['commit', '--message', subject]);
 			input.emit('ship.committed', { branch });

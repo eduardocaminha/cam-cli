@@ -98,6 +98,42 @@ From the browser you can:
 6. switch between Claude and Codex without losing the durable conversation;
 7. use the explicit controls as a deterministic fallback.
 
+## Container
+
+Gateship also ships as one container image: the compiled binary, git, the
+GitHub CLI and the Claude Code CLI, with the port it already uses answering
+the same UI.
+
+```bash
+GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+# http://127.0.0.1:7777, published to loopback only
+```
+
+`GSHIP_BUILD_SHA` bakes the commit the image was built from into the binary
+the same way `scripts/build-release.sh` does for the native release binaries.
+It is optional -- CI passes it (`.github/workflows/ci.yml` builds with
+`--build-arg GSHIP_BUILD_SHA="${{ github.sha }}"`), but a bare `docker build
+.` still produces a working image without it, exactly as a first manual
+build or `docker compose up` without the variable would. It just cannot say
+what commit it came from, so the service stays silent about it rather than
+compare against a ref read that would belong to whatever project the
+container is managing, not to Gateship's own source.
+
+Provider and GitHub authentication happen inside the container, on first boot,
+and persist on the named volume `compose.yaml` mounts over that project's
+`.gship/` -- never copied from the host, since on macOS the Claude CLI keeps
+its credential in the Keychain and there is no host credential file to mount:
+
+```bash
+docker compose exec gateship claude auth login
+docker compose exec gateship gh auth login --web
+docker compose exec gateship gh auth setup-git
+```
+
+Recreating the container from the same image and the same volume returns the
+operator to the same place: the same SQLite state, the same managed
+worktrees, and the same two logins.
+
 ## Runtime flow
 
 ```text
@@ -189,11 +225,25 @@ check out the user's local `main` branch.
 
 ## Security
 
-The HTTP server binds only to `127.0.0.1` and browser mutations require a
-same-origin localhost request. The implementer is intentionally write-capable
-inside the isolated worktree, so the selected Claude Code or Codex process
-still has the host permissions of the user running Gateship. Use Gateship only
-in repositories and on machines where that authority is acceptable.
+By default the HTTP server binds only to `127.0.0.1`, and browser mutations
+additionally require a same-origin localhost request. Read routes carry no
+authentication of their own -- the loopback bind is their only boundary, same
+as before this existed. The [container image](#container) needs
+`GATESHIP_BIND_HOST=0.0.0.0` for Docker's published-port proxy to reach the
+service at all (it always connects to the container's own network address,
+never its loopback), so inside the container that boundary no longer lives in
+the service's own bind; it moves entirely to how the port is published on the
+host. `compose.yaml` publishes it as `127.0.0.1:<port>` to keep the same
+loopback-only guarantee end to end. Publishing that port on any other
+interface -- a bare `docker run -p 7777:7777` without pinning it to
+`127.0.0.1`, or a compose override that widens it -- exposes every
+unauthenticated read route to the network. Adding authentication is a
+separate, deliberate decision, not a byproduct of this packaging.
+
+The implementer is intentionally write-capable inside the isolated worktree,
+so the selected Claude Code or Codex process still has the host permissions of
+the user running Gateship. Use Gateship only in repositories and on machines
+where that authority is acceptable.
 
 The conversational orchestrator is mechanically read-only: Claude exposes only
 Read/Grep/Glob with MCP and slash commands disabled; Codex runs in its read-only
@@ -209,9 +259,11 @@ web or SQLite field for provider or GitHub credentials; see the documented
 
 ## Retired runtime
 
-The tmux orchestrator, sidecar, container worker, terminal UI, installed Claude
-personas, and their control commands have been removed. The web runtime invokes
-the selected signed-in Claude or Codex CLI directly.
+The tmux orchestrator, sidecar, per-run container worker, terminal UI,
+installed Claude personas, and their control commands have been removed. The
+web runtime invokes the selected signed-in Claude or Codex CLI directly. The
+[container image](#container) above is a different, later decision: one image
+for the whole service, not a sandbox per run.
 
 Historical decisions remain in `docs/adr/`; the current executable flow is
 summarized in [FLOW.md](./FLOW.md).

@@ -23,6 +23,7 @@ import {
 	OrchestratorBusyError,
 	type OrchestratorTurnResult,
 } from '../runtime/conversational-orchestrator.ts';
+import { checkGitIdentity, ensureGitIdentity, type GitIdentityResult } from '../runtime/git-identity.ts';
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
@@ -79,6 +80,19 @@ import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
 
+/**
+ * Overrides the interface `Bun.serve` binds to, independent from
+ * `WEB_HOSTNAME` (the trusted-origin check below, and the default every
+ * non-container caller still gets). Docker's published-port proxy always
+ * connects to the container's own network address, never its loopback, so a
+ * process bound only to `127.0.0.1` inside the container is unreachable
+ * through `-p`/compose port publishing no matter what the host maps it to.
+ * The browser still only ever presents an Origin of `127.0.0.1` or
+ * `localhost`, because the container image keeps the published host port
+ * restricted to loopback (see compose.yaml); only the bind address changes.
+ */
+export const BIND_HOSTNAME_ENV_VAR = 'GATESHIP_BIND_HOST';
+
 export interface WebServerOptions {
 	port: number;
 	cwd: string;
@@ -96,6 +110,16 @@ export interface WebServerOptions {
 	providerAuth?: ProviderAuth;
 	/** Test seam for probing a chosen model/effort against the provider's own CLI. */
 	modelProber?: ModelProber;
+	/**
+	 * Test seam for the commit-path git author identity derivation (GSHIP-654):
+	 * the intake and ship commit paths call this right before their own write,
+	 * sharing one process-lifetime success cache. Production defaults to
+	 * `ensureGitIdentity`, which is a fast no-op on any host that already has
+	 * one. This never runs on the read-only snapshot path -- see
+	 * `checkGitIdentity`, which that route calls directly and unconditionally,
+	 * since it is cheap and safe enough to need no test seam of its own.
+	 */
+	ensureGitIdentity?: () => GitIdentityResult;
 	/** Test seam for the operator-maintained project brief. */
 	projectBrief?: ProjectBriefAccess;
 	/**
@@ -1035,15 +1059,55 @@ function readSourceSha(cwd: string): string | null {
 
 /**
  * `scripts/build-release.sh` bakes the commit it compiled into each binary
- * with `bun build --define GSHIP_BUILD_SHA='"<sha>"'`. Running from source --
- * `bun run`, `bun test`, `bun x gship` -- there is no such global: `typeof` on
- * an undeclared identifier never throws, so the read degrades to null instead
- * of crashing (GSHIP-648).
+ * with `bun build --define GSHIP_BUILD_SHA='"<sha>"'`; the Dockerfile does the
+ * same from its own `GSHIP_BUILD_SHA` build arg, which is optional and
+ * defaults to an empty string. Running from source -- `bun run`, `bun test`,
+ * `bun x gship` -- there is no such global at all: `typeof` on an undeclared
+ * identifier never throws, so the read degrades to null instead of crashing
+ * (GSHIP-648). A present-but-blank global (a container built without its
+ * build arg) reads as null the same way.
  */
 declare const GSHIP_BUILD_SHA: string | undefined;
 
 function readBuildSha(): string | null {
-	return typeof GSHIP_BUILD_SHA === 'string' ? GSHIP_BUILD_SHA : null;
+	if (typeof GSHIP_BUILD_SHA !== 'string') return null;
+	const trimmed = GSHIP_BUILD_SHA.trim();
+	return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * A second, unconditional define the Dockerfile always bakes in, regardless
+ * of whether `GSHIP_BUILD_SHA` itself was supplied (see the Dockerfile). Its
+ * only job is telling apart "a container image with no known build sha" from
+ * "a genuine source run with no such global at all" -- see
+ * `resolveBootSourceSha`, the one place this distinction changes behavior.
+ */
+declare const GSHIP_CONTAINER_BUILD: string | undefined;
+
+function isContainerBuild(): boolean {
+	return typeof GSHIP_CONTAINER_BUILD === 'string';
+}
+
+/**
+ * The sha `staleServiceNotice` compares the boot-time ref read against. A
+ * known build sha (embedded by `build-release.sh` or the Dockerfile) is used
+ * verbatim; failing that, a container image still says nothing rather than
+ * fall back to reading `cwd`'s ref -- inside a container `cwd` is the project
+ * being managed, not Gateship's own source tree, so that ref has nothing to
+ * do with the running binary, and a container "restart" can never apply
+ * newer Gateship code regardless, only a rebuilt image can. Every other
+ * caller (a genuine source run, or a native binary that always carries its
+ * sha) keeps exactly the boot-time ref read GSHIP-648 replaced. Exported for
+ * direct unit coverage, since the compile-time globals it otherwise reads
+ * cannot be faked from a `bun test` process.
+ */
+export function resolveBootSourceSha(
+	buildSha: string | null,
+	isContainer: boolean,
+	readSourceShaOfCwd: () => string | null,
+): string | null {
+	if (buildSha !== null) return buildSha;
+	return isContainer ? null : readSourceShaOfCwd();
 }
 
 /**
@@ -1122,8 +1186,18 @@ function modelResolver(
  * Production composition of the durable runtime: the real implementer, the
  * real oracle verifier, the real full-project verifier (GSHIP-649), the real
  * independent reviewer and the real GitHub shipper over one sqlite store.
+ *
+ * `ensureIdentity` defaults to an uncached, unshared call bound to `cwd`,
+ * which is what any caller other than `startWebServer` gets (existing direct
+ * callers of this function, and its own tests); `startWebServer` always
+ * passes its shared, process-lifetime-cached closure instead (GSHIP-654), so
+ * the shipper's own commit and issue intake's agree and `gh` is queried at
+ * most once per outcome across both.
  */
-export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
+export function createDefaultRunRuntimeOptions(
+	cwd: string,
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
+): RunRuntimeOptions {
 	const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
 		modelResolver(() => store.getModelSettings(), providerId, role);
@@ -1140,7 +1214,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer') }),
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
 		}),
-		shipper: new GithubShipper(),
+		shipper: new GithubShipper({ ensureIdentity }),
 		preflight: createGitRuntimePreflight(cwd),
 		evidenceCheck: new GitEvidenceChecker(),
 		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
@@ -1304,8 +1378,18 @@ function createDefaultOrchestrator(
 	});
 }
 
-/** Each operator issue writer defaults to the remote-main publisher for this cwd. */
-function resolveIssueWriters(options: WebServerOptions): {
+/**
+ * Each operator issue writer defaults to the remote-main publisher for this
+ * cwd. `ensureIdentity` is the shared, process-lifetime-cached derive-and-
+ * write `startWebServer` constructs (GSHIP-654) and also hands to the
+ * shipper: each writer's own commit path calls it right before its write.
+ * The read-only snapshot notice is a separate, uncached `checkGitIdentity`
+ * call and never touches this.
+ */
+function resolveIssueWriters(
+	options: WebServerOptions,
+	ensureIdentity: () => GitIdentityResult,
+): {
 	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue;
 	issueApprover: (id: string) => CreatedOperatorIssue;
@@ -1313,14 +1397,26 @@ function resolveIssueWriters(options: WebServerOptions): {
 } {
 	return {
 		issueIntake: options.issueIntake
-			?? ((input, intakeOptions) => createOperatorIssue(options.cwd, input, intakeOptions)),
+			?? ((input, intakeOptions) => createOperatorIssue(
+				options.cwd, input, intakeOptions, undefined, ensureIdentity,
+			)),
 		issueSpecifier: options.issueSpecifier
-			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input)),
+			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input, undefined, ensureIdentity)),
 		issueApprover: options.issueApprover
-			?? ((id) => approveOperatorIssue(options.cwd, id)),
+			?? ((id) => approveOperatorIssue(options.cwd, id, undefined, ensureIdentity)),
 		issueAbandoner: options.issueAbandoner
-			?? ((id, input) => abandonOperatorIssue(options.cwd, id, input)),
+			?? ((id, input) => abandonOperatorIssue(options.cwd, id, input, undefined, ensureIdentity)),
 	};
+}
+
+/**
+ * The socket address to bind, from `GATESHIP_BIND_HOST`. Absent or blank
+ * keeps `WEB_HOSTNAME`, so every non-container caller still binds exactly
+ * `127.0.0.1`, same as before this existed.
+ */
+export function resolveBindHostname(env: Record<string, string | undefined> = process.env): string {
+	const raw = env[BIND_HOSTNAME_ENV_VAR]?.trim();
+	return raw !== undefined && raw.length > 0 ? raw : WEB_HOSTNAME;
 }
 
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
@@ -1328,12 +1424,38 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
 	const ownsProviderAuth = options.providerAuth === undefined;
 	const ownsOrchestrator = options.orchestrator === undefined;
+	// Constructed before anything that might commit, and shared by the two
+	// commit paths alone -- the shipper's and issue intake's own writes, each
+	// calling this right before its write (GSHIP-654) -- never by the
+	// snapshot, which reads `checkGitIdentity` directly below instead: see
+	// that route for why the two must not share this cache or this function.
+	// One shared cache between the two commit paths means a derive-and-write
+	// on either is immediately visible to the other, and `gh` is queried at
+	// most once per outcome.
+	//
+	// Only a settled outcome -- already-configured or derived -- is cached for
+	// the process's lifetime. `missing` is retried on every call instead: the
+	// container's own documented first-boot order is compose up, open the UI,
+	// then run `gh auth login` inside the container, so an early call is
+	// expected to see it missing. Caching that would wedge the identity as
+	// permanently missing for the rest of the process and let the first
+	// commit fail with "Author identity unknown" regardless of a login that
+	// happens seconds later -- exactly the failure this exists to prevent.
+	const ensureGitIdentityFn = options.ensureGitIdentity ?? (() => ensureGitIdentity(options.cwd));
+	let gitIdentityEnsured: GitIdentityResult | undefined;
+	const ensureGitIdentityOnce = (): GitIdentityResult => {
+		if (gitIdentityEnsured === undefined || gitIdentityEnsured.outcome === 'missing') {
+			gitIdentityEnsured = ensureGitIdentityFn();
+		}
+		return gitIdentityEnsured;
+	};
 	const runRuntime = options.runRuntime
-		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
+		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd, ensureGitIdentityOnce));
 	// The same durable event log the SSE stream below reads per-connection
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL makes this a no-op subscriber.
 	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier());
-	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } = resolveIssueWriters(options);
+	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
+		resolveIssueWriters(options, ensureGitIdentityOnce);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
 	const modelProber = options.modelProber ?? new NativeModelProber();
 	const projectBrief = options.projectBrief ?? {
@@ -1352,11 +1474,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// build sha (GSHIP-648) is preferred when the binary carries one, since it
 	// names the commit the executable actually came from rather than the ref
 	// this process happened to read at start; a source run falls back to the
-	// ref read exactly as before that sha existed.
+	// ref read exactly as before that sha existed, and a container image with
+	// no known sha falls back to nothing at all (resolveBootSourceSha).
 	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
-	const bootSourceSha = buildSha ?? readSourceSha(options.cwd);
+	const bootSourceSha = resolveBootSourceSha(
+		buildSha,
+		isContainerBuild(),
+		() => readSourceSha(options.cwd),
+	);
 	const server = Bun.serve({
-		hostname: WEB_HOSTNAME,
+		hostname: resolveBindHostname(),
 		port: options.port,
 		routes: {
 			// The operator surfaces are four enumerated paths, each answered with
@@ -1379,6 +1506,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				// waiting for a decision, which this is not.
 				const staleService = staleServiceNotice(options.cwd, bootSourceSha);
 				if (staleService !== null) snapshot['staleService'] = staleService;
+				// `checkGitIdentity`, never `ensureGitIdentity`, and never the commit
+				// paths' cache above (GSHIP-654): this is a GET handler on Bun's
+				// single-threaded server, so it must never be the one that calls
+				// `gh` -- that call carries its own five-second timeout, and a
+				// blocked GET would stall every other request the service is
+				// trying to answer at the same time. One cheap local `git var`
+				// read, on every request, with no cache of its own: derivation
+				// itself belongs only to the intake and ship commit paths, which
+				// call `ensureGitIdentity` right before their own write, so this
+				// notice reflects whatever they most recently derived without ever
+				// causing that derivation itself.
+				const gitIdentity = checkGitIdentity(options.cwd);
+				if (gitIdentity.outcome === 'missing') snapshot['gitIdentity'] = { detail: gitIdentity.detail };
 				return Response.json(snapshot);
 			},
 			'/api/runs': {
@@ -1387,7 +1527,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/providers': () => listProviders(providerAuth, runRuntime),
 			// The read stays unguarded like every other GET: a same-origin browser
-			// read sends no Origin header, and 127.0.0.1 is the read boundary.
+			// read sends no Origin header, and the bind address is the read
+			// boundary -- WEB_HOSTNAME (127.0.0.1) by default. GATESHIP_BIND_HOST
+			// moves that boundary out of the service's own socket (needed for the
+			// container's published port to be reachable at all, see
+			// resolveBindHostname above); from there it lives entirely in how the
+			// port is published on the host, e.g. compose.yaml's `127.0.0.1:<port>`.
+			// A route published on any other interface is unauthenticated.
 			//
 			// The automatic handoff rides along on the same read because the screen
 			// shows it beside the brief the operator is correcting. It is the
@@ -1536,7 +1682,7 @@ export async function runWeb(options: WebServerOptions): Promise<number> {
 		handle = startWebServer(options);
 	} catch (error) {
 		printError(
-			`gship: failed to bind --port ${options.port} on ${WEB_HOSTNAME}`,
+			`gship: failed to bind --port ${options.port} on ${resolveBindHostname()}`,
 			error instanceof Error ? error.message : String(error),
 		);
 		return 1;

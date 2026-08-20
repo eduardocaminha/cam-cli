@@ -30,6 +30,7 @@ import {
 	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
+	type GitIdentityView,
 	promoteProposal,
 	type RunAction,
 	type ChatMessageView,
@@ -87,6 +88,7 @@ function useOperationalRun(): {
 	events: RunEventView[];
 	workspaceNotices: WorkspaceNoticeView[];
 	staleService: StaleServiceView | null;
+	gitIdentity: GitIdentityView | null;
 	chatMessages: ChatMessageView[];
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
@@ -111,6 +113,7 @@ function useOperationalRun(): {
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
 	const [staleService, setStaleService] = useState<StaleServiceView | null>(null);
+	const [gitIdentity, setGitIdentity] = useState<GitIdentityView | null>(null);
 	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
 	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
 	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
@@ -159,6 +162,7 @@ function useOperationalRun(): {
 				setResolvedProposalsOmittedCount(resolvedProposalSnapshot.omittedCount);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
 				setStaleService(backlogSnapshot.staleService);
+				setGitIdentity(backlogSnapshot.gitIdentity);
 				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
 				setSelectedProvider(providerSnapshot.selected);
@@ -226,6 +230,7 @@ function useOperationalRun(): {
 		events,
 		workspaceNotices,
 		staleService,
+		gitIdentity,
 		chatMessages,
 		providers,
 		selectedProvider,
@@ -254,6 +259,7 @@ function Screen(): ReactElement {
 		events,
 		workspaceNotices,
 		staleService,
+		gitIdentity,
 		chatMessages,
 		providers,
 		selectedProvider,
@@ -282,6 +288,7 @@ function Screen(): ReactElement {
 			brief={brief}
 			chatMessages={chatMessages}
 			events={events}
+			gitIdentity={gitIdentity}
 			handoff={handoff}
 			ideas={ideas}
 			notificationPermission={notificationPermission}

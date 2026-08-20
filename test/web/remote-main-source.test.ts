@@ -104,6 +104,11 @@ function publishShip(author: string, file: string, id: string): void {
 }
 
 async function idleBacklog(cwd: string): Promise<Record<string, unknown>> {
+	// This suite is about the backlog's source ref, not git identity, and needs
+	// no seam for it: the snapshot's `checkGitIdentity` reads whatever `git
+	// commit` itself would resolve (GSHIP-654), and identify(local) above
+	// already sets one, so it reports already-configured regardless of
+	// whatever machine runs this suite.
 	const handle = startWebServer({ port: 0, cwd });
 	try {
 		const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);

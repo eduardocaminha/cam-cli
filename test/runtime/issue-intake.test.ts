@@ -9,6 +9,7 @@ import {
 	IssueIntakeError,
 	specifyOperatorIssue,
 } from '../../src/runtime/issue-intake.ts';
+import type { GitIdentityResult } from '../../src/runtime/git-identity.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -46,7 +47,16 @@ function writeIssue(cwd: string, number: number, stage: 'idea' | 'specified' = '
 	);
 }
 
-function seedFixture(): { root: string; seed: string; remote: string; local: string } {
+/**
+ * `identifyLocal: false` leaves the runtime clone with no committer identity
+ * at all -- neither local nor global -- so a `git commit` inside it fails
+ * with "Author identity unknown" unless something derives one first
+ * (GSHIP-654). The seed repo still identifies itself either way: that commit
+ * is unrelated setup a fresh clone never inherits local config from.
+ */
+function seedFixture(
+	options: { identifyLocal?: boolean } = {},
+): { root: string; seed: string; remote: string; local: string } {
 	const root = createTestTmpdir('gship-issue-intake-');
 	const seed = join(root, 'seed');
 	mkdirSync(seed, { recursive: true });
@@ -61,7 +71,7 @@ function seedFixture(): { root: string; seed: string; remote: string; local: str
 	git(root, ['clone', '-q', '--bare', seed, remote]);
 	const local = join(root, 'local');
 	git(root, ['clone', '-q', remote, local]);
-	identify(local);
+	if (options.identifyLocal ?? true) identify(local);
 	return { root, seed, remote, local };
 }
 
@@ -386,6 +396,92 @@ describe('remote-main operator issue intake', () => {
 			expect(error).toBeInstanceOf(IssueIntakeError);
 			expect(error).toMatchObject({ code: 'invalid-request', status: 400 });
 		}
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+	});
+});
+
+// A fresh container's volume has no git author identity until something
+// derives one; issue intake is one of the two paths that commit (the other
+// is GithubShipper's own ship, covered in github-shipper.test.ts). Both must
+// derive it themselves, right on the commit path, before their own first
+// write -- never by depending on the operator-facing snapshot in
+// src/commands/web.ts having been read first, which is a display of the same
+// outcome and not a trigger for it (GSHIP-654).
+describe('git author identity on the commit path (GSHIP-654)', () => {
+	test('a missing identity is derived on the very first commit attempt, with no snapshot ever read', () => {
+		// No identify(fixture.local): this clone starts with no committer
+		// identity at all, local or global, so this commit only succeeds if
+		// something derives one before git ever runs it. The real
+		// ensureGitIdentity's own --global/GIT_CONFIG_GLOBAL write is unit-
+		// tested directly and hermetically in git-identity.test.ts; the fake
+		// here writes local config instead purely so this test needs no real
+		// environment variable and never risks the real person's own
+		// ~/.gitconfig -- what it proves is the wiring: that this call happens,
+		// and that its effect is what the commit below actually uses.
+		const fixture = seedFixture({ identifyLocal: false });
+		let calls = 0;
+		const ensureIdentity = (): GitIdentityResult => {
+			calls += 1;
+			git(fixture.local, ['config', 'user.name', 'Derived Operator']);
+			git(fixture.local, ['config', 'user.email', '777+derived-operator@users.noreply.github.com']);
+			return {
+				outcome: 'derived',
+				name: 'Derived Operator',
+				email: '777+derived-operator@users.noreply.github.com',
+			};
+		};
+
+		// No startWebServer, no /api/snapshot, no HTTP request anywhere in this
+		// test -- the entire derive-and-use happens on the commit path alone.
+		const issue = createOperatorIssue(
+			fixture.local,
+			{
+				title: 'First intake, no identity yet',
+				scope: 'Prove derivation happens before the first commit, not after a snapshot.',
+				verificationCommand: 'true',
+			},
+			{},
+			() => '2026-08-19T00:00:00.000Z',
+			ensureIdentity,
+		);
+
+		expect(calls).toBe(1);
+		expect(issue.id).toBe('GSHIP-3');
+		const author = git(fixture.remote, ['log', '-1', '--format=%an <%ae>', 'main']);
+		expect(author).toBe('Derived Operator <777+derived-operator@users.noreply.github.com>');
+	});
+
+	test('a persistently missing identity fails clearly before any worktree is touched, not with a raw git error', () => {
+		const fixture = seedFixture({ identifyLocal: false });
+		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+		const ensureIdentity = (): GitIdentityResult => ({
+			outcome: 'missing',
+			detail: 'gh is not authenticated yet (fixture)',
+		});
+
+		try {
+			createOperatorIssue(
+				fixture.local,
+				{
+					title: 'Should never publish',
+					scope: 'A missing identity must refuse before any write.',
+					verificationCommand: 'true',
+				},
+				{},
+				() => '2026-08-19T00:00:00.000Z',
+				ensureIdentity,
+			);
+			throw new Error('expected createOperatorIssue to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect(error).toMatchObject({ code: 'source-unavailable', status: 503 });
+			// Gateship's own diagnostic, not git's opaque "Author identity
+			// unknown; *** Please tell me who you are." stderr.
+			expect((error as IssueIntakeError).message).toContain('gh is not authenticated yet (fixture)');
+			expect((error as IssueIntakeError).message).not.toContain('Please tell me who you are');
+		}
+		// Nothing published: the refusal happened before the commit, not after
+		// a failed one.
 		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
 	});
 });

@@ -1,0 +1,35 @@
+# One image, one volume, one process supervising its children (AGENTS.md).
+# GATESHIP_PROJECT_DIR is the git repository Gateship manages -- the current
+# directory by default. The published port stays bound to the host's loopback
+# only, so the container is reachable exactly like the local binary was:
+# from this machine alone.
+#
+#   GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+#
+# GSHIP_BUILD_SHA is optional -- an unset one still builds, it just leaves the
+# image unable to say what commit it came from (see the Dockerfile and
+# resolveBootSourceSha in src/commands/web.ts, GSHIP-654).
+#
+# The named volume below is mounted over ./.gship inside that repository,
+# which is where the SQLite store, managed worktrees and (via
+# CLAUDE_CONFIG_DIR/GH_CONFIG_DIR in the Dockerfile) the Claude and GitHub CLI
+# logins already live. Recreating the container against the same project
+# directory and the same volume returns the operator to the same place.
+services:
+  gateship:
+    build:
+      context: .
+      args:
+        GSHIP_BUILD_SHA: ${GSHIP_BUILD_SHA:-}
+    image: gateship:latest
+    init: true
+    ports:
+      - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"
+    volumes:
+      - ${GATESHIP_PROJECT_DIR:-.}:/workspace
+      - gateship-state:/workspace/.gship
+    stdin_open: true
+    tty: true
+
+volumes:
+  gateship-state:
