@@ -56,10 +56,25 @@
 // the merge timeout, then fetches and hard-resets this ship's own worktree to
 // the resulting head — without that sync this ship's next push would be
 // rejected as non-fast-forward, exactly the idempotent-retry invariant above
-// this update is not allowed to break. The updated head is registered as the
-// head this ship published, which is the point the recovery turns on: without
-// it, the next poll would read the update as a head moved outside the service
-// and the GSHIP-615 guard would end the ship over its own recovery. That
+// this update is not allowed to break. `gh pr update-branch` returns as soon
+// as GitHub accepts the request, but the update itself lands asynchronously,
+// so the head is reread until it changes from the one this ship published,
+// with a small fixed number of attempts and a short interval between them,
+// before any of that sync or registration happens (GSHIP-656). `mergeStateStatus`
+// leaving BEHIND is not trusted as confirmation on its own: GitHub invalidates
+// and recomputes mergeability as soon as `update-branch` is requested and
+// reports UNKNOWN while it does, so a reread fired in that window can already
+// read as "not BEHIND" before the head has moved at all. The evidence for
+// GSHIP-656 was a `gh pr view` fired immediately after `update-branch` that
+// still returned the head this ship had already published — registered as
+// though it were the new head, then read back moments later as a divergence
+// from itself once the real update landed. Exhausting the attempts without
+// the head changing ends the ship with its own reason instead of registering
+// a head this service never confirmed. Only a confirmed head is registered as
+// the head this ship published, which is the point the recovery turns on:
+// without it, the next poll would read the update as a head moved outside
+// the service and the GSHIP-615 guard would end the ship over its own
+// recovery. That
 // guard still has to refuse a head moved by anyone else, so only a poll that
 // finds the head unchanged from what this ship last published is read as
 // BEHIND and resolved; any other head still ends the ship as a divergence.
@@ -123,6 +138,19 @@ const DEFAULT_UNAVAILABLE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
  * must not turn the recovery into an infinite loop.
  */
 const DEFAULT_MAX_BRANCH_UPDATES = 3;
+/**
+ * Attempts to reread the pull request's head after `gh pr update-branch`
+ * before trusting what it reports (GSHIP-656): the update is applied
+ * asynchronously, so a read fired immediately after can still return the head
+ * this ship already published. Small and fixed on purpose, the same shape as
+ * the other retry budgets in this file.
+ */
+const DEFAULT_BRANCH_UPDATE_CONFIRM_ATTEMPTS = 5;
+/**
+ * Interval between those rereads. Short on purpose: this is confirming an
+ * update GitHub already accepted, not waiting out an outage.
+ */
+const DEFAULT_BRANCH_UPDATE_CONFIRM_DELAY_MS = 500;
 
 const HTTP_5XX_PATTERN = /\bHTTP\/?\s*5\d{2}\b/i;
 const TIMEOUT_PATTERN = /\b(timed?\s?-?out|timeout|deadline exceeded)\b/i;
@@ -142,6 +170,13 @@ function isGithubUnavailable(detail: string): boolean {
 /** Thrown only once an idempotent `gh` command exhausts its retry budget while GitHub stays unavailable. */
 class GithubUnavailableError extends Error {}
 
+/**
+ * Thrown only once the branch-update confirmation loop (GSHIP-656) exhausts
+ * its attempts without observing `gh pr update-branch` take effect: the head
+ * it reports never changed from the one this ship published.
+ */
+class BranchUpdateStalledError extends Error {}
+
 export interface ShipCommandInput {
 	cwd: string;
 	command: string;
@@ -159,6 +194,10 @@ export interface GithubShipperOptions {
 	unavailableRetryDelaysMs?: number[];
 	/** Ceiling on branch updates one ship triggers to clear BEHIND before giving up. */
 	maxBranchUpdates?: number;
+	/** Attempts to reread the head after `gh pr update-branch` before giving up on confirming it landed (GSHIP-656). */
+	branchUpdateConfirmAttempts?: number;
+	/** Interval between those rereads. */
+	branchUpdateConfirmDelayMs?: number;
 	/**
 	 * Called right before this ship's own commit (GSHIP-654): a fresh
 	 * container's global git config has no author identity, and this is the
@@ -338,6 +377,8 @@ export class GithubShipper implements RuntimeShipper {
 	readonly #mergeTimeoutMs: number;
 	readonly #unavailableRetryDelaysMs: number[];
 	readonly #maxBranchUpdates: number;
+	readonly #branchUpdateConfirmAttempts: number;
+	readonly #branchUpdateConfirmDelayMs: number;
 	readonly #ensureIdentity: () => GitIdentityResult;
 
 	constructor(options: GithubShipperOptions = {}) {
@@ -347,6 +388,10 @@ export class GithubShipper implements RuntimeShipper {
 		this.#unavailableRetryDelaysMs =
 			options.unavailableRetryDelaysMs ?? DEFAULT_UNAVAILABLE_RETRY_DELAYS_MS;
 		this.#maxBranchUpdates = options.maxBranchUpdates ?? DEFAULT_MAX_BRANCH_UPDATES;
+		this.#branchUpdateConfirmAttempts =
+			options.branchUpdateConfirmAttempts ?? DEFAULT_BRANCH_UPDATE_CONFIRM_ATTEMPTS;
+		this.#branchUpdateConfirmDelayMs =
+			options.branchUpdateConfirmDelayMs ?? DEFAULT_BRANCH_UPDATE_CONFIRM_DELAY_MS;
 		this.#ensureIdentity = options.ensureIdentity ?? (() => ({ outcome: 'already-configured' }));
 	}
 
@@ -674,34 +719,58 @@ export class GithubShipper implements RuntimeShipper {
 			}
 			throw error;
 		}
-		// BEHIND on the head this ship still recognises as its own is not a
-		// divergence and not an outage: main advanced while this ship waited.
-		// A BEHIND head that is not ours falls through to #pollVerdict below,
-		// which reports it as a divergence like any other.
-		if (view.state === 'OPEN' && view.mergeStateStatus === 'BEHIND' && view.headRefOid === headSha) {
-			if (branchUpdates >= this.#maxBranchUpdates) {
-				return {
-					result: {
-						outcome: 'failed',
-						detail: `pull request #${prNumber} stayed BEHIND after ${this.#maxBranchUpdates} branch updates: giving up so a main that keeps advancing cannot loop this ship forever`,
-					},
-				};
-			}
-			try {
-				const updated = await this.#updateBranch(input, prNumber, branch, headSha);
-				return { headSha: updated, branchUpdates: branchUpdates + 1, pending: null };
-			} catch (error) {
-				if (error instanceof GithubUnavailableError) {
-					return { result: await this.#unconfirmed(input, prNumber, headSha, error) };
-				}
-				throw error;
-			}
-		}
+		const behind = await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view);
+		if (behind !== null) return behind;
 		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
 		if (blocked !== null) return { result: blocked };
 		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 		if (verdict !== null) return { result: verdict };
 		return { headSha, branchUpdates, pending: view.mergeStateStatus };
+	}
+
+	/**
+	 * BEHIND on the head this ship still recognises as its own is not a
+	 * divergence and not an outage: main advanced while this ship waited, so
+	 * this updates the branch itself instead of waiting out the merge timeout.
+	 * Null keeps #pollOnce's loop state unchanged: a BEHIND head that is not
+	 * ours is left to #pollVerdict, which reports it as a divergence like any
+	 * other, so this only ever acts on the head this ship published.
+	 */
+	async #pollBehind(
+		input: RuntimeShipInput,
+		prNumber: number,
+		branch: string,
+		headSha: string,
+		branchUpdates: number,
+		view: PullRequestView,
+	): Promise<
+		| { result: RuntimeShipResult }
+		| { headSha: string; branchUpdates: number; pending: null }
+		| null
+	> {
+		if (view.state !== 'OPEN' || view.mergeStateStatus !== 'BEHIND' || view.headRefOid !== headSha) {
+			return null;
+		}
+		if (branchUpdates >= this.#maxBranchUpdates) {
+			return {
+				result: {
+					outcome: 'failed',
+					detail: `pull request #${prNumber} stayed BEHIND after ${this.#maxBranchUpdates} branch updates: giving up so a main that keeps advancing cannot loop this ship forever`,
+				},
+			};
+		}
+		try {
+			const updated = await this.#updateBranch(input, prNumber, branch, headSha);
+			return { headSha: updated, branchUpdates: branchUpdates + 1, pending: null };
+		} catch (error) {
+			if (error instanceof GithubUnavailableError) {
+				return { result: await this.#unconfirmed(input, prNumber, headSha, error) };
+			}
+			if (error instanceof BranchUpdateStalledError) {
+				return { result: await this.#branchUpdateStalled(input, prNumber, headSha, error) };
+			}
+			throw error;
+		}
 	}
 
 	/**
@@ -788,14 +857,21 @@ export class GithubShipper implements RuntimeShipper {
 	}
 
 	/**
-	 * Update the pull request branch with the latest base commit, read back the
-	 * head GitHub records afterwards, then sync this ship's own worktree to
-	 * that head. The sync is not cosmetic: without it, the branch this ship
-	 * checked out stays behind the commit GitHub just added, so this ship's
-	 * next push — an operator retry, or this same worktree used again later —
-	 * would be rejected as non-fast-forward, and every head comparison after
-	 * this point, including GSHIP-615's divergence guard, would read against a
-	 * stale local HEAD.
+	 * Update the pull request branch with the latest base commit, confirm the
+	 * update actually landed (GSHIP-656), then sync this ship's own worktree to
+	 * the resulting head. The sync is not cosmetic: without it, the branch this
+	 * ship checked out stays behind the commit GitHub just added, so this
+	 * ship's next push — an operator retry, or this same worktree used again
+	 * later — would be rejected as non-fast-forward, and every head comparison
+	 * after this point, including GSHIP-615's divergence guard, would read
+	 * against a stale local HEAD.
+	 *
+	 * `gh pr update-branch` returns as soon as GitHub accepts the request, not
+	 * once the update is applied, so the head it hands back is read only once
+	 * `#confirmBranchUpdate` has seen it change: registering an unconfirmed
+	 * read is exactly the GSHIP-656 bug, where the pre-update head was
+	 * registered as though it were the result and the real update, landing a
+	 * moment later, was then read back as a divergence from itself.
 	 */
 	async #updateBranch(
 		input: RuntimeShipInput,
@@ -804,13 +880,74 @@ export class GithubShipper implements RuntimeShipper {
 		previousHead: string,
 	): Promise<string> {
 		await this.#checked(input, 'gh', ['pr', 'update-branch', String(prNumber)], { retryIdempotent: true });
-		const updated = parsePullRequestView(await this.#checked(input, 'gh', [
-			'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
-		], { retryIdempotent: true }));
+		const updated = await this.#confirmBranchUpdate(input, prNumber, previousHead);
 		await this.#checked(input, 'git', ['fetch', 'origin', branch]);
 		await this.#checked(input, 'git', ['reset', '--hard', updated.headRefOid]);
 		input.emit('ship.branch-updated', { prNumber, previousHead, headSha: updated.headRefOid });
 		return updated.headRefOid;
+	}
+
+	/**
+	 * Reread the pull request until `gh pr update-branch` visibly took effect:
+	 * the head no longer matches `previousHead`. That is the only signal
+	 * trusted here — `mergeStateStatus` leaving BEHIND is not, because GitHub
+	 * invalidates and recomputes mergeability as soon as `update-branch` is
+	 * requested and reports UNKNOWN while it does, so a reread fired in that
+	 * window can already read as "not BEHIND" while the head has not moved at
+	 * all. Treating that as confirmation is exactly the GSHIP-656 bug: it
+	 * would return the pre-update view, and the caller would register the
+	 * head this ship already published as though it were the update's result.
+	 * A short, fixed number of attempts bounds the wait, the same shape as
+	 * every other retry budget in this file; exhausting them without the head
+	 * changing throws `BranchUpdateStalledError` instead of returning the
+	 * last, still-stale read, so nothing calling this can register a head it
+	 * never confirmed.
+	 */
+	async #confirmBranchUpdate(
+		input: RuntimeShipInput,
+		prNumber: number,
+		previousHead: string,
+	): Promise<PullRequestView> {
+		for (let attempt = 1; ; attempt++) {
+			const view = parsePullRequestView(await this.#checked(input, 'gh', [
+				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
+			], { retryIdempotent: true }));
+			if (view.headRefOid !== previousHead) return view;
+			if (attempt >= this.#branchUpdateConfirmAttempts) {
+				throw new BranchUpdateStalledError(
+					`pull request #${prNumber} still reads ${previousHead} after ${attempt} rereads`,
+				);
+			}
+			await sleep(this.#branchUpdateConfirmDelayMs, input.signal);
+			if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+		}
+	}
+
+	/**
+	 * The branch-update confirmation loop (GSHIP-656) exhausted its attempts
+	 * without observing `gh pr update-branch` take effect. This is its own
+	 * ending, distinct from both a divergence and GitHub being unavailable:
+	 * GitHub accepted the update and kept answering the polls, it simply had
+	 * not applied it within the attempts this ship allotted. The head this
+	 * ship still recognises as published is unchanged, so — same as
+	 * `#unconfirmed` — nothing is disarmed or reset here: a retry may find the
+	 * update has landed by then.
+	 */
+	async #branchUpdateStalled(
+		input: RuntimeShipInput,
+		prNumber: number,
+		headSha: string,
+		error: BranchUpdateStalledError,
+	): Promise<RuntimeShipResult> {
+		input.emit('ship.branch-update-stalled', { prNumber, headSha, detail: error.message });
+		return {
+			outcome: 'failed',
+			detail:
+				`pull request #${prNumber} branch update did not complete: ${error.message} ` +
+				'— GitHub accepted the update but this ship never confirmed it applied, so the head ' +
+				`it still recognises as published is unchanged (${headSha}); check the pull request ` +
+				'directly before shipping again',
+		};
 	}
 
 	/**

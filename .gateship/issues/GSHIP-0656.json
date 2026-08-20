@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-656",
   "title": "Atualizacao de branch no ship registra o head que produziu",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-20T07:20:48.128Z",
-  "updatedAt": "2026-08-20T07:26:56.018Z",
+  "updatedAt": "2026-08-20T07:50:01.879Z",
   "description": "Fazer a atualizacao de branch do ship registrar o head que ela realmente produziu, e nao o head anterior. Hoje toda pull request que fica BEHIND durante o ship termina como ship falhado, e o trabalho precisa ser mergeado e reconciliado a mao.\n\nEvidencia real, colhida na run da GSHIP-654 em 2026-08-20. A sequencia gravada foi: ship.pushed com head 27af5351, ship.pr-opened, ship.automerge-armed, e um segundo depois ship.branch-updated com previousHead e headSha ambos iguais a 27af5351. Dois segundos depois, ship.head-diverged com observedHead 23beb8d3, que era justamente o merge commit que a propria atualizacao acabara de criar, seguido de run.ship-failed. O servico detectou como intrusao a alteracao que ele mesmo fez.\n\nA causa e uma corrida em src/runtime/github-shipper.ts: gh pr update-branch retorna assim que o GitHub aceita o pedido, mas a atualizacao e aplicada de forma assincrona, e o gh pr view disparado na sequencia ainda devolve o head antigo. Esse valor e o que vai para o evento e passa a ser o head que o servico considera seu.\n\nA fatia e esperar a atualizacao concluir antes de registrar: reler o head ate ele mudar em relacao ao anterior, ou ate a pull request deixar de estar atras da base, com limite de tentativas e intervalo curto. Esgotar o limite sem mudanca precisa terminar o ship com uma razao propria que diga que a atualizacao nao concluiu, e nao registrar um head que o servico nao confirmou. Nao afrouxar a verificacao da GSHIP-615: ela esta correta e foi ela que impediu um merge nao verificado de passar despercebido.\n\nConsequencia observada que a fatia tambem resolve: depois desse ship falhado, uma retentativa falha no push, porque a branch remota ja carrega o merge e o push local deixa de ser fast-forward, e a reconciliacao com a pull request ja mergeada tambem e recusada, porque o head mergeado nunca foi registrado como do servico. A run fica presa em ready-to-ship e a fila para.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: atualizacao que muda o head registra o head novo, atualizacao que nao muda dentro do limite encerra o ship com a razao propria, e um head movido de fora continua sendo recusado como hoje.\n\nFora de escopo: mudar a verificacao de head da GSHIP-615, mudar o desarme do auto-merge, reconciliar runs ja presas, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
