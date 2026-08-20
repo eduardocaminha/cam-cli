@@ -4,7 +4,7 @@
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
 > Shipped baseline: `origin/main` at `eb11f8d8` (GSHIP-659, PR #511)
 > Active implementation branch: `codex/provider-failure-recovery`
-> Current stage: provider recovery and container-boundary correction
+> Current stage: recovery/security slice verified and ready to publish
 
 ## How to use this file
 
@@ -70,8 +70,9 @@ logic.
 
 ## Active bounded slice
 
-The branch `codex/provider-failure-recovery` currently has six commits on top
-of `origin/main`:
+The branch `codex/provider-failure-recovery` has six implementation commits on
+top of `origin/main`; handoff-only checkpoint commits follow them and do not
+change product code:
 
 1. `69c1d522` — classify provider call failures at the adapter boundary;
 2. `1a1c531d` — preserve runs in `waiting-provider`;
@@ -157,9 +158,8 @@ without inventing a new `deferred` state or editing issue JSON by hand.
   Compose boundary.
 - Projecting the real backlog through the new fingerprint code yields no
   plannable issues; GSHIP-660/661/662 all project as stale.
-- One complete `bun run check:all` passed with 723 tests before the final ship
-  review; the review corrections then passed 198 focused tests, typecheck and
-  lint.
+- The final `bun run check:all` passed after the ship-review corrections: 725
+  tests, typecheck, lint and Knip all clean.
 - The source service was restarted on this branch. `/`, `/runs`, `/work` and
   `/settings` return the current bundle; the live APIs report the chain off,
   no plannable issue and no stale-service warning.
@@ -168,8 +168,8 @@ without inventing a new `deferred` state or editing issue JSON by hand.
   component tests cover the changed surface, but no automated visual assertion
   should be claimed.
 
-Still required before shipping: run the complete `bun run check:all` after the
-ship-review corrections, inspect the final diff, push and open the pull request.
+Still required before shipping: inspect the final diff, push, open the pull
+request and let its pinned auto-merge observe the required CI checks.
 
 ## Queue state and evidence
 
