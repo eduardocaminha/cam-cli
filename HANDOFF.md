@@ -96,9 +96,14 @@ The replayable-eval foundation is implemented locally on
 Focused runtime, API and rendered-client tests pass together with both
 TypeScript projects and Biome. The production UI build passes. Automated visual
 inspection is unavailable in this Codex execution, so no visual assertion is
-claimed. The full ship-boundary `bun run check:all` passes 767 tests and 3,086
-assertions, both TypeScript projects, Biome and Knip; Knip reports only its two
-pre-existing configuration hints. Publication remains unauthorized.
+claimed. PR #519 reproduced an upstream npm
+publication failure twice: mutable `@openai/codex` resolved `0.149.0` while its
+Linux artifact returned 404. The container now pins the last complete release,
+`0.148.0`, and a static regression test prevents returning to an unversioned
+install. After the correction, the full ship-boundary `bun run check:all`
+passes 768 tests and 3,088 assertions, both TypeScript projects, Biome and Knip;
+Knip reports only its two pre-existing configuration hints. A local container
+image builds successfully and both Claude Code and Codex respond inside it.
 
 ## Previously shipped bounded slices
 

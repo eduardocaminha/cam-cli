@@ -1,6 +1,6 @@
 // test/compose-config.test.ts
 //
-// Static-source guard for compose.yaml (GSHIP-657), mirroring
+// Static-source guards for the container boundary (GSHIP-657), mirroring
 // test/release-workflow.test.ts: reads the committed file and pins its
 // shape, no Docker daemon needed. compose.yaml must keep both the `build`
 // block (the development path, and what the container image's own
@@ -12,7 +12,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const COMPOSE_PATH = resolve(import.meta.dir, '..', 'compose.yaml');
+const DOCKERFILE_PATH = resolve(import.meta.dir, '..', 'Dockerfile');
 const compose = readFileSync(COMPOSE_PATH, 'utf8');
+const dockerfile = readFileSync(DOCKERFILE_PATH, 'utf8');
 
 describe('compose.yaml image consumption (GSHIP-657)', () => {
 	test('image defaults to the unpublished local tag, so it builds unless overridden', () => {
@@ -35,5 +37,12 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 		expect(compose).toContain('- no-new-privileges:true');
 		expect(compose).toContain('cap_drop:\n      - ALL');
 		expect(compose).toContain('- /tmp:rw,nosuid,nodev,mode=1777');
+	});
+});
+
+describe('container provider CLI installation', () => {
+	test('pins Codex to a complete published release instead of mutable latest', () => {
+		expect(dockerfile).toMatch(/RUN bun add -g @openai\/codex@\d+\.\d+\.\d+\n/);
+		expect(dockerfile).not.toContain('RUN bun add -g @openai/codex\n');
 	});
 });
