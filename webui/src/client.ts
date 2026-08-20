@@ -5,7 +5,12 @@
 // guarded by the trusted-origin check. No token, no second server, no
 // alternate base URL: the bundle is served by the process it talks to.
 
-import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
+import type {
+	PlannableIssue,
+	RunEventView,
+	RunProviderWaitView,
+	RunView,
+} from './run-view.ts';
 
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const RUNS_PATH = '/api/runs';
@@ -130,6 +135,8 @@ export interface ProviderStatusView {
 	label: string;
 	plan?: string;
 	login: 'external' | 'web';
+	/** An observed active hold; absence does not claim remaining subscription quota. */
+	availability?: RunProviderWaitView;
 }
 
 /**

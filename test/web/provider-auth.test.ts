@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import type { ProviderAuth, ProviderStatus } from '../../src/runtime/provider-auth.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -17,6 +18,14 @@ function fakeAuth(): ProviderAuth {
 		startCodexLogin: async () => ({ loginId: 'login-1', authUrl: 'https://chatgpt.com/auth' }),
 		close: async () => {},
 	};
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+	const deadline = Date.now() + 2_000;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error('timed out waiting for provider hold');
+		await Bun.sleep(5);
+	}
 }
 
 describe('provider auth web API', () => {
@@ -48,6 +57,51 @@ describe('provider auth web API', () => {
 			});
 		} finally {
 			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('reports an observed provider hold separately from subscription login', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-provider-availability-runtime-'),
+			store: new RunStore(':memory:'),
+			newId: () => 'run-provider-availability',
+			executor: {
+				execute: async () => {
+					throw new ProviderCallError(
+						'claude',
+						'usage-limit',
+						'Claude usage limit reached.',
+						{ retryAt: '2026-08-20T12:10:00.000Z' },
+					);
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.startRun('GSHIP-700');
+		await waitFor(() => runtime.listRuns()[0]?.state === 'waiting-provider');
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-provider-availability-web-'),
+			runRuntime: runtime,
+			providerAuth: fakeAuth(),
+		});
+		try {
+			const payload = await (await fetch(
+				`http://${handle.hostname}:${handle.port}/api/providers`,
+			)).json() as { providers: Array<Record<string, unknown>> };
+			expect(payload.providers[0]).toMatchObject({
+				id: 'claude',
+				subscription: true,
+				availability: {
+					kind: 'usage-limit',
+					retryAt: '2026-08-20T12:10:00.000Z',
+				},
+			});
+			expect(payload.providers[1]).not.toHaveProperty('availability');
+		} finally {
+			await handle.stop();
+			await runtime.stop();
 			runtime.close();
 		}
 	});

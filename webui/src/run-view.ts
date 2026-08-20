@@ -18,6 +18,7 @@ export type RunState =
 	| 'shipping'
 	| 'done'
 	| 'waiting-user'
+	| 'waiting-provider'
 	| 'failed'
 	| 'interrupted'
 	| 'cancelled';
@@ -79,6 +80,23 @@ export interface RunRoundOriginsView {
 	indeterminate: number;
 }
 
+export interface RunProviderWaitView {
+	provider: 'claude' | 'codex';
+	kind:
+		| 'auth-required'
+		| 'usage-limit'
+		| 'rate-limited'
+		| 'overloaded'
+		| 'model-refused'
+		| 'transport-unavailable'
+		| 'protocol-invalid'
+		| 'cancelled'
+		| 'unknown';
+	message: string;
+	phase: 'working' | 'review';
+	retryAt?: string;
+}
+
 export interface RunView {
 	id: string;
 	issueId: string;
@@ -88,6 +106,7 @@ export interface RunView {
 	updatedAt: string;
 	cost: RunCostView;
 	roundOrigins: RunRoundOriginsView;
+	providerWait: RunProviderWaitView | null;
 }
 
 /** A cost total plus exactly how many runs it spans (GSHIP-628). */
@@ -140,6 +159,7 @@ export const RUN_PHASES: readonly RunState[] = [
 
 const OFF_SPINE_PHASE: Readonly<Record<string, RunState>> = {
 	'waiting-user': 'working',
+	'waiting-provider': 'working',
 	interrupted: 'working',
 	// Abandoning ends the run where it stopped; it never advances the spine.
 	cancelled: 'working',
@@ -164,7 +184,9 @@ export type StateTone = 'default' | 'info' | 'success' | 'warning' | 'error';
 export function toneOf(state: RunState): StateTone {
 	if (state === 'failed') return 'error';
 	if (state === 'done') return 'success';
-	if (state === 'waiting-user' || state === 'interrupted') return 'warning';
+	if (state === 'waiting-user' || state === 'waiting-provider' || state === 'interrupted') {
+		return 'warning';
+	}
 	if (state === 'ready-to-ship') return 'info';
 	return 'default';
 }
@@ -181,6 +203,7 @@ const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
 	shipping: 'Trabalhando',
 	'ready-to-ship': 'Precisa de você',
 	'waiting-user': 'Precisa de você',
+	'waiting-provider': 'Precisa de você',
 	failed: 'Precisa de você',
 	interrupted: 'Precisa de você',
 	done: 'Ocioso',
@@ -243,6 +266,7 @@ const CANCELLABLE: readonly RunState[] = [
 	'full-verify',
 	'ready-to-ship',
 	'shipping',
+	'waiting-provider',
 ];
 
 /**
@@ -272,7 +296,7 @@ export function actionsFor(run: RunView | null, hasSelection: boolean): RunActio
 	const settled = state === undefined || isTerminalRunState(state);
 	return {
 		start: hasSelection && settled,
-		resume: state === 'interrupted' || state === 'waiting-user',
+		resume: state === 'interrupted' || state === 'waiting-user' || state === 'waiting-provider',
 		// The way out of an interrupted run that is not worth resuming, and the
 		// only state that admits it.
 		abandon: state === 'interrupted',

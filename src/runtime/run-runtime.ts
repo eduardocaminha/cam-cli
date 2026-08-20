@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentProviderId } from './agent-session.ts';
+import {
+	PROVIDER_ERROR_KINDS,
+	ProviderCallError,
+	type AgentProviderId,
+	type ProviderErrorKind,
+} from './agent-session.ts';
 import { isPlannable } from '../issues/plannable.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type {
@@ -205,6 +210,14 @@ export interface ChainPauseView {
 	issue?: { id: string; title: string };
 }
 
+export interface RunProviderWait {
+	provider: AgentProviderId;
+	kind: ProviderErrorKind;
+	message: string;
+	phase: 'working' | 'review';
+	retryAt?: string;
+}
+
 function isChainPauseReason(value: unknown): value is ChainPauseReason {
 	return typeof value === 'string' && (Object.values(CHAIN_PAUSE_REASONS) as string[]).includes(value);
 }
@@ -226,6 +239,15 @@ interface RunAttempt {
 	fullVerifyFeedback?: string;
 	operatorGuidance?: string;
 }
+
+const PROVIDER_AVAILABILITY_FAILURES: readonly ProviderErrorKind[] = [
+	'auth-required',
+	'usage-limit',
+	'rate-limited',
+	'overloaded',
+	'model-refused',
+	'transport-unavailable',
+];
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -308,7 +330,9 @@ export class RunRuntime {
 		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
 		const run = this.#store.getRun(runId);
 		if (run === null) throw new Error(`run not found: ${runId}`);
-		if (run.state !== 'interrupted' && run.state !== 'waiting-user') {
+		if (run.state !== 'interrupted'
+			&& run.state !== 'waiting-user'
+			&& run.state !== 'waiting-provider') {
 			throw new Error(`run cannot resume from state ${run.state}`);
 		}
 		const guidance = operatorGuidance?.trim();
@@ -428,6 +452,39 @@ export class RunRuntime {
 	 */
 	getRunRoundOrigins(runId: string): RunRoundOrigins {
 		return selectRunRoundOrigins(this.#store.listRunDecisionEvents(runId));
+	}
+
+	/** Latest structured provider hold, present only while that run is resting on it. */
+	getRunProviderWait(runId: string): RunProviderWait | null {
+		if (this.#store.getRun(runId)?.state !== 'waiting-provider') return null;
+		const event = this.#store.listRunDecisionEvents(runId)
+			.findLast((candidate) => candidate.kind === 'run.provider-waiting');
+		if (event === undefined) return null;
+		const { provider, kind, message, phase, retryAt } = event.payload;
+		if ((provider !== 'claude' && provider !== 'codex')
+			|| typeof kind !== 'string'
+			|| !(PROVIDER_ERROR_KINDS as readonly string[]).includes(kind)
+			|| typeof message !== 'string'
+			|| (phase !== 'working' && phase !== 'review')) {
+			return null;
+		}
+		return {
+			provider,
+			kind: kind as ProviderErrorKind,
+			message,
+			phase,
+			...(typeof retryAt === 'string' ? { retryAt } : {}),
+		};
+	}
+
+	/** An observed active hold for this provider; absence never claims a quota balance. */
+	getProviderWait(providerId: AgentProviderId): RunProviderWait | null {
+		for (const run of this.#store.listRuns(10_000)) {
+			if (run.state !== 'waiting-provider') continue;
+			const wait = this.getRunProviderWait(run.id);
+			if (wait?.provider === providerId) return wait;
+		}
+		return null;
 	}
 
 	listWorkspaceNotices(): WorkspaceNotice[] {
@@ -629,16 +686,33 @@ export class RunRuntime {
 		if (executor === undefined || verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
-		this.#transition(run.id, 'working', 'run.started');
+		const providerWaitPhase = run.state === 'waiting-provider'
+			? this.#providerWaitPhase(run.id)
+			: null;
+		if (providerWaitPhase !== 'review') {
+			this.#transition(
+				run.id,
+				'working',
+				providerWaitPhase === 'working' ? 'run.provider-retry-started' : 'run.started',
+			);
+		}
 
 		try {
 			if (await this.#checkEvidence(run, signal, firstAttempt)) return;
-			await this.#driveImplementation(executor, verifier, run, signal, firstAttempt);
+			await this.#driveImplementation(
+				executor,
+				verifier,
+				run,
+				signal,
+				firstAttempt,
+				providerWaitPhase === 'review',
+			);
 		} catch (error) {
 			if (signal.aborted) {
 				this.#interrupt(run.id);
 				return;
 			}
+			if (this.#restForProviderFailure(run.id, error)) return;
 			const current = this.#store.getRun(run.id);
 			if (current !== null && canTransition(current.state, 'failed')) {
 				const failedRun = this.#transition(run.id, 'failed', 'run.failed', {
@@ -667,8 +741,22 @@ export class RunRuntime {
 		run: RunRecord,
 		signal: AbortSignal,
 		firstAttempt: RunAttempt,
+		resumeAtReview = false,
 	): Promise<void> {
 		let attempt = firstAttempt;
+		if (resumeAtReview) {
+			const next = await this.#review(
+				run,
+				signal,
+				this.#executionInput(run, signal, attempt),
+				'run.provider-retry-started',
+			);
+			if (next === null) {
+				await this.#shipIfReady(run, signal);
+				return;
+			}
+			attempt = next;
+		}
 		for (;;) {
 			const executionInput = this.#executionInput(run, signal, attempt);
 			const verified = await this.#work(executor, verifier, run, signal, executionInput);
@@ -680,10 +768,46 @@ export class RunRuntime {
 		// A run that got here verified, reviewed and fully verified clean ships
 		// under the same ownership: the operator asked for the change, not for a
 		// button.
+		await this.#shipIfReady(run, signal);
+	}
+
+	async #shipIfReady(run: RunRecord, signal: AbortSignal): Promise<void> {
 		const shipper = this.#shipper;
 		if (shipper === undefined) return;
 		if (this.#store.getRun(run.id)?.state !== 'ready-to-ship') return;
 		await this.#driveShip(shipper, run, signal);
+	}
+
+	#providerWaitPhase(runId: string): 'working' | 'review' {
+		return this.getRunProviderWait(runId)?.phase ?? 'working';
+	}
+
+	/**
+	 * Availability and configuration failures preserve the run and its
+	 * workspace. Protocol defects and unclassified failures still use the
+	 * ordinary terminal failure path below.
+	 */
+	#restForProviderFailure(runId: string, error: unknown): boolean {
+		if (!(error instanceof ProviderCallError)) return false;
+		const current = this.#store.getRun(runId);
+		if (current === null) return false;
+		if (error.kind === 'cancelled') {
+			this.#interrupt(runId);
+			return true;
+		}
+		const payload = {
+			provider: error.provider,
+			kind: error.kind,
+			message: error.message,
+			phase: current.state,
+			...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+		};
+		if (PROVIDER_AVAILABILITY_FAILURES.includes(error.kind)
+			&& canTransition(current.state, 'waiting-provider')) {
+			this.#transition(runId, 'waiting-provider', 'run.provider-waiting', { payload });
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -821,12 +945,13 @@ export class RunRuntime {
 		run: RunRecord,
 		signal: AbortSignal,
 		executionInput: RuntimeExecutionInput,
+		startKind = 'run.review-started',
 	): Promise<RunAttempt | null> {
 		const reviewer = this.#reviewer;
 		if (reviewer === undefined) {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.verified');
 		}
-		this.#transition(run.id, 'review', 'run.review-started');
+		this.#transition(run.id, 'review', startKind);
 		const review = await reviewer.review(executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);

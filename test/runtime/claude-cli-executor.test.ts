@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import {
 	buildClaudeCliArgv,
 	buildClaudeReadOnlyArgv,
 	buildWorkPrompt,
+	ClaudeAgentSession,
 	ClaudeCliExecutor,
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
@@ -99,6 +101,69 @@ describe('Claude CLI runtime executor', () => {
 		expect(argv).toContain('--strict-mcp-config');
 		expect(argv).toContain('--safe-mode');
 		expect(argv).not.toContain('bypassPermissions');
+	});
+
+	test('preserves a structured subscription limit and its reset time', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=usage-limit'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'session-limit',
+				resume: true,
+				cwd: createTestTmpdir('gship-claude-usage-limit-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: (kind, payload) => events.push({
+					kind,
+					...(payload === undefined ? {} : { payload }),
+				}),
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({
+			provider: 'claude',
+			kind: 'usage-limit',
+			retryAt: '2027-01-15T08:00:00.000Z',
+		});
+		expect(events).toContainEqual({
+			kind: 'provider.rate-limit',
+			payload: {
+				status: 'rejected',
+				limit: 'five_hour',
+				retryAt: '2027-01-15T08:00:00.000Z',
+			},
+		});
+	});
+
+	test('ignores an invalid provider reset timestamp without losing the limit', async () => {
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=usage-limit-invalid-reset'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'session-invalid-reset',
+				resume: true,
+				cwd: createTestTmpdir('gship-claude-invalid-reset-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'claude', kind: 'usage-limit' });
+		expect((failure as ProviderCallError).retryAt).toBeUndefined();
 	});
 
 	// GSHIP-617: the operator's per-role choice, pushed as flags only when set.

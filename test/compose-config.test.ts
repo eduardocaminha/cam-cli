@@ -29,4 +29,11 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 		expect(buildBlock).toContain('context: .');
 		expect(buildBlock).toContain('GSHIP_BUILD_SHA: ${GSHIP_BUILD_SHA:-}');
 	});
+
+	test('keeps the container boundary read-only and prevents privilege escalation', () => {
+		expect(compose).toContain('read_only: true');
+		expect(compose).toContain('- no-new-privileges:true');
+		expect(compose).toContain('cap_drop:\n      - ALL');
+		expect(compose).toContain('- /tmp:rw,nosuid,nodev,mode=1777');
+	});
 });

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
@@ -234,6 +235,115 @@ describe('durable run runtime', () => {
 			{ sessionId: 'session-stable', resume: false, cwd: '/workspaces/run-resume' },
 			{ sessionId: 'session-stable', resume: true, cwd: '/workspaces/run-resume' },
 		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('rests on a provider usage limit and resumes the same session without releasing work', async () => {
+		const calls: Array<{ sessionId: string; resume: boolean }> = [];
+		const releases: string[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-provider-limit',
+			newSessionId: () => 'session-provider-limit',
+			workspace: {
+				prepare: () => '/workspaces/run-provider-limit',
+				release: ({ runId }) => {
+					releases.push(runId);
+					return { outcome: 'released', branch: 'gship/gship-700-run-provider-limit' };
+				},
+			},
+			executor: {
+				execute: async (input) => {
+					calls.push({ sessionId: input.sessionId, resume: input.resume });
+					if (!input.resume) {
+						throw new ProviderCallError(
+							'claude',
+							'usage-limit',
+							'Claude usage limit reached.',
+							{ retryAt: '2026-08-20T12:10:00.000Z' },
+						);
+					}
+					return { outcome: 'completed', summary: 'continued safely' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-700');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRun(run.id)).toMatchObject({
+			state: 'waiting-provider',
+			error: null,
+		});
+		expect(releases).toEqual([]);
+		expect(runtime.listRunEvents(run.id).at(-1)).toMatchObject({
+			kind: 'run.provider-waiting',
+			payload: {
+				provider: 'claude',
+				kind: 'usage-limit',
+				message: 'Claude usage limit reached.',
+				phase: 'working',
+				retryAt: '2026-08-20T12:10:00.000Z',
+			},
+		});
+		expect(runtime.getRunProviderWait(run.id)).toEqual({
+			provider: 'claude',
+			kind: 'usage-limit',
+			message: 'Claude usage limit reached.',
+			phase: 'working',
+			retryAt: '2026-08-20T12:10:00.000Z',
+		});
+		expect(() => runtime.startRun('GSHIP-701')).toThrow('still waiting-provider');
+
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(runtime.getRunProviderWait(run.id)).toBeNull();
+		expect(calls).toEqual([
+			{ sessionId: 'session-provider-limit', resume: false },
+			{ sessionId: 'session-provider-limit', resume: true },
+		]);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain(
+			'run.provider-retry-started',
+		);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('retries a fresh reviewer after provider recovery without rerunning the executor', async () => {
+		let executions = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-review-provider-limit',
+			executor: {
+				execute: async () => {
+					executions += 1;
+					return { outcome: 'completed', summary: 'implemented' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async () => {
+					reviews += 1;
+					if (reviews === 1) {
+						throw new ProviderCallError('codex', 'overloaded', 'Codex is overloaded.');
+					}
+					return { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = runtime.startRun('GSHIP-702');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.listRunEvents(run.id).at(-1)?.payload['phase']).toBe('review');
+
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executions).toBe(1);
+		expect(reviews).toBe(2);
 		await runtime.stop();
 		runtime.close();
 	});

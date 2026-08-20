@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { buildWorkPrompt } from '../../src/runtime/claude-cli-executor.ts';
 import {
 	buildCodexCliArgv,
@@ -151,6 +152,52 @@ describe('Codex CLI runtime executor', () => {
 			emit: () => {},
 			eventPrefix: 'provider',
 		})).rejects.toThrow('structured fixture diagnostic');
+	});
+
+	test('classifies a protocol-reported subscription limit', async () => {
+		const session = new CodexAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=usage-limit'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'codex-session-limit',
+				resume: true,
+				cwd: createTestTmpdir('gship-codex-usage-limit-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'codex', kind: 'usage-limit' });
+	});
+
+	test('keeps an unrecognized turn failure unknown instead of calling it a model refusal', async () => {
+		const session = new CodexAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=failed'],
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'codex-session-unknown',
+				resume: true,
+				cwd: createTestTmpdir('gship-codex-unknown-failure-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'codex', kind: 'unknown' });
 	});
 
 	test('binds the provider thread, projects activity, and removes the temporary schema', async () => {

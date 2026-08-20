@@ -30,6 +30,12 @@ describe('run notifications', () => {
 		expect(notificationForRunEvent(event('waiting-user', 'run.waiting-user', {
 			summary: 'Escolha o seam.',
 		}))).toMatchObject({ title: 'Gateship precisa de você', body: 'Escolha o seam.' });
+		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting', {
+			message: 'Claude usage limit reached.',
+		}))).toMatchObject({
+			title: 'Provider temporariamente indisponível',
+			body: 'Claude usage limit reached.',
+		});
 		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed', {
 			error: 'checks red',
 		}))).toMatchObject({ title: 'Ship precisa de nova tentativa', body: 'checks red' });
@@ -47,6 +53,8 @@ describe('run notifications', () => {
 
 	test('a decision opens the conversation and every other alert opens the runs surface', () => {
 		expect(notificationForRunEvent(event('waiting-user', 'run.waiting-user'))?.url).toBe('/');
+		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting'))?.url)
+			.toBe('/runs');
 		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed'))?.url).toBe('/runs');
 		expect(notificationForRunEvent(event('interrupted', 'run.interrupted'))?.url).toBe('/runs');
 		expect(notificationForRunEvent(event('failed', 'run.verification-failed'))?.url).toBe('/runs');

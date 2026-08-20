@@ -23,6 +23,21 @@ if (mode === 'wait') {
 		is_error: true,
 		result: `model "${flagValue('--model')}" effort "${flagValue('--effort')}" not found`,
 	})}\n`);
+} else if (mode === 'usage-limit' || mode === 'usage-limit-invalid-reset') {
+	process.stdout.write(`${JSON.stringify({
+		type: 'rate_limit_event',
+		rate_limit_info: {
+			status: 'rejected',
+			rateLimitType: 'five_hour',
+			resetsAt: mode === 'usage-limit' ? 1_800_000_000 : Number.MAX_VALUE,
+		},
+	})}\n`);
+	process.stdout.write(`${JSON.stringify({
+		type: 'assistant',
+		message: { content: [{ type: 'text', text: "You've hit your session limit" }] },
+	})}\n`);
+	process.stdout.write(`${JSON.stringify({ type: 'result', is_error: true, result: '' })}\n`);
+	process.exitCode = 1;
 } else if (mode === 'review') {
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);

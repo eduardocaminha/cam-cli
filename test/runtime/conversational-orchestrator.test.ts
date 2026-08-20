@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import type {
-	AgentSession,
-	AgentSessionInput,
+import {
+	ProviderCallError,
+	type AgentSession,
+	type AgentSessionInput,
 } from '../../src/runtime/agent-session.ts';
 import {
 	buildOrchestratorPrompt,
@@ -197,6 +198,41 @@ describe('conversational orchestrator', () => {
 		await expect(orchestrator.turn('Comece uma conversa.')).rejects.toThrow('fresh failed');
 		expect(codex.inputs).toHaveLength(1);
 		expect(codex.inputs[0]).toMatchObject({ resume: false, sessionId: 'only-fresh-session' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('does not replace a resumed session when the provider is unavailable', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-provider-limit-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		runtime.setOrchestratorSession('codex', 'active-native-session');
+		const codex = new ScriptedSession(async () => {
+			throw new ProviderCallError(
+				'codex',
+				'usage-limit',
+				'Codex usage limit reached.',
+			);
+		});
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({}),
+			execute: () => '',
+			newSessionId: () => 'must-not-be-used',
+		});
+
+		await expect(orchestrator.turn('Continue a sessão.')).rejects.toMatchObject({
+			kind: 'usage-limit',
+		});
+		expect(codex.inputs).toHaveLength(1);
+		expect(codex.inputs[0]).toMatchObject({
+			resume: true,
+			sessionId: 'active-native-session',
+		});
 		await runtime.stop();
 		runtime.close();
 	});

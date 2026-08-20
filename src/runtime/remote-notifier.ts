@@ -20,6 +20,9 @@ export const NTFY_URL_ENV_VAR = 'GATESHIP_NTFY_URL';
  * `.gitignore`d, so deleting the project deletes this with it -- no residue in
  * a system vault. The operator places this file themselves (out of scope:
  * editing it from the screen); the format is one line, the bare topic URL.
+ * Mode 0600 and the child environment allowlist prevent accidental disclosure;
+ * they do not isolate this file from a hostile child running with the same
+ * filesystem identity. That product boundary is documented explicitly.
  */
 export const NTFY_URL_FILE_PATH = join('.gship', 'ntfy-url');
 
@@ -70,6 +73,12 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
 		return {
 			title: 'Gateship precisa de você',
 			body: payloadText(event, 'summary') ?? 'O run aguarda uma decisão do operador.',
+		};
+	}
+	if (event.toState === 'waiting-provider') {
+		return {
+			title: 'Provider temporariamente indisponível',
+			body: payloadText(event, 'message') ?? 'O run foi preservado e pode ser retomado depois.',
 		};
 	}
 	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {
@@ -285,8 +294,10 @@ export async function sendNtfyTestNotification(options: NtfyTestOptions): Promis
  * exact same rules as ntfy's topic URL: an env var that wins over a project
  * file requiring mode 600, never SQLite, never a browser response, never a
  * log line, and never named in `child-env.ts`'s allowlists so a spawned
- * agent or `gh` child never inherits it. `from` and `to` are ordinary
- * configuration, not secrets, so they are read from the environment only.
+ * agent or `gh` child never inherits it. This is an inheritance boundary, not
+ * filesystem isolation from a hostile same-identity child. `from` and `to`
+ * are ordinary configuration, not secrets, so they are read from the
+ * environment only.
  */
 export const RESEND_API_KEY_ENV_VAR = 'GATESHIP_RESEND_API_KEY';
 

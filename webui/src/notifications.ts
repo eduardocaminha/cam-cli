@@ -39,7 +39,7 @@ function notificationRuntime(): NotificationRuntime {
 	return globalThis as NotificationRuntime;
 }
 
-function payloadText(event: RunEventView, key: 'summary' | 'error' | 'detail'): string | null {
+function payloadText(event: RunEventView, key: 'summary' | 'error' | 'detail' | 'message'): string | null {
 	const value = event.payload[key];
 	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
@@ -67,6 +67,14 @@ export function notificationForRunEvent(event: RunEventView): RunNotification | 
 			body: payloadText(event, 'summary') ?? 'O run aguarda uma decisão do operador.',
 			tag,
 			url: '/',
+		};
+	}
+	if (event.toState === 'waiting-provider') {
+		return {
+			title: 'Provider temporariamente indisponível',
+			body: payloadText(event, 'message') ?? 'O run foi preservado e pode ser retomado depois.',
+			tag,
+			url: '/runs',
 		};
 	}
 	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {

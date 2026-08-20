@@ -37,7 +37,9 @@ flowchart TD
 - `AgentSession` is the provider-neutral bus; the selected Claude/Codex
   executor owns its resumable native session.
 - `GitIssueVerifier` runs the acceptance commands from the task contract.
-- New task contracts are direct `{ scope, verify[] }` records. The old
+- New task contracts are direct `{ scope, verify[], evidence? }` records. Scope,
+  verification and every optional evidence command/output are covered by the
+  human approval fingerprint. The old
   acceptance-criteria DSL is read only by a compatibility adapter and is never
   emitted by the current intake.
 - The matching provider reviewer starts a fresh read-only session for

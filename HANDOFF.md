@@ -2,776 +2,308 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Product baseline: `main` at `8d7afb48` (GSHIP-654 shipped through PR #503)
-> Active provider: Claude Code. Codex exhausted its subscription credit on
-> 2026-08-16 mid-stage, so continuation moved provider without changing scope,
-> direction or stage. This file is the resume point if the Claude side degrades.
+> Shipped baseline: `origin/main` at `eb11f8d8` (GSHIP-659, PR #511)
+> Active implementation branch: `codex/provider-failure-recovery`
+> Current stage: recovery/security slice verified and ready to publish
 
 ## How to use this file
 
-This is the canonical cross-agent continuation checkpoint for Codex, Claude
-Code, and the Gateship orchestrator. It records product direction, decisions,
-current stage, and the ordered roadmap.
+This is the canonical cross-session checkpoint for Codex, Claude Code and the
+Gateship orchestrator. Read `AGENTS.md`, `CLAUDE.md` and this file, then inspect
+Git and the running service before continuing.
 
-It is not an executable specification and does not authorize an agent to start
-the whole roadmap. Before implementation, turn only the current proposed slice
-into a bounded specification and obtain explicit operator approval. If code and
-this file disagree, investigate the repository and update the checkpoint rather
-than silently assuming either is current.
+This file records direction and current state. It is not blanket authorization
+to execute the roadmap. Continue only the active bounded slice or another slice
+the operator explicitly approves. When code and this file disagree, investigate
+and update the checkpoint instead of preserving stale prose.
 
-It records problems, decisions and evidence, not habits. A workaround that asks a
-human to remember something is a defect with no owner: state it as an unsolved
-problem so it can be fixed in the product, rather than as a rule to follow.
-
-## Current stage
-
-**Stage 6 of 15 — started, and the product's packaging changed with it. The
-service now ships as one container image with one volume, and the rule that
-forbade container workers was revoked deliberately rather than by omission. Three
-problems this cycle shared a root the local-process design could not fix: the
-executor runs with no sandbox, so no secret on the machine is beyond its reach;
-Windows has no supported path, since the release builds only darwin and linux and
-verification shells out to `/bin/sh`; and an installed binary can be arbitrarily
-older than the repository while saying nothing. GSHIP-654 shipped the image with
-git, `gh` and the Claude CLI inside it, authenticating on first boot and
-persisting on the volume, so the subscription login is kept and API-key billing
-is not adopted.
-
-Stage 5 delivered its scheduler and its first two capabilities. GSHIP-638 chains
-approved runs behind a switch, and two of the four capabilities the roadmap listed
-already existed. GSHIP-650 makes a stopped queue name the issue that stopped it,
-and GSHIP-651 sends push through ntfy so an unattended queue does not depend on an
-open browser tab. Stage 9 closed earlier, with per-role model and effort validated
-against the CLI and cost recorded for every role. What Stage 5 still owes is
-whether a failed run should offer anything beyond stopping, which has one
-occurrence and is not worth specifying yet.
-
-The chain proved itself: six approved runs executed in series with no attention at
-all, 641 through 646, and stopped honestly on 647, whose evidence had diverged.
-Four issues wait unapproved: GSHIP-652, 653, 655 and 656.**
-
-Stages 1 and 2 are complete. GSHIP-602 through GSHIP-604 added and dogfooded the
-generated cross-provider handoff plus the separate operator-maintained project
-brief and its `/settings` editor.
-
-Stage 3 is complete. GSHIP-605 binds approval to a
-deterministic SHA-256 fingerprint of `{ scope, verify }`; only
-`create_and_start_issue` records approval at creation, and run preflight rejects
-missing or stale approval. A full-CI failure also proved the intended test
-boundary: focused tests run during implementation and the complete suite runs
-before merge. The production invariant stayed strict; only an obsolete fixture
-was corrected.
-
-Dogfooding the Codex subscription fallback then exposed two orchestration
-integration defects. GSHIP-606 retries a failed native session resume once with
-a fresh read-only session while reusing the durable transcript. GSHIP-607 made
-the shared command envelope compatible with strict Structured Outputs and
-preserves JSONL provider errors instead of masking them behind empty stderr.
-The same real conversation that had failed then succeeded without losing the
-cross-provider transcript or executing a command.
-
-GSHIP-609 added deterministic operations to revise an existing specified draft,
-always invalidating approval, and to approve its current fingerprint without
-starting it. GSHIP-610 exposed those operations on `/work` as a progressively
-disclosed review form with an explicit human confirmation. Visual dogfooding
-then caught one shared-domain mismatch: an unapproved draft was also projected
-as plannable. PR #438 moved the approval-fingerprint check into `isPlannable`;
-the final browser check showed zero executable issues, one reviewable draft, and
-an approval button enabled only after confirmation.
-
-GSHIP-611 is complete and shipped through PR #441. The operator approved its
-fingerprint on `/work`, the run executed on Claude and merged with no fix round.
-Run state gains a terminal `cancelled` reachable only from `interrupted`, plus
-`abandonRun`, `POST /api/runs/:runId/abandon`, the typed `abandon_run` command
-and an "Abandonar" control rendered only when eligible. Abandoning never reopens
-the provider session, releases only the run's own clean worktree and branch,
-preserves and surfaces a dirty one, and stops blocking the next issue. That run
-was also the first end-to-end proof of the full loop on the Claude provider
-after the Codex credit ran out.
-
-The executor flagged one non-blocking factor worth capturing later: abandon
-reuses the merged-run release contract, so a clean worktree whose branch still
-holds unmerged commits loses that branch. Uncommitted work makes the worktree
-dirty and is therefore preserved. No new gate was added because destructive
-cleanup was out of that slice's scope.
-
-GSHIP-612 shipped Stage 4's backend through PR #442. `run-proposal.ts` defines
-the proposal shape, its limits of at most three items with bounded `title` and
-`evidence`, and the normalizer that trims, clamps and drops unusable items. The
-shared Claude and Codex execution schema now requires a `proposals` array, and
-the work prompt tells the executor to keep the current issue closed to its scope
-and use proposals only for future work discovered while implementing. Proposals
-are parsed for a `completed` result only; `waiting-user` drops them and a missing
-or malformed array degrades to empty. `RunStore` gained a `run_proposals` table
-with stable ids, `derived-from` provenance and deterministic reads. `RunRuntime`
-persists them right after the accepted work-completed transition, emitting
-`run.proposals-captured` or `run.proposals-failed` so a capture failure can never
-change run state.
-
-GSHIP-613 then shipped Stage 4's operator surface through PR #444. Proposal
-status widened to `pending | dismissed | promoted`, a proposal now carries the
-issue it became, and `decodeProposal` reads status and relationship from the row
-instead of returning constants. `/api/proposals` lists pending proposals and the
-dismiss and promote routes settle one with a status-guarded update. Promotion
-takes an operator-authored title, scope and verification command, calls the
-existing intake with approval withheld, and only then marks the proposal
-promoted; a failing intake leaves it pending. `/work` shows the inbox as a third
-disclosure card beside plannable work and reviewable drafts.
-
-The inbox did not open empty. The GSHIP-613 run itself captured three proposals,
-because it executed with the schema GSHIP-612 had already shipped: a snapshot
-that does not refresh on capture, a promoted proposal whose issue is stored but
-never shown, and duplicated refusal responses across the web handlers.
-
-Both repairs shipped. GSHIP-614 made the issue file's ownership explicit:
-`RunRuntime.findActiveRunForIssue` answers whether a run still owns an issue, the
-revise and approve routes and the typed specify, approve and abandon commands
-refuse with 409 `issue-run-active` before any git work, approving a fingerprint
-that already matches returns the published entry without committing, and `/work`
-explains itself instead of offering those controls during a run. The abandon
-route named in the specification does not exist in this tree, so the guard was
-placed on the writer where it is actually reachable.
-
-GSHIP-615 made the ship refuse a merge whose head the service did not push. It
-stores the pushed sha, re-reads the pull request's `headRefOid` on every poll,
-ends the ship explicitly on divergence without merging, re-arming or deleting the
-branch, and reports merged only while the observed head is still the pushed one.
-An unreported head counts as divergence. The file comment that claimed
-`--match-head-commit` alone would refuse such a merge now documents the re-check.
-
-### Proposed next bounded slice
-
-GSHIP-616 shipped through PR #449, completing the inbox's first full circuit: a
-run captured a proposal about its own fix, the operator promoted it, and the
-promoted issue executed and merged. The ship now disarms the auto-merge before
-ending as a failure on a divergent head, so GitHub can no longer land that head
-later, unwatched.
-
-GSHIP-617 shipped Stage 9's first slice through PR #451. Gateship now owns model
-and effort per provider and per role, stored in `runtime_settings` and edited in
-`/settings`, consulted at each spawn rather than at boot, with the resolved pair
-emitted in the run's spawn event. An unset slot passes no flag, and every slot is
-still unset, so behavior is unchanged until the operator chooses.
-
-GSHIP-619 then deleted the suggestion lists GSHIP-617 had shipped, because they
-were already wrong on the day they landed: the Claude list omitted `fable` and the
-Codex list omitted the very effort level the operator's own configuration uses.
-Each provider now links its official model documentation instead, and the fields
-stay free text. Gateship cannot track vendor releases, and a suggestion that lies
-is worse than none.
-
-GSHIP-618 shipped the stale-service warning through PR #453. The service records
-the `origin/main` sha it booted from, compares it to the current one on every
-snapshot read, and reports the divergence with both shas. It never blocks an
-operation and never invents a divergence when either sha fails to resolve.
-
-GSHIP-622 then corrected GSHIP-618 the same day: comparing any movement of `main`
-kept the warning permanently lit, because filing, approving and closing an issue
-all commit to `main` continuously. It now fires only when the diff between the two
-shas touches something outside `.gateship/`.
-
-GSHIP-621 released the worktree and branch of a run that ends `failed`, which
-until then were left behind, with one condition the merged path does not need: it
-releases only when the worktree is clean *and* the branch holds no commit missing
-from the base ref. A failed run often fails after committing, and that commit may
-be the thing worth inspecting. This also closes the factor GSHIP-611 flagged and
-deliberately left out.
-
-GSHIP-620 validates a typed model and effort by probing the CLI itself at save,
-for changed slots only. A slot the CLI refuses is not stored; an inconclusive
-probe stores the slot and warns, because refusing on ambiguity would lock the
-operator out of settings while offline. The Codex probe carries
-`--skip-git-repo-check` beside `--ignore-user-config`: without it the probe fails
-on directory trust before reaching the model check and would refuse a valid model.
-No catalog, no scheduled refresh, no network of Gateship's own.
-
-### Proposed next bounded slice
-
-GSHIP-626 made the Claude reviewer's verdict a mechanism instead of a request.
-`REVIEW_RESULT_SCHEMA` existed but only the Codex reviewer passed it; the Claude
-reviewer asked for JSON in prose and a salvage parser scanned the reply for any
-object that parsed. On a review whose subject was JSON payloads, the reviewer
-ended without the verdict object, the parser promoted an inline example, and the
-run failed after the work was already implemented and verified. The schema now
-rides the argv like the executor's, and the prose scan is gone.
-
-GSHIP-623 then records what each role costs. Measured on the real stream, the
-`result` event carries `input_tokens`, `output_tokens`,
-`cache_creation_input_tokens`, `cache_read_input_tokens` and
-`output_tokens_details.thinking_tokens`, plus a `modelUsage` breakdown with a
-`costUSD` per model. Three rules hold. The dollar figure is always the expected
-cost of the same usage through the API, never an amount charged, because the
-operator pays a subscription. The total includes auxiliary model calls the
-configuration does not name, so the breakdown is per model rather than attributed
-to the configured one. And the total is aggregated server-side from the complete
-event history: the first attempt summed it in the browser, where two independent
-caps of 200 events would have under-reported a long run without saying so.
-
-GSHIP-625 separates provider unavailability from provider decision in the ship. A
-transient `HTTP 503` is retried with backoff instead of ending the ship, and a
-merge that cannot be observed is reported as unconfirmed rather than failed, while
-a divergent head still fails immediately.
-
-GSHIP-627 split the event log by lifetime. Measured before the change, 92.8% of
-16006 events were the four provider-stream kinds and only 1153 carried a decision;
-the largest run held 1144 events of which 35 were decisions, most of them outside
-the newest 200 the live read returns. Class is written at emit time and never
-inferred at read time, the default is durable so a new kind that forgets to
-declare itself shows up rather than vanishing, and the suffix rule that described
-the old rows was used once by the migration and is not live logic.
-
-GSHIP-628 completed the cost surface, and its two rounds were both modelling
-errors in the specification rather than in the implementation. Effort and thinking
-tokens are properties of an invocation, not of a model: the CLI reports thinking
-once per invocation and never inside `modelUsage`, and matching a model name is
-impossible anyway because the operator's slot holds a free-text alias while the
-CLI reports resolved ids. Both are now reported per role, and an effort that
-differs between a role's invocations is reported as absent rather than guessed.
-
-GSHIP-629 gave a specification an executable premise. `evidence` holds up to three
-command-and-observed-output pairs, checked in the run's own workspace after it is
-prepared and before any provider work, with a divergence ending the run and
-naming the command, the recorded output and the current one. It runs through the
-same owned-command path as verification, with timeout and process-group
-termination, because an operator-authored command deserves the same containment
-whether it proves a premise or a result.
-
-GSHIP-630 carries the operator's own decisions into the review prompt, read from
-the durable class and bounded, and labelled as already settled so a reviewer that
-still disagrees says it disagrees with a decision rather than reporting a pending
-defect. It reaches both providers at once, because the two reviewers share one
-prompt builder.
-
-GSHIP-631 put the product's own mark in the sidebar and moved the attention badge
-to its own row, where a label like "Precisa de você" no longer truncates.
-
-GSHIP-632 lets the ship recover a pull request that fell behind. The service
-updates the branch itself and records the resulting head as the one it published,
-so GSHIP-615 keeps refusing a head moved from outside while the service's own
-update is not mistaken for one, with a small fixed cap on updates per ship.
-
-GSHIP-633 removed the previous era's spec contract. `acceptanceCriteria`,
-`gotchas` and `domainTerms` are gone from `Spec`, the verification fallback and
-`oracle-directive.ts` with it, and `verify` is now the only source of a
-verification command. The CAM-era backlog was retired in full beforehand, first
-the 80 open issues and then the 10 abandoned ones, so no file carried a shape the
-code was about to stop understanding.
-
-GSHIP-634 records what each orchestrator turn costs, on the message row that turn
-already writes, closing the last invisible spend: a conversation belongs to no
-run, so its usage had nowhere to go and was discarded.
-
-GSHIP-635 puts the pending proposals in the orchestrator's context, bounded and
-labelled as awaiting an operator decision rather than as work to do, and adds no
-typed command, so the orchestrator can discuss the inbox it previously could only
-invent.
-
-GSHIP-636 makes the verification gate rebuild the UI and fail when the tree
-changes. The committed bundle matched its source by executor habit rather than by
-mechanism, and a stale bundle looks like a product regression, which is how this
-cycle began.
-
-GSHIP-637 carries the run's accumulated operator decisions into the executor
-prompt, the same gap GSHIP-630 closed for the reviewer. The executor had seen only
-the latest reply, so a decision already settled could be reintroduced as new.
-
-GSHIP-638 started Stage 5. Approved runs chain in series behind a switch that is
-off by default, only a run ending `done` continues the queue, and every pause is
-recorded with its own reason. It adds no authority: it starts only what the
-operator already approved.
-
-### Proposed next bounded slice
-
-GSHIP-656 comes first, because it breaks every ship that meets a moving base: the
-branch update records the head it replaced instead of the head it produced, so the
-service reports its own update as an intrusion. Filing or approving an issue
-commits to `main`, so using the product during a run is what usually triggers it.
-
-Then the container work already identified: GSHIP-655 puts the Codex CLI in the
-image, since the runtime declares two providers and the image installs one, and
-GSHIP-652 and GSHIP-653 move notification secrets into the project and add Resend
-beside ntfy. Those two were written against a local filesystem and deserve a
-reread now that the volume is the place secrets live.
-
-What Stage 5 still owes is whether a failed run should offer anything beyond
-stopping. GSHIP-647 stopped six runs of approved work, which argues for skipping a
-diverged issue and recording the skip, but one occurrence does not separate skip
-from stop.
-
-Two smaller slices remain identified and unfiled: classifying provider errors at
-their source in each adapter, following the shape GSHIP-625 settled, and wiring
-the Claude CLI's own `--fallback-model` as an optional per-role slot. Polling
-vendor status pages was considered and rejected, because a status page lagged
-reality in both directions during the outage this cycle.
-
-The inbox holds seven triaged proposals, in the order the operator confirmed:
-per-run cost in the previous-runs panel, lint covering `test/`, a pull request
-closed without merging keeping its arming, run terminality mirrored by hand in the
-web client, a promoted proposal's issue never shown, no abandon route or control
-for an issue, and the snapshot not refreshing on capture. Seven others were
-dismissed, three of them because a slice this cycle had already fixed them. They
-stay as proposals rather than becoming drafts, because a draft written before its
-turn goes stale while its fingerprint still matches.
-
-### Recent process evidence
-
-- GSHIP-608 generated a nonexistent verification path. It was cancelled before
-  edits and abandoned rather than silently changing an approved contract.
-- The interrupted GSHIP-608 run initially remained resumable and blocked new
-  work; GSHIP-611 records that derived lifecycle proposal rather than expanding
-  another issue's scope.
-- Codex reached its subscription usage limit during the final Stage 3 pass and
-  Claude was also temporarily unavailable. PR #438 was therefore an explicit
-  local bootstrap repair: separate PR, full `bun run check:all`, CI, and browser
-  validation, but no provider review. Provider availability is a moving condition
-  that the checkpoint cannot record accurately.
-- Codex then exhausted its credit entirely and the operator continued on Claude
-  Code from commit `9dbd8d55`. Nothing about the product direction, the stage or
-  the approval discipline changed with the provider. If a Claude session goes
-  wrong, resume from this checkpoint rather than reconstructing the state from a
-  transcript.
-- GSHIP-611 then ran end to end on Claude, from operator approval to squash
-  merge, in about thirteen minutes with no fix round. The provider swap is
-  therefore validated on the real loop, not only in principle.
-- A stale `gship` binary in `~/.local/bin` served a UI seven hours older than
-  the repository and read as a product regression. GSHIP-618 later covered the
-  running service, but nothing covers the installed binary: it can be arbitrarily
-  older than the repository and says so nowhere, and on arm64 it also needs
-  re-signing with `codesign` after every build. Unsolved.
-- GSHIP-612 then shipped the same way in about eleven minutes with no fix round,
-  making two consecutive unattended Claude runs. Both released their worktree and
-  branch automatically after merge.
-- A schema added by a run does not exist in an already-running service. The
-  `run_proposals` table only appeared after restarting the process, because the
-  store creates its schema at startup.
-- Branch and worktree hygiene is only automatic for runs that merge. Hand-made
-  pull requests and runs that end `failed` leave their branch and worktree
-  behind, and one such leftover was a superseded GSHIP-605 attempt whose diff
-  against `main` was an earlier shape of an already-shipped feature.
-- Approving GSHIP-613 a second time while its run was in flight wrote `main` on
-  the same file the branch would commit, and the ship stalled on a conflicting
-  pull request. The fingerprint was identical, so the second approval carried no
-  new decision at all. The branch was rebased by hand, keeping the branch's
-  shipped stage and the newer approval, and the run then completed. GSHIP-614
-  records the durable repair.
-- That hand repair force-pushed the run's branch, and the auto-merge armed with
-  `--match-head-commit` did not refuse the moved head as the shipper's own
-  comment says it would. The merged code was verified locally before the push,
-  but by discipline rather than by the mechanism. GSHIP-615 records that repair.
-- Four consecutive Claude runs shipped unattended with no fix round: GSHIP-612,
-  613, 614 and 615. Every one released its worktree and branch after merge.
-- The inbox paid for itself on its first day. Seven proposals were captured from
-  four runs, and the sharpest one came from the run that had just shipped the
-  fix it criticised: GSHIP-615's own divergence failure leaves the auto-merge
-  armed. That became GSHIP-616 through promotion rather than by hand.
-- A hand-made pull request goes `BEHIND` whenever `main` advances while it waits
-  for CI, and needs `gh pr update-branch`. A run hits this too, whenever anything
-  merges during its window: a checkpoint pull request landed while GSHIP-617 was
-  working and left the run's own pull request behind.
-- Killing the service does not lose a run, but it does strand one. GSHIP-616's
-  run survived the restart in `ready-to-ship` with verification and review
-  already recorded, and finished from `POST /api/runs/:runId/ship` without
-  repeating any provider work. Nothing resumes a stranded ship on its own.
-- The operator's own Codex configuration selects an expensive model at a high
-  reasoning effort, and Gateship never used it, because the Codex adapter passes
-  `--ignore-user-config`. Reading a personal configuration file is not evidence
-  about what the runtime spent.
-- Fixing that `BEHIND` from outside the service proved GSHIP-615 on its first
-  real occurrence: moving the head emitted `ship.head-diverged` and ended the
-  ship without merging. GSHIP-616's disarm did not run, because the service
-  process predated it, so the armed auto-merge landed the head while the runtime
-  still believed the run had not shipped. `POST /api/runs/:runId/ship` reconciled
-  it, since the shipper recognises an already-merged pull request.
-- That is the third distinct way one stale process bit in a single day: a missing
-  table, a missing route, and a safety fix silently absent. GSHIP-618, GSHIP-622
-  and GSHIP-624 turned that into a warning the service raises itself, so the
-  operator no longer carries the rule. Restarting is still manual, and whether it
-  should stay manual is open.
-- A model or effort the operator mistypes is not caught by Gateship at all. Both
-  CLIs refuse an unknown model with a message covering existence and account
-  access, so validation belongs in a probe against the CLI rather than in any
-  catalog Gateship would maintain.
-- The per-role split is confirmed in use, not only in argv: run events now carry
-  `provider.model` as Sonnet 5 at `xhigh` and `review.model` as Opus 5 at `high`.
-- Those were also the session's first two fix rounds, after six consecutive runs
-  with none on the previous defaults, and both were the design working rather than
-  failing. The Opus reviewer caught a real defect the Sonnet executor had shipped,
-  naming file and line: a dead Codex process would have been reported as a refused
-  model and silently reverted the operator's choice, the exact lockout that issue
-  forbade. The other round caught `README.md` still documenting the old cleanup
-  contract. Both were fixed inside the run, with no operator involvement.
-- Whether the cheaper executor is actually cheaper is unknown and unmeasurable
-  today. Sonnet 5 costs roughly two and a half times less per token than Opus 5,
-  while `xhigh` is documented for long-horizon work with far larger token budgets,
-  and Gateship keeps no token accounting. Two extra fix rounds are a cost the
-  price-per-token comparison does not include.
-- Specifying a signal from reasoning without checking it against the repository's
-  real traffic has now misfired three times in one day: the model suggestion lists,
-  the always-lit stale warning, and the refusal classification GSHIP-620 needed a
-  fix round to correct. Each was cheap to repair and each was found by something
-  other than the specification.
-- A draft written before the previous run finishes goes stale, and the approval
-  fingerprint does not notice, because the specification's text is unchanged while
-  the code it describes moved. GSHIP-619 could not have been written before
-  GSHIP-617 shipped a wrong suggestion list, and GSHIP-622 could not have been
-  written before GSHIP-618's warning stayed permanently lit. Working one slice at
-  a time avoids this by hand and is not a rule worth keeping: it is a workaround
-  for revalidation that only checks the fingerprint, and Stage 5 is where that
-  gets fixed.
-- Three attempts to ship GSHIP-624 during a GitHub partial outage produced two
-  `HTTP 503` failures at different steps, and the second one armed the auto-merge
-  that landed the pull request one second after reporting failure. The service was
-  right to refuse to claim a merge it could not observe, and wrong to call an
-  unavailable provider a failed merge. GSHIP-625 records that repair.
-- A provider status page is not the authoritative signal. GitHub's page still
-  reported a partial outage while pushes from this repository were already
-  succeeding, so the call the runtime just made is a better source than the page.
-- Three of the four agent paths enforced their structured result with a schema
-  flag and the Claude reviewer did not, which is how a finished, verified run
-  died at its verdict. The asymmetry survived because the salvage parser hid it:
-  it worked on every review until one whose subject was JSON.
-- A run whose merge happens outside the shipper leaves its remote branch behind.
-  The release path deletes the local remote-tracking ref with `update-ref -d` and
-  never pushes a delete, so the leftover is invisible until the next
-  `fetch --prune`. Both branches found this way came from ships reconciled by
-  hand after the outage.
-- Eleven issues shipped in this cycle, GSHIP-614 through GSHIP-626, nine of them
-  with no fix round. The two fix rounds and the one failed run were all found by
-  the reviewer or by the mechanism, never by the operator reading code.
-- The first measured costs, all expected API-equivalent and none of them charged:
-  GSHIP-627 cost about seven dollars with no round, GSHIP-628 about twenty-two
-  with three, and GSHIP-629 about forty-seven with five. Rounds, not the model,
-  dominate what a run costs, because every round pays the executor and the
-  reviewer again.
-- Of the nine operator decisions those two runs needed, seven corrected a premise
-  the specification had stated wrongly and two corrected the implementation. The
-  bottleneck this cycle was specification quality, not execution, and GSHIP-629
-  exists because of it.
-- The reviewer never sees an operator decision. Each review is a fresh session
-  with no resume, and the review prompt carries no record of what was settled, so
-  the same ratified deviation was reported twice on GSHIP-629 and cost a round
-  each time.
-- Moving a run's pull request from outside is now safe: on GSHIP-629 the head
-  moved, GSHIP-615 detected it, GSHIP-616 disarmed the auto-merge, and nothing
-  landed unwatched. The day before, with the disarm missing from a stale process,
-  the same sequence merged a head the service never verified.
-- Retiring the CAM-era backlog removed 80 open issues that no run referenced and
-  that carried the legacy `acceptanceCriteria` contract, which cut the directory
-  the snapshot parses from 120 open issues to 40. The 10 abandoned CAM records
-  followed, because stripping the legacy fields from a retired record leaves a
-  file that is neither the original nor useful.
-- A pull request that waits for CI while `main` moves goes `BEHIND`, and this
-  happened four times in one day from three different causes: a checkpoint merge,
-  another issue merging, and filing a draft. Filing, approving and promoting all
-  commit to `main` through the intake, so using the product during a run breaks
-  that run's ship until GSHIP-632 shipped the recovery.
-- Seven runs are now measured, from about five expected dollars to about
-  forty-seven. The two most expensive were the two that needed operator decisions,
-  and the cheapest ran clean on the same models, so rounds dominate cost.
-- Revising GSHIP-633 was itself the staleness case GSHIP-629 exists for: its
-  premise named ten files that a merge had just deleted, the text was untouched
-  and the fingerprint still matched, so only a human noticing kept it honest.
-- Twelve runs are measured, from about two expected dollars to about forty-seven.
-  The three most expensive are the three that needed operator decisions, which is
-  the same finding at a larger sample: rounds dominate, not the model.
-- Two of Stage 5's four listed capabilities were already built. `isPlannable`
-  already refused an issue blocked by an unshipped dependency, and GSHIP-629
-  already revalidated a specification's premise at run start, so the scheduler
-  reduced to a switch and a chain on the terminal transition. Reading the code
-  before specifying the stage removed most of the stage.
-- A build from a dirty tree nearly shipped: `git pull` aborted on locally rebuilt
-  `webui/dist` artifacts and the release was compiled four commits behind. The
-  stale-service warning would have caught it after the fact; nothing caught it
-  before. GSHIP-636 gated the bundle half of that and has since been replaced by
-  generating the bundle, and the installed binary's own age is still unsolved.
-- GSHIP-636's gate then failed the only way it could: GSHIP-639 edited
-  `webui/src` without rebuilding, and the gate lives in a test file the issue's
-  approved verification command does not name, so the executor passed its own
-  verification and the failure surfaced only in CI, after the run had ended. Four
-  attempts died there, none of them reaching the operator as a decision. The
-  repair was to delete the artifact rather than the gate's blind spot: the bundle
-  is now generated by a `prepare` script on every `bun install`, which covers the
-  clean checkout, CI and release, and the run worktree the runtime installs. A
-  gate that only fires after the run that broke it has finished cannot be the
-  mechanism, because nothing carries its verdict back to the executor.
-- The same blind spot then killed GSHIP-641 twice on a lint rule its verify did
-  not name, which is why GSHIP-649 makes the ship run the project's whole
-  verification manifest before committing, reading the command from the `verify`
-  script `package.json` already declares. It fired on the very first run that had
-  it and turned that lint failure into a fix round the executor owned.
-- A fix merged is not a fix running. GSHIP-649 landed and the next run still
-  shipped without the gate, because the service in use was a binary compiled
-  before it. Two attempts were burned before anyone thought to look at the
-  binary's age, which is what GSHIP-648 now answers by baking the build commit
-  into the image and the binary.
-- The chain then ran six approved issues end to end with no attention, and stopped
-  on GSHIP-647 because its recorded evidence no longer matched the repository. The
-  premise had died the same day it was written: the bundle gate it depended on was
-  deleted, and the decision it forbade was the one GSHIP-649 shipped. The run
-  ended before any provider work, so the cost was near zero, and it is the first
-  obsolete specification caught by mechanism rather than by someone remembering.
-- GSHIP-654 needed nine review rounds, and that is the shape worth reading, not
-  the count. Severity fell monotonically and nothing repeated: a server-stalling
-  synchronous probe on a polled route, a gate refusing commits git would have
-  made, then a wrong count in a comment. Five of the nine came from operator
-  decisions or their side effects rather than from executor error, which is what a
-  slice this wide costs.
-- Two of those rounds were decided by measurement rather than by reading. `git
-  config user.name` reports nothing on a host whose identity comes from
-  `GIT_AUTHOR_NAME`, while `git var GIT_AUTHOR_IDENT` reports what git would
-  actually use and fails inside a container with no identity. That one command
-  replaced a gate that had started refusing work git would have accepted.
-- The reviewer now argues with decisions instead of reopening them. On GSHIP-654
-  it opened a finding by saying the derive-on-commit split was the operator's
-  decision and criticised only the message that split had orphaned. That is
-  GSHIP-630 working: before it, the same ratified deviation was reported twice and
-  cost a round each time.
-- GSHIP-654 shipped and its run could not say so. `gh pr update-branch` returns
-  before GitHub applies the update, so the `gh pr view` that follows still reports
-  the old head, and that stale value became the head the service considered its
-  own. Seconds later its own merge commit read as an intrusion, the auto-merge was
-  disarmed and the ship ended as diverged; the retry then failed on a push that
-  was no longer fast-forward, and reconciling the merged pull request was refused
-  for the same reason. The protection was right every time, which is why GSHIP-656
-  fixes what the service records and not what it checks.
+Keep this file short. Git owns historical detail; the handoff owns current
+decisions, evidence, open risks and the next safe action.
 
 ## Product objective
 
-Gateship should let an operator turn ideas into reviewed specifications, approve
-them deliberately, and then leave a queue of work executing as autonomously as
-is safely possible. Human judgment belongs at intent, specification, exceptions,
-and final product decisions. Deterministic code owns lifecycle, isolation,
-verification, and shipping.
+Gateship should let one operator discuss and approve several well-specified
+ideas, then deliver the approved queue with as little attention as correctness
+allows. Autonomy is the product. More agents, gates, regexes, retries or tests
+are not progress unless they measurably reduce operator attention or failures.
 
-Autonomy is measured by useful work completed without attention, not by the
-number of agents, gates, regexes, policies, or tests. Prefer a smaller reliable
-loop over recreating the former harness in the browser.
+The governing rules are:
 
-## Decisions already made
-
-- Gateship is web-first: one Bun service, React UI, SQLite, and provider
-  adapters. Do not add tmux, send-keys, a sidecar, a terminal UI, or a second
-  `gshipd` process.
-- **Revoked on 2026-08-19: the service ships as one container image rather than
-  as a local binary.** The earlier rule forbade container workers, and that rule
-  is withdrawn deliberately, with its reasons on the record. Three problems this
-  cycle have the same root: the executor runs with no sandbox, so no secret on
-  the machine is out of its reach; Windows has no supported path at all, since
-  the release produces only darwin and linux artifacts and verification shells
-  out to `/bin/sh`; and an installed binary can be arbitrarily older than the
-  repository while saying nothing, which burned two runs in one afternoon. A
-  versioned image answers all three at once. What is not traded away is the
-  subscription login: the container is not a reason to adopt API-key billing.
-  Measured before deciding: on macOS the Claude CLI keeps its credential in the
-  Keychain and no `~/.claude/.credentials.json` exists, so mounting host
-  credentials is not an option that exists. `claude` and `gh` therefore log in
-  inside the container on first boot and persist on the volume, which also keeps
-  Gateship credential-blind, since the CLI owns the store and Gateship never
-  reads it.
-- Use the operator's authenticated subscription CLIs. Claude Code and Codex are
-  the first providers; provider-specific credentials remain in their own local
-  stores. Never copy OAuth tokens or API keys into Gateship or expose token
-  fields in the web UI.
-- A provider adapter is the portability seam. Model and reasoning-effort choice
-  should eventually be configurable and measured. A local-model adapter is a
-  later option only if real demand justifies it.
-- Gateship owns its own model and effort configuration and keeps ignoring the
-  operator's personal provider configuration. Inheriting it would let personal
-  MCP servers, instructions and sandbox policy govern an unattended executor
-  that already runs with approvals and sandbox bypassed, and would make a run's
-  behavior change because an interactive preference changed between two days.
-  The defect worth fixing is not the separation: it is that Gateship discards
-  the operator's configuration without yet having one of its own, so nobody
-  chooses. Choice belongs in `/settings`, per provider and per role, and an
-  unset value means the flag is not passed at all.
-- Both providers must be told the model explicitly once it is configured. Today
-  they disagree about what a default is: `--ignore-user-config` cuts the whole
-  inheritance on Codex, while `--safe-mode` on Claude disables customizations
-  but not the model preference. Any comparison between providers is meaningless
-  until both are explicit.
-- No planner stage inside a run. The plan is the operator-approved specification,
-  produced by the orchestrator investigating with the operator and closed by the
-  approval; that is what lets the executor run a weaker model on closed scope.
-  A planner inside the run would re-derive what the specification already fixed,
-  and anything it decided beyond that would be scope expansion without approval.
-  Revisit only if measurement shows fix rounds rise because specifications were
-  underspecified, which is a different cause from a weak executor and needs the
-  telemetry stage to tell the two apart.
-- The conversational orchestrator may investigate the repository, clarify
-  intent, and invoke typed commands. The deterministic runtime owns state,
-  worktrees, verification, cancellation, and shipping.
-- The operator-approved specification is the execution contract. Do not require
-  planner/auditor convergence. Specifications are mutable drafts whose explicit
-  approval fingerprint is invalidated by later executable changes.
-- Derived ideas never silently expand a running issue. Capture them as proposed
-  follow-ups, deduplicate and relate them, then require human validation before
-  they enter the executable queue.
-- Multiple approved issues in one project execute serially by default. Before
-  each starts, revalidate it against current `origin/main`, dependencies, and
-  assumptions. Parallelism is initially for independent projects, not branches
-  that can invalidate each other's specifications.
-- Review is an independent read-only session. It may trigger one bounded fix
-  attempt; unresolved judgment returns to the operator rather than creating an
-  unbounded reviewer/fixer loop.
-- Run worktrees start from fresh `origin/main`. After confirmed merge, Gateship
-  removes only clean owned worktrees/branches and reports dirty or unknown
-  leftovers. Local and remote branch hygiene is a product responsibility.
-- While editing, run the smallest relevant tests. Run `bun run check:all` once
-  at the ship/CI boundary. Do not multiply gates or tests for wording and
-  implementation details.
-- UI information architecture should favor a calm conversational workspace,
-  progressive disclosure, and dedicated routes for materially different jobs.
-  Run cards must show decisions and outcomes first, with raw detail on demand.
-- The UI may use shadcn primitives, but the product and source must not name or
-  depend on COSS. Do not vendor third-party product identity or copy a product's
-  proprietary presentation.
-- Secrets for GitHub remain in `gh`; optional notification credentials remain
-  server-side environment configuration. Add concrete integrations only when
-  needed rather than designing a universal secrets or notification bus.
-- Prefer bounded structured memory and evidence-backed retrieval. Do not build a
-  knowledge graph until observed workflows demonstrate that simpler project
-  context, decisions, links, and search are insufficient.
-- Community-submitted reports enter through the existing proposal inbox, not
-  through a parallel queue of their own. What separates an outside report from a
-  captured one is a source field on the proposal, which is also what makes the
-  volume, the promotion rate and the cost per origin measurable without a second
-  surface to reconcile. A community report is never triaged straight into the
-  backlog: promotion stays an operator decision, because third-party text reaches
-  the executor prompt and the executor runs with approvals and sandbox bypassed,
-  so automatic intake would be an injection path with write access to the
-  repository. Automatic triage may normalize, deduplicate against existing issues
-  and classify; it may not approve. The intake channel is the repository's own
-  GitHub issues, read through the already authenticated `gh`, so no public
-  endpoint, account model or authentication is added to a service that listens
-  only on `127.0.0.1`.
-
-## Ordered roadmap
-
-1. **Invariant baseline — complete.** Web-first single-process core,
-   subscription provider bus, deterministic typed runtime, no terminal proxy,
-   and simplified review/spec boundaries.
-2. **Cross-session continuity — complete.** Generated handoff and the editable
-   operator-maintained brief are separate, provider-neutral, and dogfooded.
-3. **Specification lifecycle — complete.** Draft, revision, approval
-   invalidation, explicit reapproval, fail-closed start, and web confirmation
-   share one approval-fingerprint contract.
-4. **Derived-idea inbox — complete.** Implementation discoveries are captured as
-   proposals with provenance, shown to the operator, and dismissed or promoted by
-   hand. Promotion never approves or starts the issue it creates.
-5. **Serial autonomous scheduler — next.** Queue approved work, revalidate just in time,
-   handle dependencies/conflicts, pause honestly, and resume without replanning
-   everything. Revalidation must cover a specification's assumptions, not only
-   its approval fingerprint: a draft written before the previous run goes stale
-   because that run changed the code it described, and the fingerprint still
-   matches. GSHIP-629 supplies the mechanism, since a specification's premise is
-   now recorded as commands with their observed output, so revalidating a queued
-   issue is re-running them and comparing.
-6. **Containerized runtime and sandbox.** Package the service, git, `gh` and the
-   provider CLIs as one image with one volume, authenticate inside it on first
-   boot, and let the container be the filesystem, process and network boundary
-   around provider work. This supersedes the local-process hardening the stage
-   previously described; secret and cancellation boundaries stay in scope.
-7. **Onboarding.** Separate flows for an existing repository and a new project;
-   discover scripts and repository facts, then ask the operator to confirm the
-   proposed setup.
-8. **Project and operator configuration.** Name, timezone, repository identity,
-   notification preferences, and other minimal durable settings.
-9. **Provider, model, and effort policy — pulled forward, shipped.** Per-role
-   choice, its validation against the CLI, and the per-role cost record landed as
-   GSHIP-617 through GSHIP-626, because the executor does not need the strongest
-   model and the cost was already being paid. Subscription availability detection
-   and graceful fallback stay in this stage for later; the Claude CLI's own
-   `--fallback-model` covers the overloaded case with one flag when it is wired.
-10. **Telemetry.** A coherent event model for latency, attention, retries,
-    failures, provider/model/effort, test cost, and shipped outcomes, with
-    privacy-conscious defaults.
-11. **Evals and self-benchmarking.** Replayable scenarios and product-level
-    success measures that compare workflow changes against the baseline rather
-    than rewarding more activity.
-12. **Self-improvement and community.** Turn measured recurring failures and
-    successful patterns into reviewable proposals; let the community share
-    improvements without allowing remote rules to mutate local behavior
-    automatically. Community intake is designed in the decisions above and is
-    blocked on Stage 14, since a submission funnel has nothing to funnel until a
-    public beta exists. Its first implementable slice is the GitHub issue
-    ingestion adapter that fills the same proposal inbox with a source field.
-13. **Observability and insights.** Operator-facing traces and periodic,
-    evidence-backed recommendations at a cadence derived from available data,
-    not noisy dashboards.
-14. **Internationalization and beta readiness.** Externalize UI language,
-    harden accessibility and first-run experience, document support boundaries,
-    and prepare a credible public beta.
-15. **Multiproject and external validation.** Project switcher and safe parallel
-    execution across independent repositories, followed by real-user validation
-    before Product Hunt or a broader launch.
-
-This order is intentional but not immutable. Change it when user evidence,
-measurements, or implementation discoveries justify a better sequence; record
-the reason rather than preserving the roadmap ceremonially.
+- Prefer a small root-cause repair or deletion over a policy layer.
+- A human approves the complete executable specification before a run.
+- The deterministic runtime owns state, verification, review and shipping.
+- An LLM may investigate and propose typed commands; it never becomes the
+  source of lifecycle truth.
+- Stop honestly on uncertainty. Preserve work and make recovery explicit.
+- Same-project runs remain serial. Parallel execution is reserved for
+  independent projects after multiproject support exists.
+- Focused tests run while editing; `bun run check:all` runs once at the ship
+  boundary.
 
 ## Current product
 
-Gateship is one local web service started by `gship`. It serves the React UI,
-stores durable runs, events, and the orchestrator transcript in SQLite, creates
-an isolated worktree from fresh `origin/main`, invokes the selected signed-in
-Claude or Codex CLI, runs the task's explicit verification commands, asks a
-fresh read-only session from the same provider to review, and ships through a
-squash-merged pull request.
-After a confirmed merge it releases the clean managed worktree and local branch;
-dirty or unowned leftovers stay visible for operator inspection.
+Gateship is one Bun web service started by `gship`. There is no `gshipd`, tmux,
+send-keys path, terminal UI, sidecar or per-run daemon.
 
-The operator specification is the contract. There is no planner/auditor
-convergence phase and no terminal proxy on the execution path.
+The service:
 
-The `/work` route separately projects currently executable issues and specified
-drafts awaiting review. A draft cannot appear as plannable unless its persisted
-approval fingerprint still matches its executable contract.
+- serves a React UI on localhost with `/`, `/runs`, `/work` and `/settings`;
+- persists run state, events, settings and the provider-neutral orchestrator
+  transcript in SQLite;
+- reads approved work from fresh `origin/main` without moving local `main`;
+- creates one managed worktree per run;
+- invokes the selected subscription-backed Claude Code or Codex CLI;
+- executes optional specification evidence before provider work and explicit
+  verification commands after implementation;
+- uses a fresh, mechanically read-only reviewer session;
+- allows one bounded automatic fix and otherwise returns judgment to the
+  operator;
+- commits, opens a pull request, arms squash auto-merge, observes the exact
+  head it pushed and releases clean merged workspaces;
+- captures out-of-scope implementation discoveries in a proposal inbox. A
+  human dismisses or promotes them; promotion never approves or starts them.
 
-## Boundaries to preserve
+The browser conversation is the primary operator surface. Explicit controls
+remain deterministic fallbacks. The right architecture is a typed provider
+adapter plus one runtime, not a second orchestration server duplicating domain
+logic.
 
-- Keep one process and one owner for HTTP, SQLite, children, and cancellation;
-  do not add `gshipd` or a sidecar, and do not split the runtime across several
-  containers.
-- Do not reintroduce tmux, send-keys, terminal UI, installed personas, or
-  control-file protocols.
-- Keep the conversational orchestrator read-only. It may investigate and return
-  at most one typed command; only the deterministic service mutates lifecycle.
-- Use authenticated subscription CLIs, not an Agent SDK or API-key billing.
-- Review is a new read-only session. One bounded automatic fix attempt is
-  allowed; remaining judgment returns to the operator.
-- Runtime work starts from `refs/remotes/origin/main`; never move the user's
-  local `main` branch.
-- Prefer deleting obsolete surface over adding a policy or gate to govern it.
+## Active bounded slice
 
-## Where to look
+The branch `codex/provider-failure-recovery` has six implementation commits on
+top of `origin/main`; handoff-only checkpoint commits follow them and do not
+change product code:
 
-- `README.md` and `FLOW.md`: public behavior and end-to-end flow.
-- `src/commands/web.ts`: HTTP composition.
-- `src/runtime/run-runtime.ts`: durable run state machine.
-- `src/runtime/run-store.ts`: SQLite state and events.
-- `src/runtime/conversational-orchestrator.ts`: durable chat and typed commands.
-- `src/runtime/agent-session.ts`: Claude/Codex provider bus.
-- `src/runtime/*-cli-executor.ts`: resumable implementation sessions.
-- `src/runtime/*-cli-reviewer.ts`: independent review.
-- `src/runtime/github-shipper.ts`: commit, PR, auto-merge, and source refresh.
+1. `69c1d522` — classify provider call failures at the adapter boundary;
+2. `1a1c531d` — preserve runs in `waiting-provider`;
+3. `f024b8d1` — separate subscription login from observed availability;
+4. `ad27fb6d` — harden and document the real container boundary;
+5. `9e39716d` — bind evidence commands and recorded output to human approval;
+6. `93c43ef1` — tighten unknown-error, timestamp, provider-status and run-scan
+   behavior found in the ship review.
 
-## Verification
+### Provider recovery behavior
 
-Run `bun run check:all`. CI invokes the same manifest on one Ubuntu host job.
+Provider adapters now produce typed failures:
+
+- `auth-required`
+- `usage-limit`
+- `rate-limited`
+- `overloaded`
+- `model-refused`
+- `transport-unavailable`
+- `protocol-invalid`
+- `cancelled`
+- `unknown`
+
+Structured provider fields are authoritative when available. One small ordered
+message classifier is only a fallback at the adapter boundary.
+
+Availability failures move the run to durable `waiting-provider` instead of
+terminal `failed`. The worktree and native session id stay owned by that run.
+Explicit resume continues the executor session; if the hold occurred during
+review, only a fresh reviewer is started and implementation is not repeated.
+Protocol-invalid and unknown errors still fail; cancellation still interrupts.
+
+There is deliberately no blind automatic retry. A write-capable provider call
+may have edited files before the client reports failure, so replay is not known
+to be idempotent. There is also no automatic provider swap in the middle of a
+run. The UI and notifications expose the hold and an explicit resume.
+
+Provider settings distinguish:
+
+- whether the subscription login is connected; and
+- whether an active run has observed a temporary hold for that provider.
+
+Absence of a hold never claims a remaining quota balance. Gateship observes
+failures; it does not poll or invent provider quota.
+
+### Container boundary
+
+Compose now uses a read-only image filesystem, ephemeral `/tmp`,
+`no-new-privileges` and drops every Linux capability except `DAC_OVERRIDE` and
+`FOWNER`, retained for bind-mounted repositories with a different host uid.
+The project and single `.gship` state volume remain writable.
+
+This is honest host containment for one trusted operator, not multi-tenant
+secret isolation. Environment allowlists prevent accidental inheritance, but
+the selected provider process necessarily reads the login store owned by its
+own CLI. A mode-0600 notification secret on the same filesystem identity is
+also not hidden from a hostile child. Moving files to another directory on the
+same volume would not change that. A stronger boundary would require a separate
+OS identity and credential broker and is deferred until evidence justifies the
+complexity.
+
+### Approval correction
+
+The approval fingerprint now covers normalized `scope`, `verify` and every
+optional evidence command/output. Evidence runs before the provider and is
+therefore executable authority; changing it without invalidating approval was
+unsafe.
+
+Specs without evidence keep their existing fingerprint. Existing approved
+specs with evidence become stale and require an explicit new approval. This
+correctly removes GSHIP-660, GSHIP-661 and GSHIP-662 from the executable queue
+without inventing a new `deferred` state or editing issue JSON by hand.
+
+## Verification already completed on this branch
+
+- Focused provider, runtime, web API, UI, notification, approval and container
+  configuration tests pass.
+- Type checking and lint pass after each bounded change.
+- A real container image built successfully.
+- Claude and Codex both responded inside the read-only, capability-minimized
+  container.
+- The real Gateship service booted and served `/api/snapshot` under that same
+  Compose boundary.
+- Projecting the real backlog through the new fingerprint code yields no
+  plannable issues; GSHIP-660/661/662 all project as stale.
+- The final `bun run check:all` passed after the ship-review corrections: 725
+  tests, typecheck, lint and Knip all clean.
+- The source service was restarted on this branch. `/`, `/runs`, `/work` and
+  `/settings` return the current bundle; the live APIs report the chain off,
+  no plannable issue and no stale-service warning.
+- Automated browser inspection was unavailable in this Codex session. The live
+  `/runs` page was opened in the app panel, and API, route, bundle and rendered
+  component tests cover the changed surface, but no automated visual assertion
+  should be claimed.
+
+Still required before shipping: inspect the final diff, push, open the pull
+request and let its pinned auto-merge observe the required CI checks.
+
+## Queue state and evidence
+
+The chain switch was manually turned off through `PUT /api/chain-runs` on
+2026-08-20. The action is reversible and starts nothing by itself.
+
+GSHIP-660 had already started under the old runtime and ended terminal `failed`
+when Claude reported: `You've hit your session limit`. Its event log shows the
+provider result and usage followed by `run.failed`; the clean worktree was then
+released. This is the exact real failure the new `waiting-provider` state fixes.
+
+The approved GSHIP-660 design should not be executed as written. It proposes
+executing evidence while an issue is filed or revised, before the human approval
+boundary. That would turn a read-only conversational proposal into arbitrary
+project command execution. Evidence remains shape-validated at intake, covered
+by the later human fingerprint and executed just in time in the run worktree.
+If early evidence preview proves necessary, specify it later as an explicit
+human-triggered validation action, not as a hidden intake side effect.
+
+GSHIP-661 (external MCP server) is deferred. The internal web orchestrator can
+already investigate and call typed runtime commands. A second MCP/HTTP adapter
+would add another command registry and authority surface before demand proves
+that browser conversation is insufficient.
+
+GSHIP-662 (host-side automatic image updater) is deferred. Self-replacement
+requires a host supervisor, rollback and another lifecycle owner, conflicting
+with the one-service design. For now updates stay explicit and the stale-service
+warning remains the honest mechanism.
+
+Do not reapprove any of these three without reviewing its specification with
+the operator.
+
+## Stable architecture decisions
+
+### Agents and subscriptions
+
+- Claude Code and Codex are peers behind `AgentSession` adapters.
+- Both implementation and review work on either provider; provider-specific
+  protocol remains inside the adapter.
+- Subscription CLI login is required. Gateship does not use Agent SDK/API-key
+  billing and does not accept provider token fields in the UI.
+- A local-model adapter is possible later, but only after a concrete provider
+  can satisfy the same session, tool, cancellation and review contract. Do not
+  build a generic bus in anticipation.
+- Model and reasoning effort are selected per provider and role, validated by
+  the CLI and included in usage measurements.
+
+### Specification and autonomous queue
+
+- No planner/auditor convergence loop. The human-approved specification is the
+  contract.
+- Approval covers all executable commands: evidence and verification.
+- Evidence is checked just in time against the run workspace. Approval proves
+  intent; evidence checks whether assumptions still match current code.
+- Ten or twenty ideas may be specified ahead of time, but each starts only
+  after current admission/evidence checks. A divergence pauses the queue instead
+  of silently replanning the approved contract.
+- Derived ideas go to the existing proposal inbox with provenance. They never
+  expand the current issue or auto-enter the executable queue.
+
+### Tests and deterministic gates
+
+- Keep deterministic gates for state transitions, approval, workspace safety,
+  explicit verification and shipping identity.
+- Remove gates that merely restate registries, wording or obsolete surfaces.
+- Run the smallest relevant tests during implementation.
+- Run `bun run check:all` once before ship/CI. It is not an inner-loop ritual.
+- Add tests for observable behavior, destructive boundaries and reproduced
+  failures, not every branch introduced by implementation style.
+
+### UI and product surface
+
+- `/` is the conversation and current attention surface.
+- `/runs` owns run history and detailed event inspection.
+- `/work` owns executable work, reviewable specs and derived proposals.
+- `/settings` owns providers, model/effort, notifications and scheduler policy.
+- Keep default cards readable; details belong behind progressive disclosure,
+  not in a mixed right rail.
+- shadcn-compatible primitives are acceptable, but Gateship must not contain
+  product-specific references or vendored source from the earlier UI kit.
+- Keep the CLI small: launch, help, version and packaging needs. Product
+  operations belong to the web/runtime contract rather than a second CLI UX.
+
+### Memory, telemetry and community
+
+- Durable orchestrator transcript plus the operator-maintained project brief is
+  the current handoff mechanism. Do not add a knowledge graph until measured
+  retrieval failures demonstrate need.
+- Telemetry should derive from one coherent event model: latency, attention,
+  retries, failures, provider/model/effort, verification cost and shipped
+  outcome. Privacy-conscious local defaults come first.
+- Evals compare workflow changes against a baseline and must reward shipped
+  outcomes and reduced attention, not agent activity.
+- Self-improvement produces reviewable proposals from recurring measured
+  failures. It never mutates local rules automatically.
+- Community input should enter the same proposal inbox with provenance and
+  operator promotion. Remote content never receives approval authority.
+
+## Ordered roadmap
+
+Completed foundations:
+
+1. web-first single-service core and provider adapters;
+2. durable cross-session transcript and editable project brief;
+3. specification revision, approval fingerprint and fail-closed admission;
+4. derived-idea proposal inbox;
+5. serial approved-run scheduler and pause visibility;
+6. container packaging, published image and provider-failure recovery;
+7. per-role model/effort selection and usage accounting.
+
+Next product stages, in current order:
+
+1. finish and ship the active recovery/security slice;
+2. onboarding for existing repository versus new project;
+3. minimal project/operator settings: identity, timezone and repository facts;
+4. coherent telemetry and operator-facing observability;
+5. replayable evals and self-benchmarking;
+6. measured self-improvement and community proposal intake;
+7. internationalization, accessibility and beta readiness;
+8. multiproject selection and parallelism across independent repositories;
+9. external-user validation before Product Hunt or a YC-style launch push.
+
+This order is not ceremonial. Change it when product evidence or an
+implementation discovery supports a better sequence, and record why.
 
 ## Continuation prompt
 
-For a fresh Claude Code or Codex session:
+For a fresh Codex, Claude Code or Gateship orchestrator session:
 
-> Read `AGENTS.md`, `CLAUDE.md`, and `HANDOFF.md`, inspect `git status` and the
-> latest commits, then summarize the current stage and any mismatch you find.
-> Do not implement the full roadmap. Continue only the next operator-approved
-> bounded slice. Stages 1 through 4 are complete, Stage 9 shipped ahead of Stage 5
-> as GSHIP-617 through GSHIP-626, and GSHIP-627 through GSHIP-651 followed. Stage 5
-> delivered its scheduler and its visibility, and Stage 6 started: the product now
-> ships as a container image, and the rule that forbade that was revoked with its
-> reasons recorded. The chain switch is on. Four issues are filed and unapproved,
-> GSHIP-652, 653, 655 and 656, and GSHIP-656 should go first, because until it
-> lands any pull request that falls behind its base turns into a failed ship.
-> Report the current state, including the pending proposals in the inbox, and wait
-> for the operator's explicit approval before starting anything.
+> Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
+> `origin/main`, the latest commits and the running service. Continue the
+> active `codex/provider-failure-recovery` slice from its recorded verification
+> state. Do not start GSHIP-660/661/662 and do not reapprove them. Preserve the
+> simple one-service architecture, run focused checks while editing and run
+> `bun run check:all` once at the ship boundary. If the branch has already
+> shipped, update this handoff first and ask the operator before starting the
+> next roadmap stage.

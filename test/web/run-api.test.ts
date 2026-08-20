@@ -83,7 +83,12 @@ describe('durable web run API', () => {
 			await waitForReady(runtime, started.run.id);
 			const listResponse = await fetch(`${origin}/api/runs`);
 			expect(await listResponse.json()).toMatchObject({
-				runs: [{ id: 'run-http', issueId: 'GSHIP-12', state: 'ready-to-ship' }],
+				runs: [{
+					id: 'run-http',
+					issueId: 'GSHIP-12',
+					state: 'ready-to-ship',
+					providerWait: null,
+				}],
 			});
 			const historyResponse = await fetch(`${origin}/api/runs/run-http/events`);
 			expect(historyResponse.status).toBe(200);

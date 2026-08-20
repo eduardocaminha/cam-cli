@@ -5,6 +5,7 @@ import {
 	type OrchestratorRuntime,
 	startWebServer,
 } from '../../src/commands/web.ts';
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import type {
 	OrchestratorCommand,
 	OrchestratorTurnResult,
@@ -82,6 +83,50 @@ class FakeOrchestrator implements OrchestratorRuntime {
 }
 
 describe('orchestrator web API', () => {
+	test('returns a typed provider limit instead of a generic orchestrator failure', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-chat-provider-limit-'),
+			store: new RunStore(':memory:'),
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-chat-provider-limit-cwd-'),
+			runRuntime: runtime,
+			orchestrator: () => ({
+				listMessages: () => [],
+				turn: async () => {
+					throw new ProviderCallError(
+						'claude',
+						'usage-limit',
+						'Claude usage limit reached.',
+						{ retryAt: '2026-08-20T12:10:00.000Z' },
+					);
+				},
+				stop: async () => {},
+			}),
+		});
+		const base = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const response = await fetch(`${base}/api/chat`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({ message: 'Continue.' }),
+			});
+			expect(response.status).toBe(503);
+			expect(await response.json()).toMatchObject({
+				ok: false,
+				code: 'provider-usage-limit',
+				provider: 'claude',
+				kind: 'usage-limit',
+				retryAt: '2026-08-20T12:10:00.000Z',
+			});
+		} finally {
+			await handle.stop();
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
 	test('persists the public conversation and protects the write by origin', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-chat-api-'),
