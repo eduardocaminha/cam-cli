@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-657",
+  "title": "Release publica a imagem de container versionada",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-20T09:26:57.223Z",
+  "updatedAt": "2026-08-20T09:26:57.223Z",
+  "description": "Publicar a imagem de container versionada no release, para que exista uma versao instalavel em vez de uma construcao local. Hoje o compose referencia gateship:latest e a constroi na maquina, e o workflow de release produz apenas os quatro binarios darwin e linux, sem imagem alguma. Sem isso nao ha alvo para atualizar, e a unica forma de subir uma versao nova e reconstruir a partir do repositorio.\n\nA fatia e: o release passa a construir e publicar a imagem, marcada com a tag da versao e tambem com o commit, assando esse commit nela pelo mesmo GSHIP_BUILD_SHA que o binario ja usa, de modo que o aviso de servico velho funcione dentro do container do mesmo jeito que funciona fora.\n\nO compose passa a poder consumir a imagem publicada em vez de construir, mantendo a construcao local como opcao para desenvolvimento. Nao remover a construcao local: ela e o que o comando de verificacao das fatias de container usa.\n\nPublicar apenas o que o release ja publica hoje em termos de confianca: a imagem entra com a mesma atestacao de procedencia que os binarios ja recebem, e o manifesto de checksum continua cobrindo os binarios.\n\nFora de escopo: atualizacao automatica, registry privado, imagem multiarquitetura alem do que o runner produz sem emulacao, politica de retencao de tags, e qualquer alteracao no ciclo de vida da run.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Publicar a imagem de container versionada no release, para que exista uma versao instalavel em vez de uma construcao local. Hoje o compose referencia gateship:latest e a constroi na maquina, e o workflow de release produz apenas os quatro binarios darwin e linux, sem imagem alguma. Sem isso nao ha alvo para atualizar, e a unica forma de subir uma versao nova e reconstruir a partir do repositorio.\n\nA fatia e: o release passa a construir e publicar a imagem, marcada com a tag da versao e tambem com o commit, assando esse commit nela pelo mesmo GSHIP_BUILD_SHA que o binario ja usa, de modo que o aviso de servico velho funcione dentro do container do mesmo jeito que funciona fora.\n\nO compose passa a poder consumir a imagem publicada em vez de construir, mantendo a construcao local como opcao para desenvolvimento. Nao remover a construcao local: ela e o que o comando de verificacao das fatias de container usa.\n\nPublicar apenas o que o release ja publica hoje em termos de confianca: a imagem entra com a mesma atestacao de procedencia que os binarios ja recebem, e o manifesto de checksum continua cobrindo os binarios.\n\nFora de escopo: atualizacao automatica, registry privado, imagem multiarquitetura alem do que o runner produz sem emulacao, politica de retencao de tags, e qualquer alteracao no ciclo de vida da run.",
+    "verify": [
+      "bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -c 'docker' .github/workflows/release.yml || true",
+        "output": "0"
+      },
+      {
+        "command": "grep -o 'image: gateship:latest' compose.yaml",
+        "output": "image: gateship:latest"
+      }
+    ]
+  }
+}
