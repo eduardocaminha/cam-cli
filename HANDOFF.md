@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `eb11f8d8` (GSHIP-659, PR #511)
-> Active implementation branch: `codex/provider-failure-recovery`
-> Current stage: recovery/security slice verified and ready to publish
+> Shipped baseline: `origin/main` at `ba1004ec` (provider recovery, PR #512)
+> Active implementation branch: none
+> Current stage: recovery/security slice shipped; next stage not started
 
 ## How to use this file
 
@@ -68,11 +68,9 @@ remain deterministic fallbacks. The right architecture is a typed provider
 adapter plus one runtime, not a second orchestration server duplicating domain
 logic.
 
-## Active bounded slice
+## Shipped bounded slice
 
-The branch `codex/provider-failure-recovery` has six implementation commits on
-top of `origin/main`; handoff-only checkpoint commits follow them and do not
-change product code:
+PR #512 shipped six implementation changes as squash commit `ba1004ec`:
 
 1. `69c1d522` — classify provider call failures at the adapter boundary;
 2. `1a1c531d` — preserve runs in `waiting-provider`;
@@ -160,16 +158,16 @@ without inventing a new `deferred` state or editing issue JSON by hand.
   plannable issues; GSHIP-660/661/662 all project as stale.
 - The final `bun run check:all` passed after the ship-review corrections: 725
   tests, typecheck, lint and Knip all clean.
-- The source service was restarted on this branch. `/`, `/runs`, `/work` and
-  `/settings` return the current bundle; the live APIs report the chain off,
-  no plannable issue and no stale-service warning.
+- The source service was restarted after the merge. `/`, `/runs`, `/work` and
+  `/settings` return the merged bundle; the live APIs report the chain off, no
+  plannable issue and no stale-service warning.
 - Automated browser inspection was unavailable in this Codex session. The live
   `/runs` page was opened in the app panel, and API, route, bundle and rendered
   component tests cover the changed surface, but no automated visual assertion
   should be claimed.
 
-Still required before shipping: inspect the final diff, push, open the pull
-request and let its pinned auto-merge observe the required CI checks.
+Nothing remains to ship for this slice. PR #512 passed required CI and merged
+through pinned squash auto-merge on 2026-08-20.
 
 ## Queue state and evidence
 
@@ -280,17 +278,16 @@ Completed foundations:
 6. container packaging, published image and provider-failure recovery;
 7. per-role model/effort selection and usage accounting.
 
-Next product stages, in current order:
+Next product stages, in current order and not yet started:
 
-1. finish and ship the active recovery/security slice;
-2. onboarding for existing repository versus new project;
-3. minimal project/operator settings: identity, timezone and repository facts;
-4. coherent telemetry and operator-facing observability;
-5. replayable evals and self-benchmarking;
-6. measured self-improvement and community proposal intake;
-7. internationalization, accessibility and beta readiness;
-8. multiproject selection and parallelism across independent repositories;
-9. external-user validation before Product Hunt or a YC-style launch push.
+1. onboarding for existing repository versus new project;
+2. minimal project/operator settings: identity, timezone and repository facts;
+3. coherent telemetry and operator-facing observability;
+4. replayable evals and self-benchmarking;
+5. measured self-improvement and community proposal intake;
+6. internationalization, accessibility and beta readiness;
+7. multiproject selection and parallelism across independent repositories;
+8. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -300,10 +297,9 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Continue the
-> active `codex/provider-failure-recovery` slice from its recorded verification
-> state. Do not start GSHIP-660/661/662 and do not reapprove them. Preserve the
-> simple one-service architecture, run focused checks while editing and run
-> `bun run check:all` once at the ship boundary. If the branch has already
-> shipped, update this handoff first and ask the operator before starting the
-> next roadmap stage.
+> `origin/main`, the latest commits and the running service. Confirm PR #512 is
+> present. Do not restart its completed slice. Do not start GSHIP-660/661/662
+> or reapprove them. Preserve the simple one-service architecture. Ask the
+> operator before starting the next roadmap stage; once a bounded slice is
+> approved, run focused checks while editing and `bun run check:all` once at
+> its ship boundary.
