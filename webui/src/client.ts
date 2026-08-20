@@ -159,12 +159,22 @@ export interface DiagnosticAnalyzerView {
 	description: string;
 }
 
+export interface DiagnosticFindingStatsView {
+	total: number;
+	pending: number;
+	dismissed: number;
+	promoted: number;
+	cleared: number;
+	recurring: number;
+}
+
 export interface DiagnosticsView {
 	analyzers: DiagnosticAnalyzerView[];
 	scan: DiagnosticScanView | null;
 	findings: DiagnosticFindingView[];
 	resolvedFindings: DiagnosticFindingView[];
 	resolvedFindingsOmittedCount: number;
+	stats: DiagnosticFindingStatsView;
 	workspaceNotices: string[];
 }
 
@@ -175,6 +185,7 @@ export function emptyDiagnostics(): DiagnosticsView {
 		findings: [],
 		resolvedFindings: [],
 		resolvedFindingsOmittedCount: 0,
+		stats: { total: 0, pending: 0, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
 		workspaceNotices: [],
 	};
 }
@@ -502,6 +513,14 @@ export async function fetchDiagnostics(): Promise<DiagnosticsView> {
 		findings: payload.findings ?? [],
 		resolvedFindings: payload.resolvedFindings ?? [],
 		resolvedFindingsOmittedCount: payload.resolvedFindingsOmittedCount ?? 0,
+		stats: payload.stats ?? {
+			total: 0,
+			pending: 0,
+			dismissed: 0,
+			promoted: 0,
+			cleared: 0,
+			recurring: 0,
+		},
 		workspaceNotices: payload.workspaceNotices ?? [],
 	};
 }

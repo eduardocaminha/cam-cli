@@ -16,21 +16,6 @@
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
 import React, { useState } from 'react';
-import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
-import { GateshipLockup } from './components/gateship-logo.tsx';
-import {
-	Card,
-	CardAction,
-	CardDescription,
-	CardDisclosure,
-	CardHeader,
-	CardPanel,
-	CardSummary,
-	CardTitle,
-} from './components/ui/card.tsx';
-import { Progress } from './components/ui/progress.tsx';
-import { Separator } from './components/ui/separator.tsx';
-import { cn } from './lib/cn.ts';
 import {
 	aggregateChatTurnCosts,
 	type ChainPauseReason,
@@ -48,10 +33,10 @@ import {
 	type ModelSlotView,
 	NOTIFICATION_CHANNEL_IDS,
 	type NotificationChannelId,
-	type NotificationChannelView,
 	type NotificationChannelsView,
-	type OperatorProfileView,
+	type NotificationChannelView,
 	type OperatorIssueDraft,
+	type OperatorProfileView,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
 	type ProjectStatusView,
@@ -61,11 +46,26 @@ import {
 	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
+import { GateshipLockup } from './components/gateship-logo.tsx';
+import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
+import {
+	Card,
+	CardAction,
+	CardDescription,
+	CardDisclosure,
+	CardHeader,
+	CardPanel,
+	CardSummary,
+	CardTitle,
+} from './components/ui/card.tsx';
+import { Progress } from './components/ui/progress.tsx';
+import { Separator } from './components/ui/separator.tsx';
+import { cn } from './lib/cn.ts';
 import { useLiveEdge } from './live-edge.ts';
+import type { BrowserNotificationPermission } from './notifications.ts';
 import {
 	actionsFor,
 	activeRunIssueId,
-	aggregateRunCosts,
 	attentionOf,
 	attentionToneOf,
 	type PlannableIssue,
@@ -76,9 +76,9 @@ import {
 	type RunEventView,
 	type RunProviderWaitView,
 	type RunView,
+	summarizeWorkflow,
 	toneOf,
 } from './run-view.ts';
-import type { BrowserNotificationPermission } from './notifications.ts';
 
 /** The four paths the server answers with this document, and nothing else. */
 export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
@@ -680,22 +680,50 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 }
 
 /**
- * The expected cost across exactly the runs this screen shows -- the current
- * run's card plus the history panel below it, no more and no less (GSHIP-628).
- * Never labeled as a project total or a billed amount, and the run count says
- * plainly which runs it covers so it is never mistaken for a wider "session".
- * Hidden entirely when none of those runs ever reported a cost, the same
- * absence-over-zero rule a single run's own card already follows.
+ * One compact read of the complete /api/runs window. The raw outcome,
+ * correction and cost facts stay inspectable; Gateship does not collapse them
+ * into a score that an agent could optimize instead of shipping useful work.
  */
-function RunsCostSummary({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
-	const aggregate = aggregateRunCosts(runs.slice(0, 1 + PREVIOUS_RUNS_SHOWN));
-	if (aggregate.totalCostUsd === null) return null;
+function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+	if (runs.length === 0) return null;
+	const insights = summarizeWorkflow(runs);
+	const correctionRounds = insights.corrections.executor
+		+ insights.corrections.decision
+		+ insights.corrections.indeterminate;
 	return (
-		<p className="text-muted-foreground text-sm">
-			Custo esperado agregado de {aggregate.runCount} run(s) (os já listados acima):{' '}
-			{formatCostUsd(aggregate.totalCostUsd)}. Equivalente ao uso via API, nunca o total do projeto
-			nem o valor cobrado da assinatura.
-		</p>
+		<ContextPanel
+			description={`Janela local dos ${insights.runCount} runs mais recentes, sem score composto.`}
+			title="Sinais do workflow"
+		>
+			<dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">
+				<dt className="text-muted-foreground">Resultados</dt>
+				<dd>
+					{insights.outcomes.done} concluído(s) · {insights.outcomes.failed} falho(s) ·{' '}
+					{insights.outcomes.cancelled} cancelado(s)
+					{insights.outcomes.active === 0 ? null : ` · ${insights.outcomes.active} ativo(s)`}
+				</dd>
+				<dt className="text-muted-foreground">Correções</dt>
+				<dd>
+					{correctionRounds} rodada(s) em {insights.corrections.runCount} run(s):{' '}
+					{insights.corrections.executor} automáticas, {insights.corrections.decision} após
+					 decisão humana
+					{insights.corrections.indeterminate === 0
+						? null
+						: `, ${insights.corrections.indeterminate} sem origem determinável`}
+				</dd>
+				<dt className="text-muted-foreground">Custo conhecido</dt>
+				<dd>
+					{insights.cost.totalCostUsd === null
+						? 'Nenhum provider reportou custo nesta janela.'
+						: `${formatCostUsd(insights.cost.totalCostUsd)} em ${insights.cost.reportedRunCount} de ${insights.runCount} runs.`}
+				</dd>
+			</dl>
+			{insights.cost.totalCostUsd === null ? null : (
+				<p className="text-muted-foreground text-xs">
+					Custo esperado equivale ao uso reportado pela API; não é cobrança da assinatura.
+				</p>
+			)}
+		</ContextPanel>
 	);
 }
 
@@ -1818,10 +1846,10 @@ function RunsSurface(props: AppProps): React.ReactElement {
 			/>
 			{run === null ? null : <RunReport run={run} />}
 			{run === null ? null : <RunCostPanel run={run} />}
+			<WorkflowInsightsPanel runs={props.runs} />
 			<RunActivity events={props.events} run={run} />
 			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
 			<PreviousRunsPanel runs={props.runs} />
-			<RunsCostSummary runs={props.runs} />
 		</SurfaceColumn>
 	);
 }
@@ -2132,6 +2160,33 @@ function ResolvedDiagnosticFindings({
 	);
 }
 
+function DiagnosticOutcomeSummary({
+	stats,
+}: Pick<DiagnosticsView, 'stats'>): React.ReactElement {
+	if (stats.total === 0) {
+		return (
+			<p className="text-muted-foreground text-sm">
+				Ainda não há histórico suficiente para medir a utilidade deste analyzer.
+			</p>
+		);
+	}
+	return (
+		<div className="flex flex-col gap-1 text-sm">
+			<p>
+				Histórico local: {stats.promoted} promovido(s), {stats.dismissed} descartado(s),{' '}
+				{stats.cleared} que não reapareceram e {stats.pending} pendente(s).
+			</p>
+			{stats.recurring === 0 ? null : (
+				<p className="text-muted-foreground">{stats.recurring} achado(s) reapareceram em outro scan.</p>
+			)}
+			<p className="text-muted-foreground text-xs">
+				Descartar não significa falso positivo; isso só poderá ser medido quando o operador
+				classificar explicitamente o motivo.
+			</p>
+		</div>
+	);
+}
+
 /**
  * One optional, advisory analyzer at a time. The summary stays compact; raw
  * evidence and issue promotion live behind per-finding disclosure.
@@ -2198,6 +2253,7 @@ function DiagnosticsPanel({
 				{diagnostics.workspaceNotices.map((notice) => (
 					<p className="text-warning-foreground text-sm" key={notice}>{notice}</p>
 				))}
+				<DiagnosticOutcomeSummary stats={diagnostics.stats} />
 				<Separator />
 				<PendingDiagnosticFindings
 					findings={diagnostics.findings}

@@ -5,9 +5,9 @@ import type { DiagnosticDraft } from '../../src/runtime/diagnostic-finding.ts';
 import {
 	type DiagnosticAdapter,
 	type DiagnosticAdapterResult,
-	type DiagnosticWorkspace,
-	DiagnosticsRuntime,
 	DiagnosticRuntimeError,
+	DiagnosticsRuntime,
+	type DiagnosticWorkspace,
 	GitDiagnosticWorkspace,
 	parseReactDoctorReport,
 	ReactDoctorAdapter,
@@ -271,6 +271,14 @@ describe('diagnostics runtime and inbox', () => {
 		expect(runtime.snapshot().resolvedFindings[0]).toMatchObject({
 			status: 'dismissed',
 			occurrenceCount: 3,
+		});
+		expect(runtime.snapshot().stats).toEqual({
+			total: 1,
+			pending: 0,
+			dismissed: 1,
+			promoted: 0,
+			cleared: 0,
+			recurring: 1,
 		});
 		expect(workspace.releases).toBe(5);
 		runtime.close();

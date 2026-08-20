@@ -15,61 +15,61 @@ import {
 	aggregateChatTurnCosts,
 	approveIssue,
 	BRIEF_PATH,
+	CHAIN_RUNS_PATH,
+	CHAT_PATH,
 	type ChainPauseReason,
 	type ChainPauseView,
 	type ChainRunsView,
-	CHAIN_RUNS_PATH,
+	cancelDiagnostic,
 	commandRun,
 	createIssue,
-	CHAT_PATH,
-	cancelDiagnostic,
-	dismissProposal,
-	dismissDiagnosticFinding,
 	DIAGNOSTIC_FINDINGS_PATH,
 	DIAGNOSTICS_PATH,
-	emptyDiagnostics,
-	emptyNotificationChannels,
+	dismissDiagnosticFinding,
+	dismissProposal,
 	EVENTS_PATH,
+	emptyDiagnostics,
+	emptyModelSettings,
+	emptyNotificationChannels,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
 	fetchDiagnostics,
+	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
-	fetchProposals,
 	fetchProjectStatus,
+	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
-	type NotificationChannelsView,
-	NOTIFICATIONS_PATH,
-	type OperatorProfileView,
-	OPERATOR_PROFILE_PATH,
-	type ProjectBriefView,
-	type ProjectStatusView,
-	PROJECT_PATH,
+	ISSUES_PATH,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
-	promoteProposal,
-	promoteDiagnosticFinding,
+	NOTIFICATIONS_PATH,
+	type NotificationChannelsView,
+	OPERATOR_PROFILE_PATH,
+	type OperatorProfileView,
+	PROJECT_PATH,
 	PROPOSALS_PATH,
+	PROVIDERS_PATH,
+	type ProjectBriefView,
+	type ProjectStatusView,
+	promoteDiagnosticFinding,
+	promoteProposal,
 	RESOLVED_PROPOSALS_PATH,
 	type ResolvedProposalView,
 	RUNS_PATH,
-	ISSUES_PATH,
-	PROVIDERS_PATH,
+	SNAPSHOT_PATH,
 	saveBrief,
 	saveChainRuns,
-	fetchModelSettings,
 	saveModelSettings,
 	saveOperatorProfile,
-	sendNotificationTest,
-	emptyModelSettings,
 	selectProvider,
 	sendChat,
-	SNAPSHOT_PATH,
+	sendNotificationTest,
 	specifyIssue,
 	startCodexLogin,
 	startDiagnostic,
@@ -87,6 +87,7 @@ import {
 	type RunRoundOriginsView,
 	type RunState,
 	type RunView,
+	summarizeWorkflow,
 } from '../../webui/src/run-view.ts';
 
 const BACKLOG = [
@@ -733,32 +734,43 @@ describe('runs surface', () => {
 		expect(reviewerLine).not.toContain('thinking');
 	});
 
-	// GSHIP-628: the same expected-cost total the individual cards show, but
-	// summed across exactly the runs this screen already lists -- current run
-	// plus history -- with the count of runs it covers, so it can never be read
-	// as the whole project's total or as an amount actually charged.
-	test('shows an aggregated total across exactly the listed runs, with the run count', () => {
+	test('summarizes raw outcomes, correction origins and known cost without a score', () => {
 		const runs = [
-			runIn('done', { id: 'run-3', cost: { totalCostUsd: 0.1, breakdown: [], roles: [] } }),
-			runIn('done', { id: 'run-2', cost: { totalCostUsd: 0.05, breakdown: [], roles: [] } }),
-			runIn('done', { id: 'run-1', cost: EMPTY_RUN_COST }),
+			runIn('done', {
+				id: 'run-3',
+				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				roundOrigins: { executor: 1, decision: 0, indeterminate: 0 },
+			}),
+			runIn('failed', {
+				id: 'run-2',
+				cost: { totalCostUsd: 0.05, breakdown: [], roles: [] },
+				roundOrigins: { executor: 0, decision: 2, indeterminate: 0 },
+			}),
+			runIn('cancelled', { id: 'run-1', cost: EMPTY_RUN_COST }),
 		];
 		const aggregate = aggregateRunCosts(runs);
 		expect(aggregate.totalCostUsd).toBeCloseTo(0.15, 6);
 		expect(aggregate.runCount).toBe(3);
+		expect(summarizeWorkflow(runs)).toMatchObject({
+			outcomes: { done: 1, failed: 1, cancelled: 1, active: 0 },
+			corrections: { executor: 1, decision: 2, indeterminate: 0, runCount: 2 },
+			cost: { reportedRunCount: 2, runCount: 3 },
+		});
 
-		const html = runsPage({ runs });
-		expect(html).toContain('Custo esperado agregado');
-		expect(html).toContain('3 run(s)');
-		expect(html).toContain('US$');
+		const summary = panel(runsPage({ runs }), 'Sinais do workflow');
+		expect(summary).toContain('Janela local dos 3 runs mais recentes');
+		expect(summary).toContain('1 concluído(s)');
+		expect(summary).toContain('3 rodada(s) em 2 run(s)');
+		expect(summary).toContain('2 após decisão humana');
+		expect(summary).toContain('US$');
+		expect(summary).not.toContain('Pontuação');
 	});
 
-	// GSHIP-628: no run in the list ever reported a cost, so there is nothing to
-	// aggregate -- the total is absent, not a fabricated zero across zero runs.
-	test('shows no aggregated total when none of the listed runs have a cost', () => {
+	test('keeps absent provider cost explicit instead of fabricating zero', () => {
 		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
 		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2 });
-		expect(runsPage({ runs })).not.toContain('Custo esperado agregado');
+		expect(panel(runsPage({ runs }), 'Sinais do workflow'))
+			.toContain('Nenhum provider reportou custo nesta janela.');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {
@@ -1101,6 +1113,14 @@ describe('work surface', () => {
 				promotedIssueId: 'GSHIP-900',
 			}],
 			resolvedFindingsOmittedCount: 3,
+			stats: {
+				total: 5,
+				pending: 1,
+				dismissed: 1,
+				promoted: 1,
+				cleared: 2,
+				recurring: 1,
+			},
 			workspaceNotices: [],
 		};
 		const html = workPage({ diagnostics });
@@ -1116,6 +1136,8 @@ describe('work surface', () => {
 		expect(html).toContain('Resolvidos (1)');
 		expect(html).toContain('GSHIP-900');
 		expect(html).toContain('+3 não exibido(s).');
+		expect(html).toContain('Histórico local: 1 promovido(s), 1 descartado(s)');
+		expect(html).toContain('Descartar não significa falso positivo');
 		expect(html).not.toContain('Pontuação');
 
 		const active = workPage({

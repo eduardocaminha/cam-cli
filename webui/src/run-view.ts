@@ -130,6 +130,62 @@ export function aggregateRunCosts(runs: readonly RunView[]): RunCostAggregate {
 	return { totalCostUsd, runCount: runs.length };
 }
 
+/**
+ * The small, factual workflow summary shown on /runs. It deliberately has no
+ * synthetic score: each number is either a persisted run outcome, a correction
+ * origin already derived from that run's complete decision log, or provider-
+ * reported cost. The caller controls the window by choosing which runs to pass.
+ */
+export interface WorkflowInsights {
+	runCount: number;
+	outcomes: {
+		done: number;
+		failed: number;
+		cancelled: number;
+		active: number;
+	};
+	corrections: RunRoundOriginsView & {
+		runCount: number;
+	};
+	cost: RunCostAggregate & {
+		reportedRunCount: number;
+	};
+}
+
+export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
+	const outcomes = { done: 0, failed: 0, cancelled: 0, active: 0 };
+	const corrections = {
+		executor: 0,
+		decision: 0,
+		indeterminate: 0,
+		runCount: 0,
+	};
+	for (const run of runs) {
+		if (run.state === 'done') outcomes.done += 1;
+		else if (run.state === 'failed') outcomes.failed += 1;
+		else if (run.state === 'cancelled') outcomes.cancelled += 1;
+		else outcomes.active += 1;
+
+		const rounds = run.roundOrigins.executor
+			+ run.roundOrigins.decision
+			+ run.roundOrigins.indeterminate;
+		if (rounds > 0) corrections.runCount += 1;
+		corrections.executor += run.roundOrigins.executor;
+		corrections.decision += run.roundOrigins.decision;
+		corrections.indeterminate += run.roundOrigins.indeterminate;
+	}
+	const cost = aggregateRunCosts(runs);
+	return {
+		runCount: runs.length,
+		outcomes,
+		corrections,
+		cost: {
+			...cost,
+			reportedRunCount: runs.filter((run) => run.cost.totalCostUsd !== null).length,
+		},
+	};
+}
+
 export interface RunEventView {
 	seq: number;
 	runId: string;
