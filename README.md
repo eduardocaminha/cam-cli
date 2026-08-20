@@ -155,6 +155,12 @@ Recreating the container from the same image and the same volume returns the
 operator to the same place: the same SQLite state, the same managed
 worktrees, and the same two logins.
 
+Compose keeps the image filesystem read-only, provides only an ephemeral
+`/tmp`, prevents privilege escalation and drops every Linux capability except
+the two filesystem capabilities needed for bind-mounted repositories whose
+host uid differs from the container's. The project mount and the named state
+volume remain writable by design.
+
 ## Runtime flow
 
 ```text
@@ -261,10 +267,14 @@ interface -- a bare `docker run -p 7777:7777` without pinning it to
 unauthenticated read route to the network. Adding authentication is a
 separate, deliberate decision, not a byproduct of this packaging.
 
-The implementer is intentionally write-capable inside the isolated worktree,
-so the selected Claude Code or Codex process still has the host permissions of
-the user running Gateship. Use Gateship only in repositories and on machines
-where that authority is acceptable.
+The implementer is intentionally write-capable inside the isolated worktree.
+In native mode, the selected Claude Code or Codex process therefore has the
+filesystem authority of the user running Gateship. In container mode, its host
+boundary is the container and its explicit mounts; the image root is read-only,
+privilege escalation is disabled, and Linux capabilities are minimized. The
+project and `.gship` state volume are still intentionally visible inside that
+boundary. This is process containment for a trusted single operator, not a
+multi-tenant secret sandbox.
 
 The conversational orchestrator is mechanically read-only: Claude exposes only
 Read/Grep/Glob with MCP and slash commands disabled; Codex runs in its read-only
@@ -276,7 +286,10 @@ Agent and GitHub CLI children receive an environment allowlist, so unrelated
 PATs and API keys are not inherited accidentally. Verification commands are
 trusted project commands and retain the service environment. Gateship has no
 web or SQLite field for provider or GitHub credentials; see the documented
-[credential boundary](./docs/credentials-and-notifications.md).
+[credential boundary](./docs/credentials-and-notifications.md). The selected
+provider CLI necessarily receives access to its own login store; “credential
+blind” means Gateship does not parse, copy, return or persist that credential,
+not that the process using it is cryptographically separated from it.
 
 ## Retired runtime
 

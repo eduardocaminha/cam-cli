@@ -56,9 +56,20 @@ values in SQLite.
 
 This boundary prevents accidental inheritance. It is not a sandbox against a
 malicious write-capable agent: the agent runs as the same operating-system user
-and therefore holds that user's filesystem authority. A stronger adversarial
-boundary requires a separate OS identity or sandbox and is deliberately not
-part of the local core.
+inside the Gateship service and therefore holds that identity's filesystem
+authority. The provider process must also be able to read the login store owned
+by its own CLI; Gateship cannot both invoke that CLI and make its credential
+unavailable to the same process. “Credential blind” is an application contract:
+Gateship never parses, copies, returns or persists the credential.
+
+The container narrows the host boundary without pretending to solve that
+intra-container fact. Compose uses a read-only image filesystem, an ephemeral
+`/tmp`, `no-new-privileges` and a minimal capability set. Only the mounted
+project and named `.gship` volume are durable and writable. They remain visible
+to a write-capable provider process, so this is a trusted single-operator
+boundary, not multi-tenant isolation. A stronger adversarial boundary would
+need a separate OS identity plus a credential broker; adding directory names or
+another folder on the same volume would not provide it.
 
 ## Notification policy
 
@@ -69,26 +80,29 @@ failed/retryable ship, a run failure or a completed merge. It needs no account,
 network service or secret. These notifications are non-persistent: closing the
 browser also closes this channel.
 
-Resend or another remote channel is useful only when closed-browser delivery is
-a measured requirement. It should then remain optional and obey all of these
-conditions:
+Closed-browser delivery is optional. The current server supports one ntfy topic
+and one Resend destination, independently; when neither is configured, the
+runtime behaves exactly as before. These channels obey the following contract:
 
 - use a sending-only, domain-scoped key;
-- retrieve the key inside the notifier from an operating-system credential
-  store, outside the browser, Gateship's service environment, SQLite, logs and
-  agent prompts;
-- pass the key only to the notifier, never to Claude, Codex, `gh` or task
-  verification;
+- resolve it only inside the notifier, from a mode-`0600` file or the service
+  environment, outside the browser, SQLite, logs and agent prompts;
+- never inject it into Claude, Codex, `gh` or task verification environments;
 - send the same small set of durable run transitions used by local
   notifications;
-- add the concrete channel directly before introducing a generic event bus.
+- keep each concrete channel direct; there is no generic integration bus.
+
+The file-backed option is protection against accidental inheritance and
+disclosure, not against a hostile provider process with the same filesystem
+identity. Use a restricted, revocable credential and treat the mounted project
+and `.gship` volume as visible to that process. This is an explicit limitation,
+not a claim that mode `0600` separates two processes running as the same user.
 
 Resend documents both [restricted API keys](https://resend.com/docs/dashboard/api-keys/introduction)
 and the requirement to keep them out of browser code and rotate them after
 suspected exposure in its [API-key guidance](https://resend.com/docs/knowledge-base/how-to-handle-api-keys).
 
-The web UI may later configure a destination and show adapter health. A setup
-flow may write the raw key directly to a platform credential store, but the UI
-must never display it again and the server must never return or persist it in
-Gateship state. Until that cross-platform boundary is implemented, Resend stays
-out of the product rather than becoming another ambient environment variable.
+The web UI shows channel health and setup instructions but never accepts or
+returns the raw secret. A future setup flow may write directly to a platform
+credential store, but that would improve secret handling only if the provider
+process also ran under a genuinely separate identity.

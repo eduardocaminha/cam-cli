@@ -36,6 +36,21 @@ services:
         GSHIP_BUILD_SHA: ${GSHIP_BUILD_SHA:-}
     image: ${GATESHIP_IMAGE:-gateship:latest}
     init: true
+    # The repository and named state volume are the only durable write
+    # surfaces. Everything baked into the image stays immutable, and a child
+    # cannot gain privileges through a setuid/setgid binary. Root retains only
+    # the two filesystem capabilities needed to operate bind-mounted projects
+    # whose host uid differs from the container's uid.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - FOWNER
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
     ports:
       - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"
     volumes:
