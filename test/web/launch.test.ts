@@ -12,7 +12,14 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 import { parseWebArgs } from '../../index.ts';
-import { DEFAULT_WEB_PORT, startWebServer, WEB_HOSTNAME } from '../../src/commands/web.ts';
+import {
+	BIND_HOSTNAME_ENV_VAR,
+	DEFAULT_WEB_PORT,
+	isTrustedCommandOrigin,
+	resolveBindHostname,
+	startWebServer,
+	WEB_HOSTNAME,
+} from '../../src/commands/web.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
@@ -217,5 +224,48 @@ describe('web server launch', () => {
 		} finally {
 			await occupied.stop();
 		}
+	});
+});
+
+describe('GATESHIP_BIND_HOST (container bind address)', () => {
+	test('resolveBindHostname keeps WEB_HOSTNAME when unset or blank', () => {
+		expect(resolveBindHostname({})).toBe(WEB_HOSTNAME);
+		expect(resolveBindHostname({ [BIND_HOSTNAME_ENV_VAR]: '' })).toBe(WEB_HOSTNAME);
+		expect(resolveBindHostname({ [BIND_HOSTNAME_ENV_VAR]: '   ' })).toBe(WEB_HOSTNAME);
+	});
+
+	test('resolveBindHostname trims and returns an explicit override', () => {
+		expect(resolveBindHostname({ [BIND_HOSTNAME_ENV_VAR]: '0.0.0.0' })).toBe('0.0.0.0');
+		expect(resolveBindHostname({ [BIND_HOSTNAME_ENV_VAR]: '  0.0.0.0  ' })).toBe('0.0.0.0');
+	});
+
+	// A container must bind a non-loopback interface, or Docker's
+	// published-port proxy -- which always connects to the container's own
+	// network address, never its loopback -- has nothing to reach.
+	test('startWebServer binds the overridden host, not WEB_HOSTNAME', async () => {
+		const previous = process.env[BIND_HOSTNAME_ENV_VAR];
+		process.env[BIND_HOSTNAME_ENV_VAR] = '0.0.0.0';
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-bind-host-') });
+		try {
+			expect(handle.hostname).not.toBe(WEB_HOSTNAME);
+			const response = await fetch(`http://127.0.0.1:${handle.port}/`);
+			expect(response.status).toBe(200);
+		} finally {
+			await handle.stop();
+			if (previous === undefined) delete process.env[BIND_HOSTNAME_ENV_VAR];
+			else process.env[BIND_HOSTNAME_ENV_VAR] = previous;
+		}
+	});
+
+	// The bind address is a socket concern only: the browser always reaches
+	// the service through 127.0.0.1 or localhost (the host side of a
+	// container's published port stays restricted to loopback), so the
+	// trusted-origin check must keep accepting exactly those regardless of
+	// what the process bound to.
+	test('the trusted-origin check is unaffected by the bind host override', () => {
+		const trusted = new Request('http://127.0.0.1:7777/api/runs', {
+			headers: { origin: 'http://127.0.0.1:7777' },
+		});
+		expect(isTrustedCommandOrigin(trusted)).toBe(true);
 	});
 });

@@ -56,6 +56,8 @@ export interface BacklogSnapshot {
 	workspaceNotices: WorkspaceNoticeView[];
 	/** The service is older than origin/main; null while it is current. */
 	staleService: StaleServiceView | null;
+	/** No git author identity is configured yet; null once one is. */
+	gitIdentity: GitIdentityView | null;
 	/** Version of the binary serving the screen; empty when it did not say. */
 	version: string;
 }
@@ -68,6 +70,19 @@ export interface BacklogSnapshot {
 export interface StaleServiceView {
 	bootSha: string;
 	currentSha: string;
+	detail: string;
+}
+
+/**
+ * No global git author identity exists yet, so the first commit a run or a
+ * ship attempts would fail with "Author identity unknown". Informative only:
+ * it holds no command back. The derive-and-write itself happens on that same
+ * commit path, not here and not on a poll -- there is none -- so this can
+ * still show stale between a completed `gh auth login` and the next
+ * snapshot read, which a command or a run event triggers, not a timer;
+ * nothing here ever needs a restart.
+ */
+export interface GitIdentityView {
 	detail: string;
 }
 
@@ -217,6 +232,7 @@ interface SnapshotPayload {
 	};
 	workspaceNotices?: WorkspaceNoticeView[];
 	staleService?: Partial<StaleServiceView>;
+	gitIdentity?: Partial<GitIdentityView>;
 	version?: string;
 }
 
@@ -286,6 +302,14 @@ function staleServiceRecord(record: Partial<StaleServiceView> | undefined): Stal
 	return { bootSha, currentSha, detail: detail ?? '' };
 }
 
+/** Same absence-is-the-ordinary-case rule as `staleServiceRecord`: a missing or incomplete field reads as configured. */
+function gitIdentityRecord(record: Partial<GitIdentityView> | undefined): GitIdentityView | null {
+	if (record === undefined) return null;
+	const { detail } = record;
+	if (typeof detail !== 'string') return null;
+	return { detail };
+}
+
 /** Read the executable queue and the ideas that can be specified while idle. */
 export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	const payload = await readJson<SnapshotPayload>(await fetch(SNAPSHOT_PATH), 'Snapshot');
@@ -295,6 +319,7 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 		drafts: payload.idleState?.backlog?.drafts ?? [],
 		workspaceNotices: payload.workspaceNotices ?? [],
 		staleService: staleServiceRecord(payload.staleService),
+		gitIdentity: gitIdentityRecord(payload.gitIdentity),
 		version: payload.version ?? '',
 	};
 }

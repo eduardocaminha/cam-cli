@@ -37,6 +37,7 @@ import {
 	type ChainRunsView,
 	type ChatMessageView,
 	emptyModelSettings,
+	type GitIdentityView,
 	type IssueReviewDraft,
 	MODEL_PROVIDER_IDS,
 	MODEL_ROLE_NAMES,
@@ -131,6 +132,14 @@ export interface AppProps {
 	 * case; while it is set the shell says so, and no command is held back.
 	 */
 	staleService: StaleServiceView | null;
+	/**
+	 * No global git author identity is configured yet, so a commit would fail.
+	 * Null is the ordinary case; nothing here is ever a restart instruction --
+	 * derivation happens on the commit path itself, not here, so this can
+	 * still show stale until the next snapshot read, which a command or a run
+	 * event triggers rather than a timer.
+	 */
+	gitIdentity: GitIdentityView | null;
 	/** Last command outcome, or the last transport error. */
 	status: string | null;
 	/** A command is in flight; every button is held until it answers. */
@@ -1401,6 +1410,31 @@ function StaleServiceCallout({
 	);
 }
 
+/**
+ * No global git author identity is configured, so the first commit a run or a
+ * ship attempts would fail with "Author identity unknown" (GSHIP-654). A
+ * statement, not a decision: no button, no dismissal. Unlike
+ * `StaleServiceCallout`, this never asks for a restart -- derivation happens
+ * on the commit path itself the moment a run or a ship actually needs it, so
+ * it needs no operator action here at all; this callout is a display of that
+ * outcome and clears on the next snapshot a command or a run event triggers,
+ * not on a poll, since there is none.
+ */
+function GitIdentityCallout({
+	gitIdentity,
+}: Pick<AppProps, 'gitIdentity'>): React.ReactElement | null {
+	if (gitIdentity === null) return null;
+	return (
+		<section
+			aria-label="Identidade de git ausente"
+			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+		>
+			<span className="font-medium text-sm">Identidade de git ausente</span>
+			<p className="break-words text-xs">{gitIdentity.detail}</p>
+		</section>
+	);
+}
+
 /** One line per reason the queue is not advancing on its own (GSHIP-638). */
 const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
 	'chain-disabled': 'o interruptor está desligado.',
@@ -1456,12 +1490,13 @@ function ChainPauseCallout({
 
 function ShellSidebar({
 	chainRuns,
+	gitIdentity,
 	route,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'chainRuns' | 'staleService' | 'workspaceNotices'> & {
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'staleService' | 'workspaceNotices'> & {
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
@@ -1488,6 +1523,7 @@ function ShellSidebar({
 			</div>
 			<ChainPauseCallout pause={stoppedQueue} />
 			<StaleServiceCallout staleService={staleService} />
+			<GitIdentityCallout gitIdentity={gitIdentity} />
 			<Separator />
 			<nav aria-label="Superfícies do operador">
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
@@ -2004,6 +2040,7 @@ export function App(props: AppProps): React.ReactElement {
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<ShellSidebar
 				chainRuns={props.chainRuns}
+				gitIdentity={props.gitIdentity}
 				route={props.route}
 				run={run}
 				staleService={props.staleService}

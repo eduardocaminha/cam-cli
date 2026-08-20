@@ -6,18 +6,20 @@
 // deriving issue state from working-tree files.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import process from 'node:process';
 
-import { startWebServer } from '../../src/commands/web.ts';
+import { resolveBootSourceSha, startWebServer } from '../../src/commands/web.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { GSHIP_VERSION } from '../../src/version.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
-function git(cwd: string, args: string[]): void {
+function git(cwd: string, args: string[], env?: Record<string, string>): void {
 	const result = Bun.spawnSync(['git', ...args], {
 		cwd,
+		env: env === undefined ? undefined : { ...process.env, ...env },
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
@@ -25,6 +27,14 @@ function git(cwd: string, args: string[]): void {
 		throw new Error(new TextDecoder().decode(result.stderr));
 	}
 }
+
+/** An author identity supplied only via env vars for one commit, never written to any config file. */
+const UNPERSISTED_COMMIT_IDENTITY = {
+	GIT_AUTHOR_NAME: 'Unpersisted Seed Author',
+	GIT_AUTHOR_EMAIL: 'unpersisted-seed@example.invalid',
+	GIT_COMMITTER_NAME: 'Unpersisted Seed Author',
+	GIT_COMMITTER_EMAIL: 'unpersisted-seed@example.invalid',
+};
 
 function issue(overrides: Partial<IssueEntry> & Pick<IssueEntry, 'id' | 'title'>): IssueEntry {
 	return {
@@ -37,13 +47,34 @@ function issue(overrides: Partial<IssueEntry> & Pick<IssueEntry, 'id' | 'title'>
 	};
 }
 
-function seedIdleRepo(): string {
+/**
+ * `identify: false` leaves the repository with no committer identity at all
+ * in its own config, local or global -- the seed commit below still needs
+ * one to succeed, so it supplies `UNPERSISTED_COMMIT_IDENTITY` through env
+ * vars for that one call only, never written to any file (GSHIP-654).
+ *
+ * `git var GIT_AUTHOR_IDENT` -- what `checkGitIdentity` reads -- also accepts
+ * an identity it auto-detects from the OS user and hostname when config and
+ * env vars are both silent, and whether that guess succeeds depends on
+ * hostname-resolution details of whatever machine happens to run this suite,
+ * not on anything this fixture controls. `user.useConfigOnly` is git's own
+ * switch for refusing that guess (confirmed to leave both config- and
+ * env-var-based resolution untouched); setting it locally here, without ever
+ * setting user.name/email, makes "no identity" the same deterministic state
+ * on every host, matching what a genuinely identity-less container measures.
+ */
+function seedIdleRepo(options: { identify?: boolean } = {}): string {
+	const identify = options.identify ?? true;
 	const root = createTestTmpdir('gship-web-idle-');
 	const cwd = join(root, 'repo');
 	mkdirSync(cwd, { recursive: true });
 	git(cwd, ['init', '-q', '--initial-branch=main']);
-	git(cwd, ['config', 'user.email', 'gship-test@example.com']);
-	git(cwd, ['config', 'user.name', 'Gateship Test']);
+	if (identify) {
+		git(cwd, ['config', 'user.email', 'gship-test@example.com']);
+		git(cwd, ['config', 'user.name', 'Gateship Test']);
+	} else {
+		git(cwd, ['config', 'user.useConfigOnly', 'true']);
+	}
 	// The server under test writes its durable run store to .gship/ inside cwd
 	// (RunRuntime's default path); ignore it like the real repo does so a
 	// broad `git add .` in these fixtures never sweeps up that live state.
@@ -70,7 +101,7 @@ function seedIdleRepo(): string {
 		writeFileSync(join(issueDir, `${entry.id}.json`), JSON.stringify(entry));
 	}
 	git(cwd, ['add', '.']);
-	git(cwd, ['commit', '-q', '-m', 'seed backlog']);
+	git(cwd, ['commit', '-q', '-m', 'seed backlog'], identify ? undefined : UNPERSISTED_COMMIT_IDENTITY);
 
 	// The snapshot derives the backlog from the runtime source ref, so the
 	// fixture publishes main to a remote and tracks it.
@@ -98,6 +129,12 @@ async function withSnapshotServer<T>(
 	body: (readSnapshot: () => Promise<Record<string, unknown>>) => Promise<T>,
 	buildSha?: string | null,
 ): Promise<T> {
+	// This suite is about idle state and service freshness, not git identity,
+	// and needs no seam for it: the snapshot's `checkGitIdentity` reads
+	// whatever `git commit` itself would resolve (GSHIP-654), and
+	// seedIdleRepo() below already sets a local `user.name`/`user.email`, so
+	// it reports already-configured regardless of whether the host running
+	// the suite has one of its own.
 	const handle = startWebServer({ port: 0, cwd, buildSha });
 	try {
 		return await body(async () => {
@@ -246,6 +283,107 @@ describe('GET /api/snapshot idle state', () => {
 				],
 				planned: [],
 			},
+		});
+	});
+});
+
+/**
+ * A repository fixture with no local identity and `user.useConfigOnly` set
+ * (seedIdleRepo's own `identify: false` branch) still reads as resolvable
+ * through whatever real global config the host running this suite happens to
+ * have -- what `checkGitIdentity`'s `git var GIT_AUTHOR_IDENT` read is
+ * supposed to see, by design: it is what `git commit` would actually use.
+ * Pointing GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM at paths that do not exist
+ * makes that read genuinely resolve nothing, on any host, without ever
+ * touching that host's real config -- safe here specifically because
+ * `checkGitIdentity` never writes, so there is no write for a stale mutated
+ * env to land in the wrong place, unlike `ensureGitIdentity`.
+ */
+async function withNoEffectiveGitIdentity(cwd: string, body: () => Promise<void>): Promise<void> {
+	const previousGlobal = process.env['GIT_CONFIG_GLOBAL'];
+	const previousSystem = process.env['GIT_CONFIG_SYSTEM'];
+	process.env['GIT_CONFIG_GLOBAL'] = join(cwd, 'nonexistent-gitconfig');
+	process.env['GIT_CONFIG_SYSTEM'] = join(cwd, 'nonexistent-system-gitconfig');
+	try {
+		await body();
+	} finally {
+		if (previousGlobal === undefined) delete process.env['GIT_CONFIG_GLOBAL'];
+		else process.env['GIT_CONFIG_GLOBAL'] = previousGlobal;
+		if (previousSystem === undefined) delete process.env['GIT_CONFIG_SYSTEM'];
+		else process.env['GIT_CONFIG_SYSTEM'] = previousSystem;
+	}
+}
+
+// The snapshot's own git-identity notice reads `checkGitIdentity` directly,
+// with no test seam of its own: it is cheap and safe enough (one local `git
+// var` read, never `gh`, never a write) to exercise for real against a
+// fixture, unlike the commit paths' `ensureGitIdentity`, whose `gh` call
+// this route must never be the one to trigger (GSHIP-654).
+describe('GET /api/snapshot git identity (GSHIP-654)', () => {
+	test('an already-configured identity adds no field', async () => {
+		const cwd = seedIdleRepo();
+		const handle = startWebServer({ port: 0, cwd });
+		try {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
+			const payload = (await response.json()) as Record<string, unknown>;
+			expect(payload['gitIdentity']).toBeUndefined();
+			expect(Object.keys(payload)).toEqual(['idleState', 'version']);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('a missing identity surfaces its detail in the snapshot', async () => {
+		const cwd = seedIdleRepo({ identify: false });
+		await withNoEffectiveGitIdentity(cwd, async () => {
+			const handle = startWebServer({ port: 0, cwd });
+			try {
+				const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
+				const payload = (await response.json()) as Record<string, unknown>;
+				expect(payload['gitIdentity']).toMatchObject({ detail: expect.any(String) });
+			} finally {
+				await handle.stop();
+			}
+		});
+	});
+
+	// The defect this closes: checkGitIdentityOnce, the closure the snapshot
+	// used to share with the commit paths, derived and wrote just like they
+	// do. `ensureGitIdentity`'s `gh` call carries a five-second timeout, and
+	// Bun's HTTP handlers run on one thread, so a snapshot that called it
+	// could stall the whole service on a single GET. `checkGitIdentity`'s own
+	// options do not even accept a `gh` runner (git-identity.test.ts), but
+	// that guarantee is only as good as this route actually calling it: this
+	// proves it end to end, against a repository with no identity at all, the
+	// exact state a snapshot request would otherwise be tempted to fix.
+	test('a snapshot request never calls gh and never writes any git config, even with identity missing', async () => {
+		const cwd = seedIdleRepo({ identify: false });
+		const localConfigPath = join(cwd, '.git', 'config');
+		const configBefore = readFileSync(localConfigPath, 'utf8');
+		// `[user]` itself is present (seedIdleRepo's own `useConfigOnly = true`,
+		// GSHIP-654), but never a name or email: the precondition this test
+		// needs is no author identity, not an empty section.
+		expect(configBefore).not.toContain('name =');
+		expect(configBefore).not.toContain('email =');
+
+		await withNoEffectiveGitIdentity(cwd, async () => {
+			const handle = startWebServer({ port: 0, cwd });
+			try {
+				const url = `http://${handle.hostname}:${handle.port}/api/snapshot`;
+				const startedAt = performance.now();
+				const response = await fetch(url);
+				const elapsedMs = performance.now() - startedAt;
+				const payload = (await response.json()) as Record<string, unknown>;
+
+				expect(payload['gitIdentity']).toMatchObject({ detail: expect.any(String) });
+				// A snapshot that called `gh` would take at least its five-second
+				// timeout to answer at all; comfortably under that is evidence the
+				// gh-free, write-free path ran instead of `ensureGitIdentity`.
+				expect(elapsedMs).toBeLessThan(2_000);
+				expect(readFileSync(localConfigPath, 'utf8')).toBe(configBefore);
+			} finally {
+				await handle.stop();
+			}
 		});
 	});
 });
@@ -434,5 +572,45 @@ describe('GET /api/snapshot service freshness -- compiled build sha (GSHIP-648)'
 			expect(payload['staleService']).toBeUndefined();
 			expect(payload['version']).toBe(GSHIP_VERSION);
 		}, unresolvableBuildSha);
+	});
+});
+
+// A container image compiled without its optional `GSHIP_BUILD_SHA` build arg
+// (the Dockerfile's own default, and what the issue's own `docker build -t
+// gateship:verify .` verify command produces) has no sha to compare against.
+// `cwd` inside a container is the project being managed, not Gateship's own
+// source tree, so falling back to reading its ref -- the ordinary source-run
+// behavior above -- would compare against a ref with nothing to do with the
+// running binary; a container "restart" can never apply newer Gateship code
+// either way, only a rebuilt image can. `readSourceShaOfCwd` is a spy here
+// specifically to prove that fallback is never even attempted.
+describe('resolveBootSourceSha (GSHIP-654)', () => {
+	test('a known build sha is used verbatim, container or not, and the ref is never read', () => {
+		let calls = 0;
+		const readSourceShaOfCwd = () => {
+			calls += 1;
+			return 'ref-sha';
+		};
+
+		expect(resolveBootSourceSha('build-sha', false, readSourceShaOfCwd)).toBe('build-sha');
+		expect(resolveBootSourceSha('build-sha', true, readSourceShaOfCwd)).toBe('build-sha');
+		expect(calls).toBe(0);
+	});
+
+	test('no build sha outside a container falls back to the ref read, unchanged from before GSHIP-654', () => {
+		const readSourceShaOfCwd = () => 'ref-sha';
+
+		expect(resolveBootSourceSha(null, false, readSourceShaOfCwd)).toBe('ref-sha');
+	});
+
+	test('no build sha inside a container says nothing, and never reads the ref at all', () => {
+		let calls = 0;
+		const readSourceShaOfCwd = () => {
+			calls += 1;
+			return 'ref-sha';
+		};
+
+		expect(resolveBootSourceSha(null, true, readSourceShaOfCwd)).toBeNull();
+		expect(calls).toBe(0);
 	});
 });

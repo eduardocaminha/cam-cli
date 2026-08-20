@@ -1111,3 +1111,71 @@ describe('the GitHub shipper', () => {
 		expect(findCall(calls, 'git', 'add')).toHaveLength(0);
 	});
 });
+
+// A fresh container's volume has no git author identity until something
+// derives one; the ship's own commit is one of the two paths that must
+// derive it themselves, right on the commit path, before their own first
+// write -- never by depending on the operator-facing snapshot in
+// src/commands/web.ts having been read first (the other path is issue
+// intake, covered in issue-intake.test.ts) (GSHIP-654).
+describe('git author identity on the ship commit path (GSHIP-654)', () => {
+	test('a missing identity fails the ship before the commit, and no commit is ever attempted', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo();
+		const calls: RecordedCall[] = [];
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			ensureIdentity: () => ({ outcome: 'missing', detail: 'gh is not authenticated yet (fixture)' }),
+		});
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, [], new AbortController().signal),
+		);
+
+		expect(shipped).toMatchObject({ outcome: 'failed' });
+		expect((shipped as { detail: string }).detail).toContain('gh is not authenticated yet (fixture)');
+		expect(repo.commits).toBe(0);
+		expect(findCall(calls, 'git', 'commit')).toHaveLength(0);
+		// The run's diff survives a missing identity: `git add --all` already
+		// staged it, and nothing here discards a worktree over a retryable gap.
+		expect(findCall(calls, 'git', 'add')).toHaveLength(1);
+	});
+
+	test('an identity ensureIdentity reports as already there lets the commit proceed, called exactly once', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo();
+		const calls: RecordedCall[] = [];
+		let ensureIdentityCalls = 0;
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			ensureIdentity: () => {
+				ensureIdentityCalls += 1;
+				return { outcome: 'already-configured' };
+			},
+		});
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, [], new AbortController().signal),
+		);
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.commits).toBe(1);
+		expect(ensureIdentityCalls).toBe(1);
+	});
+
+	test('without an injected ensureIdentity, the ship commits exactly as it did before this option existed', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo();
+		const calls: RecordedCall[] = [];
+		const shipper = new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 });
+
+		const shipped = await shipper.ship(
+			createShipInput(cwd, [], new AbortController().signal),
+		);
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.commits).toBe(1);
+	});
+});

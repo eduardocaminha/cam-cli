@@ -7,6 +7,7 @@ import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/b
 import { type EvidenceItem, fingerprintSpec, type Spec, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { defaultRunGit } from './git-runtime.ts';
+import { ensureGitIdentity, type GitIdentityResult } from './git-identity.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 const MAX_PUBLISH_ATTEMPTS = 3;
@@ -187,7 +188,17 @@ function publishEntryAttempt(
 	sourceSha: string,
 	entry: IssueEntry,
 	commitMessage: string,
+	ensureIdentity: () => GitIdentityResult,
 ): { kind: 'published'; issue: CreatedOperatorIssue } | { kind: 'retry' } {
+	// Right before the first write this attempt makes, not merely displayed
+	// (GSHIP-654): a missing identity fails clearly here, before any worktree
+	// is even prepared, instead of surfacing later as git's own opaque
+	// "Author identity unknown" once the commit below is already attempted.
+	const identity = ensureIdentity();
+	if (identity.outcome === 'missing') {
+		throw commandFailure('Não foi possível criar o commit', identity.detail);
+	}
+
 	const path = issueFilePath(entry.id);
 	const tempRoot = mkdtempSync(join(tmpdir(), 'gship-intake-'));
 	const worktree = join(tempRoot, 'checkout');
@@ -242,6 +253,7 @@ export function createOperatorIssue(
 	rawInput: unknown,
 	options: { approve?: boolean } = {},
 	now: () => string = () => new Date().toISOString(),
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 ): CreatedOperatorIssue {
 	const input = parseOperatorIssueInput(rawInput);
 	const createdAt = now();
@@ -251,7 +263,7 @@ export function createOperatorIssue(
 		const number = nextIssueNumber(cwd, sourceSha);
 		const id = `GSHIP-${number}`;
 		const entry = buildIssue(input, id, createdAt, options.approve ?? false);
-		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`);
+		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`, ensureIdentity);
 		if (result.kind === 'published') {
 			// The push is already durable. A transient second fetch must not turn
 			// success into a retry that could file a duplicate issue.
@@ -273,6 +285,7 @@ export function specifyOperatorIssue(
 	id: string,
 	rawInput: unknown,
 	now: () => string = () => new Date().toISOString(),
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 ): CreatedOperatorIssue {
 	const issueId = requiredString(id, 'Issue');
 	const input = parseOperatorSpecInput(rawInput);
@@ -305,6 +318,7 @@ export function specifyOperatorIssue(
 			sourceSha,
 			specified,
 			`chore(gship): specify ${issueId}`,
+			ensureIdentity,
 		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);
@@ -324,6 +338,7 @@ export function approveOperatorIssue(
 	cwd: string,
 	id: string,
 	now: () => string = () => new Date().toISOString(),
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 ): CreatedOperatorIssue {
 	const issueId = requiredString(id, 'Issue');
 	const approvedAt = now();
@@ -355,7 +370,13 @@ export function approveOperatorIssue(
 			updatedAt: approvedAt,
 			approval: { fingerprint, approvedAt },
 		};
-		const result = publishEntryAttempt(cwd, sourceSha, approved, `chore(gship): approve ${issueId}`);
+		const result = publishEntryAttempt(
+			cwd,
+			sourceSha,
+			approved,
+			`chore(gship): approve ${issueId}`,
+			ensureIdentity,
+		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);
 			return result.issue;
@@ -378,6 +399,7 @@ export function abandonOperatorIssue(
 	id: string,
 	rawInput: unknown,
 	now: () => string = () => new Date().toISOString(),
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 ): CreatedOperatorIssue {
 	const issueId = requiredString(id, 'Issue');
 	const input = parseOperatorAbandonInput(rawInput);
@@ -408,6 +430,7 @@ export function abandonOperatorIssue(
 			sourceSha,
 			abandoned,
 			`chore(gship): abandon ${issueId}`,
+			ensureIdentity,
 		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);
