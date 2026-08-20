@@ -70,14 +70,16 @@ logic.
 
 ## Active bounded slice
 
-The branch `codex/provider-failure-recovery` currently has five commits on top
+The branch `codex/provider-failure-recovery` currently has six commits on top
 of `origin/main`:
 
 1. `69c1d522` — classify provider call failures at the adapter boundary;
 2. `1a1c531d` — preserve runs in `waiting-provider`;
 3. `f024b8d1` — separate subscription login from observed availability;
 4. `ad27fb6d` — harden and document the real container boundary;
-5. `9e39716d` — bind evidence commands and recorded output to human approval.
+5. `9e39716d` — bind evidence commands and recorded output to human approval;
+6. `93c43ef1` — tighten unknown-error, timestamp, provider-status and run-scan
+   behavior found in the ship review.
 
 ### Provider recovery behavior
 
@@ -155,11 +157,19 @@ without inventing a new `deferred` state or editing issue JSON by hand.
   Compose boundary.
 - Projecting the real backlog through the new fingerprint code yields no
   plannable issues; GSHIP-660/661/662 all project as stale.
+- One complete `bun run check:all` passed with 723 tests before the final ship
+  review; the review corrections then passed 198 focused tests, typecheck and
+  lint.
+- The source service was restarted on this branch. `/`, `/runs`, `/work` and
+  `/settings` return the current bundle; the live APIs report the chain off,
+  no plannable issue and no stale-service warning.
+- Automated browser inspection was unavailable in this Codex session. The live
+  `/runs` page was opened in the app panel, and API, route, bundle and rendered
+  component tests cover the changed surface, but no automated visual assertion
+  should be claimed.
 
-Still required before shipping: update this checkpoint after the final diff,
-run the complete `bun run check:all` once, restart the source service, visually
-exercise the recovery/UI path, inspect the full diff, push and open the pull
-request.
+Still required before shipping: run the complete `bun run check:all` after the
+ship-review corrections, inspect the final diff, push and open the pull request.
 
 ## Queue state and evidence
 
