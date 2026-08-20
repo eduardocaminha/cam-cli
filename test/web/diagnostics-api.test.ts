@@ -13,7 +13,7 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const SOURCE_SHA = 'b'.repeat(40);
 
-function diagnosticHarness() {
+function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'daily' | 'weekly' } } = {}) {
 	const runRuntime = new RunRuntime({
 		cwd: '/project',
 		store: new RunStore(':memory:'),
@@ -55,6 +55,7 @@ function diagnosticHarness() {
 		newId: () => 'scan-api',
 		now: () => '2026-08-20T12:00:00.000Z',
 	});
+	if (options.schedule !== undefined) diagnostics.setSchedule(options.schedule);
 	const intakeCalls: Array<{ input: unknown; approve: boolean | undefined }> = [];
 	const handle = startWebServer({
 		port: 0,
@@ -86,6 +87,14 @@ function post(origin: string, path: string, body?: unknown, requestOrigin = orig
 		method: 'POST',
 		headers: { origin: requestOrigin, 'content-type': 'application/json' },
 		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+}
+
+function put(origin: string, path: string, body: unknown, requestOrigin = origin): Promise<Response> {
+	return fetch(`${origin}${path}`, {
+		method: 'PUT',
+		headers: { origin: requestOrigin, 'content-type': 'application/json' },
+		body: JSON.stringify(body),
 	});
 }
 
@@ -174,6 +183,85 @@ describe('diagnostics web API', () => {
 				promoted: 1,
 				cleared: 0,
 				recurring: 0,
+			});
+		} finally {
+			await harness.stop();
+		}
+	});
+
+	test('persists a bounded same-origin schedule and starts one due scan', async () => {
+		const harness = diagnosticHarness();
+		try {
+			const forbidden = await put(
+				harness.origin,
+				'/api/diagnostics/schedule',
+				{ enabled: true, cadence: 'daily' },
+				'http://evil.example',
+			);
+			expect(forbidden.status).toBe(403);
+
+			const invalid = await put(
+				harness.origin,
+				'/api/diagnostics/schedule',
+				{ enabled: true, cadence: 'hourly' },
+			);
+			expect(invalid.status).toBe(400);
+
+			const enabled = await put(
+				harness.origin,
+				'/api/diagnostics/schedule',
+				{ enabled: true, cadence: 'daily' },
+			);
+			expect(enabled.status).toBe(200);
+			expect(await enabled.json()).toMatchObject({
+				ok: true,
+				outcome: 'started',
+				schedule: {
+					enabled: true,
+					cadence: 'daily',
+					lastScanAt: '2026-08-20T12:00:00.000Z',
+					nextRunAt: '2026-08-21T12:00:00.000Z',
+					overdue: false,
+				},
+			});
+
+			const completed = await waitForCompleted(harness.origin);
+			expect(completed.schedule).toMatchObject({
+				enabled: true,
+				cadence: 'daily',
+				nextRunAt: '2026-08-21T12:00:00.000Z',
+				overdue: false,
+			});
+
+			const disabled = await put(
+				harness.origin,
+				'/api/diagnostics/schedule',
+				{ enabled: false, cadence: 'weekly' },
+			);
+			expect(await disabled.json()).toMatchObject({
+				ok: true,
+				outcome: 'disabled',
+				schedule: { enabled: false, cadence: 'weekly', nextRunAt: null, overdue: false },
+			});
+			expect((await fetchDiagnostics(harness.origin)).scan?.id).toBe('scan-api');
+		} finally {
+			await harness.stop();
+		}
+	});
+
+	test('activates an already persisted overdue schedule when the service starts', async () => {
+		const harness = diagnosticHarness({ schedule: { enabled: true, cadence: 'weekly' } });
+		try {
+			const completed = await waitForCompleted(harness.origin);
+			expect(completed).toMatchObject({
+				scan: { id: 'scan-api', state: 'completed' },
+				schedule: {
+					enabled: true,
+					cadence: 'weekly',
+					lastScanAt: '2026-08-20T12:00:00.000Z',
+					nextRunAt: '2026-08-27T12:00:00.000Z',
+					overdue: false,
+				},
 			});
 		} finally {
 			await harness.stop();

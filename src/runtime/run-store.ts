@@ -16,6 +16,12 @@ import {
 	normalizeDiagnosticDrafts,
 } from './diagnostic-finding.ts';
 import {
+	defaultDiagnosticSchedule,
+	DIAGNOSTIC_SCHEDULE_KEY,
+	type DiagnosticScheduleSettings,
+	normalizeDiagnosticSchedule,
+} from './diagnostic-schedule.ts';
+import {
 	emptyModelSettings,
 	MODEL_SETTINGS_KEY,
 	type ModelSettings,
@@ -1351,6 +1357,28 @@ export class RunStore {
 			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value
 		`).run({ key: CHAIN_RUNS_KEY, value: enabled ? 'true' : 'false' });
+	}
+
+	getDiagnosticSchedule(): DiagnosticScheduleSettings {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: DIAGNOSTIC_SCHEDULE_KEY }) as { value: string } | null;
+		if (row === null) return defaultDiagnosticSchedule();
+		try {
+			return normalizeDiagnosticSchedule(JSON.parse(row.value) as unknown);
+		} catch {
+			return defaultDiagnosticSchedule();
+		}
+	}
+
+	setDiagnosticSchedule(settings: DiagnosticScheduleSettings): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({
+			key: DIAGNOSTIC_SCHEDULE_KEY,
+			value: JSON.stringify(normalizeDiagnosticSchedule(settings)),
+		});
 	}
 
 	/**
