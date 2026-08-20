@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-20T09:28:27.122Z",
-  "updatedAt": "2026-08-20T09:28:27.122Z",
+  "updatedAt": "2026-08-20T09:43:46.754Z",
   "description": "Expor os comandos do Gateship como servidor MCP, para que o operador use o agente de codigo que ja usa como orquestrador, no terminal, em vez de depender do chat da interface. E o que ja acontece na pratica hoje quando o operador conduz o Gateship por um agente externo chamando as rotas HTTP a mao; a fatia transforma isso em contrato tipado, e o mesmo servidor serve Claude Code, Codex, Cursor e qualquer cliente MCP.\n\nLimite de autoridade, que e a decisao central desta fatia e nao um detalhe: o servidor expoe investigar, listar, filar, especificar, revisar, responder run em espera, cancelar e abandonar. Nao expoe aprovar nem iniciar run. Aprovar e o gesto humano que o produto protege com fingerprint desde a etapa 3, e move-lo para dentro de um agente o torna invisivel; iniciar decorre da aprovacao. Essa separacao e a mesma que ja existe entre o orquestrador conversacional e o runtime deterministico, apenas aplicada a outra porta.\n\nO servidor e um adaptador fino sobre a API HTTP existente, sem estado proprio, sem logica de dominio duplicada e sem acesso direto ao SQLite. Toda recusa que a API ja faz continua valendo, incluindo a de issue com run ativa.\n\nNao substitui o orquestrador interno, que continua atendendo quem usa so o navegador.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: cada comando exposto chega a rota correspondente, aprovar e iniciar nao existem como ferramenta, e um erro da API vira erro de ferramenta em vez de sucesso silencioso.\n\nFora de escopo: expor aprovar ou iniciar, autenticacao remota, transporte alem do local, empacotar o servidor separadamente do produto, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "'/api/issues/:issueId/approve': {"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "0505d12bc53f45f7e5205cba76e8c7878c991a7e86217941243cbeb2a4b809ae",
+    "approvedAt": "2026-08-20T09:43:46.754Z"
   }
 }
