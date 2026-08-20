@@ -729,6 +729,113 @@ describe('abandoning an interrupted run', () => {
 		runtime.close();
 	});
 
+	// GSHIP-658: the missing-from-base gate previously only guarded the failed
+	// path; an abandoned run now requires it too, so a branch that already
+	// carries a commit no other copy has is never force-deleted along with its
+	// only remote copy.
+	test('abandons a run whose branch has no commit missing from the base ref, requiring the same upstream check as a failed run', async () => {
+		const releaseCalls: Array<{ runId: string; requireUpstream?: boolean }> = [];
+		let markStarted = (): void => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-abandon-clean',
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: ({ runId, requireUpstream }) => {
+					releaseCalls.push({ runId, requireUpstream });
+					return { outcome: 'released', branch: 'gship/cam-33-run-abandon-clean' };
+				},
+			},
+			executor: {
+				execute: (input) => {
+					markStarted();
+					return new Promise((_resolve, reject) => {
+						input.signal.addEventListener(
+							'abort',
+							() => reject(new DOMException('cancelled', 'AbortError')),
+							{ once: true },
+						);
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-33');
+		await started;
+		await runtime.cancelRun(run.id);
+
+		runtime.abandonRun(run.id);
+
+		expect(releaseCalls).toEqual([{ runId: 'run-abandon-clean', requireUpstream: true }]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('preserves and signals an abandoned run workspace whose branch is ahead of the base ref', async () => {
+		let markStarted = (): void => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-abandon-ahead',
+			workspace: {
+				prepare: ({ runId }) => `/workspaces/${runId}`,
+				release: () => ({
+					outcome: 'preserved',
+					branch: 'gship/cam-34-run-abandon-ahead',
+					detail: 'branch has a commit missing from origin/main',
+				}),
+				inspect: (runs) => runs.map((reference) => ({
+					kind: 'cleanup-failed',
+					runId: reference.runId,
+					workspacePath: reference.workspacePath,
+					branch: null,
+					detail: `state ${reference.state}`,
+				})),
+			},
+			executor: {
+				execute: (input) => {
+					markStarted();
+					return new Promise((_resolve, reject) => {
+						input.signal.addEventListener(
+							'abort',
+							() => reject(new DOMException('cancelled', 'AbortError')),
+							{ once: true },
+						);
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-34');
+		await started;
+		await runtime.cancelRun(run.id);
+
+		runtime.abandonRun(run.id);
+
+		expect(runtime.listRunEvents(run.id).at(-1)).toMatchObject({
+			kind: 'workspace.cleanup-warning',
+			payload: { detail: 'branch has a commit missing from origin/main' },
+		});
+		expect(runtime.listWorkspaceNotices()).toEqual([{
+			kind: 'cleanup-failed',
+			runId: 'run-abandon-ahead',
+			workspacePath: '/workspaces/run-abandon-ahead',
+			branch: null,
+			detail: 'state cancelled',
+		}]);
+		// The preserved leftover never reopens the run: cancelled stays terminal.
+		expect(runtime.getRun(run.id)?.state).toBe('cancelled');
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('preserves and signals a dirty workspace instead of forcing it away', async () => {
 		let markStarted = (): void => {};
 		const started = new Promise<void>((resolve) => {
@@ -997,6 +1104,97 @@ describe('releasing a failed run workspace', () => {
 			roles: [],
 		});
 		await runtime.stop();
+		runtime.close();
+	});
+});
+
+// GSHIP-658: a remote branch delete that fails must not go silently unretried
+// forever once the local worktree and branch are already gone -- reconcile
+// only rediscovers a run through its own local state, and a fully-released
+// run has none left to find. The failure is instead recorded durably and
+// retried on every later call for the same run, e.g. the next service start.
+describe('retrying a failed remote branch delete', () => {
+	function seedDoneRun(store: RunStore, runId: string): void {
+		store.createRun({
+			id: runId,
+			issueId: 'CAM-35',
+			sessionId: `session-${runId}`,
+			workspacePath: `/workspaces/${runId}`,
+			createdAt: '2026-08-18T10:00:00Z',
+		});
+		for (const toState of ['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const) {
+			store.transition({
+				runId,
+				toState,
+				kind: `run.${toState}`,
+				createdAt: '2026-08-18T10:00:01Z',
+			});
+		}
+	}
+
+	test('records a failed remote branch delete durably and retries it on the next reconciliation', () => {
+		const store = new RunStore(':memory:');
+		seedDoneRun(store, 'run-remote-pending');
+		// Stands in for a previous session that released the run locally but
+		// whose remote branch delete failed and got recorded durably.
+		store.appendEvent({
+			runId: 'run-remote-pending',
+			kind: 'workspace.released',
+			createdAt: '2026-08-18T10:00:02Z',
+			payload: { branch: 'gship/cam-35-run-remote-pending', outcome: 'released', reconciled: false },
+		});
+		store.appendEvent({
+			runId: 'run-remote-pending',
+			kind: 'workspace.remote-delete-pending',
+			createdAt: '2026-08-18T10:00:02Z',
+			payload: { detail: 'cannot delete remote branch: exit 1' },
+		});
+
+		const releaseCalls: Array<{ runId: string; retryRemoteDelete?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			workspace: {
+				prepare: () => '/unused',
+				release: ({ runId, retryRemoteDelete }) => {
+					releaseCalls.push({ runId, retryRemoteDelete });
+					return { outcome: 'already-released', branch: 'gship/cam-35-run-remote-pending' };
+				},
+			},
+		});
+
+		expect(releaseCalls).toEqual([{ runId: 'run-remote-pending', retryRemoteDelete: true }]);
+		expect(runtime.listRunEvents('run-remote-pending').at(-1)?.kind)
+			.toBe('workspace.remote-delete-resolved');
+		// Reconciliation never touches the run's own lifecycle state.
+		expect(runtime.getRun('run-remote-pending')?.state).toBe('done');
+		runtime.close();
+	});
+
+	test('never asks for a retry when a released run has no remote delete pending', () => {
+		const store = new RunStore(':memory:');
+		seedDoneRun(store, 'run-remote-clean');
+		store.appendEvent({
+			runId: 'run-remote-clean',
+			kind: 'workspace.released',
+			createdAt: '2026-08-18T10:00:02Z',
+			payload: { branch: 'gship/cam-36-run-remote-clean', outcome: 'released', reconciled: false },
+		});
+
+		const releaseCalls: Array<{ runId: string; retryRemoteDelete?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			workspace: {
+				prepare: () => '/unused',
+				release: ({ runId, retryRemoteDelete }) => {
+					releaseCalls.push({ runId, retryRemoteDelete });
+					return { outcome: 'already-released', branch: 'gship/cam-36-run-remote-clean' };
+				},
+			},
+		});
+
+		expect(releaseCalls).toEqual([{ runId: 'run-remote-clean', retryRemoteDelete: undefined }]);
 		runtime.close();
 	});
 });

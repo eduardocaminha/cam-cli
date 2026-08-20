@@ -125,6 +125,38 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	// GSHIP-658: `ship` merges with `--squash` (github-shipper.ts), which lands
+	// a brand-new commit on the base ref -- a merged branch's own commits are
+	// never reachable from it even though the work landed there. Requiring
+	// upstream reachability on this path, like the abandon and failed paths
+	// do, would misreport every merge as carrying a missing commit and block
+	// exactly the remote delete this issue adds.
+	test('never requires upstream reachability on the merge path', async () => {
+		const releaseCalls: Array<{ requireUpstream?: boolean }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-release-upstream',
+			workspace: {
+				prepare: () => '/project/.gship/worktrees/run-release-upstream',
+				release: ({ requireUpstream }) => {
+					releaseCalls.push({ requireUpstream });
+					return { outcome: 'released', branch: 'gship/cam-584-run-rel' };
+				},
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 386 }) },
+		});
+
+		runtime.startRun('CAM-584');
+		await waitForCondition(() => eventKinds(runtime).includes('workspace.released'));
+
+		expect(releaseCalls).toEqual([{ requireUpstream: false }]);
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('keeps a merged run done when workspace cleanup needs attention', async () => {
 		const runtime = new RunRuntime({
 			cwd: '/project',

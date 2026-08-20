@@ -20,23 +20,40 @@ export interface PrepareWorkspaceInput {
 export interface ReleaseWorkspaceInput extends PrepareWorkspaceInput {
 	workspacePath: string;
 	/**
-	 * Set by a caller releasing a `failed` run: the merged and cancelled paths
-	 * don't need it, but a failed run only releases once its branch also has no
-	 * commit missing from the base ref, so a commit made before the failure
-	 * stays available for the operator to inspect.
+	 * Set by a caller releasing an abandoned or a failed run (GSHIP-658): the
+	 * branch only releases once it also has no commit missing from the base
+	 * ref, so a commit that reached no other copy stays available for the
+	 * operator to inspect. Never set by the merge path: `ship` merges with
+	 * `--squash`, so a merged branch's own commits are never reachable from
+	 * the base ref even though the work landed there -- the merge itself is
+	 * that path's proof, not commit reachability. Also left unset by
+	 * `prepare`'s own rollback of a workspace it just created, which can never
+	 * carry a commit missing from anywhere.
 	 */
 	requireUpstream?: boolean;
+	/**
+	 * Set by a caller that durably recorded an earlier failure to delete this
+	 * run's remote branch (GSHIP-658): forces the origin probe even though this
+	 * call finds nothing left to release locally, so a previously failed
+	 * delete keeps being retried instead of going silently unretried forever
+	 * once the local side is already gone.
+	 */
+	retryRemoteDelete?: boolean;
 }
 
 export type WorkspaceReleaseResult =
-	| { outcome: 'released' | 'already-released'; branch: string }
+	| { outcome: 'released' | 'already-released'; branch: string; remoteWarning?: string }
 	| { outcome: 'preserved'; branch: string; detail: string };
 
 export interface WorkspaceRunReference extends ReleaseWorkspaceInput {
 	/**
-	 * `cancelled` is settled like `done`. `failed` releases too, but only when
-	 * its worktree is clean and its branch has no commit missing from the base
-	 * ref -- otherwise it is kept for inspection.
+	 * `done` releases once the worktree is clean; the merge that got it there
+	 * is already its own proof the work landed elsewhere. `cancelled` and
+	 * `failed` release the same way as each other but with one more gate: the
+	 * branch must also carry no commit missing from the base ref, since
+	 * nothing else guarantees that work exists anywhere but that branch --
+	 * otherwise it is kept for inspection, on both the local and the remote
+	 * side (GSHIP-658).
 	 */
 	state: 'active' | 'done' | 'failed' | 'cancelled';
 }
@@ -241,7 +258,16 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 	/**
 	 * Release only the exact worktree and branch this manager would create for
 	 * the run. A dirty, moved, symlinked or otherwise surprising checkout is
-	 * preserved for the operator instead of being forced away.
+	 * preserved for the operator instead of being forced away. A call that
+	 * actually releases the worktree and local branch also pushes the delete
+	 * for the matching branch on `origin`; a repo with no `origin`, a branch
+	 * never published there, or a push failure never turns the release into
+	 * `preserved` -- it surfaces as `remoteWarning` instead. A repeat call on
+	 * an already-released run (e.g. startup reconciliation replaying run
+	 * history) finds nothing left to release locally and skips the origin
+	 * probe entirely, so it stays local and offline-safe, unless the caller
+	 * sets `retryRemoteDelete` because it durably recorded a previous push
+	 * failure for this run and wants it retried.
 	 */
 	release(input: ReleaseWorkspaceInput): WorkspaceReleaseResult {
 		const expectedPath = this.#workspacePath(input.runId);
@@ -271,33 +297,56 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 			}
 		}
 
-		const steps: CleanupStepResult[] = [];
-		const workspace = this.#removeWorkspace(expectedPath, branch);
-		if (workspace.detail !== undefined) {
-			return { outcome: 'preserved', branch, detail: workspace.detail };
+		const steps = this.#releaseLocal(expectedPath, branch);
+		if (!Array.isArray(steps)) {
+			return { outcome: 'preserved', branch, detail: steps.detail };
 		}
-		steps.push(workspace);
+		return this.#finishRelease(branch, steps, input.retryRemoteDelete === true);
+	}
+
+	/** The three purely local cleanup steps, in order, or the detail of whichever one first refuses to proceed. */
+	#releaseLocal(
+		expectedPath: string,
+		branch: string,
+	): CleanupStepResult[] | { detail: string } {
+		const workspace = this.#removeWorkspace(expectedPath, branch);
+		if (workspace.detail !== undefined) return { detail: workspace.detail };
 		const localBranch = this.#deleteRef(
 			`refs/heads/${branch}`,
 			['branch', '-D', '--', branch],
 			'cannot delete local branch',
 		);
-		if (localBranch.detail !== undefined) {
-			return { outcome: 'preserved', branch, detail: localBranch.detail };
-		}
-		steps.push(localBranch);
+		if (localBranch.detail !== undefined) return { detail: localBranch.detail };
 		const remoteTracking = this.#deleteRef(
 			`refs/remotes/origin/${branch}`,
 			['update-ref', '-d', `refs/remotes/origin/${branch}`],
 			'cannot prune remote-tracking ref',
 		);
-		if (remoteTracking.detail !== undefined) {
-			return { outcome: 'preserved', branch, detail: remoteTracking.detail };
-		}
-		steps.push(remoteTracking);
+		if (remoteTracking.detail !== undefined) return { detail: remoteTracking.detail };
+		return [workspace, localBranch, remoteTracking];
+	}
+
+	/**
+	 * Only probes origin when this call itself just released something
+	 * locally, or the caller durably recorded a prior remote-delete failure for
+	 * this run and asked for a retry: a reconcile pass over an already
+	 * fully-released run with no such pending failure (RunRuntime replays its
+	 * whole run history at startup) would otherwise cost one network round
+	 * trip per historical run for a branch that is either long gone or was
+	 * never published, and would misreport a warning when offline.
+	 */
+	#finishRelease(
+		branch: string,
+		steps: readonly CleanupStepResult[],
+		retryRemoteDelete: boolean,
+	): WorkspaceReleaseResult {
+		const localChanged = steps.some((step) => step.changed);
+		const shouldProbeRemote = localChanged || retryRemoteDelete;
+		const remoteBranch = shouldProbeRemote ? this.#deleteRemoteBranch(branch) : { changed: false };
 		return {
-			outcome: steps.some((step) => step.changed) ? 'released' : 'already-released',
+			outcome: localChanged || remoteBranch.changed ? 'released' : 'already-released',
 			branch,
+			...(remoteBranch.warning === undefined ? {} : { remoteWarning: remoteBranch.warning }),
 		};
 	}
 
@@ -402,6 +451,39 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		const exists = this.#hasRef(ref);
 		if (exists instanceof Error) return { changed: false, detail: exists.message };
 		return exists ? this.#mutation(args, failure) : { changed: false };
+	}
+
+	/**
+	 * A repo with no `origin` remote configured is left alone -- it is not a
+	 * Gateship checkout published to GitHub, so there is nothing to warn about.
+	 */
+	#hasOriginRemote(): boolean {
+		return this.#runGit(this.#projectRoot, ['remote', 'get-url', 'origin']).exitCode === 0;
+	}
+
+	#hasRemoteBranch(branch: string): boolean | Error {
+		const result = this.#runGit(this.#projectRoot, [
+			'ls-remote', '--exit-code', '--heads', 'origin', branch,
+		]);
+		if (result.exitCode === 0) return true;
+		if (result.exitCode === 2) return false;
+		return new Error(`cannot inspect origin/${branch}: ${failureDetail(result)}`);
+	}
+
+	/**
+	 * Never turns a release into `preserved`: a failure here is reported back
+	 * as a warning so the caller can raise it as a workspace notice while the
+	 * already-released local worktree and branch keep the run's state as is.
+	 */
+	#deleteRemoteBranch(branch: string): { changed: boolean; warning?: string } {
+		if (!this.#hasOriginRemote()) return { changed: false };
+		const exists = this.#hasRemoteBranch(branch);
+		if (exists instanceof Error) return { changed: false, warning: exists.message };
+		if (!exists) return { changed: false };
+		const result = this.#runGit(this.#projectRoot, ['push', 'origin', '--delete', '--', branch]);
+		return result.exitCode === 0
+			? { changed: true }
+			: { changed: false, warning: `cannot delete remote branch: ${failureDetail(result)}` };
 	}
 
 	#mutation(args: string[], failure: string): CleanupStepResult {
