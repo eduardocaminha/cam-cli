@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-20T09:27:20.785Z",
-  "updatedAt": "2026-08-20T09:27:20.785Z",
+  "updatedAt": "2026-08-20T09:43:09.961Z",
   "description": "Fazer a liberacao de workspace apagar tambem o branch remoto, e nao apenas a referencia local que aponta para ele. Hoje src/runtime/git-workspace.ts executa update-ref -d em refs/remotes/origin/<branch> e nunca faz push de delete, entao o branch continua existindo no GitHub e some do listado localmente, ficando invisivel ate alguem rodar fetch com prune.\n\nEvidencia real de 2026-08-20: dois branches remotos orfaos foram encontrados de uma vez, gship/gship-641-07d0df0b e gship/gship-654-2d73cb95, ambos de runs abandonadas cujo trabalho ja estava em main. Nenhum aparecia no resultado local antes do prune, e nenhum tinha dono.\n\nA regra de quando apagar e a que ja existe e nao muda: so quando o worktree esta limpo e o branch nao carrega commit ausente da base. O que muda e que, nesse caso, alem de soltar o worktree e o branch local, a liberacao empurra o delete do branch remoto. Um branch preservado por sujeira ou por commit proprio continua preservado dos dois lados, e continua sendo reportado ao operador.\n\nVale para os tres caminhos que ja liberam: merge confirmado, run abandonada e run que termina em falha. Uma falha ao apagar o remoto nunca pode alterar estado de run: ela vira aviso de workspace, do mesmo jeito que uma sobra local vira hoje.\n\nOs testes novos entram nos arquivos ja nomeados no comando de verificacao e devem cobrir: liberacao segura empurra o delete, branch preservado nao empurra nada, e falha ao apagar o remoto vira aviso sem mudar o estado da run.\n\nFora de escopo: apagar branches remotos que a liberacao nao criou, varredura periodica de orfaos existentes, mudar a regra de preservacao, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "'update-ref', '-d', `refs/remotes/origin/${branch}`"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "1f9f618e68c1408f7f914adc2324c102bc280f31c04a539fec630edb1cff7ae1",
+    "approvedAt": "2026-08-20T09:43:09.961Z"
   }
 }
