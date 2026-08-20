@@ -23,16 +23,20 @@ import {
 	createIssue,
 	CHAT_PATH,
 	dismissProposal,
+	emptyNotificationChannels,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
+	fetchNotificationChannels,
 	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
 	fetchRuns,
+	type NotificationChannelsView,
+	NOTIFICATIONS_PATH,
 	type ProjectBriefView,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
@@ -47,6 +51,7 @@ import {
 	saveChainRuns,
 	fetchModelSettings,
 	saveModelSettings,
+	sendNotificationTest,
 	emptyModelSettings,
 	selectProvider,
 	sendChat,
@@ -114,6 +119,8 @@ const EMPTY_MODEL_SETTINGS: ModelSettingsView = emptyModelSettings();
 
 const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
 
+const EMPTY_NOTIFICATION_CHANNELS: NotificationChannelsView = emptyNotificationChannels();
+
 const EMPTY_BRIEF: ProjectBriefView = {
 	objective: '',
 	decisions: [],
@@ -134,6 +141,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
 			modelSettings={EMPTY_MODEL_SETTINGS}
+			notificationChannels={EMPTY_NOTIFICATION_CHANNELS}
 			notificationPermission="default"
 			onAbandon={() => {}}
 			onCancel={() => {}}
@@ -143,6 +151,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onAbandonIssue={() => {}}
 			onDismissProposal={() => {}}
 			onEnableNotifications={() => {}}
+			onSendNotificationTest={() => {}}
 			onPromoteProposal={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
@@ -1085,6 +1094,38 @@ describe('settings surface', () => {
 		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
 	});
 
+	// GSHIP-652: the remote ntfy channel shows only whether it is configured,
+	// a real test-send action, and setup instructions -- never the secret,
+	// which the read-only `configured` boolean makes structurally impossible.
+	test('the remote channel shows its configured state, a test action, and setup instructions, never a secret', () => {
+		const unconfigured = panel(settingsPage(), 'Notificações locais');
+		expect(unconfigured).toContain('ntfy: não configurado');
+		expect(buttonIsEnabled(unconfigured, 'Enviar teste')).toBe(false);
+		expect(unconfigured).toContain('.gship/ntfy-url');
+		expect(unconfigured).toContain('permissão 600');
+		expect(unconfigured).toContain('GATESHIP_NTFY_URL');
+		const docLink = openingTags(unconfigured).find((tag) => tag.includes('docs.ntfy.sh'));
+		expect(docLink).toBeDefined();
+		expect(docLink).toContain('<a');
+		expect(docLink).toContain('target="_blank"');
+		expect(docLink).toContain('rel="noreferrer noopener"');
+
+		const configured = panel(
+			settingsPage({ notificationChannels: { ntfy: { configured: true } } }),
+			'Notificações locais',
+		);
+		expect(configured).toContain('ntfy: configurado');
+		expect(buttonIsEnabled(configured, 'Enviar teste')).toBe(true);
+	});
+
+	test('the remote channel test action is held while a command is in flight, like every other', () => {
+		const html = panel(
+			settingsPage({ notificationChannels: { ntfy: { configured: true } }, pending: true }),
+			'Notificações locais',
+		);
+		expect(buttonIsEnabled(html, 'Enviar teste')).toBe(false);
+	});
+
 	test('the brief is edited here and the automatic handoff sits beside it, read-only', () => {
 		const html = settingsPage({
 			brief: {
@@ -1711,6 +1752,7 @@ describe('same-origin transport', () => {
 		expect(PROPOSALS_PATH).toBe('/api/proposals');
 		expect(RESOLVED_PROPOSALS_PATH).toBe('/api/proposals/resolved');
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
+		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
 	});
 
 	test('the inbox is read and decided on the proposal-scoped routes', async () => {
@@ -2098,6 +2140,41 @@ describe('same-origin transport', () => {
 				body: null,
 			}]);
 		});
+	});
+
+	// GSHIP-652: the read is a boolean per channel, and the client's own type
+	// (`configured: boolean`) makes it structurally impossible to carry the
+	// secret through even if a future server bug tried to include one.
+	test('reads notification channel status and fires a real test on its own routes', async () => {
+		await withRecordedFetch({ channels: { ntfy: { configured: true } } }, 200, async (calls) => {
+			expect(await fetchNotificationChannels()).toEqual({ ntfy: { configured: true } });
+			expect(calls).toEqual([{ url: NOTIFICATIONS_PATH, method: 'GET', body: null }]);
+		});
+		// A payload missing the channel, or the field, reads as not configured.
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchNotificationChannels()).toEqual({ ntfy: { configured: false } });
+		});
+		await withRecordedFetch(
+			{ ok: true, outcome: 'sent', message: 'Mensagem de teste entregue ao ntfy.' },
+			200,
+			async (calls) => {
+				expect(await sendNotificationTest('ntfy'))
+					.toBe('Mensagem de teste entregue ao ntfy.');
+				expect(calls).toEqual([{
+					url: `${NOTIFICATIONS_PATH}/ntfy/test`,
+					method: 'POST',
+					body: null,
+				}]);
+			},
+		);
+		await withRecordedFetch(
+			{ ok: false, code: 'not-configured', message: 'Canal ntfy não está configurado.' },
+			409,
+			async () => {
+				expect(await sendNotificationTest('ntfy'))
+					.toBe('Canal ntfy não está configurado.');
+			},
+		);
 	});
 
 	test('start posts the issue id to the runs route', async () => {
