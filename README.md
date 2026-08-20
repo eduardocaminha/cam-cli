@@ -101,8 +101,8 @@ From the browser you can:
 ## Container
 
 Gateship also ships as one container image: the compiled binary, git, the
-GitHub CLI and the Claude Code CLI, with the port it already uses answering
-the same UI.
+GitHub CLI, the Claude Code CLI and the Codex CLI, with the port it already
+uses answering the same UI.
 
 ```bash
 GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
@@ -129,6 +129,12 @@ docker compose exec gateship claude auth login
 docker compose exec gateship gh auth login --web
 docker compose exec gateship gh auth setup-git
 ```
+
+The Codex CLI is in the image too, and its `CODEX_HOME` persists on the same
+volume, but its ChatGPT sign-in does not work from inside this container yet:
+it redirects the browser to a fixed loopback callback (`localhost:1455`) that
+Docker's default bridge networking cannot reach from the host, so the web
+interface's own Codex login button cannot complete there today.
 
 Recreating the container from the same image and the same volume returns the
 operator to the same place: the same SQLite state, the same managed

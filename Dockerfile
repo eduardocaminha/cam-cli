@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 #
 # One image, one process: the Gateship service and the CLIs it invokes as
-# children (git, gh, claude). A container recreated from this image plus the
-# same volume must return the operator to the same place -- see compose.yaml
-# for the volume that carries the durable state this image never bakes in.
+# children (git, gh, claude, codex). A container recreated from this image
+# plus the same volume must return the operator to the same place -- see
+# compose.yaml for the volume that carries the durable state this image never
+# bakes in.
 
 # --- Builder -----------------------------------------------------------
 # Compiles the Gateship binary from this exact build context, embedding the
@@ -35,9 +36,9 @@ RUN bun build --compile --minify \
 
 # --- Runtime -------------------------------------------------------------
 # Same base as the builder so the compiled binary's glibc matches exactly.
-# git, the GitHub CLI and the Claude Code CLI are what the executor,
-# reviewer and orchestrator invoke as children; nothing else the product
-# needs to function is installed here.
+# git, the GitHub CLI and both agent CLIs (Claude Code, Codex) are what the
+# executor, reviewer and orchestrator invoke as children; nothing else the
+# product needs to function is installed here.
 FROM oven/bun:1.3.14-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -55,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PATH="/root/.local/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN bun add -g @openai/codex
 
 COPY --from=builder /out/gateship /usr/local/bin/gateship
 
@@ -64,17 +66,23 @@ COPY --from=builder /out/gateship /usr/local/bin/gateship
 # localhost, because compose.yaml keeps the published host port restricted to
 # loopback -- see GATESHIP_BIND_HOST in src/commands/web.ts.
 #
-# CLAUDE_CONFIG_DIR, GH_CONFIG_DIR and GIT_CONFIG_GLOBAL point inside the
-# run's own working directory rather than $HOME so all three land on the same
-# volume compose.yaml mounts over ./.gship, the same place the SQLite store
-# and managed worktrees already live. GIT_CONFIG_GLOBAL matters as much as the
-# other two: `gh auth login`/`gh auth setup-git` wires the git credential
-# helper into the global git config, and git (unlike gh) runs in the
-# service's unfiltered environment (github-shipper.ts), so without this a
-# recreated container would show `gh` still logged in while `git push` could
-# no longer authenticate.
+# CLAUDE_CONFIG_DIR, CODEX_HOME, GH_CONFIG_DIR and GIT_CONFIG_GLOBAL point
+# inside the run's own working directory rather than $HOME so all four land
+# on the same volume compose.yaml mounts over ./.gship, the same place the
+# SQLite store and managed worktrees already live. GIT_CONFIG_GLOBAL matters
+# as much as the other three: `gh auth login`/`gh auth setup-git` wires the
+# git credential helper into the global git config, and git (unlike gh) runs
+# in the service's unfiltered environment (github-shipper.ts), so without
+# this a recreated container would show `gh` still logged in while `git
+# push` could no longer authenticate. CODEX_HOME needs one thing claude and
+# gh don't: `codex app-server` hard-fails if that directory does not already
+# exist, so the service creates it itself at boot (ensureCodexHome in
+# src/runtime/provider-env.ts) rather than relying on this image to have
+# pre-seeded it -- a volume kept from before the image gained the Codex CLI
+# would otherwise never get it.
 ENV GATESHIP_BIND_HOST=0.0.0.0 \
 	CLAUDE_CONFIG_DIR=/workspace/.gship/claude \
+	CODEX_HOME=/workspace/.gship/codex \
 	GH_CONFIG_DIR=/workspace/.gship/gh \
 	GIT_CONFIG_GLOBAL=/workspace/.gship/gitconfig
 

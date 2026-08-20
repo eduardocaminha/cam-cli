@@ -12,9 +12,10 @@
 #
 # The named volume below is mounted over ./.gship inside that repository,
 # which is where the SQLite store, managed worktrees and (via
-# CLAUDE_CONFIG_DIR/GH_CONFIG_DIR in the Dockerfile) the Claude and GitHub CLI
-# logins already live. Recreating the container against the same project
-# directory and the same volume returns the operator to the same place.
+# CLAUDE_CONFIG_DIR/CODEX_HOME/GH_CONFIG_DIR in the Dockerfile) the Claude,
+# Codex and GitHub CLI logins already live. Recreating the container against
+# the same project directory and the same volume returns the operator to the
+# same place.
 services:
   gateship:
     build:

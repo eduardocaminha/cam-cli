@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CodexAppServer } from '../../src/runtime/codex-app-server.ts';
 import { NativeProviderAuth } from '../../src/runtime/provider-auth.ts';
-import { buildProviderAuthEnv } from '../../src/runtime/provider-env.ts';
+import { buildProviderAuthEnv, ensureCodexHome } from '../../src/runtime/provider-env.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const FIXTURE = join(import.meta.dir, '..', 'fixtures', 'runtime', 'codex-app-server-fixture.ts');
 const openServers = new Set<CodexAppServer>();
@@ -95,5 +97,28 @@ describe('credential-blind provider auth', () => {
 		const claude = (await auth.list())[0];
 		expect(claude?.subscription).toBe(false);
 		await auth.close();
+	});
+});
+
+describe('ensureCodexHome', () => {
+	test('creates CODEX_HOME (and any missing parents) when set', () => {
+		const root = createTestTmpdir('gship-test-codex-home-');
+		const codexHome = join(root, 'nested', 'codex');
+		expect(existsSync(codexHome)).toBe(false);
+
+		ensureCodexHome({ CODEX_HOME: codexHome });
+
+		expect(existsSync(codexHome)).toBe(true);
+	});
+
+	test('is a no-op, on an existing volume, whose codex directory already exists', () => {
+		const root = createTestTmpdir('gship-test-codex-home-');
+		ensureCodexHome({ CODEX_HOME: root });
+		expect(() => ensureCodexHome({ CODEX_HOME: root })).not.toThrow();
+	});
+
+	test('does nothing outside the container image, where CODEX_HOME is unset', () => {
+		expect(() => ensureCodexHome({})).not.toThrow();
+		expect(() => ensureCodexHome({ CODEX_HOME: '' })).not.toThrow();
 	});
 });
