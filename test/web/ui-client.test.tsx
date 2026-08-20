@@ -102,6 +102,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		updatedAt: '2026-08-16T00:00:00.000Z',
 		cost: EMPTY_RUN_COST,
 		roundOrigins: EMPTY_ROUND_ORIGINS,
+		providerWait: null,
 		...overrides,
 	};
 }
@@ -482,6 +483,26 @@ describe('runs surface', () => {
 		expect(done).toContain('100%');
 		expect(hasButton(done, 'Cancelar')).toBe(false);
 		expect(hasButton(done, 'Shipar')).toBe(false);
+	});
+
+	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
+		const html = runsPage({
+			runs: [runIn('waiting-provider', {
+				providerWait: {
+					provider: 'claude',
+					kind: 'usage-limit',
+					message: 'Claude five hour usage limit reached.',
+					phase: 'working',
+					retryAt: '2026-08-20T12:10:00.000Z',
+				},
+			})],
+		});
+
+		expect(html).toContain('Claude Code em espera');
+		expect(html).toContain('Limite da assinatura atingido');
+		expect(html).toContain('Claude five hour usage limit reached.');
+		expect(html).toContain('dateTime="2026-08-20T12:10:00.000Z"');
+		expect(buttonIsEnabled(html, 'Retomar')).toBe(true);
 	});
 
 	test('the full report and the run id are one disclosure, closed by default', () => {
@@ -1731,7 +1752,13 @@ describe('screen derivations', () => {
 	});
 
 	test('every run state reads as one of the three states the operator acts on', () => {
-		const needsYou: RunState[] = ['waiting-user', 'failed', 'interrupted', 'ready-to-ship'];
+		const needsYou: RunState[] = [
+			'waiting-user',
+			'waiting-provider',
+			'failed',
+			'interrupted',
+			'ready-to-ship',
+		];
 		const busy: RunState[] = ['queued', 'working', 'verify', 'review', 'shipping'];
 
 		for (const state of needsYou) expect(attentionOf(runIn(state), false)).toBe('Precisa de você');
@@ -1761,6 +1788,7 @@ describe('screen derivations', () => {
 
 	test('an interrupted run is resumable and a terminal one is not', () => {
 		expect(actionsFor(runIn('interrupted'), false).resume).toBe(true);
+		expect(actionsFor(runIn('waiting-provider'), false).resume).toBe(true);
 		expect(actionsFor(runIn('failed'), true)).toMatchObject({ start: true, resume: false });
 	});
 

@@ -66,6 +66,15 @@ describe('remoteNotificationForRunEvent', () => {
 		)).toEqual({ title: 'Gateship precisa de você', body: 'Escolha o seam.' });
 
 		expect(remoteNotificationForRunEvent(
+			event('waiting-provider', 'run.provider-waiting', {
+				message: 'Claude usage limit reached.',
+			}),
+		)).toEqual({
+			title: 'Provider temporariamente indisponível',
+			body: 'Claude usage limit reached.',
+		});
+
+		expect(remoteNotificationForRunEvent(
 			event('failed', 'run.verification-failed', { error: 'checks red' }),
 		)).toEqual({ title: 'Run falhou', body: 'checks red' });
 

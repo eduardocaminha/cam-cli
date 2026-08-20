@@ -72,6 +72,12 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
 			body: payloadText(event, 'summary') ?? 'O run aguarda uma decisão do operador.',
 		};
 	}
+	if (event.toState === 'waiting-provider') {
+		return {
+			title: 'Provider temporariamente indisponível',
+			body: payloadText(event, 'message') ?? 'O run foi preservado e pode ser retomado depois.',
+		};
+	}
 	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {
 		return {
 			title: 'Ship precisa de nova tentativa',

@@ -10,7 +10,7 @@ import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
-import type { AgentProviderId } from '../runtime/agent-session.ts';
+import { ProviderCallError, type AgentProviderId } from '../runtime/agent-session.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
@@ -616,16 +616,35 @@ async function converse(
 		const turn = await orchestrator.turn(message);
 		return Response.json({ ok: true, turn, messages: orchestrator.listMessages() });
 	} catch (error) {
-		const busy = error instanceof OrchestratorBusyError;
+		return orchestratorFailureResponse(error);
+	}
+}
+
+function orchestratorFailureResponse(error: unknown): Response {
+	if (error instanceof OrchestratorBusyError) {
 		return Response.json(
-			{
-				ok: false,
-				code: busy ? 'orchestrator-busy' : 'orchestrator-failed',
-				message: error instanceof Error ? error.message : String(error),
-			},
-			{ status: busy ? 409 : 503 },
+			{ ok: false, code: 'orchestrator-busy', message: error.message },
+			{ status: 409 },
 		);
 	}
+	if (error instanceof ProviderCallError) {
+		return Response.json({
+			ok: false,
+			code: `provider-${error.kind}`,
+			message: error.message,
+			provider: error.provider,
+			kind: error.kind,
+			...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+		}, { status: 503 });
+	}
+	return Response.json(
+		{
+			ok: false,
+			code: 'orchestrator-failed',
+			message: error instanceof Error ? error.message : String(error),
+		},
+		{ status: 503 },
+	);
 }
 
 /**
@@ -1033,6 +1052,7 @@ function listRunsWithCost(runtime: RunRuntime): unknown[] {
 		...run,
 		cost: runtime.getRunCost(run.id),
 		roundOrigins: runtime.getRunRoundOrigins(run.id),
+		providerWait: runtime.getRunProviderWait(run.id),
 	}));
 }
 

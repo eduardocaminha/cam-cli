@@ -54,3 +54,16 @@ describe('the abandoned end of a run', () => {
 		expect(canTransition('failed', 'cancelled')).toBe(false);
 	});
 });
+
+describe('provider availability is a resting run state', () => {
+	test('executor and reviewer failures can wait and resume without becoming terminal', () => {
+		expect(isRunState('waiting-provider')).toBe(true);
+		expect(isTerminalRunState('waiting-provider')).toBe(false);
+		expect(canTransition('working', 'waiting-provider')).toBe(true);
+		expect(canTransition('review', 'waiting-provider')).toBe(true);
+		expect(canTransition('waiting-provider', 'working')).toBe(true);
+		expect(canTransition('waiting-provider', 'review')).toBe(true);
+		expect(canTransition('waiting-provider', 'interrupted')).toBe(true);
+		expect(canTransition('waiting-provider', 'done')).toBe(false);
+	});
+});

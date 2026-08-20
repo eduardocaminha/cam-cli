@@ -70,6 +70,7 @@ import {
 	type RunCostRole,
 	type RunCostRoleUsage,
 	type RunEventView,
+	type RunProviderWaitView,
 	type RunView,
 	toneOf,
 } from './run-view.ts';
@@ -393,6 +394,44 @@ function RunProgress({ run }: { run: RunView }): React.ReactElement {
 	);
 }
 
+const PROVIDER_WAIT_LABELS: Readonly<Record<RunProviderWaitView['kind'], string>> = {
+	'auth-required': 'Autenticação necessária',
+	'usage-limit': 'Limite da assinatura atingido',
+	'rate-limited': 'Chamadas temporariamente limitadas',
+	overloaded: 'Provider temporariamente sobrecarregado',
+	'model-refused': 'Modelo ou effort recusado',
+	'transport-unavailable': 'Provider sem conexão',
+	'protocol-invalid': 'Resposta inválida do provider',
+	cancelled: 'Chamada cancelada',
+	unknown: 'Provider indisponível',
+};
+
+function ProviderWaitCallout({ wait }: { wait: RunProviderWaitView | null }): React.ReactElement | null {
+	if (wait === null) return null;
+	const retryDate = wait.retryAt === undefined ? null : new Date(wait.retryAt);
+	const retryText = retryDate === null || Number.isNaN(retryDate.getTime())
+		? wait.retryAt
+		: retryDate.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+	return (
+		<section
+			aria-label="Provider em espera"
+			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+		>
+			<span className="font-medium text-sm">
+				{wait.provider === 'claude' ? 'Claude Code' : 'Codex'} em espera
+			</span>
+			<p className="text-sm">{PROVIDER_WAIT_LABELS[wait.kind]}.</p>
+			<p className="break-words text-xs">{wait.message}</p>
+			{retryText === undefined ? null : (
+				<p className="text-xs">
+					Tente novamente após{' '}
+					<time dateTime={wait.retryAt}>{retryText}</time>.
+				</p>
+			)}
+		</section>
+	);
+}
+
 /**
  * The commands the run admits right now, and only those: a command the runtime
  * would refuse is not rendered as a dead button. `pending` still holds the ones
@@ -474,6 +513,7 @@ function RunCard({
 			{run === null && footer === undefined ? null : (
 				<CardPanel className="flex flex-col gap-4">
 					{run === null ? null : <RunProgress run={run} />}
+					{run === null ? null : <ProviderWaitCallout wait={run.providerWait} />}
 					{run === null || run.cost.totalCostUsd === null ? null : (
 						<p className="text-muted-foreground text-sm">
 							Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
