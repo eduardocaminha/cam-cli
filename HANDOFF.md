@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `7a2286e5` (beta navigation/accessibility, PR #521)
-> Active implementation branch: `codex/beta-english-ui`
-> Current stage: complete external-beta English surface verified and authorized for publication
+> Shipped baseline: `origin/main` at `622d6202` (complete external-beta English surface, PR #522)
+> Active implementation branch: none
+> Current stage: accumulate real revision-tagged terminal runs before any soft ratchet
 
 ## How to use this file
 
@@ -72,10 +72,10 @@ remain deterministic fallbacks. The right architecture is a typed provider
 adapter plus one runtime, not a second orchestration server duplicating domain
 logic.
 
-## Active bounded slice
+## Current observation stage
 
-The external-beta language decision is implemented locally on
-`codex/beta-english-ui`:
+PR #522 shipped the external-beta language decision as squash commit
+`622d6202`:
 
 - every product-owned browser label, description, status and fallback is
   English across `/`, `/runs`, `/work` and `/settings`;
@@ -99,8 +99,11 @@ hints. The production UI build passes, all four real service routes return 200,
 the service recognizes the mode-0600 project ntfy configuration, and
 `git diff --check` passes. Browser automation is not exposed in this session,
 so no visual-browser result is claimed; the live page remains available at
-`http://127.0.0.1:7777` for manual inspection. The operator authorized
-publication of this exact bounded slice on 2026-08-20.
+`http://127.0.0.1:7777` for manual inspection. CI passed in 1m02s, the feature
+branch was removed, and the stable service was rebuilt from the merged commit;
+all four routes return 200 with no stale-service warning. There is no active
+code slice now. Accumulate real terminal runs from at least two workflow
+revisions before proposing any soft ratchet behavior.
 
 ## Previously shipped bounded slices
 
@@ -429,14 +432,12 @@ Completed foundations:
 
 Next product stages, in current order:
 
-1. publish the complete English external-beta surface on the active branch,
-   only after explicit operator authorization;
-2. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
+1. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
    until two comparable cohorts exist;
-3. add measured self-improvement and community proposal intake without
+2. add measured self-improvement and community proposal intake without
    automatic rule mutation;
-4. multiproject selection and parallelism across independent repositories;
-5. external-user validation before Product Hunt or a YC-style launch push.
+3. multiproject selection and parallelism across independent repositories;
+4. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -446,11 +447,12 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #521 is
-> present. If `codex/beta-english-ui` still contains unshipped work, preserve
-> the complete English product surface above without adding an i18n framework,
-> locale switch or rewrite of operator-authored data. Do not dismiss/promote the
-> real diagnostic findings. Keep the soft ratchet
+> `origin/main`, the latest commits and the running service. Confirm PR #522 is
+> present and the service has no stale warning. There is no active code slice:
+> accumulate real revision-tagged terminal runs before designing a soft
+> ratchet. Preserve the complete English product surface without adding an i18n
+> framework, locale switch or rewrite of operator-authored data. Do not
+> dismiss/promote the real diagnostic findings. Keep the soft ratchet
 > dormant until two comparable recorded cohorts exist. Do not add an evaluator
 > LLM, synthetic score, remote telemetry, new event pipeline, endpoint, table
 > or queue. Do not publish without explicit operator authorization. Do not
