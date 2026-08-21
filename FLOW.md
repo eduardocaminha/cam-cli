@@ -8,7 +8,7 @@ flowchart TD
     START["gship"] --> WEB["Bun HTTP service on 127.0.0.1"]
     WEB --> CHAT["Read-only conversational orchestrator"]
     CHAT --> COMMAND["Zero or one typed service command"]
-    COMMAND --> INTAKE["Create or specify a task"]
+    COMMAND --> INTAKE["Create, specify, or approve a task"]
     INTAKE --> SOURCE["Commit task to remote main"]
     SOURCE --> RUN["Start run from origin/main"]
     RUN --> WORKTREE["Isolated .gship/worktrees workspace"]
@@ -34,14 +34,12 @@ flowchart TD
 - `GitWorkspaceManager` creates one isolated worktree per run from
   `origin/main`, releases it after a confirmed merge, and preserves dirty or
   unknown leftovers for operator inspection. It never moves local `main`.
-- `AgentSession` is the provider-neutral bus; the selected Claude/Codex
-  executor owns its resumable native session.
+- `AgentSession` is the provider-neutral adapter contract; the selected
+  Claude/Codex executor owns its resumable native session.
 - `GitIssueVerifier` runs the acceptance commands from the task contract.
-- New task contracts are direct `{ scope, verify[], evidence? }` records. Scope,
+- Task contracts are direct `{ scope, verify[], evidence? }` records. Scope,
   verification and every optional evidence command/output are covered by the
-  human approval fingerprint. The old
-  acceptance-criteria DSL is read only by a compatibility adapter and is never
-  emitted by the current intake.
+  human approval fingerprint.
 - The matching provider reviewer starts a fresh read-only session for
   independent review.
 - `GithubShipper` owns commit, push, PR creation, squash auto-merge, and source
@@ -50,7 +48,5 @@ flowchart TD
   ship controls remain as a deterministic fallback; both paths reach the same
   service methods.
 
-## Retired runtime
-
-No tmux, sidecar, container-worker, or terminal-control compatibility path
-remains. Recovery is the durable run state plus explicit resume in the web UI.
+Recovery is the durable run state plus explicit resume in the web UI. No tmux,
+sidecar, container-worker, or terminal-control path participates in this flow.

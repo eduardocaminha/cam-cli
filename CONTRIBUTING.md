@@ -32,5 +32,5 @@ bun run check:all
 - Preserve dirty or unowned worktrees. Cleanup must be scoped and recoverable.
 
 Keep pull requests focused, explain the behavior change, and add the smallest
-test that would fail without it. Historical `CAM-*` identifiers and ADRs are
-provenance and should not be rewritten.
+test that would fail without it. Git history owns historical provenance; keep
+the published documentation centered on the current product.
