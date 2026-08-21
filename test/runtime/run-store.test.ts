@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 import { emptyModelSettings } from '../../src/runtime/model-settings.ts';
+import { selectPullRequestDelivery } from '../../src/runtime/pull-request-delivery.ts';
 import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
 import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -215,6 +216,60 @@ describe('run event class', () => {
 		expect(decisions.every((event) => event.eventClass === 'decision')).toBe(true);
 		expect(decisions.some((event) => event.kind === 'run.operator-note')).toBe(true);
 		expect(decisions.some((event) => event.kind === 'provider.activity')).toBe(false);
+		store.close();
+	});
+});
+
+describe('pull request delivery projection', () => {
+	test('replays canonical PR evidence and the latest changed CI aggregate without schema state', () => {
+		const store = storeWithRun('run-delivery', 'GSHIP-685');
+		store.appendEvent({
+			runId: 'run-delivery',
+			kind: 'ship.pr-opened',
+			payload: { prNumber: 685, url: 'https://github.com/gateship-dev/gateship/pull/685' },
+			createdAt: '2026-08-21T20:00:00.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-delivery',
+			kind: 'ship.ci-status',
+			payload: {
+				status: 'failed',
+				failedChecks: [{ name: 'verify', url: 'https://github.com/actions/1' }],
+			},
+			createdAt: '2026-08-21T20:01:00.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-delivery',
+			kind: 'ship.ci-status',
+			payload: { status: 'passed' },
+			createdAt: '2026-08-21T20:02:00.000Z',
+		});
+
+		expect(selectPullRequestDelivery(store.listRunDecisionEvents('run-delivery'))).toEqual({
+			prNumber: 685,
+			url: 'https://github.com/gateship-dev/gateship/pull/685',
+			ciStatus: 'passed',
+			failedChecks: [],
+		});
+		store.close();
+	});
+
+	test('reusing the same pull request preserves its last CI result', () => {
+		const store = storeWithRun('run-reused-delivery', 'GSHIP-685');
+		for (const [kind, payload] of [
+			['ship.pr-opened', { prNumber: 685, url: 'https://github.com/gateship-dev/gateship/pull/685' }],
+			['ship.ci-status', { status: 'passed' }],
+			['ship.pr-reused', { prNumber: 685, url: 'https://github.com/gateship-dev/gateship/pull/685' }],
+		] as const) {
+			store.appendEvent({
+				runId: 'run-reused-delivery',
+				kind,
+				payload,
+				createdAt: '2026-08-21T20:00:00.000Z',
+			});
+		}
+		expect(selectPullRequestDelivery(store.listRunDecisionEvents('run-reused-delivery'))?.ciStatus)
+			.toBe('passed');
 		store.close();
 	});
 });

@@ -8,7 +8,7 @@ import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-questi
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
-import { RunRuntime } from '../../src/runtime/run-runtime.ts';
+import { RunRuntime, type RuntimeShipInput } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { RunStore, type RunEvent, type RunRecord } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -146,6 +146,37 @@ describe('durable run runtime', () => {
 			'run.verified',
 		]);
 		expect(observedCwds).toEqual(['/workspaces/run-complete', '/workspaces/run-complete']);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('hands the shipper durable workflow, review, full-verify and prior CI evidence', async () => {
+		const store = new RunStore(':memory:');
+		const shippedInputs: RuntimeShipInput[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			workflowRevision: 'revision-delivery',
+			newId: () => 'run-delivery-evidence',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async (input) => {
+				shippedInputs.push(input);
+				return { outcome: 'merged', prNumber: 685 };
+			} },
+		});
+
+		const run = runtime.startRun('GSHIP-685');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(shippedInputs[0]?.evidence).toEqual({
+			workflowRevision: 'revision-delivery',
+			review: 'passed',
+			fullVerification: 'passed',
+		});
+		expect(shippedInputs[0]?.initialCiStatus).toBe('not-reported');
 		await runtime.stop();
 		runtime.close();
 	});

@@ -105,6 +105,7 @@ interface FakeRepo {
 	requiredChecksUnavailableRemaining: number;
 	/** Times `gh pr checks --required` has been called. */
 	requiredChecksCalls: number;
+	statusCheckRollups: unknown[][];
 }
 
 function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
@@ -140,6 +141,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		requiredChecks: [],
 		requiredChecksUnavailableRemaining: 0,
 		requiredChecksCalls: 0,
+		statusCheckRollups: [[]],
 		...overrides,
 	};
 }
@@ -180,6 +182,7 @@ function ghList(repo: FakeRepo): CommandResult {
 		number: repo.prNumber,
 		state: repo.prState,
 		headRefOid: repo.prHeadRefOid,
+		url: PR_URL.trim(),
 	}];
 	return result(0, JSON.stringify(existing));
 }
@@ -263,7 +266,16 @@ function ghView(repo: FakeRepo): CommandResult {
 	// request carries the foreign head from this poll onwards.
 	if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
 	const { state, mergeStateStatus } = resolvePullRequestState(repo);
-	return result(0, JSON.stringify({ state, mergeStateStatus, headRefOid: repo.prHeadRefOid }));
+	return result(0, JSON.stringify({
+		state,
+		mergeStateStatus,
+		headRefOid: repo.prHeadRefOid,
+		url: PR_URL.trim(),
+		statusCheckRollup: repo.statusCheckRollups[Math.min(
+			repo.views - 1,
+			repo.statusCheckRollups.length - 1,
+		)] ?? [],
+	}));
 }
 
 /**
@@ -315,7 +327,8 @@ function createWorkspace(stage = 'specified'): string {
 			id: 'CAM-579',
 			title: 'gship web: ship atomico do run ate o merge',
 			stage,
-			status: 'open',
+		status: 'open',
+			spec: { verify: ['bun test test/runtime/github-shipper.test.ts'] },
 		}, null, 2)}\n`,
 	);
 	return cwd;
@@ -346,6 +359,12 @@ function createShipInput(
 			events.push(kind);
 			payloads?.set(kind, payload);
 		},
+		evidence: {
+			workflowRevision: 'revision-test',
+			review: 'passed',
+			fullVerification: 'passed',
+		},
+		initialCiStatus: 'not-reported',
 	};
 }
 
@@ -404,6 +423,87 @@ describe('the GitHub shipper', () => {
 			'ship.source-synced',
 			'ship.merged',
 		]);
+	});
+
+	test('opens the pull request with compact approved evidence and records its canonical URL', async () => {
+		const cwd = createWorkspace();
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipper = new GithubShipper({
+			runCommand: createRunner(createRepo(), calls),
+			pollIntervalMs: 0,
+		});
+
+		await shipper.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+		const create = findCall(calls, 'gh', 'pr', 'create')[0];
+		const body = create?.args[(create.args.indexOf('--body') + 1)];
+		expect(body).toContain('## Gateship evidence');
+		expect(body).toContain('`2a6af4e6-1d68-4ba4-b99b-bc3bf905114f`');
+		expect(body).toContain('`CAM-579`');
+		expect(body).toContain('`revision-test`');
+		expect(body).toContain('bun test test/runtime/github-shipper.test.ts');
+		expect(body).toContain('Independent review: passed');
+		expect(body).toContain('Full-project verification: passed');
+		expect(payloads.get('ship.pr-opened')).toMatchObject({
+			prNumber: 385,
+			url: PR_URL.trim(),
+		});
+	});
+
+	test('reports CI only when its aggregate changes, and never treats empty checks as passed', async () => {
+		const cwd = createWorkspace();
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const repo = createRepo({
+			mergedOnView: 4,
+			statusCheckRollups: [
+				[],
+				[{ name: 'verify', status: 'IN_PROGRESS', conclusion: null }],
+				[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+				[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+			],
+		});
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, []),
+			pollIntervalMs: 0,
+		});
+
+		await shipper.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+		expect(events.filter((kind) => kind === 'ship.ci-status')).toHaveLength(2);
+		expect(payloads.get('ship.ci-status')).toMatchObject({ status: 'passed' });
+	});
+
+	test('a failed CI transition names and links every failed check GitHub reports', async () => {
+		const cwd = createWorkspace();
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const repo = createRepo({
+			statusCheckRollups: [[{
+				name: 'lint',
+				status: 'COMPLETED',
+				conclusion: 'FAILURE',
+				detailsUrl: 'https://github.com/gateship-dev/gateship/actions/runs/42',
+			}]],
+		});
+		const shipper = new GithubShipper({
+			runCommand: createRunner(repo, []),
+			pollIntervalMs: 0,
+		});
+
+		await shipper.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+		expect(payloads.get('ship.ci-status')).toEqual({
+			prNumber: 385,
+			url: PR_URL.trim(),
+			status: 'failed',
+			failedChecks: [{
+				name: 'lint',
+				url: 'https://github.com/gateship-dev/gateship/actions/runs/42',
+			}],
+		});
 	});
 
 	test('GitHub reporting unavailable while arming auto-merge retries and still ships (GSHIP-625)', async () => {
@@ -793,7 +893,7 @@ describe('the GitHub shipper', () => {
 		const views = findCall(calls, 'gh', 'pr', 'view');
 		expect(views).toHaveLength(3);
 		for (const view of views) {
-			expect(view.args).toContain('state,mergeStateStatus,headRefOid');
+			expect(view.args).toContain('state,mergeStateStatus,headRefOid,url,statusCheckRollup');
 		}
 	});
 

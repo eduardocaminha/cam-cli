@@ -98,6 +98,13 @@ export interface RunProviderWaitView {
 	retryAt?: string;
 }
 
+export interface PullRequestDeliveryView {
+	prNumber: number;
+	url: string;
+	ciStatus: 'not-reported' | 'pending' | 'passed' | 'failed';
+	failedChecks: Array<{ name: string; url?: string }>;
+}
+
 /**
  * One reported usage window, credit summary, spend-limit summary and
  * reset-credit count (GSHIP-664). Mirrors ProviderUsage and its nested types
@@ -161,6 +168,7 @@ export interface RunView {
 	roundOrigins: RunRoundOriginsView;
 	evaluation?: RunEvaluationView | null;
 	providerWait: RunProviderWaitView | null;
+	pullRequest: PullRequestDeliveryView | null;
 }
 
 /** A cost total plus exactly how many runs it spans (GSHIP-628). */
