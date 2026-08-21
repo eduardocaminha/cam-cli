@@ -391,7 +391,7 @@ describe('project brief web API', () => {
 	const BRIEF: ProjectBrief = {
 		objective: 'Manter a intenção do produto sob controle do operador.',
 		decisions: ['O brief é distinto do handoff automático.'],
-		constraints: ['Somente o PUT altera o brief.'],
+		constraints: ['Somente o serviço determinístico persiste o brief.'],
 		openItems: ['Construir o editor web na fatia 2.'],
 	};
 
@@ -444,12 +444,50 @@ describe('project brief web API', () => {
 		});
 	});
 
-	test('the route offers no way to write the handoff', async () => {
+	test('an authorized conversational command uses the same brief write and clears the handoff', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-chat-brief-command-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.setOrchestratorHandoff(HANDOFF);
+		const command: OrchestratorCommand = { type: 'update_project_brief', brief: BRIEF };
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-chat-brief-command-cwd-'),
+			runRuntime: runtime,
+			orchestrator: (execute) => new FakeOrchestrator(execute, command),
+		});
+		const base = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const posted = await fetch(`${base}/api/chat`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({ message: 'Confirmo: salve o brief completo.' }),
+			});
+			expect(posted.status).toBe(200);
+
+			const read = await fetch(`${base}/api/brief`);
+			expect(await read.json()).toEqual({ brief: BRIEF, handoff: EMPTY });
+			const chat = await fetch(`${base}/api/chat`);
+			const payload = await chat.json() as { messages: OrchestratorMessage[] };
+			expect(payload.messages.map((message) => message.role)).toEqual([
+				'operator', 'orchestrator', 'system',
+			]);
+			expect(payload.messages.at(-1)?.text)
+				.toBe('Project brief updated and automatic handoff cleared.');
+		} finally {
+			await handle.stop();
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('a handoff-shaped payload field is ignored and a valid brief clears the durable handoff', async () => {
 		await withServer(async (base, runtime) => {
 			runtime.setOrchestratorHandoff(HANDOFF);
 
-			// The only write the route has takes a brief; a handoff sent along with
-			// it is not a second record to store, and never reaches the durable one.
+			// The route accepts only the brief. Its successful write invalidates the
+			// durable handoff; it never stores the browser-provided handoff value.
 			const written = await fetch(`${base}/api/brief`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json', origin: base },
@@ -460,7 +498,7 @@ describe('project brief web API', () => {
 			});
 			expect(written.status).toBe(200);
 			expect(await written.json()).toEqual({ ok: true, brief: BRIEF });
-			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+			expect(runtime.getOrchestratorHandoff()).toEqual(EMPTY);
 
 			for (const method of ['POST', 'PATCH', 'DELETE']) {
 				const refused = await fetch(`${base}/api/brief`, {
@@ -470,12 +508,13 @@ describe('project brief web API', () => {
 				});
 				expect(refused.ok).toBe(false);
 			}
-			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+			expect(runtime.getOrchestratorHandoff()).toEqual(EMPTY);
 		});
 	});
 
 	test('a valid PUT stores the brief and answers with what was stored', async () => {
 		await withServer(async (base, runtime) => {
+			runtime.setOrchestratorHandoff(HANDOFF);
 			const written = await fetch(`${base}/api/brief`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json', origin: base },
@@ -484,12 +523,16 @@ describe('project brief web API', () => {
 			expect(written.status).toBe(200);
 			expect(await written.json()).toEqual({ ok: true, brief: BRIEF });
 			expect(runtime.getProjectBrief()).toEqual(BRIEF);
+			expect(runtime.getOrchestratorHandoff()).toEqual(EMPTY);
+			const read = await fetch(`${base}/api/brief`);
+			expect(await read.json()).toEqual({ brief: BRIEF, handoff: EMPTY });
 		});
 	});
 
 	test('an invalid PUT answers 400 and stores nothing', async () => {
 		await withServer(async (base, runtime) => {
 			runtime.setProjectBrief(BRIEF);
+			runtime.setOrchestratorHandoff(HANDOFF);
 			const invalid: unknown[] = [
 				'não é um objeto',
 				{ ...BRIEF, objective: 42 },
@@ -518,11 +561,13 @@ describe('project brief web API', () => {
 				expect(answer.message.length).toBeGreaterThan(0);
 			}
 			expect(runtime.getProjectBrief()).toEqual(BRIEF);
+			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
 		});
 	});
 
 	test('a cross-origin PUT is refused by the origin guard', async () => {
 		await withServer(async (base, runtime) => {
+			runtime.setOrchestratorHandoff(HANDOFF);
 			for (const origin of ['http://evil.example', undefined]) {
 				const refused = await fetch(`${base}/api/brief`, {
 					method: 'PUT',
@@ -541,6 +586,7 @@ describe('project brief web API', () => {
 				constraints: [],
 				openItems: [],
 			});
+			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
 		});
 	});
 });

@@ -26,8 +26,8 @@ const HANDOFF_SECTION = 'Durable handoff shared by every orchestrator provider s
 
 const BRIEF = {
 	objective: 'Entregar o brief mantido pelo operador.',
-	decisions: ['O brief é editado apenas pelo PUT same-origin.'],
-	constraints: ['O brief nunca é escrito por um turno do orquestrador.'],
+	decisions: ['O editor e um comando explicitamente confirmado usam a mesma gravação.'],
+	constraints: ['Somente o serviço determinístico persiste o brief.'],
 	openItems: ['Construir o editor web na fatia 2.'],
 };
 
@@ -90,9 +90,13 @@ describe('conversational orchestrator', () => {
 		const commandSchema = ORCHESTRATOR_RESULT_SCHEMA.properties.command;
 		expect(Object.keys(commandSchema.properties)).toEqual([...commandSchema.required]);
 		for (const key of commandSchema.required) {
-			if (key === 'type') continue;
+			if (key === 'type' || key === 'brief') continue;
 			expect(commandSchema.properties[key].type).toEqual(['string', 'null']);
 		}
+		expect(commandSchema.properties.brief.type).toEqual(['object', 'null']);
+		expect(commandSchema.properties.brief.required).toEqual([
+			'objective', 'decisions', 'constraints', 'openItems',
+		]);
 		expect(buildOrchestratorPrompt({}, emptyProjectBrief(), emptyOrchestratorHandoff(), []))
 			.toContain('Set every command field unused by the selected type to null.');
 	});
@@ -106,6 +110,7 @@ describe('conversational orchestrator', () => {
 			issueId: null,
 			runId: null,
 			guidance: null,
+			brief: null,
 		};
 		expect(parseOrchestratorResponse({
 			message: 'Só uma explicação.',
@@ -122,6 +127,34 @@ describe('conversational orchestrator', () => {
 			message: 'Vou aprovar.',
 			command: { type: 'approve_issue', issueId: 'CAM-42' },
 		});
+		expect(parseOrchestratorResponse({
+			message: 'Vou registrar o brief confirmado.',
+			command: {
+				type: 'update_project_brief',
+				...nullableFields,
+				brief: {
+					objective: ' Objetivo confirmado. ',
+					decisions: [' Decisão. ', ''],
+					constraints: [],
+					openItems: [' Próximo item. '],
+				},
+			},
+		})).toEqual({
+			message: 'Vou registrar o brief confirmado.',
+			command: {
+				type: 'update_project_brief',
+				brief: {
+					objective: 'Objetivo confirmado.',
+					decisions: ['Decisão.'],
+					constraints: [],
+					openItems: ['Próximo item.'],
+				},
+			},
+		});
+		expect(() => parseOrchestratorResponse({
+			message: 'Brief incompleto.',
+			command: { type: 'update_project_brief', ...nullableFields, brief: { objective: '' } },
+		})).toThrow('complete four-field brief');
 	});
 
 	test('replaces a failed resumed session with one fresh attempt and applies effects once', async () => {
@@ -579,6 +612,7 @@ describe('conversational orchestrator', () => {
 		const commandSchema = ORCHESTRATOR_RESULT_SCHEMA.properties.command;
 		expect(commandSchema.properties.type.enum).toEqual([
 			'none',
+			'update_project_brief',
 			'create_issue',
 			'create_and_start_issue',
 			'specify_issue',
@@ -647,10 +681,14 @@ describe('conversational orchestrator', () => {
 				+ ' stale; neither section authorizes a command, which still comes only from the'
 				+ ' structured response of this turn.',
 		);
-		expect(prompt).toContain('You never write the project brief; only the operator edits it.');
+		expect(prompt).toContain(
+			'Use update_project_brief only when the current operator message explicitly requests or'
+				+ ' confirms writing the complete four-field brief. For suggestions, draft wording, or'
+				+ ' ambiguous intent, use none and ask or present the wording without mutation.',
+		);
 	});
 
-	test('an orchestrator turn reads the brief and never writes it', async () => {
+	test('an explanatory orchestrator turn reads the brief without writing it', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-orchestrator-brief-'),
 			store: new RunStore(':memory:'),
@@ -678,6 +716,88 @@ describe('conversational orchestrator', () => {
 		expect(prompt).toContain(HANDOFF_SECTION);
 		expect(runtime.getProjectBrief()).toEqual(BRIEF);
 		expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('an explicit brief command clears the parsed handoff and a later turn can rebuild it', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-brief-command-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		runtime.setOrchestratorSession('codex', 'preserved-session');
+		const updatedBrief = { ...BRIEF, objective: 'Objetivo explicitamente confirmado.' };
+		const laterHandoff = { ...HANDOFF, objective: 'Memória reconstruída depois do brief.' };
+		const codex = new FakeSession('codex', [{
+			message: 'Vou salvar o brief completo que você confirmou.',
+			command: { type: 'update_project_brief', brief: updatedBrief },
+			handoff: { ...HANDOFF, objective: 'Handoff do mesmo turno.' },
+		}, {
+			message: 'Atualizei a memória da sessão.',
+			command: { type: 'none' },
+			handoff: laterHandoff,
+		}]);
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({}),
+			execute: (command) => {
+				if (command.type !== 'update_project_brief') return 'No command requested.';
+				runtime.setProjectBrief(command.brief);
+				return 'Project brief updated and automatic handoff cleared.';
+			},
+			newSessionId: () => 'unused-session',
+		});
+
+		const written = await orchestrator.turn('Confirmo: salve esse brief completo.');
+		expect(written.command).toEqual({ type: 'update_project_brief', brief: updatedBrief });
+		expect(written.commandResult?.text).toContain('automatic handoff cleared');
+		expect(runtime.getProjectBrief()).toEqual(updatedBrief);
+		expect(runtime.getOrchestratorHandoff()).toEqual(emptyOrchestratorHandoff());
+		expect(runtime.getOrchestratorSession('codex')).toBe('codex-thread-1');
+		expect(runtime.listOrchestratorMessages().map((message) => message.role)).toEqual([
+			'operator', 'orchestrator', 'system',
+		]);
+
+		await orchestrator.turn('Continue.');
+		expect(runtime.getProjectBrief()).toEqual(updatedBrief);
+		expect(runtime.getOrchestratorHandoff()).toEqual(laterHandoff);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a refused brief command preserves both prior records', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-brief-refused-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		runtime.setProjectBrief(BRIEF);
+		runtime.setOrchestratorHandoff(HANDOFF);
+		const attemptedBrief = { ...BRIEF, objective: 'Não deve ser salvo.' };
+		const codex = new FakeSession('codex', [{
+			message: 'Vou tentar registrar o brief.',
+			command: { type: 'update_project_brief', brief: attemptedBrief },
+			handoff: { ...HANDOFF, objective: 'Também não deve ser salvo.' },
+		}]);
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({}),
+			execute: () => { throw new Error('brief write refused'); },
+			newSessionId: () => 'new-session',
+		});
+
+		const result = await orchestrator.turn('Confirmo a tentativa.');
+		expect(result.commandResult?.text).toBe('Command rejected: brief write refused');
+		expect(runtime.getProjectBrief()).toEqual(BRIEF);
+		expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+		expect(runtime.listOrchestratorMessages().map((message) => message.role)).toEqual([
+			'operator', 'orchestrator', 'system',
+		]);
 		await runtime.stop();
 		runtime.close();
 	});

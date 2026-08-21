@@ -193,6 +193,7 @@ export interface OrchestratorRuntime {
 
 export interface ProjectBriefAccess {
 	get(): ProjectBrief;
+	/** Persists the complete brief and atomically invalidates automatic handoff. */
 	set(brief: ProjectBrief): void;
 }
 
@@ -1682,6 +1683,9 @@ async function executeOrchestratorCommand(
 	switch (command.type) {
 		case 'none':
 			return 'No command requested.';
+		case 'update_project_brief':
+			runtime.setProjectBrief(command.brief);
+			return 'Project brief updated and automatic handoff cleared.';
 		case 'create_issue': {
 			const issue = issueIntake(command);
 			return `${issue.id} created in the backlog.`;
@@ -2092,9 +2096,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// A route published on any other interface is unauthenticated.
 			//
 			// The automatic handoff rides along on the same read because the screen
-			// shows it beside the brief the operator is correcting. It is the
-			// orchestrator's own record, so it has no write here and never gets one:
-			// the PUT below takes the brief and nothing else.
+			// shows it beside the brief the operator is correcting. The PUT takes
+			// only the brief; its shared runtime operation clears the generated
+			// handoff atomically rather than accepting a handoff from the browser.
 			'/api/brief': {
 				GET: () => Response.json({
 					brief: projectBrief.get(),

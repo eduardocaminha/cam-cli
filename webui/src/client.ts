@@ -703,8 +703,9 @@ export async function fetchBrief(): Promise<BriefSnapshot> {
 }
 
 /**
- * The whole brief is overwritten at once, and only the brief: the handoff is
- * never sent back. A refusal surfaces the server's own validation message.
+ * The whole brief is overwritten at once. The handoff is never sent back; the
+ * service invalidates it as part of the successful brief write. A refusal
+ * surfaces the server's own validation message.
  */
 export async function saveBrief(brief: ProjectBriefView): Promise<string> {
 	const response = await fetch(BRIEF_PATH, {
