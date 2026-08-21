@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T22:16:35.632Z",
-  "updatedAt": "2026-08-21T22:16:35.632Z",
+  "updatedAt": "2026-08-21T22:16:43.904Z",
   "description": "Add a concrete Resend configuration flow to the existing Settings notification panel. Keep the existing .gship/resend-api-key compatibility path, but let the operator create or replace that credential from the browser through a same-origin write endpoint. The API key input is write-only: it is never returned by GET, never prefilled, never stored in SQLite, never logged, never included in an error, and never sent to agents, gh, diagnostics, telemetry, transcripts, PR evidence, or notifications. Write a supplied non-empty key through a prepared temporary file in the same .gship directory, mode 0600 before atomic rename, preserving the previous valid file if preparation fails. Add an explicit same-origin removal action for the file-backed key.\n\nLet the operator choose and persist the Resend sender and recipient from Settings. Store only these non-secret values in a small project-local Resend settings file, validate bounded non-empty strings without a brittle email regex because Resend senders may include a display name, and resolve them fresh for status, tests, run notifications, and service notifications. Preserve current environment compatibility and precedence independently per field: GATESHIP_RESEND_API_KEY, GATESHIP_RESEND_FROM, and GATESHIP_RESEND_TO continue to override files. The read API may return effective sender, effective recipient, configured/missing state, whether a file-backed credential exists, and which fields are externally managed, but never the key. The UI must not claim that saving or removing a file changed an environment-managed effective value.\n\nReplace manual-only Resend instructions with localized en-US and pt-BR controls for sender, recipient, optional replacement key, save, remove credential, and the existing real test. Blank key on save preserves the current credential. Removal deletes only the file-backed credential and is refused or reported honestly when an environment key remains authoritative. Keep ntfy unchanged. Keep the existing direct Resend adapter, event triggers, timeout, failure isolation, API-key/domain documentation links, and user-selected sender requirement. Do not add encryption whose decryption key lives beside the file, Keychain/libsecret, a generic secret store, dependency, schema/table, relay, hosted service, default gateship.dev sender, mailing-list enrollment, analytics, or any use of the recipient outside transactional notifications. Update credentials-and-notifications documentation to explain the UI path, mode-0600 boundary, environment precedence, container/manual fallback, and the fact that notification recipients never opt into marketing.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/remote-notifier.test.ts test/web/notifications-api.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run lint"
     ]
+  },
+  "approval": {
+    "fingerprint": "4536018501885ba9f4e80741889d2d7d6e7a8ef717e84ed4105e3c012b63dcd6",
+    "approvedAt": "2026-08-21T22:16:43.904Z"
   }
 }
