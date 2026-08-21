@@ -4,9 +4,9 @@
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
 > Inspect `origin/main` for the shipped Git baseline and `/api/snapshot` for the
 > installed service version and current runtime facts.
-> Stable phase: the shell, primary conversation, shared run inspector and
-> operational `/runs` panels are internally localized; remaining route catalogs
-> stay hidden until a complete selector slice is approved.
+> Stable phase: the shell, primary conversation and all product-owned `/runs`
+> panel content are internally localized; `/work`, `/settings` and onboarding
+> remain before any locale selector can be approved.
 
 ## How to use this file
 
@@ -100,12 +100,12 @@ GSHIP-668 shipped the dependency-free typed locale foundation for shell
 navigation and skip-link labels, with `en-US` as the production default and a
 truthful initial document language. The stable phase now extends that same
 type-complete catalog through the primary conversation column, the shared run
-inspector used there and at the top of `/runs`, and the operational `/runs`
-panels. Workflow signals and benchmarks, `/work`, `/settings` and onboarding
-remain uncataloged, so `pt-BR` stays internal and test-only: there is still no
-visible selector, persistence or browser-language inference. This records
-stable direction, not execution authority; only an operator-approved issue
-specification authorizes another slice.
+inspector and every product-owned `/runs` panel, including workflow signals and
+replayable benchmarks. `/work`, `/settings` and onboarding remain uncataloged,
+so `pt-BR` stays internal and test-only: there is still no visible selector,
+persistence or browser-language inference. This records stable direction, not
+execution authority; only an operator-approved issue specification authorizes
+another slice.
 
 PR #522 shipped the external-beta language decision as squash commit
 `622d6202`:

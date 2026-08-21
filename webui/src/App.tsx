@@ -71,6 +71,7 @@ import {
 	type Locale,
 	type RunInspectorCatalog,
 	type RunsOperationalCatalog,
+	type RunsWorkflowCatalog,
 	type ShellCatalog,
 } from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
@@ -273,12 +274,6 @@ function formatCostUsd(value: number, locale: Locale = DEFAULT_LOCALE): string {
 		maximumFractionDigits: 4,
 	}).format(value);
 }
-
-// Workflow benchmark localization remains outside this slice.
-const WORKFLOW_COST_ROLE_LABEL: Record<RunCostRole, string> = {
-	executor: 'Executor',
-	reviewer: 'Reviewer',
-};
 
 function formatEventTime(value: string, locale: Locale): string {
 	const date = new Date(value);
@@ -782,7 +777,11 @@ function PreviousRunsPanel({
  * correction and cost facts stay inspectable; Gateship does not collapse them
  * into a score that an agent could optimize instead of shipping useful work.
  */
-function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+function WorkflowInsightsPanel({
+	catalog,
+	locale,
+	runs,
+}: Pick<AppProps, 'locale' | 'runs'> & { catalog: RunsWorkflowCatalog }): React.ReactElement | null {
 	if (runs.length === 0) return null;
 	const insights = summarizeWorkflow(runs);
 	const correctionRounds = insights.corrections.executor
@@ -790,60 +789,83 @@ function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEle
 		+ insights.corrections.indeterminate;
 	return (
 		<ContextPanel
-			description={`Local window of the latest ${countLabel(insights.runCount, 'run')}, without a composite score.`}
-			title="Workflow signals"
+			description={catalog.signals.description(insights.runCount)}
+			title={catalog.signals.title}
 		>
 			<dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">
-				<dt className="text-muted-foreground">Outcomes</dt>
-				<dd>
-					{insights.outcomes.done} completed · {insights.outcomes.failed} failed ·{' '}
-					{insights.outcomes.cancelled} cancelled
-					{insights.outcomes.active === 0 ? null : ` · ${insights.outcomes.active} active`}
-				</dd>
-				<dt className="text-muted-foreground">Corrections</dt>
-				<dd>
-					{countLabel(correctionRounds, 'round')} across {countLabel(insights.corrections.runCount, 'run')}:{' '}
-					{insights.corrections.executor} automatic, {insights.corrections.decision} after
-					 human decisions
-					{insights.corrections.indeterminate === 0
-						? null
-						: `, ${insights.corrections.indeterminate} with indeterminate origin`}
-				</dd>
-				<dt className="text-muted-foreground">Known cost</dt>
+				<dt className="text-muted-foreground">{catalog.signals.outcomesLabel}</dt>
+				<dd>{catalog.signals.outcomes(
+					insights.outcomes.done,
+					insights.outcomes.failed,
+					insights.outcomes.cancelled,
+					insights.outcomes.active,
+				)}</dd>
+				<dt className="text-muted-foreground">{catalog.signals.correctionsLabel}</dt>
+				<dd>{catalog.signals.corrections(
+					correctionRounds,
+					insights.corrections.runCount,
+					insights.corrections.executor,
+					insights.corrections.decision,
+					insights.corrections.indeterminate,
+				)}</dd>
+				<dt className="text-muted-foreground">{catalog.signals.knownCostLabel}</dt>
 				<dd>
 					{insights.cost.totalCostUsd === null
-						? 'No provider reported cost in this window.'
-						: `${formatCostUsd(insights.cost.totalCostUsd)} across ${insights.cost.reportedRunCount} of ${countLabel(insights.runCount, 'run')}.`}
+						? catalog.signals.noReportedCost
+						: catalog.signals.reportedCost(
+							formatCostUsd(insights.cost.totalCostUsd, locale),
+							insights.cost.reportedRunCount,
+							insights.runCount,
+						)}
 				</dd>
 			</dl>
 			{insights.cost.totalCostUsd === null ? null : (
 				<p className="text-muted-foreground text-xs">
-					Expected cost is API-equivalent reported usage, not a subscription charge.
+					{LOCALE_CATALOG[locale].runsOperational.cost.description}
 				</p>
 			)}
 		</ContextPanel>
 	);
 }
 
-function formatWallTime(milliseconds: number | null): string {
-	if (milliseconds === null) return 'not recorded';
+function formatWallTime(
+	milliseconds: number | null,
+	catalog: RunsWorkflowCatalog['benchmarks']['card']['wallTime'],
+): string {
+	if (milliseconds === null) return catalog.notRecorded;
 	const minutes = Math.round(milliseconds / 60_000);
-	if (minutes < 1) return 'less than 1 min';
-	if (minutes < 60) return `${minutes} min`;
+	if (minutes < 1) return catalog.lessThanMinute;
+	if (minutes < 60) return catalog.minutes(minutes);
 	const hours = minutes / 60;
-	return `${hours < 10 ? hours.toFixed(1) : Math.round(hours)} h`;
+	return catalog.hours(hours < 10 ? hours : Math.round(hours));
 }
 
-function configurationLabel(configuration: WorkflowCohort['configurations'][number]): string {
+function configurationLabel(
+	configuration: WorkflowCohort['configurations'][number],
+	catalog: RunsWorkflowCatalog,
+	locale: Locale,
+): string {
+	const roleLabels = LOCALE_CATALOG[locale].runsOperational.cost.roleLabels;
 	const roles = configuration.roles.map(({ role, models, efforts }) => {
-		const model = models.length === 0 ? 'model not recorded' : models.join(' + ');
+		const model = models.length === 0 ? catalog.benchmarks.card.modelMissing : models.join(' + ');
 		const effort = efforts.length === 0 ? '' : ` (${efforts.join(' + ')})`;
-		return `${WORKFLOW_COST_ROLE_LABEL[role]}: ${model}${effort}`;
+		return `${roleLabels[role]}: ${model}${effort}`;
 	});
 	return [configuration.provider, ...roles].join(' · ');
 }
 
-function WorkflowCohortCard({ cohort, label }: { cohort: WorkflowCohort; label: string }): React.ReactElement {
+function WorkflowCohortCard({
+	catalog,
+	cohort,
+	label,
+	locale,
+}: {
+	catalog: RunsWorkflowCatalog;
+	cohort: WorkflowCohort;
+	label: string;
+	locale: Locale;
+}): React.ReactElement {
+	const card = catalog.benchmarks.card;
 	const correctionCount = cohort.corrections.executor
 		+ cohort.corrections.decision
 		+ cohort.corrections.indeterminate;
@@ -854,41 +876,42 @@ function WorkflowCohortCard({ cohort, label }: { cohort: WorkflowCohort; label: 
 				<code className="break-all text-muted-foreground text-xs">{cohort.revision}</code>
 			</div>
 			<dl className="grid gap-2 text-sm sm:grid-cols-[9rem_1fr]">
-				<dt className="text-muted-foreground">Terminal sample</dt>
-				<dd>
-					{countLabel(cohort.terminalRunCount, 'run')}
-					{cohort.incompleteRunCount === 0 ? null : ` · ${cohort.incompleteRunCount} still incomplete`}
-				</dd>
-				<dt className="text-muted-foreground">Outcomes</dt>
-				<dd>
-					{cohort.outcomes.shipped} shipped · {cohort.outcomes.failed} failed ·{' '}
-					{cohort.outcomes.cancelled} cancelled
-				</dd>
-				<dt className="text-muted-foreground">Human attention</dt>
-				<dd>
-					{countLabel(cohort.attention.requests, 'request')} across{' '}
-					{countLabel(cohort.attention.runCount, 'run')} ·{' '}
-					{countLabel(cohort.attention.interventions, 'response')}
-				</dd>
-				<dt className="text-muted-foreground">Corrections</dt>
-				<dd>{countLabel(correctionCount, 'round')} across {countLabel(cohort.corrections.runCount, 'run')}</dd>
-				<dt className="text-muted-foreground">Provider holds</dt>
-				<dd>{cohort.providerHolds.count} across {countLabel(cohort.providerHolds.runCount, 'run')}</dd>
-				<dt className="text-muted-foreground">Median time</dt>
-				<dd>{formatWallTime(cohort.medianWallTimeMs)} from creation to terminal state</dd>
-				<dt className="text-muted-foreground">Known cost</dt>
+				<dt className="text-muted-foreground">{card.terminalSampleLabel}</dt>
+				<dd>{card.terminalSample(cohort.terminalRunCount, cohort.incompleteRunCount)}</dd>
+				<dt className="text-muted-foreground">{card.outcomesLabel}</dt>
+				<dd>{card.outcomes(
+					cohort.outcomes.shipped,
+					cohort.outcomes.failed,
+					cohort.outcomes.cancelled,
+				)}</dd>
+				<dt className="text-muted-foreground">{card.humanAttentionLabel}</dt>
+				<dd>{card.humanAttention(
+					cohort.attention.requests,
+					cohort.attention.runCount,
+					cohort.attention.interventions,
+				)}</dd>
+				<dt className="text-muted-foreground">{card.correctionsLabel}</dt>
+				<dd>{card.corrections(correctionCount, cohort.corrections.runCount)}</dd>
+				<dt className="text-muted-foreground">{card.providerHoldsLabel}</dt>
+				<dd>{card.providerHolds(cohort.providerHolds.count, cohort.providerHolds.runCount)}</dd>
+				<dt className="text-muted-foreground">{card.medianTimeLabel}</dt>
+				<dd>{card.medianTime(formatWallTime(cohort.medianWallTimeMs, card.wallTime))}</dd>
+				<dt className="text-muted-foreground">{card.knownCostLabel}</dt>
 				<dd>
 					{cohort.cost.totalCostUsd === null
-						? 'no reported cost'
-						: `${formatCostUsd(cohort.cost.totalCostUsd)} across ${countLabel(cohort.cost.reportedRunCount, 'run')}`}
+						? card.noReportedCost
+						: card.reportedCost(
+							formatCostUsd(cohort.cost.totalCostUsd, locale),
+							cohort.cost.reportedRunCount,
+						)}
 				</dd>
 			</dl>
 			<div className="mt-3 flex flex-col gap-1 text-muted-foreground text-xs">
 				{cohort.configurations.length === 0 ? (
-					<span>Provider/model/effort not yet observed in a terminal run.</span>
+					<span>{card.configurationMissing}</span>
 				) : cohort.configurations.map((configuration) => (
-					<span key={configurationLabel(configuration)}>
-						{configuration.runCount}× {configurationLabel(configuration)}
+					<span key={configurationLabel(configuration, catalog, locale)}>
+						{configuration.runCount}× {configurationLabel(configuration, catalog, locale)}
 					</span>
 				))}
 			</div>
@@ -897,38 +920,39 @@ function WorkflowCohortCard({ cohort, label }: { cohort: WorkflowCohort; label: 
 }
 
 /** Adjacent immutable revision cohorts, never one synthetic score. */
-function WorkflowBenchmarkPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+function WorkflowBenchmarkPanel({
+	catalog,
+	locale,
+	runs,
+}: Pick<AppProps, 'locale' | 'runs'> & { catalog: RunsWorkflowCatalog }): React.ReactElement | null {
 	if (runs.length === 0) return null;
 	const cohorts = summarizeWorkflowCohorts(runs).slice(0, 2);
 	return (
 		<ContextPanel
-			description="Replays the durable window of up to 50 runs and compares revisions without calling another agent."
-			title="Replayable benchmarks"
+			description={catalog.benchmarks.description}
+			title={catalog.benchmarks.title}
 		>
 			{cohorts.length === 0 ? (
-				<p className="text-muted-foreground text-sm">
-					Existing runs predate revision tracking. The next run starts the first cohort.
-				</p>
+				<p className="text-muted-foreground text-sm">{catalog.benchmarks.emptyGuidance}</p>
 			) : (
 				<div className="grid gap-3 xl:grid-cols-2">
 					{cohorts.map((cohort, index) => (
 						<WorkflowCohortCard
+							catalog={catalog}
 							cohort={cohort}
 							key={cohort.revision}
-							label={index === 0 ? 'Latest cohort' : 'Previous baseline'}
+							label={index === 0
+								? catalog.benchmarks.latestCohortLabel
+								: catalog.benchmarks.previousBaselineLabel}
+							locale={locale}
 						/>
 					))}
 				</div>
 			)}
 			{cohorts.length === 1 ? (
-				<p className="mt-3 text-muted-foreground text-xs">
-					Comparison begins when another revision accumulates a terminal run.
-				</p>
+				<p className="mt-3 text-muted-foreground text-xs">{catalog.benchmarks.singleCohortGuidance}</p>
 			) : null}
-			<p className="mt-3 text-muted-foreground text-xs">
-				Observational comparison: scope, provider, model and effort may also change outcomes.
-				 There is no composite score or automatic approval.
-			</p>
+			<p className="mt-3 text-muted-foreground text-xs">{catalog.benchmarks.observationalDisclaimer}</p>
 		</ContextPanel>
 	);
 }
@@ -2310,8 +2334,16 @@ function RunsSurface(props: AppProps): React.ReactElement {
 			{run === null ? null : (
 				<RunCostPanel catalog={localeCatalog.runsOperational} locale={props.locale} run={run} />
 			)}
-			<WorkflowInsightsPanel runs={props.runs} />
-			<WorkflowBenchmarkPanel runs={props.runs} />
+			<WorkflowInsightsPanel
+				catalog={localeCatalog.runsWorkflow}
+				locale={props.locale}
+				runs={props.runs}
+			/>
+			<WorkflowBenchmarkPanel
+				catalog={localeCatalog.runsWorkflow}
+				locale={props.locale}
+				runs={props.runs}
+			/>
 			<RunActivity
 				catalog={localeCatalog.runsOperational}
 				events={props.events}
