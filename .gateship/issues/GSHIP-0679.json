@@ -1,0 +1,31 @@
+{
+  "id": "GSHIP-679",
+  "title": "Add the persistent language selector",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T16:59:46.876Z",
+  "updatedAt": "2026-08-21T16:59:46.876Z",
+  "description": "Replace the client entrypoint hard-code that always selects DEFAULT_LOCALE with one browser-local, dependency-free locale preference and expose it through one compact native language selector at the bottom of the existing shell sidebar. The selector must be visible and operable on every current route, including while project onboarding blocks the main surface, without adding a card or mixing it into an operational panel. Extend the typed ShellCatalog with the Gateship-owned control label in en-US and pt-BR; show the two choices by their stable self-names, English (US) and Português (Brasil), so either remains recognizable in either locale. Keep App pure: pass the current locale and one onSelectLocale callback through the existing props into ShellSidebar. Own browser effects only in main.tsx. Initialize from the localStorage key gateship.locale, accept only the exact supported values en-US and pt-BR, and fall back to en-US when the key is missing, invalid or unavailable. Do not infer navigator.language. A selection must update the current document immediately, set document.documentElement.lang to the same locale and persist best-effort so the existing real route navigations retain it after document reload; storage read or write failure must leave a usable en-US/current-locale screen instead of breaking mount or selection. Preserve the human-only SemVer below the logo, all route links, project blocking and every already-cataloged wording contract. Extend the existing UI and embedded-bundle tests in place to prove the selector renders in both locales, marks the active choice, remains present across the four routes and blocked onboarding, recognizes both stored values, rejects invalid or unavailable storage safely, updates the html language seam and keeps the built bundle current. Update HANDOFF.md only to record that en-US and pt-BR are now user-selectable and browser-local. Out of scope: browser-language inference, server/API/SQLite persistence, user-profile persistence, cookies, a translation dependency or runtime, additional locales, changing translations, theme controls, new panels, routes, endpoints or dependencies.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Replace the client entrypoint hard-code that always selects DEFAULT_LOCALE with one browser-local, dependency-free locale preference and expose it through one compact native language selector at the bottom of the existing shell sidebar. The selector must be visible and operable on every current route, including while project onboarding blocks the main surface, without adding a card or mixing it into an operational panel. Extend the typed ShellCatalog with the Gateship-owned control label in en-US and pt-BR; show the two choices by their stable self-names, English (US) and Português (Brasil), so either remains recognizable in either locale. Keep App pure: pass the current locale and one onSelectLocale callback through the existing props into ShellSidebar. Own browser effects only in main.tsx. Initialize from the localStorage key gateship.locale, accept only the exact supported values en-US and pt-BR, and fall back to en-US when the key is missing, invalid or unavailable. Do not infer navigator.language. A selection must update the current document immediately, set document.documentElement.lang to the same locale and persist best-effort so the existing real route navigations retain it after document reload; storage read or write failure must leave a usable en-US/current-locale screen instead of breaking mount or selection. Preserve the human-only SemVer below the logo, all route links, project blocking and every already-cataloged wording contract. Extend the existing UI and embedded-bundle tests in place to prove the selector renders in both locales, marks the active choice, remains present across the four routes and blocked onboarding, recognizes both stored values, rejects invalid or unavailable storage safely, updates the html language seam and keeps the built bundle current. Update HANDOFF.md only to record that en-US and pt-BR are now user-selectable and browser-local. Out of scope: browser-language inference, server/API/SQLite persistence, user-profile persistence, cookies, a translation dependency or runtime, additional locales, changing translations, theme controls, new panels, routes, endpoints or dependencies.",
+    "verify": [
+      "bun run build:ui && bun test test/web/ui-client.test.tsx test/web/embedded-ui.test.ts && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -oF \"const locale = DEFAULT_LOCALE;\" webui/src/main.tsx",
+        "output": "const locale = DEFAULT_LOCALE;"
+      },
+      {
+        "command": "grep -oF \"document.documentElement.lang = locale;\" webui/src/main.tsx",
+        "output": "document.documentElement.lang = locale;"
+      },
+      {
+        "command": "grep -oF \"function ShellSidebar({\" webui/src/App.tsx",
+        "output": "function ShellSidebar({"
+      }
+    ]
+  }
+}
