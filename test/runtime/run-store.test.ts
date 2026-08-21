@@ -1018,7 +1018,7 @@ describe('claude usage windows', () => {
 
 	test('reads as empty, never fabricated, when no invocation ever reported a window', () => {
 		const store = storeWithRun('run-usage-none', 'CAM-70');
-		expect(store.getClaudeUsageWindows()).toEqual([]);
+		expect(store.getClaudeUsageWindows('2026-08-17T10:00:00.000Z')).toEqual([]);
 		store.close();
 	});
 
@@ -1044,7 +1044,7 @@ describe('claude usage windows', () => {
 			usedPercent: 20,
 		});
 
-		expect(store.getClaudeUsageWindows()).toEqual([
+		expect(store.getClaudeUsageWindows('2026-08-17T14:59:59.999Z')).toEqual([
 			{
 				window: 'five_hour',
 				status: 'allowed_warning',
@@ -1052,6 +1052,14 @@ describe('claude usage windows', () => {
 				observedAt: '2026-08-17T11:00:00.000Z',
 				resetsAt: '2026-08-17T15:00:00.000Z',
 			},
+			{
+				window: 'seven_day',
+				status: 'allowed',
+				usedPercent: 20,
+				observedAt: '2026-08-17T10:30:00.000Z',
+			},
+		]);
+		expect(store.getClaudeUsageWindows('2026-08-17T15:00:00.000Z')).toEqual([
 			{
 				window: 'seven_day',
 				status: 'allowed',
@@ -1067,7 +1075,7 @@ describe('claude usage windows', () => {
 		// The malformed-payload shape consumeClaudeLine emits when readClaudeRateLimit
 		// returned null (an unrecognized status, e.g.): no `limit`, no `status`.
 		appendRateLimit(store, 'run-usage-unnamed', 'provider.rate-limit', '2026-08-17T10:00:00.000Z', {});
-		expect(store.getClaudeUsageWindows()).toEqual([]);
+		expect(store.getClaudeUsageWindows('2026-08-17T10:00:00.000Z')).toEqual([]);
 		store.close();
 	});
 });
