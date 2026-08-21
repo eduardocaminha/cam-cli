@@ -88,7 +88,12 @@ import {
 	startRun,
 	UPDATE_PATH,
 } from '../../webui/src/client.ts';
-import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
+import {
+	createLiveEdgeController,
+	isAtLiveEdge,
+	LIVE_EDGE_TOLERANCE_PX,
+	liveEdgeSession,
+} from '../../webui/src/live-edge.ts';
 import {
 	applyLocalePreference,
 	DEFAULT_LOCALE,
@@ -2997,6 +3002,60 @@ describe('conversation transcript', () => {
 		expect(isAtLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(true);
 	});
 
+	test('the shared live edge opens at newest, follows arrivals, pauses, and resumes', () => {
+		const position = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+		const liveEdge = createLiveEdgeController();
+
+		liveEdge.onArrival(position);
+		expect(position.scrollTop).toBe(1000);
+
+		position.scrollHeight = 1200;
+		liveEdge.onArrival(position);
+		expect(position.scrollTop).toBe(1200);
+
+		position.scrollTop = 500;
+		liveEdge.onScroll(position);
+		position.scrollHeight = 1400;
+		liveEdge.onArrival(position);
+		expect(position.scrollTop).toBe(500);
+
+		position.scrollTop = position.scrollHeight - position.clientHeight;
+		liveEdge.onScroll(position);
+		position.scrollHeight = 1600;
+		liveEdge.onArrival(position);
+		expect(position.scrollTop).toBe(1600);
+	});
+
+	test('a replacement run resets a paused live edge and opens at its newest event', () => {
+		const position = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+		let session = liveEdgeSession(null, 'run-1');
+
+		session.controller.onArrival(position);
+		position.scrollTop = 100;
+		session.controller.onScroll(position);
+		position.scrollHeight = 800;
+		session = liveEdgeSession(session, 'run-2');
+		session.controller.onArrival(position);
+
+		expect(position.scrollTop).toBe(800);
+	});
+
+	test('an unmounted run resets before the same run remounts', () => {
+		const position = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+		let session = liveEdgeSession(null, 'run-1');
+
+		session.controller.onArrival(position);
+		position.scrollTop = 100;
+		session.controller.onScroll(position);
+		// The null identity has no node, so there is deliberately no arrival.
+		session = liveEdgeSession(session, null);
+		session = liveEdgeSession(session, 'run-1');
+		position.scrollHeight = 1200;
+		session.controller.onArrival(position);
+
+		expect(position.scrollTop).toBe(1200);
+	});
+
 	test('the transcript is one focusable, announced region in every state', () => {
 		const empty = home();
 		const loaded = home({
@@ -3019,6 +3078,41 @@ describe('conversation transcript', () => {
 		// The empty state is inside the region, so the region never moves.
 		expect(empty.indexOf('role="log"')).toBeLessThan(empty.indexOf('Describe the goal'));
 		expect(loaded.indexOf('role="log"')).toBeLessThan(loaded.indexOf('Pronto.'));
+	});
+
+	test('conversation and run output use the same focusable live-edge contract', () => {
+		const conversation = home({
+			chatMessages: [{
+				seq: 1,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: 'Watching the run.',
+				createdAt: '2026-08-16T03:00:00.000Z',
+			}],
+		});
+		const activity = runsPage({
+			runs: [runIn('working')],
+			events: [{
+				seq: 2,
+				runId: 'run-1',
+				kind: 'provider.activity',
+				fromState: 'working',
+				toState: 'working',
+				payload: { text: 'Editing the client.' },
+				createdAt: '2026-08-16T03:04:05.000Z',
+			}],
+		});
+		const liveRegions = [conversation, activity].map((html) => elementWith(html, 'role="log"'));
+
+		expect(liveRegions).toHaveLength(2);
+		expect(liveRegions.map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
+			'Conversation transcript',
+			'Activity',
+		]);
+		for (const region of liveRegions) {
+			expect(region).toContain('tabindex="0"');
+			expect(region).toContain('overflow-y-auto');
+		}
 	});
 
 	test('long hashes, commands and ids are rendered with a rule that breaks them', () => {
