@@ -1,4 +1,17 @@
-import { readFileSync, statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	fsyncSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import type { RunEvent } from './run-store.ts';
@@ -322,13 +335,19 @@ export async function sendNtfyTestNotification(options: NtfyTestOptions): Promis
  * log line, and never named in `child-env.ts`'s allowlists so a spawned
  * agent or `gh` child never inherits it. This is an inheritance boundary, not
  * filesystem isolation from a hostile same-identity child. `from` and `to`
- * are ordinary configuration, not secrets, so they are read from the
- * environment only.
+ * are ordinary configuration, not secrets, and can also live in the small
+ * project-local settings file below.
  */
 export const RESEND_API_KEY_ENV_VAR = 'GATESHIP_RESEND_API_KEY';
 
 /** Project-relative home of the file-backed API key, mirroring `NTFY_URL_FILE_PATH`. */
 export const RESEND_API_KEY_FILE_PATH = join('.gship', 'resend-api-key');
+
+/** Non-secret sender and recipient selected in Settings. */
+export const RESEND_SETTINGS_FILE_PATH = join('.gship', 'resend-settings.json');
+
+/** Generous enough for a display-name sender while keeping local input bounded. */
+export const RESEND_SETTING_MAX_LENGTH = 512;
 
 export const RESEND_FROM_ENV_VAR = 'GATESHIP_RESEND_FROM';
 export const RESEND_TO_ENV_VAR = 'GATESHIP_RESEND_TO';
@@ -362,6 +381,82 @@ function readResendApiKeyFile(cwd: string): string | null {
 	}
 }
 
+interface ResendFileSettings {
+	from: string | null;
+	to: string | null;
+}
+
+function boundedSetting(value: unknown): string | null {
+	if (typeof value !== 'string') return null;
+	const trimmed = value.trim();
+	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
+}
+
+function readResendFileSettings(cwd: string): ResendFileSettings {
+	try {
+		const parsed = JSON.parse(readFileSync(join(cwd, RESEND_SETTINGS_FILE_PATH), 'utf8')) as unknown;
+		if (parsed === null || typeof parsed !== 'object') return { from: null, to: null };
+		const record = parsed as Record<string, unknown>;
+		return { from: boundedSetting(record.from), to: boundedSetting(record.to) };
+	} catch {
+		return { from: null, to: null };
+	}
+}
+
+function atomicWrite(cwd: string, relativePath: string, contents: string, mode: number): void {
+	const directory = join(cwd, '.gship');
+	mkdirSync(directory, { recursive: true });
+	const target = join(cwd, relativePath);
+	const temporary = join(directory, `.${relativePath.split('/').at(-1)}.${randomUUID()}.tmp`);
+	let descriptor: number | null = null;
+	try {
+		descriptor = openSync(temporary, 'wx', mode);
+		// Do not rely on the process umask to establish the credential boundary.
+		chmodSync(temporary, mode);
+		writeFileSync(descriptor, contents, 'utf8');
+		fsyncSync(descriptor);
+		closeSync(descriptor);
+		descriptor = null;
+		renameSync(temporary, target);
+	} catch (error) {
+		if (descriptor !== null) closeSync(descriptor);
+		try { unlinkSync(temporary); } catch { /* Nothing was prepared. */ }
+		throw error;
+	}
+}
+
+/** Writes a replacement key without exposing it through any return value. */
+export function writeResendApiKey(cwd: string, apiKey: string): void {
+	const trimmed = apiKey.trim();
+	if (trimmed.length === 0) throw new Error('A non-empty API key is required.');
+	atomicWrite(cwd, RESEND_API_KEY_FILE_PATH, `${trimmed}\n`, 0o600);
+}
+
+/** Persists only the two non-secret fields. */
+export function writeResendSettings(cwd: string, from: string, to: string): void {
+	const normalizedFrom = boundedSetting(from);
+	const normalizedTo = boundedSetting(to);
+	if (normalizedFrom === null || normalizedTo === null) {
+		throw new Error('Sender and recipient must be non-empty bounded strings.');
+	}
+	atomicWrite(
+		cwd,
+		RESEND_SETTINGS_FILE_PATH,
+		`${JSON.stringify({ from: normalizedFrom, to: normalizedTo }, null, 2)}\n`,
+		0o600,
+	);
+}
+
+export function removeResendApiKey(cwd: string): boolean {
+	try {
+		unlinkSync(join(cwd, RESEND_API_KEY_FILE_PATH));
+		return true;
+	} catch (error) {
+		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+		throw error;
+	}
+}
+
 /** The env var wins over the project file, the same precedence `resolveNtfyUrl` gives ntfy. */
 export function resolveResendApiKey(
 	cwd: string,
@@ -379,6 +474,45 @@ function trimmedEnvValue(env: Record<string, string | undefined>, key: string): 
 	return trimmed.length > 0 ? trimmed : null;
 }
 
+export interface ResendStatus {
+	configured: boolean;
+	missing: ResendConfigField[];
+	from: string | null;
+	to: string | null;
+	fileCredentialExists: boolean;
+	externallyManaged: Readonly<Record<ResendConfigField, boolean>>;
+}
+
+/** Safe browser-facing status: effective non-secrets and key presence, never the key. */
+export function resolveResendStatus(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+): ResendStatus {
+	const file = readResendFileSettings(cwd);
+	const envFrom = trimmedEnvValue(env, RESEND_FROM_ENV_VAR);
+	const envTo = trimmedEnvValue(env, RESEND_TO_ENV_VAR);
+	const externallyManaged = {
+		apiKey: trimmedEnvValue(env, RESEND_API_KEY_ENV_VAR) !== null,
+		from: envFrom !== null,
+		to: envTo !== null,
+	};
+	const from = envFrom ?? file.from;
+	const to = envTo ?? file.to;
+	const apiKey = resolveResendApiKey(cwd, env);
+	const missing: ResendConfigField[] = [];
+	if (apiKey === null) missing.push('apiKey');
+	if (from === null) missing.push('from');
+	if (to === null) missing.push('to');
+	return {
+		configured: missing.length === 0,
+		missing,
+		from,
+		to,
+		fileCredentialExists: existsSync(join(cwd, RESEND_API_KEY_FILE_PATH)),
+		externallyManaged,
+	};
+}
+
 /**
  * The one place "is Resend usable" is decided, the same role
  * `resolveNtfyTopicUrl` plays for ntfy: every other Resend function below
@@ -390,13 +524,9 @@ function resolveResendConfig(
 	cwd: string,
 	env: Record<string, string | undefined>,
 ): { config: ResendConfig | null; missing: ResendConfigField[] } {
+	const status = resolveResendStatus(cwd, env);
 	const apiKey = resolveResendApiKey(cwd, env);
-	const from = trimmedEnvValue(env, RESEND_FROM_ENV_VAR);
-	const to = trimmedEnvValue(env, RESEND_TO_ENV_VAR);
-	const missing: ResendConfigField[] = [];
-	if (apiKey === null) missing.push('apiKey');
-	if (from === null) missing.push('from');
-	if (to === null) missing.push('to');
+	const { from, to, missing } = status;
 	if (apiKey === null || from === null || to === null) return { config: null, missing };
 	return { config: { apiKey, from, to }, missing: [] };
 }

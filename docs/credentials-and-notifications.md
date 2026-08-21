@@ -102,7 +102,30 @@ Resend documents both [restricted API keys](https://resend.com/docs/dashboard/ap
 and the requirement to keep them out of browser code and rotate them after
 suspected exposure in its [API-key guidance](https://resend.com/docs/knowledge-base/how-to-handle-api-keys).
 
-The web UI shows channel health and setup instructions but never accepts or
-returns the raw secret. A future setup flow may write directly to a platform
-credential store, but that would improve secret handling only if the provider
-process also ran under a genuinely separate identity.
+Settings is the normal Resend setup path. Enter a sender on a domain verified
+with Resend, the transactional recipient, and optionally a new API key. Saving
+with a blank key preserves the current file-backed credential. The key input is
+write-only: the service never returns or prefills it. The explicit removal
+action deletes only `.gship/resend-api-key`; it does not remove the sender or
+recipient.
+
+The service prepares a replacement key in the same `.gship` directory, sets
+mode `0600`, and only then atomically renames it over the live file. A failed
+preparation therefore leaves the previous valid key intact. Sender and
+recipient are non-secret values stored in `.gship/resend-settings.json`, never
+in SQLite, and are resolved fresh for status, tests, run notifications and
+service notifications.
+
+Environment precedence is independent per field. `GATESHIP_RESEND_API_KEY`,
+`GATESHIP_RESEND_FROM` and `GATESHIP_RESEND_TO` each override only their
+corresponding file-backed value. Settings identifies environment-managed
+fields; saving or removing a file does not claim to change the effective value
+while its environment variable remains authoritative.
+
+For a container or manual fallback, place the bare key followed by a newline in
+`.gship/resend-api-key`, set its mode to `0600`, and put the non-secret sender
+and recipient in Settings or the two environment variables above. The project
+and its `.gship` directory must be writable by the Gateship process. Notification
+recipients receive only the transactional run and service alerts described
+here; configuring a recipient never enrolls that address in marketing or a
+mailing list.

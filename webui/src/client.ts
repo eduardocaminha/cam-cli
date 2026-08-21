@@ -931,12 +931,25 @@ export type NotificationChannelId = (typeof NOTIFICATION_CHANNEL_IDS)[number];
 export interface NotificationChannelView {
 	configured: boolean;
 	missing: string[];
+	/** Effective non-secret Resend values; null for ntfy or when absent. */
+	from: string | null;
+	to: string | null;
+	fileCredentialExists: boolean;
+	externallyManaged: Readonly<Record<'apiKey' | 'from' | 'to', boolean>>;
 }
 
 export type NotificationChannelsView = Record<NotificationChannelId, NotificationChannelView>;
 
 export function emptyNotificationChannels(): NotificationChannelsView {
-	return { ntfy: { configured: false, missing: [] }, resend: { configured: false, missing: [] } };
+	const empty = (): NotificationChannelView => ({
+		configured: false,
+		missing: [],
+		from: null,
+		to: null,
+		fileCredentialExists: false,
+		externallyManaged: { apiKey: false, from: false, to: false },
+	});
+	return { ntfy: empty(), resend: empty() };
 }
 
 interface NotificationChannelsPayload {
@@ -955,6 +968,14 @@ export async function fetchNotificationChannels(): Promise<NotificationChannelsV
 		channels[id] = {
 			configured: raw?.configured === true,
 			missing: Array.isArray(raw?.missing) ? raw.missing.filter((item) => typeof item === 'string') : [],
+			from: typeof raw?.from === 'string' ? raw.from : null,
+			to: typeof raw?.to === 'string' ? raw.to : null,
+			fileCredentialExists: raw?.fileCredentialExists === true,
+			externallyManaged: {
+				apiKey: raw?.externallyManaged?.apiKey === true,
+				from: raw?.externallyManaged?.from === true,
+				to: raw?.externallyManaged?.to === true,
+			},
 		};
 	}
 	return channels;
@@ -970,6 +991,31 @@ export async function sendNotificationTest(channelId: NotificationChannelId): Pr
 	const payload = (await response.json()) as NotificationTestPayload;
 	if (response.ok) return payload.message ?? 'Test message delivered.';
 	return payload.message ?? `Test rejected (${response.status}).`;
+}
+
+export interface ResendSettingsInput {
+	from: string;
+	to: string;
+	/** Empty preserves the current file-backed credential. */
+	apiKey: string;
+}
+
+export async function saveResendSettings(input: ResendSettingsInput): Promise<string> {
+	const response = await fetch(`${NOTIFICATIONS_PATH}/resend`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input),
+	});
+	const payload = (await response.json()) as CommandPayload;
+	if (!response.ok) return payload.message ?? `Resend settings rejected (${response.status}).`;
+	return payload.message ?? 'Resend settings saved.';
+}
+
+export async function removeResendCredential(): Promise<string> {
+	const response = await fetch(`${NOTIFICATIONS_PATH}/resend/credential`, { method: 'DELETE' });
+	const payload = (await response.json()) as CommandPayload;
+	if (!response.ok) return payload.message ?? `Resend credential removal rejected (${response.status}).`;
+	return payload.message ?? 'File-backed Resend credential removed.';
 }
 
 export async function startCodexLogin(): Promise<string> {
