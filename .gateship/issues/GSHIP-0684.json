@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T21:08:26.464Z",
-  "updatedAt": "2026-08-21T21:08:26.464Z",
+  "updatedAt": "2026-08-21T21:08:30.036Z",
   "description": "Apply the existing live-edge behavior to every current scrolling surface that receives conversation or agent/run output. Preserve ChatLog's current contract and wire RunActivity to the newest visible event through the same useLiveEdge hook: each region opens at its newest item, follows later arrivals while the operator remains near the bottom, stops following when the operator scrolls up to read history, and resumes when the operator returns to the live edge. The behavior must never force a reader back to the bottom. Preserve the current operational-event filter, 30-event window, conversation content, layout, localization, keyboard reachability and server event stream. Extend focused UI tests to prove both live regions use the shared contract and keep the pure boundary predicate covered. Do not add a dependency, timer, persisted preference, event source, global scroll policy, animation, gate or new product surface.",
   "specSource": "operator",
   "spec": {
@@ -23,5 +23,9 @@
         "output": "const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "38b1c995937e4e05bc018dbf2bf7fd120cd75d1e7bc4a12facf29497d53c60c3",
+    "approvedAt": "2026-08-21T21:08:30.036Z"
   }
 }
