@@ -429,17 +429,24 @@ function RunActivity({
 	catalog: RunsOperationalCatalog;
 	run: RunView | null;
 }): React.ReactElement | null {
+	const visible = run === null
+		? []
+		: events
+			.filter((event) => event.runId === run.id && isOperational(event))
+			.slice(-30);
+	const liveEdge = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
 	if (run === null) return null;
-	const visible = events
-		.filter((event) => event.runId === run.id && isOperational(event))
-		.slice(-30);
 	return (
 		<ContextPanel
 			description={catalog.activity.description(visible.length)}
 			open
 			title={catalog.activity.title}
 		>
-			<ol className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto">
+			<ol
+				{...liveEdge}
+				aria-label={catalog.activity.title}
+				className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			>
 				{visible.map((event) => {
 					const detail = eventDetail(event, catalog.activity.toolsLabel);
 					return (
@@ -1619,12 +1626,9 @@ function ChatLog({
 	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
 	return (
 		<section
+			{...liveEdge}
 			aria-label={catalog.transcriptLabel}
 			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
-			onScroll={liveEdge.onScroll}
-			ref={liveEdge.ref}
-			role="log"
-			tabIndex={0}
 		>
 			{chatMessages.length === 0 ? (
 				<p className="flex min-h-24 items-center justify-center text-center text-muted-foreground text-sm">
