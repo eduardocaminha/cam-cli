@@ -104,11 +104,66 @@ export interface RunsOperationalCatalog {
 	};
 }
 
+export interface RunsWorkflowCatalog {
+	signals: {
+		title: string;
+		description: (runCount: number) => string;
+		outcomesLabel: string;
+		outcomes: (done: number, failed: number, cancelled: number, active: number) => string;
+		correctionsLabel: string;
+		corrections: (
+			roundCount: number,
+			runCount: number,
+			executor: number,
+			decision: number,
+			indeterminate: number,
+		) => string;
+		knownCostLabel: string;
+		noReportedCost: string;
+		reportedCost: (formattedCost: string, reportedRunCount: number, runCount: number) => string;
+	};
+	benchmarks: {
+		title: string;
+		description: string;
+		latestCohortLabel: string;
+		previousBaselineLabel: string;
+		emptyGuidance: string;
+		singleCohortGuidance: string;
+		observationalDisclaimer: string;
+		card: {
+			terminalSampleLabel: string;
+			terminalSample: (runCount: number, incompleteRunCount: number) => string;
+			outcomesLabel: string;
+			outcomes: (shipped: number, failed: number, cancelled: number) => string;
+			humanAttentionLabel: string;
+			humanAttention: (requests: number, runCount: number, responses: number) => string;
+			correctionsLabel: string;
+			corrections: (roundCount: number, runCount: number) => string;
+			providerHoldsLabel: string;
+			providerHolds: (holdCount: number, runCount: number) => string;
+			medianTimeLabel: string;
+			medianTime: (wallTime: string) => string;
+			knownCostLabel: string;
+			noReportedCost: string;
+			reportedCost: (formattedCost: string, runCount: number) => string;
+			configurationMissing: string;
+			modelMissing: string;
+			wallTime: {
+				notRecorded: string;
+				lessThanMinute: string;
+				minutes: (count: number) => string;
+				hours: (count: number) => string;
+			};
+		};
+	};
+}
+
 export interface LocaleCatalog {
 	shell: ShellCatalog;
 	conversation: ConversationCatalog;
 	runInspector: RunInspectorCatalog;
 	runsOperational: RunsOperationalCatalog;
+	runsWorkflow: RunsWorkflowCatalog;
 }
 
 export const LOCALE_CATALOG = {
@@ -251,6 +306,69 @@ export const LOCALE_CATALOG = {
 					`${count} ${count === 1 ? 'run' : 'runs'} before the latest, newest first.`,
 			},
 		},
+		runsWorkflow: {
+			signals: {
+				title: 'Workflow signals',
+				description: (runCount) =>
+					`Local window of the latest ${runCount} ${runCount === 1 ? 'run' : 'runs'}, without a composite score.`,
+				outcomesLabel: 'Outcomes',
+				outcomes: (done, failed, cancelled, active) =>
+					`${done} completed · ${failed} failed · ${cancelled} cancelled${active === 0 ? '' : ` · ${active} active`}`,
+				correctionsLabel: 'Corrections',
+				corrections: (roundCount, runCount, executor, decision, indeterminate) =>
+					`${roundCount} ${roundCount === 1 ? 'round' : 'rounds'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}: ${executor} automatic, ${decision} after ${decision === 1 ? 'a human decision' : 'human decisions'}${indeterminate === 0 ? '' : `, ${indeterminate} with indeterminate origin`}`,
+				knownCostLabel: 'Known cost',
+				noReportedCost: 'No provider reported cost in this window.',
+				reportedCost: (formattedCost, reportedRunCount, runCount) =>
+					`${formattedCost} across ${reportedRunCount} of ${runCount} ${runCount === 1 ? 'run' : 'runs'}.`,
+			},
+			benchmarks: {
+				title: 'Replayable benchmarks',
+				description:
+					'Replays the durable window of up to 50 runs and compares revisions without calling another agent.',
+				latestCohortLabel: 'Latest cohort',
+				previousBaselineLabel: 'Previous baseline',
+				emptyGuidance:
+					'Existing runs predate revision tracking. The next run starts the first cohort.',
+				singleCohortGuidance:
+					'Comparison begins when another revision accumulates a terminal run.',
+				observationalDisclaimer:
+					'Observational comparison: scope, provider, model and effort may also change outcomes. There is no composite score or automatic approval.',
+				card: {
+					terminalSampleLabel: 'Terminal sample',
+					terminalSample: (runCount, incompleteRunCount) =>
+						`${runCount} ${runCount === 1 ? 'run' : 'runs'}${incompleteRunCount === 0 ? '' : ` · ${incompleteRunCount} ${incompleteRunCount === 1 ? 'run' : 'runs'} still incomplete`}`,
+					outcomesLabel: 'Outcomes',
+					outcomes: (shipped, failed, cancelled) =>
+						`${shipped} shipped · ${failed} failed · ${cancelled} cancelled`,
+					humanAttentionLabel: 'Human attention',
+					humanAttention: (requests, runCount, responses) =>
+						`${requests} ${requests === 1 ? 'request' : 'requests'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'} · ${responses} ${responses === 1 ? 'response' : 'responses'}`,
+					correctionsLabel: 'Corrections',
+					corrections: (roundCount, runCount) =>
+						`${roundCount} ${roundCount === 1 ? 'round' : 'rounds'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}`,
+					providerHoldsLabel: 'Provider holds',
+					providerHolds: (holdCount, runCount) =>
+						`${holdCount} ${holdCount === 1 ? 'hold' : 'holds'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}`,
+					medianTimeLabel: 'Median time',
+					medianTime: (wallTime) => `${wallTime} from creation to terminal state`,
+					knownCostLabel: 'Known cost',
+					noReportedCost: 'no reported cost',
+					reportedCost: (formattedCost, runCount) =>
+						`${formattedCost} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}`,
+					configurationMissing: 'Provider/model/effort not yet observed in a terminal run.',
+					modelMissing: 'model not recorded',
+					wallTime: {
+						notRecorded: 'not recorded',
+						lessThanMinute: 'less than 1 min',
+						minutes: (count) => `${count} min`,
+						hours: (count) => `${new Intl.NumberFormat('en-US', {
+							maximumFractionDigits: 1,
+						}).format(count)} h`,
+					},
+				},
+			},
+		},
 	},
 	'pt-BR': {
 		shell: {
@@ -389,6 +507,69 @@ export const LOCALE_CATALOG = {
 				title: 'Execuções anteriores',
 				description: (count) =>
 					`${count} ${count === 1 ? 'execução' : 'execuções'} antes da mais recente, da mais nova para a mais antiga.`,
+			},
+		},
+		runsWorkflow: {
+			signals: {
+				title: 'Sinais do fluxo de trabalho',
+				description: (runCount) =>
+					`Janela local das ${runCount} ${runCount === 1 ? 'execução mais recente' : 'execuções mais recentes'}, sem pontuação composta.`,
+				outcomesLabel: 'Resultados',
+				outcomes: (done, failed, cancelled, active) =>
+					`${done} concluída${done === 1 ? '' : 's'} · ${failed} com falha · ${cancelled} cancelada${cancelled === 1 ? '' : 's'}${active === 0 ? '' : ` · ${active} ativa${active === 1 ? '' : 's'}`}`,
+				correctionsLabel: 'Correções',
+				corrections: (roundCount, runCount, executor, decision, indeterminate) =>
+					`${roundCount} ${roundCount === 1 ? 'rodada' : 'rodadas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}: ${executor} automática${executor === 1 ? '' : 's'}, ${decision} após ${decision === 1 ? 'uma decisão humana' : 'decisões humanas'}${indeterminate === 0 ? '' : `, ${indeterminate} de origem indeterminada`}`,
+				knownCostLabel: 'Custo conhecido',
+				noReportedCost: 'Nenhum provedor informou custo nesta janela.',
+				reportedCost: (formattedCost, reportedRunCount, runCount) =>
+					`${formattedCost} em ${reportedRunCount} de ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}.`,
+			},
+			benchmarks: {
+				title: 'Benchmarks reproduzíveis',
+				description:
+					'Reproduz a janela durável de até 50 execuções e compara revisões sem chamar outro agente.',
+				latestCohortLabel: 'Coorte mais recente',
+				previousBaselineLabel: 'Referência anterior',
+				emptyGuidance:
+					'As execuções existentes são anteriores ao rastreamento de revisões. A próxima execução inicia a primeira coorte.',
+				singleCohortGuidance:
+					'A comparação começa quando outra revisão acumular uma execução terminal.',
+				observationalDisclaimer:
+					'Comparação observacional: escopo, provedor, modelo e esforço também podem alterar os resultados. Não há pontuação composta nem aprovação automática.',
+				card: {
+					terminalSampleLabel: 'Amostra terminal',
+					terminalSample: (runCount, incompleteRunCount) =>
+						`${runCount} ${runCount === 1 ? 'execução' : 'execuções'}${incompleteRunCount === 0 ? '' : ` · ${incompleteRunCount} ${incompleteRunCount === 1 ? 'execução ainda incompleta' : 'execuções ainda incompletas'}`}`,
+					outcomesLabel: 'Resultados',
+					outcomes: (shipped, failed, cancelled) =>
+						`${shipped} enviada${shipped === 1 ? '' : 's'} · ${failed} com falha · ${cancelled} cancelada${cancelled === 1 ? '' : 's'}`,
+					humanAttentionLabel: 'Atenção humana',
+					humanAttention: (requests, runCount, responses) =>
+						`${requests} ${requests === 1 ? 'solicitação' : 'solicitações'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'} · ${responses} ${responses === 1 ? 'resposta' : 'respostas'}`,
+					correctionsLabel: 'Correções',
+					corrections: (roundCount, runCount) =>
+						`${roundCount} ${roundCount === 1 ? 'rodada' : 'rodadas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}`,
+					providerHoldsLabel: 'Esperas do provedor',
+					providerHolds: (holdCount, runCount) =>
+						`${holdCount} ${holdCount === 1 ? 'espera' : 'esperas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}`,
+					medianTimeLabel: 'Tempo mediano',
+					medianTime: (wallTime) => `${wallTime} da criação ao estado terminal`,
+					knownCostLabel: 'Custo conhecido',
+					noReportedCost: 'nenhum custo informado',
+					reportedCost: (formattedCost, runCount) =>
+						`${formattedCost} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}`,
+					configurationMissing: 'Provedor/modelo/esforço ainda não observado em uma execução terminal.',
+					modelMissing: 'modelo não registrado',
+					wallTime: {
+						notRecorded: 'não registrado',
+						lessThanMinute: 'menos de 1 min',
+						minutes: (count) => `${count} min`,
+						hours: (count) => `${new Intl.NumberFormat('pt-BR', {
+							maximumFractionDigits: 1,
+						}).format(count)} h`,
+					},
+				},
 			},
 		},
 	},

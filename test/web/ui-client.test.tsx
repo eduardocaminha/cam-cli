@@ -1176,6 +1176,73 @@ describe('runs surface', () => {
 			.toContain('predate revision tracking');
 	});
 
+	test('an explicit pt-BR locale translates both analytical panels and preserves workflow facts', () => {
+		const roles = [
+			{ role: 'executor' as const, models: ['modelo-executor-v9'], efforts: ['xhigh'] },
+			{ role: 'reviewer' as const, models: ['modelo-revisor-v4'], efforts: ['low'] },
+		];
+		const runs = [
+			runIn('working', {
+				id: 'run-incompleta',
+				evaluation: evaluation('revisao-crua-77', 'incomplete', {
+					provider: 'codex',
+					roles,
+					wallTimeMs: null,
+				}),
+			}),
+			runIn('done', {
+				id: 'run-terminal-2',
+				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				roundOrigins: { executor: 0, decision: 1, indeterminate: 0 },
+				evaluation: evaluation('revisao-crua-77', 'shipped', {
+					provider: 'codex',
+					wallTimeMs: 3 * 60 * 60_000,
+					attentionRequests: 1,
+					operatorInterventions: 2,
+					providerHolds: 1,
+					roles,
+				}),
+			}),
+			runIn('failed', {
+				id: 'run-terminal-1',
+				cost: { totalCostUsd: 0.0534, breakdown: [], roles: [] },
+				evaluation: evaluation('revisao-crua-77', 'failed', {
+					provider: 'codex',
+					wallTimeMs: 90 * 60_000,
+					roles,
+				}),
+			}),
+		];
+		const formattedCost = new Intl.NumberFormat('pt-BR', {
+			style: 'currency',
+			currency: 'USD',
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 4,
+		}).format(0.1534);
+		const html = runsPage({ locale: 'pt-BR', runs });
+		const signals = panel(html, 'Sinais do fluxo de trabalho');
+		const benchmarks = panel(html, 'Benchmarks reproduzíveis');
+
+		expect(signals).toContain('3 execuções mais recentes');
+		expect(signals).toContain('sem pontuação composta');
+		expect(signals).toContain('1 rodada em 1 execução');
+		expect(signals).toContain('1 após uma decisão humana');
+		expect(signals).toContain(formattedCost);
+		expect(signals).toContain('Custo esperado do uso equivalente à API por função e modelo');
+		expect(benchmarks).toContain('Coorte mais recente');
+		expect(benchmarks).toContain('2 execuções · 1 execução ainda incompleta');
+		expect(benchmarks).toContain('1 solicitação em 1 execução · 2 respostas');
+		expect(benchmarks).toContain('1 rodada em 1 execução');
+		expect(benchmarks).toContain('2,3 h da criação ao estado terminal');
+		expect(benchmarks).toContain(formattedCost);
+		expect(benchmarks).toContain('A comparação começa quando outra revisão');
+		expect(benchmarks).toContain('Não há pontuação composta nem aprovação automática');
+		expect(benchmarks).toContain('revisao-crua-77');
+		expect(benchmarks).toContain('codex');
+		expect(benchmarks).toContain('Executor: modelo-executor-v9 (xhigh)');
+		expect(benchmarks).toContain('Revisor: modelo-revisor-v4 (low)');
+	});
+
 	test('a run shows persisted public activity and tool names', () => {
 		const html = runsPage({
 			runs: [runIn('working')],
