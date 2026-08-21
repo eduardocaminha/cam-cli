@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T21:55:45.446Z",
-  "updatedAt": "2026-08-21T21:55:45.446Z",
+  "updatedAt": "2026-08-21T21:55:53.144Z",
   "description": "From the current origin/main, update only the existing direct development dependencies @biomejs/biome from 2.5.1 to 2.5.10, @types/react from 19.2.14 to 19.2.18, knip from 6.24.0 to 6.32.2, and vite from 8.2.1 to 8.2.2, then refresh bun.lock with Bun. Add no dependency and make no product behavior change. Keep chalk on major 5, keep the Bun runtime at 1.3.14, do not intentionally advance @types/bun beyond the compatible lock resolution, and do not change React, Tailwind, provider CLI pins, GitHub Actions, container behavior, source files, tests, configuration, or documentation unless a listed tool requires the smallest compatibility correction. Any such correction must preserve the current gate rather than weaken or suppress it.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun install --frozen-lockfile && bun run typecheck && bun test test/renovate-config.test.ts test/webui-scaffold.test.ts && bun run lint"
     ]
+  },
+  "approval": {
+    "fingerprint": "12eb74991a7c7734ce680f5fe1bc7fec30bef064447b441a90ea22a63b879eed",
+    "approvedAt": "2026-08-21T21:55:53.144Z"
   }
 }
