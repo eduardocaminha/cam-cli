@@ -2,9 +2,9 @@
 
 > Last operator checkpoint: 2026-08-20
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `9faa57b6` (provider-CLI identity ratchet, PR #520)
-> Active implementation branch: `codex/beta-readiness`
-> Current stage: local beta navigation/accessibility repair verified and authorized for publication
+> Shipped baseline: `origin/main` at `7a2286e5` (beta navigation/accessibility, PR #521)
+> Active implementation branch: `codex/beta-english-ui`
+> Current stage: complete external-beta English surface verified and authorized for publication
 
 ## How to use this file
 
@@ -74,38 +74,43 @@ logic.
 
 ## Active bounded slice
 
-The first beta-readiness repair is implemented locally on
-`codex/beta-readiness`:
+The external-beta language decision is implemented locally on
+`codex/beta-english-ui`:
 
-- a real browser inspection covered the accessibility trees of `/`, `/runs`,
-  `/work` and `/settings`. Labels, landmarks and native disclosures were
-  coherent, but the first keyboard focus landed in repeated navigation with no
-  path to skip it;
-- one shell-level skip link now targets the single focusable `<main>` on every
-  route. Browser verification confirms that the first `Tab` reaches the link
-  and `Enter` transfers focus to the route content;
-- the document has a Gateship-authored inline SVG favicon and correctly cased
-  title. This removes the only reproduced browser-console error without adding
-  an asset route or another embedding path;
-- the active logo source now describes the mark as Gateship-owned and contains
-  no provenance reference to the retired UI kit. Immutable shipped issues and
-  superseded ADRs remain historical evidence, not active product source;
-- no localization framework or locale switch was added. The current UI is one
-  coherent `pt-BR` surface with hundreds of coupled copy sites. A partial
-  catalog would add architecture while producing a mixed-language product.
-  Before external beta, make one explicit product decision: convert the whole
-  beta UI to English, or fund two complete catalogs. Do not land an incomplete
-  middle state.
+- every product-owned browser label, description, status and fallback is
+  English across `/`, `/runs`, `/work` and `/settings`;
+- same-origin validation errors, project-readiness detail, diagnostic messages,
+  notification payloads and typed orchestrator command confirmations are
+  English too, so an error path cannot reintroduce a mixed-language surface;
+- operator-authored issue titles, scopes, evidence, chat messages and durable
+  history are preserved verbatim. Gateship does not rewrite the user's data;
+- browser currency and retry timestamps use `en-US`, and visible counts use
+  natural singular/plural labels instead of forms such as `run(s)`;
+- no localization framework, catalog, locale switch, new endpoint or persisted
+  preference was added. English is the one complete external-beta language.
+  Add Portuguese later only as a complete second catalog, after real demand;
+- source and production-bundle residue inspections found and removed several
+  unaccented fallbacks that an accent-only grep missed. Do not replace this
+  review with a permanent wording-regex gate.
 
-Focused rendered-client and embedded-bundle tests pass: 123 tests and 912
-expectations. Both TypeScript projects, Biome, the production UI build and
-`git diff --check` pass. Real-browser validation reports zero console errors or
-warnings after the repair. The full ship-boundary gate passes 769 tests and
-3,112 assertions, both TypeScript projects, Biome and Knip; Knip reports only
-its two pre-existing configuration hints. The operator authorized publication
-of this exact bounded slice on 2026-08-20.
+The final local gate passes 769 tests and 3,111 assertions, both TypeScript
+projects, Biome and Knip; Knip reports only its two pre-existing configuration
+hints. The production UI build passes, all four real service routes return 200,
+the service recognizes the mode-0600 project ntfy configuration, and
+`git diff --check` passes. Browser automation is not exposed in this session,
+so no visual-browser result is claimed; the live page remains available at
+`http://127.0.0.1:7777` for manual inspection. The operator authorized
+publication of this exact bounded slice on 2026-08-20.
 
 ## Previously shipped bounded slices
+
+PR #521 shipped the beta navigation/accessibility repair as squash commit
+`7a2286e5`. One shell-level skip link targets the focusable route `<main>`, the
+document has a Gateship-authored inline SVG favicon and correctly cased title,
+and the active logo source has no provenance reference to the retired UI kit.
+Real-browser verification covered all four routes and the keyboard transfer;
+CI passed, the branch was removed and the stable service was rebuilt and
+verified on the merged commit.
 
 PR #520 shipped the provider-CLI identity hard ratchet as squash commit
 `9faa57b6`. The image requests exact Claude Code `2.1.238` and Codex `0.148.0`,
@@ -419,20 +424,19 @@ Completed foundations:
 9. local derived workflow observability without scores or a collector;
 10. bounded daily/weekly diagnostics inside the existing service;
 11. replayable revision cohorts without an evaluator model or composite score;
-12. immutable provider-CLI identity during a recorded workflow revision.
+12. immutable provider-CLI identity during a recorded workflow revision;
+13. beta navigation, keyboard accessibility and document branding.
 
 Next product stages, in current order:
 
-1. finish and publish the beta navigation/accessibility repair on the active
-   branch, only after explicit operator authorization;
-2. choose the complete external-beta language strategy; do not ship a partial
-   locale switch or empty localization framework;
-3. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
+1. publish the complete English external-beta surface on the active branch,
+   only after explicit operator authorization;
+2. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
    until two comparable cohorts exist;
-4. add measured self-improvement and community proposal intake without
+3. add measured self-improvement and community proposal intake without
    automatic rule mutation;
-5. multiproject selection and parallelism across independent repositories;
-6. external-user validation before Product Hunt or a YC-style launch push.
+4. multiproject selection and parallelism across independent repositories;
+5. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -442,11 +446,11 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #520 is
-> present. If `codex/beta-readiness` still contains unshipped work, finish only
-> the skip-link, document-branding and active-source ownership repair above.
-> Do not introduce a partial locale switch, rewrite immutable issue history or
-> dismiss/promote the 15 real diagnostic findings. Keep the soft ratchet
+> `origin/main`, the latest commits and the running service. Confirm PR #521 is
+> present. If `codex/beta-english-ui` still contains unshipped work, preserve
+> the complete English product surface above without adding an i18n framework,
+> locale switch or rewrite of operator-authored data. Do not dismiss/promote the
+> real diagnostic findings. Keep the soft ratchet
 > dormant until two comparable recorded cohorts exist. Do not add an evaluator
 > LLM, synthetic score, remote telemetry, new event pipeline, endpoint, table
 > or queue. Do not publish without explicit operator authorization. Do not

@@ -408,7 +408,7 @@ export class ConversationalOrchestrator {
 		try {
 			commandText = await this.#options.execute(parsed.command);
 		} catch (error) {
-			commandText = `Comando recusado: ${errorMessage(error)}`;
+			commandText = `Command rejected: ${errorMessage(error)}`;
 		}
 		const commandResult = persistence.appendOrchestratorMessage(
 			providerId,

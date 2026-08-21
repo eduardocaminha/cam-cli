@@ -97,7 +97,7 @@ const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
 const CHECKING_PROJECT: ProjectStatusView = {
 	state: 'checking',
 	name: '',
-	detail: 'Verificando o projeto local…',
+	detail: 'Checking the local project…',
 };
 
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
@@ -249,8 +249,8 @@ function useOperationalRun(): {
 			.then((permission) => {
 				setNotificationPermission(permission);
 				setStatus(permission === 'granted'
-					? 'Notificações locais ativadas.'
-					: 'Notificações não foram autorizadas pelo navegador.');
+					? 'Local notifications enabled.'
+					: 'The browser did not authorize notifications.');
 			})
 			.catch((error: unknown) => setStatus(String(error)));
 	}, []);
@@ -270,7 +270,7 @@ function useOperationalRun(): {
 				});
 				if (invalidatesSnapshot(event)) refresh();
 			} catch {
-				setStatus('Evento de atividade inválido.');
+				setStatus('Invalid activity event.');
 			}
 		});
 		return () => source.close();
@@ -375,7 +375,7 @@ function Screen(): ReactElement {
 			onCreateIssue={(draft) => {
 				send(() => createIssue(draft).then((created) => {
 					setSelectedIssueId(created.id);
-					return `${created.id} criada e selecionada.`;
+					return `${created.id} created and selected.`;
 				}));
 			}}
 			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId))}
@@ -384,14 +384,14 @@ function Screen(): ReactElement {
 				send(() => dismissDiagnosticFinding(findingId))}
 			onPromoteDiagnosticFinding={(findingId, draft) => {
 				send(() => promoteDiagnosticFinding(findingId, draft).then((created) =>
-					`${created.id} criada a partir do diagnóstico.`));
+					`${created.id} created from the diagnostic.`));
 			}}
 			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer))}
 			onPromoteProposal={(proposalId, draft) => {
 				// The created issue is a draft to review, not the next run: it is
 				// filed unapproved, so it is not selected to start either.
 				send(() => promoteProposal(proposalId, draft).then((created) =>
-					`${created.id} criada a partir da proposta.`));
+					`${created.id} created from the proposal.`));
 			}}
 			onSendMessage={(message) => send(() => sendChat(message))}
 			onConnectCodex={() => {
@@ -399,7 +399,7 @@ function Screen(): ReactElement {
 				send(() => startCodexLogin().then((authUrl) => {
 					if (loginWindow === null) window.location.assign(authUrl);
 					else loginWindow.location.assign(authUrl);
-					return 'Login do Codex aberto no navegador.';
+					return 'Codex login opened in the browser.';
 				}));
 			}}
 			onEnableNotifications={enableNotifications}
@@ -418,15 +418,15 @@ function Screen(): ReactElement {
 			onSpecifyIssue={(issueId, draft) => {
 				send(() => specifyIssue(issueId, draft).then((specified) => {
 					setSelectedIssueId(specified.id);
-					return `${specified.id} especificada e selecionada.`;
+					return `${specified.id} specified and selected.`;
 				}));
 			}}
-			onApproveIssue={(issueId) => send(() => approveIssue(issueId).then(() => `${issueId} aprovada.`))}
+			onApproveIssue={(issueId) => send(() => approveIssue(issueId).then(() => `${issueId} approved.`))}
 			onAbandonIssue={(issueId, reason) => {
-				send(() => abandonIssue(issueId, reason).then(() => `${issueId} abandonada.`));
+				send(() => abandonIssue(issueId, reason).then(() => `${issueId} abandoned.`));
 			}}
 			onReviewIssue={(issueId, draft) => {
-				send(() => specifyIssue(issueId, draft).then(() => `${issueId} revisada.`));
+				send(() => specifyIssue(issueId, draft).then(() => `${issueId} revised.`));
 			}}
 			onStart={() => {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));

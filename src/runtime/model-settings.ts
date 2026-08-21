@@ -167,7 +167,7 @@ export interface ModelProbeResult {
 }
 
 /** Trivial: only the chosen model/effort combination is under test, not reasoning. */
-export const MODEL_PROBE_PROMPT = 'Responda apenas "ok".';
+export const MODEL_PROBE_PROMPT = 'Respond with only "ok".';
 
 /** Short enough that a save never feels stuck; long enough for a real turn to answer. */
 export const MODEL_PROBE_TIMEOUT_MS = 15_000;

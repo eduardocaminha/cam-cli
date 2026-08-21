@@ -63,35 +63,35 @@ describe('remoteNotificationForRunEvent', () => {
 	test('alerts on each transition that needs the operator', () => {
 		expect(remoteNotificationForRunEvent(
 			event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }),
-		)).toEqual({ title: 'Gateship precisa de você', body: 'Escolha o seam.' });
+		)).toEqual({ title: 'Gateship needs you', body: 'Escolha o seam.' });
 
 		expect(remoteNotificationForRunEvent(
 			event('waiting-provider', 'run.provider-waiting', {
 				message: 'Claude usage limit reached.',
 			}),
 		)).toEqual({
-			title: 'Provider temporariamente indisponível',
+			title: 'Provider temporarily unavailable',
 			body: 'Claude usage limit reached.',
 		});
 
 		expect(remoteNotificationForRunEvent(
 			event('failed', 'run.verification-failed', { error: 'checks red' }),
-		)).toEqual({ title: 'Run falhou', body: 'checks red' });
+		)).toEqual({ title: 'Run failed', body: 'checks red' });
 
 		// `run.interrupted` is what RunRuntime#interrupt actually emits on an
 		// aborted signal -- see the real-RunRuntime coverage below for why
 		// `run.recovered-interrupted` can never reach a subscriber.
 		expect(remoteNotificationForRunEvent(
 			event('interrupted', 'run.interrupted'),
-		)).toEqual({ title: 'Run interrompido', body: 'O run pode ser retomado pela interface.' });
+		)).toEqual({ title: 'Run interrupted', body: 'The run can be resumed from Gateship.' });
 
 		expect(remoteNotificationForRunEvent(
 			event('ready-to-ship', 'run.ship-failed', { error: 'checks red' }),
-		)).toEqual({ title: 'Ship precisa de nova tentativa', body: 'checks red' });
+		)).toEqual({ title: 'Shipping needs another attempt', body: 'checks red' });
 
 		expect(remoteNotificationForRunEvent(
 			chainPaused({ reason: 'no-admissible-issue', issueId: 'GSHIP-9' }),
-		)).toEqual({ title: 'Fila parada', body: 'A fila de encadeamento parou em GSHIP-9.' });
+		)).toEqual({ title: 'Queue stopped', body: 'The run queue stopped at GSHIP-9.' });
 	});
 
 	test('does not alert on progress, a clean finish, an operator cancellation, or a disabled chain', () => {
@@ -161,7 +161,7 @@ describe('createRemoteNotifier', () => {
 		const call = onlyCall(calls);
 		const url = new URL(call.url);
 		expect(`${url.origin}${url.pathname}`).toBe(TOPIC_URL);
-		expect(url.searchParams.get('title')).toBe('Gateship precisa de você');
+		expect(url.searchParams.get('title')).toBe('Gateship needs you');
 		expect(call.init?.method).toBe('POST');
 		expect(call.init?.body).toBe('Escolha o seam.');
 	});
@@ -218,8 +218,8 @@ describe('createRemoteNotifier', () => {
 		await flush();
 
 		const call = onlyCall(calls);
-		expect(new URL(call.url).searchParams.get('title')).toBe('Run interrompido');
-		expect(call.init?.body).toBe('O run pode ser retomado pela interface.');
+		expect(new URL(call.url).searchParams.get('title')).toBe('Run interrupted');
+		expect(call.init?.body).toBe('The run can be resumed from Gateship.');
 
 		await runtime.stop();
 		runtime.close();
@@ -410,7 +410,7 @@ describe('the project-local secret file (GSHIP-652)', () => {
 		await flush();
 
 		const call = onlyCall(calls);
-		expect(new URL(call.url).searchParams.get('title')).toBe('Run falhou');
+		expect(new URL(call.url).searchParams.get('title')).toBe('Run failed');
 	});
 
 	// GSHIP-652 review: one stored value must answer the same everywhere --
@@ -525,7 +525,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		expect(JSON.parse(String(call.init?.body))).toEqual({
 			from: RESEND_FROM,
 			to: [RESEND_TO],
-			subject: 'Gateship precisa de você',
+			subject: 'Gateship needs you',
 			text: 'Escolha o seam.',
 		});
 	});

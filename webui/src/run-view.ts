@@ -384,23 +384,23 @@ export function toneOf(state: RunState): StateTone {
 }
 
 /** What the screen answers at a glance: does Gateship need the operator now? */
-export type OperatorAttention = 'Precisa de você' | 'Trabalhando' | 'Ocioso';
+export type OperatorAttention = 'Needs you' | 'Working' | 'Idle';
 
 const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
-	queued: 'Trabalhando',
-	working: 'Trabalhando',
-	verify: 'Trabalhando',
-	review: 'Trabalhando',
-	'full-verify': 'Trabalhando',
-	shipping: 'Trabalhando',
-	'ready-to-ship': 'Precisa de você',
-	'waiting-user': 'Precisa de você',
-	'waiting-provider': 'Precisa de você',
-	failed: 'Precisa de você',
-	interrupted: 'Precisa de você',
-	done: 'Ocioso',
+	queued: 'Working',
+	working: 'Working',
+	verify: 'Working',
+	review: 'Working',
+	'full-verify': 'Working',
+	shipping: 'Working',
+	'ready-to-ship': 'Needs you',
+	'waiting-user': 'Needs you',
+	'waiting-provider': 'Needs you',
+	failed: 'Needs you',
+	interrupted: 'Needs you',
+	done: 'Idle',
 	// The operator already decided this one: nothing is pending on it.
-	cancelled: 'Ocioso',
+	cancelled: 'Idle',
 };
 
 /**
@@ -417,15 +417,15 @@ export function attentionOf(
 	chainPaused = false,
 ): OperatorAttention {
 	const hasNotice = typeof notices === 'boolean' ? notices : notices.length > 0;
-	if (hasNotice || chainPaused) return 'Precisa de você';
-	if (run === null) return 'Ocioso';
+	if (hasNotice || chainPaused) return 'Needs you';
+	if (run === null) return 'Idle';
 	return ATTENTION_STATES[run.state];
 }
 
 const ATTENTION_TONE: Readonly<Record<OperatorAttention, StateTone>> = {
-	'Precisa de você': 'warning',
-	Trabalhando: 'info',
-	Ocioso: 'default',
+	'Needs you': 'warning',
+	Working: 'info',
+	Idle: 'default',
 };
 
 /** Badge variant for a human state, which no longer follows a single run. */

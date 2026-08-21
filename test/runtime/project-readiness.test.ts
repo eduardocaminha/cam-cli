@@ -23,7 +23,7 @@ describe('project readiness', () => {
 		expect(inspectProject(cwd, runner({}))).toEqual({
 			state: 'empty',
 			name: basename(cwd),
-			detail: 'Esta pasta ainda não contém um projeto Git.',
+			detail: 'This folder does not contain a Git project yet.',
 		});
 	});
 
@@ -68,18 +68,18 @@ describe('project readiness', () => {
 
 	test('each local prerequisite reports one deterministic reason', () => {
 		const cases: readonly [ResultByCommand, string, string][] = [
-			[{}, 'not-repository', 'não pertence a um repositório Git'],
+			[{}, 'not-repository', 'is not part of a Git repository'],
 			[{
 				'rev-parse --show-toplevel': { exitCode: 0, stdout: '/workspace/product' },
-			}, 'origin-missing', 'não tem um remote chamado origin'],
+			}, 'origin-missing', 'does not have a remote named origin'],
 			[{
 				'rev-parse --show-toplevel': { exitCode: 0, stdout: '/workspace/product' },
 				'remote get-url origin': { exitCode: 0, stdout: 'git@gitlab.com:acme/product.git' },
-			}, 'github-origin-required', 'precisa apontar para um repositório no GitHub.com'],
+			}, 'github-origin-required', 'must point to a repository on GitHub.com'],
 			[{
 				'rev-parse --show-toplevel': { exitCode: 0, stdout: '/workspace/product' },
 				'remote get-url origin': { exitCode: 0, stdout: 'https://github.com/acme/product.git' },
-			}, 'origin-main-missing', 'origin/main ainda não existe'],
+			}, 'origin-main-missing', 'origin/main reference does not exist yet'],
 		];
 
 		for (const [results, reason, detail] of cases) {

@@ -55,7 +55,7 @@ export class IssueIntakeError extends Error {
 
 function requiredString(value: unknown, label: string): string {
 	if (typeof value !== 'string' || value.trim().length === 0) {
-		throw new IssueIntakeError('invalid-request', `${label} é obrigatório.`, 400);
+		throw new IssueIntakeError('invalid-request', `${label} is required.`, 400);
 	}
 	return value.trim();
 }
@@ -69,12 +69,12 @@ function requiredString(value: unknown, label: string): string {
 function optionalEvidence(value: unknown): EvidenceItem[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', 'Evidência deve ser uma lista.', 400);
+		throw new IssueIntakeError('invalid-request', 'Evidence must be a list.', 400);
 	}
 	if (value.length === 0) return undefined;
 	return value.map((item, index) => {
 		if (item === null || typeof item !== 'object' || Array.isArray(item)) {
-			throw new IssueIntakeError('invalid-request', `Evidência ${index + 1} deve ser um objeto.`, 400);
+			throw new IssueIntakeError('invalid-request', `Evidence ${index + 1} must be an object.`, 400);
 		}
 		const record = item as Record<string, unknown>;
 		return {
@@ -87,15 +87,15 @@ function optionalEvidence(value: unknown): EvidenceItem[] | undefined {
 /** Validate the browser payload before any Git or filesystem write occurs. */
 export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+		throw new IssueIntakeError('invalid-request', 'A JSON object is required.', 400);
 	}
 	const input = value as Record<string, unknown>;
 	const evidence = optionalEvidence(input['evidence']);
 	return {
-		scope: requiredString(input['scope'], 'Escopo'),
+		scope: requiredString(input['scope'], 'Scope'),
 		verificationCommand: requiredString(
 			input['verificationCommand'],
-			'Comando de verificação',
+			'Verification command',
 		),
 		...(evidence === undefined ? {} : { evidence }),
 	};
@@ -104,7 +104,7 @@ export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 export function parseOperatorIssueInput(value: unknown): OperatorIssueInput {
 	const spec = parseOperatorSpecInput(value);
 	return {
-		title: requiredString((value as Record<string, unknown>)['title'], 'Título'),
+		title: requiredString((value as Record<string, unknown>)['title'], 'Title'),
 		...spec,
 	};
 }
@@ -112,16 +112,16 @@ export function parseOperatorIssueInput(value: unknown): OperatorIssueInput {
 /** Abandoning carries no spec contract: only a durable justification. */
 export function parseOperatorAbandonInput(value: unknown): OperatorAbandonInput {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+		throw new IssueIntakeError('invalid-request', 'A JSON object is required.', 400);
 	}
 	const input = value as Record<string, unknown>;
-	return { reason: requiredString(input['reason'], 'Justificativa') };
+	return { reason: requiredString(input['reason'], 'Reason') };
 }
 
 function commandFailure(label: string, detail: string): IssueIntakeError {
 	return new IssueIntakeError(
 		'source-unavailable',
-		`${label}: ${detail.trim() || 'git saiu sem diagnóstico'}`,
+		`${label}: ${detail.trim() || 'git exited without diagnostics'}`,
 		503,
 	);
 }
@@ -196,7 +196,7 @@ function publishEntryAttempt(
 	// "Author identity unknown" once the commit below is already attempted.
 	const identity = ensureIdentity();
 	if (identity.outcome === 'missing') {
-		throw commandFailure('Não foi possível criar o commit', identity.detail);
+		throw commandFailure('Could not create the commit', identity.detail);
 	}
 
 	const path = issueFilePath(entry.id);
@@ -205,18 +205,18 @@ function publishEntryAttempt(
 
 	try {
 		const added = git(cwd, ['worktree', 'add', '--quiet', '--detach', worktree, sourceSha]);
-		if (added.exitCode !== 0) throw commandFailure('Não foi possível preparar o intake', added.stderr);
+		if (added.exitCode !== 0) throw commandFailure('Could not stage the intake', added.stderr);
 
 		const target = join(worktree, path);
 		mkdirSync(dirname(target), { recursive: true });
 		writeFileSync(target, `${JSON.stringify(entry, null, 2)}\n`);
 
 		const staged = git(worktree, ['add', '--', path]);
-		if (staged.exitCode !== 0) throw commandFailure('Não foi possível registrar a tarefa', staged.stderr);
+		if (staged.exitCode !== 0) throw commandFailure('Could not record the issue', staged.stderr);
 		const committed = git(worktree, ['commit', '--quiet', '-m', commitMessage]);
-		if (committed.exitCode !== 0) throw commandFailure('Não foi possível criar o commit', committed.stderr);
+		if (committed.exitCode !== 0) throw commandFailure('Could not create the commit', committed.stderr);
 		const shaResult = git(worktree, ['rev-parse', 'HEAD']);
-		if (shaResult.exitCode !== 0) throw commandFailure('Não foi possível resolver o commit', shaResult.stderr);
+		if (shaResult.exitCode !== 0) throw commandFailure('Could not resolve the commit', shaResult.stderr);
 		const sha = shaResult.stdout.trim();
 
 		const pushed = git(worktree, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
@@ -224,7 +224,7 @@ function publishEntryAttempt(
 			return { kind: 'published', issue: { id: entry.id, title: entry.title, sha } };
 		}
 		if (isPushRace(pushed.stderr)) return { kind: 'retry' };
-		throw commandFailure('Não foi possível publicar a tarefa', pushed.stderr);
+		throw commandFailure('Could not publish the issue', pushed.stderr);
 	} finally {
 		git(cwd, ['worktree', 'remove', '--force', worktree]);
 		rmSync(tempRoot, { recursive: true, force: true });
@@ -234,11 +234,11 @@ function publishEntryAttempt(
 function refreshRuntimeSource(cwd: string): string {
 	const fetched = fetchRuntimeSource(defaultRunGit, cwd);
 	if (fetched.exitCode !== 0) {
-		throw commandFailure(`Não foi possível atualizar ${RUNTIME_SOURCE_REF}`, fetched.stderr);
+		throw commandFailure(`Could not update ${RUNTIME_SOURCE_REF}`, fetched.stderr);
 	}
 	const resolved = git(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
 	if (resolved.exitCode !== 0) {
-		throw commandFailure(`Não foi possível resolver ${RUNTIME_SOURCE_REF}`, resolved.stderr);
+		throw commandFailure(`Could not resolve ${RUNTIME_SOURCE_REF}`, resolved.stderr);
 	}
 	return resolved.stdout.trim();
 }
@@ -274,7 +274,7 @@ export function createOperatorIssue(
 
 	throw new IssueIntakeError(
 		'publish-conflict',
-		'O backlog avançou durante três tentativas; tente criar a tarefa novamente.',
+		'The backlog advanced during three attempts; try creating the issue again.',
 		409,
 	);
 }
@@ -296,12 +296,12 @@ export function specifyOperatorIssue(
 		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
 			.find((issue) => issue.id === issueId);
 		if (entry === undefined) {
-			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+			throw new IssueIntakeError('issue-not-found', `${issueId} does not exist in the backlog.`, 404);
 		}
 		if (entry.status !== 'open' || (entry.stage !== 'idea' && entry.stage !== 'specified')) {
 			throw new IssueIntakeError(
 				'issue-not-eligible',
-				`${issueId} precisa estar open e em stage:idea ou stage:specified.`,
+				`${issueId} must be open and at stage:idea or stage:specified.`,
 				409,
 			);
 		}
@@ -328,7 +328,7 @@ export function specifyOperatorIssue(
 
 	throw new IssueIntakeError(
 		'publish-conflict',
-		'O backlog avançou durante três tentativas; tente especificar a ideia novamente.',
+		'The backlog advanced during three attempts; try specifying the idea again.',
 		409,
 	);
 }
@@ -348,13 +348,13 @@ export function approveOperatorIssue(
 		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
 			.find((issue) => issue.id === issueId);
 		if (entry === undefined) {
-			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+			throw new IssueIntakeError('issue-not-found', `${issueId} does not exist in the backlog.`, 404);
 		}
 		const validation = entry.spec === undefined ? null : validateSpec(entry.spec);
 		if (entry.status !== 'open' || entry.stage !== 'specified' || validation?.ok !== true) {
 			throw new IssueIntakeError(
 				'issue-not-eligible',
-				`${issueId} precisa estar open, em stage:specified e ter spec executável.`,
+				`${issueId} must be open, at stage:specified and have an executable spec.`,
 				409,
 			);
 		}
@@ -385,7 +385,7 @@ export function approveOperatorIssue(
 
 	throw new IssueIntakeError(
 		'publish-conflict',
-		'O backlog avançou durante três tentativas; tente aprovar a tarefa novamente.',
+		'The backlog advanced during three attempts; try approving the issue again.',
 		409,
 	);
 }
@@ -410,12 +410,12 @@ export function abandonOperatorIssue(
 		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
 			.find((issue) => issue.id === issueId);
 		if (entry === undefined) {
-			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+			throw new IssueIntakeError('issue-not-found', `${issueId} does not exist in the backlog.`, 404);
 		}
 		if (entry.status !== 'open') {
 			throw new IssueIntakeError(
 				'issue-not-eligible',
-				`${issueId} precisa estar open.`,
+				`${issueId} must be open.`,
 				409,
 			);
 		}
@@ -440,7 +440,7 @@ export function abandonOperatorIssue(
 
 	throw new IssueIntakeError(
 		'publish-conflict',
-		'O backlog avançou durante três tentativas; tente abandonar a tarefa novamente.',
+		'The backlog advanced during three attempts; try abandoning the issue again.',
 		409,
 	);
 }

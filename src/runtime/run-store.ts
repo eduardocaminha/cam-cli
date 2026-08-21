@@ -1070,11 +1070,11 @@ export class RunStore {
 		if (row !== null) return decodeProposal(row);
 		const current = this.getProposal(id);
 		if (current === null) {
-			throw new ProposalTransitionError('proposal-not-found', `Proposta ${id} não existe.`, 404);
+			throw new ProposalTransitionError('proposal-not-found', `Proposal ${id} does not exist.`, 404);
 		}
 		throw new ProposalTransitionError(
 			'proposal-not-pending',
-			`Proposta ${id} já está ${current.status}.`,
+			`Proposal ${id} is already ${current.status}.`,
 			409,
 		);
 	}
@@ -1317,13 +1317,13 @@ export class RunStore {
 		if (current === null) {
 			throw new DiagnosticTransitionError(
 				'diagnostic-finding-not-found',
-				`Achado diagnóstico ${id} não existe.`,
+				`Diagnostic finding ${id} does not exist.`,
 				404,
 			);
 		}
 		throw new DiagnosticTransitionError(
 			'diagnostic-finding-not-pending',
-			`Achado diagnóstico ${id} já está ${current.status}.`,
+			`Diagnostic finding ${id} is already ${current.status}.`,
 			409,
 		);
 	}

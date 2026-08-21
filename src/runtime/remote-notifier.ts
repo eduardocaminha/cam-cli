@@ -47,10 +47,10 @@ function chainPauseNotification(event: RunEvent): RemoteNotification | null {
 	if (typeof reason !== 'string' || SILENT_CHAIN_PAUSE_REASONS.has(reason)) return null;
 	const issueId = payloadText(event, 'issueId');
 	return {
-		title: 'Fila parada',
+		title: 'Queue stopped',
 		body: issueId === null
-			? 'A fila de encadeamento parou e precisa de atenção.'
-			: `A fila de encadeamento parou em ${issueId}.`,
+			? 'The run queue stopped and needs attention.'
+			: `The run queue stopped at ${issueId}.`,
 	};
 }
 
@@ -71,20 +71,20 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
 
 	if (event.toState === 'waiting-user') {
 		return {
-			title: 'Gateship precisa de você',
-			body: payloadText(event, 'summary') ?? 'O run aguarda uma decisão do operador.',
+			title: 'Gateship needs you',
+			body: payloadText(event, 'summary') ?? 'The run is waiting for an operator decision.',
 		};
 	}
 	if (event.toState === 'waiting-provider') {
 		return {
-			title: 'Provider temporariamente indisponível',
-			body: payloadText(event, 'message') ?? 'O run foi preservado e pode ser retomado depois.',
+			title: 'Provider temporarily unavailable',
+			body: payloadText(event, 'message') ?? 'The run was preserved and can be resumed later.',
 		};
 	}
 	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {
 		return {
-			title: 'Ship precisa de nova tentativa',
-			body: payloadText(event, 'error') ?? 'O código continua preservado e pronto para retry.',
+			title: 'Shipping needs another attempt',
+			body: payloadText(event, 'error') ?? 'The code remains preserved and ready to retry.',
 		};
 	}
 	// `run.cancelled` (RunRuntime#cancelRun on a run with nothing active to
@@ -100,14 +100,14 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
 	// exists for.
 	if (event.toState === 'interrupted' && event.kind !== 'run.cancelled') {
 		return {
-			title: 'Run interrompido',
-			body: 'O run pode ser retomado pela interface.',
+			title: 'Run interrupted',
+			body: 'The run can be resumed from Gateship.',
 		};
 	}
 	if (event.toState === 'failed') {
 		return {
-			title: 'Run falhou',
-			body: payloadText(event, 'error') ?? 'Abra o Gateship para ver o erro.',
+			title: 'Run failed',
+			body: payloadText(event, 'error') ?? 'Open Gateship to inspect the error.',
 		};
 	}
 	return null;
@@ -149,7 +149,7 @@ export function resolveNtfyUrl(cwd: string, env: Record<string, string | undefin
  * this module could actually POST to. `isNtfyConfigured`, `createRemoteNotifier`
  * and `sendNtfyTestNotification` all call this instead of each re-parsing the
  * raw value their own way, so a value that fails to parse reads as off
- * everywhere at once -- never "configurado" on one path and refused on another.
+ * everywhere at once -- never "configured" on one path and refused on another.
  */
 function resolveNtfyTopicUrl(cwd: string, env: Record<string, string | undefined>): URL | null {
 	const raw = resolveNtfyUrl(cwd, env);
@@ -162,7 +162,7 @@ function resolveNtfyTopicUrl(cwd: string, env: Record<string, string | undefined
 }
 
 /**
- * The only shape Ajustes -- or any other caller -- is allowed to read the
+ * The only shape Settings -- or any other caller -- is allowed to read the
  * secret's presence through: a boolean, never the value it resolved (GSHIP-652).
  */
 export function isNtfyConfigured(cwd: string, env: Record<string, string | undefined> = process.env): boolean {
@@ -268,11 +268,11 @@ export async function sendNtfyTestNotification(options: NtfyTestOptions): Promis
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const target = new URL(topicUrl);
-	target.searchParams.set('title', 'Teste do Gateship');
+	target.searchParams.set('title', 'Gateship test');
 	try {
 		const response = await fetchImpl(target, {
 			method: 'POST',
-			body: 'Mensagem de teste enviada pelo painel de Ajustes.',
+			body: 'Test message sent from the Settings panel.',
 			signal: AbortSignal.timeout(timeoutMs),
 		});
 		return response.ok ? { outcome: 'sent' } : { outcome: 'rejected', detail: `HTTP ${response.status}` };
@@ -280,7 +280,7 @@ export async function sendNtfyTestNotification(options: NtfyTestOptions): Promis
 		// The error's own `name` only, never its `message`: fetch's own network
 		// and timeout errors sometimes embed the request URL in the message, and
 		// that URL carries the secret this function must never leak.
-		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'falha de rede' };
+		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'network failure' };
 	}
 }
 
@@ -319,9 +319,9 @@ interface ResendConfig {
 export type ResendConfigField = 'apiKey' | 'from' | 'to';
 
 export const RESEND_FIELD_LABELS: Readonly<Record<ResendConfigField, string>> = {
-	apiKey: 'chave de API',
-	from: 'remetente',
-	to: 'destinatário',
+	apiKey: 'API key',
+	from: 'sender',
+	to: 'recipient',
 };
 
 /** Same refusal as `readNtfyUrlFile`: absent, empty, or looser than 600 all read as no file. */
@@ -461,8 +461,8 @@ export async function sendResendTestNotification(options: ResendTestOptions): Pr
 			body: JSON.stringify({
 				from: config.from,
 				to: [config.to],
-				subject: 'Teste do Gateship',
-				text: 'Mensagem de teste enviada pelo painel de Ajustes.',
+				subject: 'Gateship test',
+				text: 'Test message sent from the Settings panel.',
 			}),
 			signal: AbortSignal.timeout(timeoutMs),
 		});
@@ -470,6 +470,6 @@ export async function sendResendTestNotification(options: ResendTestOptions): Pr
 	} catch (error) {
 		// The error's own `name` only, never its `message`, mirroring
 		// `sendNtfyTestNotification`'s own rationale.
-		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'falha de rede' };
+		return { outcome: 'unreachable', detail: error instanceof Error ? error.name : 'network failure' };
 	}
 }

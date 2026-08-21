@@ -328,7 +328,7 @@ export class ReactDoctorAdapter implements DiagnosticAdapter {
 	readonly id = 'react';
 	readonly label = 'React';
 	readonly version = REACT_DOCTOR_VERSION;
-	readonly description = 'Erros, segurança, performance e acessibilidade em projetos React.';
+	readonly description = 'Errors, security, performance and accessibility in React projects.';
 	readonly #cacheDir: string;
 	readonly #run: DiagnosticCommandRunner;
 
@@ -405,18 +405,18 @@ export class DiagnosticsRuntime {
 
 	start(analyzerId = 'react'): DiagnosticScan {
 		if (this.#active !== null) {
-			throw new DiagnosticRuntimeError('diagnostic-busy', 'Um diagnóstico já está em execução.', 409);
+			throw new DiagnosticRuntimeError('diagnostic-busy', 'A diagnostic is already running.', 409);
 		}
 		if (!this.#isProjectIdle()) {
 			throw new DiagnosticRuntimeError(
 				'project-busy',
-				'Conclua ou interrompa a run ativa antes de diagnosticar o mesmo projeto.',
+				'Complete or interrupt the active run before diagnosing the same project.',
 				409,
 			);
 		}
 		const adapter = this.#adapters.get(analyzerId);
 		if (adapter === undefined) {
-			throw new DiagnosticRuntimeError('analyzer-not-found', `Analyzer desconhecido: ${analyzerId}.`, 404);
+			throw new DiagnosticRuntimeError('analyzer-not-found', `Unknown analyzer: ${analyzerId}.`, 404);
 		}
 		const scan = this.#store.createDiagnosticScan({
 			id: this.#newId(),
@@ -448,7 +448,7 @@ export class DiagnosticsRuntime {
 		if (this.#active?.scanId !== scanId) {
 			throw new DiagnosticRuntimeError(
 				'diagnostic-not-active',
-				`O diagnóstico ${scanId} não está em execução.`,
+				`Diagnostic ${scanId} is not running.`,
 				409,
 			);
 		}
@@ -611,8 +611,8 @@ export class DiagnosticsRuntime {
 	}
 
 	#failureDetail(active: ActiveDiagnostic, timedOut: () => boolean, error: unknown): string {
-		if (timedOut()) return `Diagnóstico excedeu ${Math.ceil(this.#scanTimeoutMs / 1_000)} segundos.`;
-		if (active.controller.signal.aborted) return 'Diagnóstico cancelado.';
+		if (timedOut()) return `Diagnostic exceeded ${Math.ceil(this.#scanTimeoutMs / 1_000)} seconds.`;
+		if (active.controller.signal.aborted) return 'Diagnostic cancelled.';
 		return error instanceof Error ? error.message : String(error);
 	}
 

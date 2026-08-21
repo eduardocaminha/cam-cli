@@ -382,7 +382,7 @@ describe('diagnostics runtime and inbox', () => {
 		});
 		timedOut.start();
 		await waitForScan(timedOut, 'failed');
-		expect(timedOut.snapshot().scan?.error).toContain('excedeu 1 segundos');
+		expect(timedOut.snapshot().scan?.error).toContain('exceeded 1 seconds');
 		timedOut.close();
 	});
 });
