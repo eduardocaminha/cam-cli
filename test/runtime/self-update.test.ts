@@ -10,6 +10,7 @@ import {
 	type HandoffPlan,
 	type ReleaseClient,
 	SELF_UPDATE_INTERVAL_MS,
+	SELF_UPDATE_SETTING_KEY,
 	SelfUpdateRuntime,
 } from '../../src/runtime/self-update.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -138,6 +139,46 @@ describe('native self update policy', () => {
 		expect(runtime.snapshot().available?.version).toBe('2.0.0');
 		expect(downloads).toEqual([]);
 		expect(plans).toEqual([]);
+	});
+
+	test('projects only stored releases newer than the current binary', async () => {
+		for (const [version, expected] of [
+			['0.9.0', null],
+			['1.0.0', null],
+			['1.1.0', '1.1.0'],
+		] as const) {
+			const release = { ...RELEASE, version, tag: `v${version}` };
+			const { runtime, store } = fixture({
+				client: {
+					resolveLatest: async () => release,
+					download: async () => new Uint8Array(),
+				},
+			});
+
+			await runtime.checkIfDue();
+
+			expect(runtime.snapshot().available?.version ?? null).toBe(expected);
+			const stored = JSON.parse(store.getRuntimeSetting(SELF_UPDATE_SETTING_KEY) ?? '{}') as {
+				available?: AvailableRelease;
+			};
+			expect(stored.available?.version).toBe(version);
+		}
+	});
+
+	test('changing policy cannot resurrect a stale stored release', async () => {
+		const staleRelease = { ...RELEASE, version: '1.0.0', tag: 'v1.0.0' };
+		const { runtime } = fixture({
+			client: {
+				resolveLatest: async () => staleRelease,
+				download: async () => new Uint8Array(),
+			},
+		});
+		await runtime.checkIfDue();
+
+		const snapshot = runtime.setEnabled(true);
+
+		expect(snapshot.enabled).toBe(true);
+		expect(snapshot.available).toBeNull();
 	});
 
 	test('checks at most daily', async () => {

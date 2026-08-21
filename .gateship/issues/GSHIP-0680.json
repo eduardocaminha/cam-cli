@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-680",
   "title": "Hide stale self-update releases from the current snapshot",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T17:27:15.914Z",
-  "updatedAt": "2026-08-21T17:27:45.188Z",
+  "updatedAt": "2026-08-21T17:30:06.027Z",
   "description": "Correct the self-update read projection so a stored detected release is exposed as available only when its semantic version is strictly newer than the binary currently serving the request. Reuse the existing version comparator in SelfUpdateRuntime; do not add a second parser or perform any network work from snapshot(). If the stored release is equal to or older than currentVersion, return available: null from every snapshot-producing path, including the GET /api/update response and the snapshot returned after changing the enabled policy. Keep the durable detection record intact until an ordinary scheduled check replaces it; this slice fixes what the operator is told, not historical persistence. Preserve lastCheckedAt, result, enabled, installation availability, current identity and applying exactly. Preserve the existing apply guard that already refuses equal or older releases, along with scheduler cadence, download, checksum, handoff, rollback and container behavior. Extend the existing self-update runtime tests in place to cover stored older, equal and newer candidates, proving that only the strictly newer candidate is projected and that toggling enabled cannot resurrect stale availability. Keep the existing API/UI contract where available: null renders no available-release line; change no UI wording or component when the corrected runtime projection is sufficient. Update HANDOFF.md only to record the observed stale-cache defect and its projection fix. Out of scope: deleting or migrating the stored cache, forcing a release check, changing the 24-hour cadence, comparing commits, downgrades, release selection, UI redesign, endpoints, database schema, dependencies or update lifecycle changes.",
   "specSource": "operator",
   "spec": {

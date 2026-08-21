@@ -92,6 +92,12 @@ logic.
 
 ## Current observation stage
 
+The self-update durable cache can retain a detected release after the serving
+binary has reached or passed that version. GSHIP-680 corrects the read
+projection so snapshots expose a cached release only when its semantic version
+is strictly newer, while preserving the durable detection record for the next
+ordinary scheduled check.
+
 GSHIP-662 shipped in `v0.297.0` as PR #529. The single service can now stage a
 newer stable image while idle and hand replacement to a short-lived helper,
 with bounded rollback and explicit operator policy. This supersedes the earlier
