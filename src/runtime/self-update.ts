@@ -336,8 +336,14 @@ export class SelfUpdateRuntime {
 		const availability: SelfUpdateAvailabilityView = this.#installation.kind === 'native'
 			? { kind: 'native' }
 			: this.#installation;
+		const stored = readStored(this.#options.store);
+		const available = stored.available !== null
+			&& compareVersions(stored.available.version, this.#options.currentVersion) > 0
+			? stored.available
+			: null;
 		return {
-			...readStored(this.#options.store),
+			...stored,
+			available,
 			currentVersion: this.#options.currentVersion,
 			currentCommit: this.#options.currentCommit,
 			availability,
