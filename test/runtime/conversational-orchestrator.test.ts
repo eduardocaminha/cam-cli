@@ -101,6 +101,22 @@ describe('conversational orchestrator', () => {
 			.toContain('Set every command field unused by the selected type to null.');
 	});
 
+	test('gives every provider the same bounded operator-language contract', () => {
+		const prompt = buildOrchestratorPrompt(
+			{},
+			emptyProjectBrief(),
+			emptyOrchestratorHandoff(),
+			[],
+		);
+		expect(prompt).toContain('Lead with the answer or outcome. Be concise');
+		expect(prompt).toContain('Organize longer answers by topic with short headings');
+		expect(prompt).toContain('Do not use emojis or em dashes.');
+		expect(prompt).toContain('State facts, inferences, and uncertainty honestly.');
+		expect(prompt).toContain('re-explain the previous answer instead of answering a different question');
+		expect(prompt).toContain('preserve paths, commands, filenames, numbers, and URLs exactly');
+		expect(prompt).toContain('introduce no new information, use no tools, and return command type none');
+	});
+
 	test('accepts null unused command fields and rejects null required values', () => {
 		const nullableFields = {
 			title: null,
