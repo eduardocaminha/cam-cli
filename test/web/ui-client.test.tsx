@@ -2399,7 +2399,12 @@ describe('operator shell', () => {
 		expect(shellHeader(runsPage({ runs: [runIn('working')] }))).toContain('Working');
 		// No version reported: the header shows the title alone.
 		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);
+		expect(shellHeader(home())).not.toContain('>v<');
 		expect(home({ version: '0.292.0' })).toContain('>v0.292.0<');
+
+		const released = shellHeader(home({ version: '0.302.0+8146b060' }));
+		expect(released).toContain('>v0.302.0<');
+		expect(released).not.toContain('8146b060');
 	});
 
 	test('the header carries the product mark as its accessible title, the badge in full, and the version', () => {

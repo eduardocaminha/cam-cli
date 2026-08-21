@@ -2198,6 +2198,11 @@ function ChainPauseCallout({
 	);
 }
 
+function humanVersionOf(version: string): string {
+	const buildMetadata = version.indexOf('+');
+	return buildMetadata === -1 ? version : version.slice(0, buildMetadata);
+}
+
 function ShellSidebar({
 	chainRuns,
 	gitIdentity,
@@ -2222,6 +2227,7 @@ function ShellSidebar({
 	const stoppedQueue = stoppedQueuePause(chainRuns);
 	const attention = attentionOf(run, workspaceNotices, stoppedQueue !== null);
 	const catalog = LOCALE_CATALOG[locale].shell;
+	const humanVersion = humanVersionOf(version);
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
 			<div className="flex flex-col items-start gap-3">
@@ -2230,7 +2236,7 @@ function ShellSidebar({
 						<GateshipLockup className="block aspect-[15665/3068] h-7 w-auto" />
 					</h1>
 					{version === '' ? null : (
-						<span className="font-mono text-muted-foreground text-xs">v{version}</span>
+						<span className="font-mono text-muted-foreground text-xs">v{humanVersion}</span>
 					)}
 				</div>
 				<Badge variant={attentionToneOf(attention)}>
