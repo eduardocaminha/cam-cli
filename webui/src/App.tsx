@@ -192,6 +192,7 @@ export interface AppProps {
 	/** A command is in flight; every button is held until it answers. */
 	pending: boolean;
 	onSelectIssue: (issueId: string) => void;
+	onSelectLocale: (locale: Locale) => void;
 	onCreateIssue: (input: OperatorIssueDraft) => void;
 	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onReviewIssue: (issueId: string, input: OperatorSpecDraft) => void;
@@ -2202,13 +2203,14 @@ function ShellSidebar({
 	chainRuns,
 	gitIdentity,
 	locale,
+	onSelectLocale,
 	runInspectorCatalog,
 	route,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'staleService' | 'workspaceNotices'> & {
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectLocale' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	run: RunView | null;
@@ -2260,6 +2262,18 @@ function ShellSidebar({
 					))}
 				</ul>
 			</nav>
+			<label className="flex flex-col gap-1 text-sidebar-foreground text-xs lg:mt-auto" htmlFor="gateship-locale">
+				<span className="font-medium">{catalog.languageLabel}</span>
+				<select
+					className="w-full rounded-md border border-sidebar-border bg-sidebar-accent px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+					id="gateship-locale"
+					onChange={(event) => onSelectLocale((event.currentTarget as unknown as { value: Locale }).value)}
+					value={locale}
+				>
+					<option value="en-US">English (US)</option>
+					<option value="pt-BR">Português (Brasil)</option>
+				</select>
+			</label>
 		</header>
 	);
 }
@@ -3305,6 +3319,7 @@ export function App(props: AppProps): React.ReactElement {
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}
 				locale={props.locale}
+				onSelectLocale={props.onSelectLocale}
 				runInspectorCatalog={localeCatalog.runInspector}
 				route={props.route}
 				run={run}

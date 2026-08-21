@@ -89,7 +89,13 @@ import {
 	UPDATE_PATH,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
-import { DEFAULT_LOCALE, LOCALE_CATALOG, type Locale } from '../../webui/src/locale.ts';
+import {
+	applyLocalePreference,
+	DEFAULT_LOCALE,
+	LOCALE_CATALOG,
+	type Locale,
+	readLocalePreference,
+} from '../../webui/src/locale.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -230,6 +236,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSetChainRuns={() => {}}
 			onSetSelfUpdate={() => {}}
 			onSelectIssue={() => {}}
+			onSelectLocale={() => {}}
 			onSelectProvider={() => {}}
 			onSendMessage={() => {}}
 			onShip={() => {}}
@@ -2610,6 +2617,54 @@ describe('settings surface', () => {
 });
 
 describe('operator shell', () => {
+	test('the persistent language control renders both self-named choices and marks the locale on every surface', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			for (const route of SURFACE_PATHS) {
+				const header = shellHeader(renderAt(route, { locale }));
+				const select = header.slice(header.indexOf('<select'), header.indexOf('</select>'));
+
+				expect(header).toContain(locale === 'en-US' ? '>Language</span>' : '>Idioma</span>');
+				expect(select).toContain('id="gateship-locale"');
+				expect(select).toContain('<option value="en-US"');
+				expect(select).toContain('>English (US)</option>');
+				expect(select).toContain('<option value="pt-BR"');
+				expect(select).toContain('>Português (Brasil)</option>');
+				expect(select).toContain(`<option value="${locale}" selected="">`);
+			}
+		}
+	});
+
+	test('the language control remains available while onboarding blocks the route surface', () => {
+		const project: ProjectStatusView = { state: 'empty', name: 'workspace', detail: 'not ready' };
+		for (const route of ['/', '/runs', '/work'] as const) {
+			const html = renderAt(route, { project });
+			expect(html).toContain('Connect a GitHub project');
+			expect(shellHeader(html)).toContain('id="gateship-locale"');
+		}
+	});
+
+	test('only exact supported stored values become locales', () => {
+		expect(readLocalePreference(() => 'en-US')).toBe('en-US');
+		expect(readLocalePreference(() => 'pt-BR')).toBe('pt-BR');
+		for (const stored of [null, 'en-us', 'pt', '']) {
+			expect(readLocalePreference(() => stored)).toBe('en-US');
+		}
+		expect(readLocalePreference(() => { throw new Error('storage unavailable'); })).toBe('en-US');
+	});
+
+	test('selection updates the document language before best-effort persistence', () => {
+		const effects: string[] = [];
+		applyLocalePreference(
+			'pt-BR',
+			(locale) => { effects.push(`lang:${locale}`); },
+			(key, locale) => {
+				effects.push(`store:${key}:${locale}`);
+				throw new Error('storage unavailable');
+			},
+		);
+		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
+	});
+
 	test('navigation is four real paths, with the active one marked', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
