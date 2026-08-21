@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-684",
+  "title": "Keep every live transcript and run output at the live edge",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T21:08:26.464Z",
+  "updatedAt": "2026-08-21T21:08:26.464Z",
+  "description": "Apply the existing live-edge behavior to every current scrolling surface that receives conversation or agent/run output. Preserve ChatLog's current contract and wire RunActivity to the newest visible event through the same useLiveEdge hook: each region opens at its newest item, follows later arrivals while the operator remains near the bottom, stops following when the operator scrolls up to read history, and resumes when the operator returns to the live edge. The behavior must never force a reader back to the bottom. Preserve the current operational-event filter, 30-event window, conversation content, layout, localization, keyboard reachability and server event stream. Extend focused UI tests to prove both live regions use the shared contract and keep the pure boundary predicate covered. Do not add a dependency, timer, persisted preference, event source, global scroll policy, animation, gate or new product surface.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Apply the existing live-edge behavior to every current scrolling surface that receives conversation or agent/run output. Preserve ChatLog's current contract and wire RunActivity to the newest visible event through the same useLiveEdge hook: each region opens at its newest item, follows later arrivals while the operator remains near the bottom, stops following when the operator scrolls up to read history, and resumes when the operator returns to the live edge. The behavior must never force a reader back to the bottom. Preserve the current operational-event filter, 30-event window, conversation content, layout, localization, keyboard reachability and server event stream. Extend focused UI tests to prove both live regions use the shared contract and keep the pure boundary predicate covered. Do not add a dependency, timer, persisted preference, event source, global scroll policy, animation, gate or new product surface.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -m1 -oF '<ol className=\"flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto\">' webui/src/App.tsx",
+        "output": "<ol className=\"flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto\">"
+      },
+      {
+        "command": "grep -m1 -oF 'const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);' webui/src/App.tsx",
+        "output": "const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);"
+      }
+    ]
+  }
+}
