@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T22:28:17.239Z",
-  "updatedAt": "2026-08-21T22:28:17.239Z",
+  "updatedAt": "2026-08-21T22:28:25.308Z",
   "description": "Recover and finish the exact operator-approved GSHIP-688 feature from the preserved failed-run workspace /Users/eduardo/Documents/Projects/gateship/.gship/worktrees/a6a01db7-f5c2-4019-a046-03f0e835ac38. Treat that workspace as read-only recovery evidence: reapply its uncommitted diff into this run own assigned worktree, then make only the corrections required by verification and review. The delivered feature must remain the concrete Resend Settings flow: same-origin UI save and removal; a write-only API key that is never returned, logged, stored in SQLite, or exposed to any child; same-directory prepared mode-0600 file plus atomic rename preserving the old valid key on preparation failure; file-backed bounded sender and recipient chosen by the operator; blank key preserving the credential; effective values and external-management flags visible without exposing the key; existing environment variables independently overriding file-backed fields; localized en-US and pt-BR controls; real test delivery; and updated credential documentation. Keep ntfy unchanged. Keep Keychain, encryption with an adjacent key, generic secret stores, dependencies, database schema, hosted relay, default gateship.dev sender, mailing lists, analytics, and non-transactional use of the recipient out of scope.\n\nCorrect the reproduced verification defect without changing the required production precedence: web notification tests must control or clear GATESHIP_RESEND_API_KEY, GATESHIP_RESEND_FROM, and GATESHIP_RESEND_TO instead of inheriting the Gateship service environment. The same-origin save test must prove file-backed effective values under a controlled empty environment, while a separate observable test proves each environment field wins independently. Do not weaken assertions, hide the externallyManaged fields, or make files override environment merely to pass. Run the complete approved verification command from a clean test environment before returning; unlike the failed run, do not infer that repairing one earlier assertion proves the remaining suite.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/remote-notifier.test.ts test/web/notifications-api.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run lint"
     ]
+  },
+  "approval": {
+    "fingerprint": "ad3c08c7835ed588f70f12c09a139202b9cafc61569a85094140c09a5b90de16",
+    "approvedAt": "2026-08-21T22:28:25.308Z"
   }
 }
