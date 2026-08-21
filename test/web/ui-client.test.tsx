@@ -66,6 +66,7 @@ import {
 	PROVIDERS_PATH,
 	type ProjectBriefView,
 	type ProjectStatusView,
+	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
 	RESOLVED_PROPOSALS_PATH,
@@ -1966,6 +1967,62 @@ describe('work surface', () => {
 });
 
 describe('settings surface', () => {
+	test('the typed settings catalog renders representative actionable and empty states in both locales', () => {
+		const diagnostics = emptyDiagnostics();
+		diagnostics.schedule = {
+			enabled: false,
+			analyzer: 'react',
+			cadence: 'daily',
+			lastScanAt: null,
+			nextRunAt: null,
+			overdue: false,
+		};
+		const overrides: Partial<AppProps> = {
+			brief: { objective: 'Objetivo escrito pelo operador.', decisions: ['Keep authored text.'], constraints: [], openItems: [] },
+			diagnostics,
+			modelSettings: {
+				...EMPTY_MODEL_SETTINGS,
+				codex: { ...EMPTY_MODEL_SETTINGS.codex, executor: { model: 'gpt-factual', effort: 'xhigh' } },
+			},
+			operatorProfile: { name: 'Eduardo', timezone: 'America/Sao_Paulo' },
+			providers: [{
+				id: 'codex',
+				installed: true,
+				subscription: true,
+				label: 'Codex factual',
+				login: 'web',
+				plan: 'team-plan',
+				usage: { windows: [{ window: 'seven_day', usedPercent: 78.4, observedAt: '2026-08-20T09:05:00.000Z' }], resetCreditCount: 2_000 },
+			}],
+			notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+			handoff: EMPTY_BRIEF,
+		};
+		const english = settingsPage({ ...overrides, locale: 'en-US' });
+		const portuguese = settingsPage({ ...overrides, locale: 'pt-BR' });
+
+		for (const [html, labels] of [
+			[english, ['Settings', 'Project', 'Operator', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Gateship updates', 'Diagnostic schedule', 'Notifications', 'Project brief', 'Automatic handoff', 'Save profile', 'Save models', 'Save schedule', 'Save brief', 'Disabled.', 'Nothing recorded yet.', 'open', 'close']],
+			[portuguese, ['Ajustes', 'Projeto', 'Operador', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Atualizações do Gateship', 'Agenda de diagnósticos', 'Notificações', 'Brief do projeto', 'Handoff automático', 'Salvar perfil', 'Salvar modelos', 'Salvar agenda', 'Salvar brief', 'Desativada.', 'Nada registrado ainda.', 'abrir', 'fechar']],
+		] as const) {
+			for (const label of labels) expect(html).toContain(label);
+			for (const factual of ['acme/gateship', 'origin/main', 'Eduardo', 'America/Sao_Paulo', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'react', 'Objetivo escrito pelo operador.', 'Keep authored text.']) {
+				expect(html).toContain(factual);
+			}
+		}
+		expect(english).toContain('78% used');
+		expect(portuguese).toContain('78% usados');
+		expect(english).toContain('2,000 reset credit(s) available');
+		expect(portuguese).toContain('2.000 créditos de reinício disponíveis');
+		const observed = new Date('2026-08-20T09:05:00.000Z');
+		expect(english).toContain(observed.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }));
+		expect(portuguese).toContain(observed.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
+		expect(english).toContain('ntfy: configured');
+		expect(portuguese).toContain('ntfy: configurado');
+		expect(buttonIsEnabled(english, 'Send test')).toBe(true);
+		expect(buttonIsEnabled(portuguese, 'Enviar teste')).toBe(true);
+		expect(portuguese).not.toContain('Settings');
+	});
+
 	test('edits the operator identity and suggests browser timezone without silently saving it', () => {
 		const empty = panel(settingsPage(), 'Operator');
 		expect(empty).toContain('name="operator-name"');
@@ -2123,6 +2180,24 @@ describe('settings surface', () => {
 		expect(providers).toContain('Spend limit: $42.00 of $100.00');
 		expect(providers).toContain('58% remaining');
 		expect(providers).toContain('2 reset credit(s) available');
+	});
+
+	test('preserves decimal spend-limit facts while formatting them for each locale', () => {
+		const provider: ProviderStatusView = {
+			id: 'codex',
+			installed: true,
+			subscription: true,
+			label: 'Codex',
+			login: 'web',
+			usage: {
+				windows: [],
+				spendLimit: { limit: '$100.00', used: '$87.50', remainingPercent: 12.5 },
+			},
+		};
+		expect(settingsPage({ locale: 'en-US', providers: [provider] }))
+			.toContain('Spend limit: $87.50 of $100.00 (12.5% remaining)');
+		expect(settingsPage({ locale: 'pt-BR', providers: [provider] }))
+			.toContain('Limite de gastos: $87.50 de $100.00 (12,5% restantes)');
 	});
 
 	test('local notifications show the browser permission state without a secret field', () => {

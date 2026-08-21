@@ -72,6 +72,7 @@ import {
 	type RunInspectorCatalog,
 	type RunsOperationalCatalog,
 	type RunsWorkflowCatalog,
+	type SettingsCatalog,
 	type ShellCatalog,
 	type WorkCatalog,
 } from './locale.ts';
@@ -394,11 +395,13 @@ function ContextPanel({
 	description,
 	open = false,
 	children,
+	actionLabels = { open: 'open', close: 'close' },
 }: {
 	title: string;
 	description: string;
 	open?: boolean;
 	children: React.ReactNode;
+	actionLabels?: { open: string; close: string };
 }): React.ReactElement {
 	return (
 		<CardDisclosure className="group" open={open}>
@@ -406,8 +409,8 @@ function ContextPanel({
 				<CardTitle>{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
 				<CardAction aria-hidden="true">
-					<span className="text-muted-foreground text-xs group-open:hidden">open</span>
-					<span className="hidden text-muted-foreground text-xs group-open:inline">close</span>
+					<span className="text-muted-foreground text-xs group-open:hidden">{actionLabels.open}</span>
+					<span className="hidden text-muted-foreground text-xs group-open:inline">{actionLabels.close}</span>
 				</CardAction>
 			</CardSummary>
 			<CardPanel>{children}</CardPanel>
@@ -1009,41 +1012,29 @@ type ProviderPanelProps = Pick<
 	'providers' | 'selectedProvider' | 'pending' | 'onConnectCodex' | 'onSelectProvider'
 >;
 
-function providerDescription(provider: ProviderStatusView): string {
+function providerDescription(provider: ProviderStatusView, catalog: SettingsCatalog): string {
 	if (provider.availability !== undefined) {
-		const reason = LOCALE_CATALOG[DEFAULT_LOCALE].runInspector.providerHold.waitReasons[
-			provider.availability.kind
-		];
+		const reason = catalog.providers.waitReasons[provider.availability.kind];
 		return provider.subscription
-			? `Subscription connected, but currently unavailable: ${reason}.`
-			: `Currently unavailable: ${reason}.`;
+			? catalog.providers.connectedUnavailable(reason)
+			: catalog.providers.unavailable(reason);
 	}
 	if (provider.subscription) {
-		return `Subscription connected${provider.plan === undefined ? '' : ` · ${provider.plan}`}`;
+		return catalog.providers.connected(provider.plan);
 	}
-	return provider.installed ? 'Installed, without a connected subscription' : 'Client not found';
+	return provider.installed ? catalog.providers.installedDisconnected : catalog.providers.clientMissing;
 }
 
-/** Friendly labels for Claude's own window names; Codex's primary/secondary fall back to their reported duration. */
-const USAGE_WINDOW_LABELS: Readonly<Record<string, string>> = {
-	five_hour: '5 hour',
-	seven_day: '7 day',
-	seven_day_opus: '7 day (Opus)',
-	seven_day_sonnet: '7 day (Sonnet)',
-	seven_day_overage_included: '7 day (overage)',
-	overage: 'Overage',
-};
-
-function formatUsageWindowDuration(minutes: number): string {
-	if (minutes % 1_440 === 0) return `${minutes / 1_440} day`;
-	if (minutes % 60 === 0) return `${minutes / 60} hour`;
-	return `${minutes} min`;
+function formatUsageWindowDuration(minutes: number, locale: Locale, catalog: SettingsCatalog): string {
+	if (minutes % 1_440 === 0) return catalog.providers.duration.days(minutes / 1_440, formatCount(minutes / 1_440, locale));
+	if (minutes % 60 === 0) return catalog.providers.duration.hours(minutes / 60, formatCount(minutes / 60, locale));
+	return catalog.providers.duration.minutes(formatCount(minutes, locale));
 }
 
-function usageWindowLabel(window: ProviderUsageWindowView): string {
-	const known = USAGE_WINDOW_LABELS[window.window];
+function usageWindowLabel(window: ProviderUsageWindowView, locale: Locale, catalog: SettingsCatalog): string {
+	const known = catalog.providers.usageWindowLabels[window.window];
 	if (known !== undefined) return known;
-	return window.windowMinutes === undefined ? window.window : formatUsageWindowDuration(window.windowMinutes);
+	return window.windowMinutes === undefined ? window.window : formatUsageWindowDuration(window.windowMinutes, locale, catalog);
 }
 
 function usageWindowVariant(status: ProviderUsageWindowView['status']): BadgeVariant {
@@ -1052,31 +1043,36 @@ function usageWindowVariant(status: ProviderUsageWindowView['status']): BadgeVar
 	return 'outline';
 }
 
-function formatUsageTime(value: string): string {
+function formatUsageTime(value: string, locale: Locale): string {
 	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+	return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function formatExactPercent(value: number, locale: Locale): string {
+	return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 20 }).format(value / 100);
 }
 
 /** One window's percentage and reset time, each shown only when the source actually reported it. */
-function ProviderUsageWindowRow({ window }: { window: ProviderUsageWindowView }): React.ReactElement {
+function ProviderUsageWindowRow({ window, locale, catalog }: { window: ProviderUsageWindowView; locale: Locale; catalog: SettingsCatalog }): React.ReactElement {
+	const percent = window.usedPercent === undefined ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(window.usedPercent / 100);
 	return (
 		<li className="flex flex-wrap items-center gap-2">
-			<span>{usageWindowLabel(window)}</span>
+			<span>{usageWindowLabel(window, locale, catalog)}</span>
 			{window.usedPercent === undefined ? null : (
-				<Badge variant={usageWindowVariant(window.status)}>{Math.round(window.usedPercent)}% used</Badge>
+				<Badge variant={usageWindowVariant(window.status)}>{catalog.providers.usedPercent(percent ?? '')}</Badge>
 			)}
 			{window.resetsAt === undefined ? null : (
-				<span>resets <time dateTime={window.resetsAt}>{formatUsageTime(window.resetsAt)}</time></span>
+				<span>{catalog.providers.resets} <time dateTime={window.resetsAt}>{formatUsageTime(window.resetsAt, locale)}</time></span>
 			)}
 			<span className="text-muted-foreground">
-				as of <time dateTime={window.observedAt}>{formatUsageTime(window.observedAt)}</time>
+				{catalog.providers.asOf} <time dateTime={window.observedAt}>{formatUsageTime(window.observedAt, locale)}</time>
 			</span>
 		</li>
 	);
 }
 
 /** Compact progressive detail (GSHIP-664): each piece of the source's telemetry renders only when present, never absent as a fabricated zero. */
-function ProviderUsageDetail({ usage }: { usage: ProviderUsageView | undefined }): React.ReactElement | null {
+function ProviderUsageDetail({ usage, locale, catalog }: { usage: ProviderUsageView | undefined; locale: Locale; catalog: SettingsCatalog }): React.ReactElement | null {
 	if (usage === undefined) return null;
 	const hasContent = usage.windows.length > 0
 		|| usage.credits !== undefined
@@ -1087,29 +1083,28 @@ function ProviderUsageDetail({ usage }: { usage: ProviderUsageView | undefined }
 		<div className="mt-1 flex flex-col gap-1 text-xs">
 			{usage.windows.length === 0 ? null : (
 				<ul className="flex flex-col gap-1">
-					{usage.windows.map((window) => <ProviderUsageWindowRow key={window.window} window={window} />)}
+					{usage.windows.map((window) => <ProviderUsageWindowRow catalog={catalog} key={window.window} locale={locale} window={window} />)}
 				</ul>
 			)}
 			{usage.credits === undefined ? null : (
 				<p className="text-muted-foreground">
-					Credits: {usage.credits.unlimited
-						? 'unlimited'
+					{catalog.providers.credits}: {usage.credits.unlimited
+						? catalog.providers.unlimited
 						: usage.credits.hasCredits
-							? (usage.credits.balance ?? 'available')
-							: 'none'}
+							? (usage.credits.balance ?? catalog.providers.available)
+							: catalog.providers.none}
 				</p>
 			)}
 			{usage.spendLimit === undefined ? null : (
 				<p className="text-muted-foreground">
-					Spend limit: {usage.spendLimit.used} of {usage.spendLimit.limit}
-					{' '}({usage.spendLimit.remainingPercent}% remaining)
+					{catalog.providers.spendLimit(usage.spendLimit.used, usage.spendLimit.limit, formatExactPercent(usage.spendLimit.remainingPercent, locale))}
 					{usage.spendLimit.resetsAt === undefined ? null : (
-						<> · resets <time dateTime={usage.spendLimit.resetsAt}>{formatUsageTime(usage.spendLimit.resetsAt)}</time></>
+						<> · {catalog.providers.resets} <time dateTime={usage.spendLimit.resetsAt}>{formatUsageTime(usage.spendLimit.resetsAt, locale)}</time></>
 					)}
 				</p>
 			)}
 			{usage.resetCreditCount === undefined ? null : (
-				<p className="text-muted-foreground">{usage.resetCreditCount} reset credit(s) available</p>
+				<p className="text-muted-foreground">{catalog.providers.resetCredits(usage.resetCreditCount, formatCount(usage.resetCreditCount, locale))}</p>
 			)}
 		</div>
 	);
@@ -1117,23 +1112,25 @@ function ProviderUsageDetail({ usage }: { usage: ProviderUsageView | undefined }
 
 function ProviderRow({
 	provider,
+	catalog,
+	locale,
 	selectedProvider,
 	pending,
 	onConnectCodex,
 	onSelectProvider,
-}: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView }): React.ReactElement {
+}: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView; catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
 		<li className="flex items-center justify-between gap-3 text-sm">
 			<div className="min-w-0">
 				<p className="flex flex-wrap items-center gap-2 font-medium">
 					{provider.label}
-					{provider.id === selectedProvider ? <Badge variant="secondary">in use</Badge> : null}
+					{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
 				</p>
-				<p className="break-words text-muted-foreground">{providerDescription(provider)}</p>
-				<ProviderUsageDetail usage={provider.usage} />
+				<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
+				<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
 			</div>
 			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
-				<ActionButton enabled={!pending} label="Connect ChatGPT" onClick={onConnectCodex} />
+				<ActionButton enabled={!pending} label={catalog.providers.connectChatGpt} onClick={onConnectCodex} />
 			) : null}
 			{provider.id === 'claude' && !provider.subscription && provider.installed ? (
 				<code className="break-all text-muted-foreground">claude auth login</code>
@@ -1141,7 +1138,7 @@ function ProviderRow({
 			{provider.subscription && provider.id !== selectedProvider ? (
 				<ActionButton
 					enabled={!pending}
-					label={`Use ${provider.label}`}
+					label={catalog.providers.useProvider(provider.label)}
 					onClick={() => onSelectProvider(provider.id)}
 				/>
 			) : null}
@@ -1149,17 +1146,20 @@ function ProviderRow({
 	);
 }
 
-function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
+function ProvidersPanel(props: ProviderPanelProps & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Gateship uses subscriptions from installed clients and never receives tokens."
+			actionLabels={props.catalog.disclosure}
+			description={props.catalog.providers.description}
 			open
-			title="Local agents"
+			title={props.catalog.providers.title}
 		>
 			<ul className="flex flex-col gap-3">
 				{props.providers.map((provider) => (
 					<ProviderRow
+						catalog={props.catalog}
 						key={provider.id}
+						locale={props.locale}
 						onConnectCodex={props.onConnectCodex}
 						onSelectProvider={props.onSelectProvider}
 						pending={props.pending}
@@ -1175,12 +1175,6 @@ function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
 const MODEL_PROVIDER_LABELS: Readonly<Record<ProviderStatusView['id'], string>> = {
 	claude: 'Claude',
 	codex: 'Codex',
-};
-
-const MODEL_ROLE_LABELS: Readonly<Record<ModelRoleName, string>> = {
-	orchestrator: 'Orchestrator',
-	executor: 'Executor',
-	reviewer: 'Reviewer',
 };
 
 /**
@@ -1212,10 +1206,12 @@ function ModelSlotFields({
 	providerId,
 	role,
 	slot,
+	catalog,
 }: {
 	providerId: ProviderStatusView['id'];
 	role: ModelRoleName;
 	slot: ModelSlotView;
+	catalog: SettingsCatalog;
 }): React.ReactElement {
 	return (
 		<div className="flex flex-col gap-2 sm:flex-row">
@@ -1223,26 +1219,26 @@ function ModelSlotFields({
 				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
 				htmlFor={`${providerId}-${role}-model`}
 			>
-				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — model</span>
+				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.model}</span>
 				<input
 					className={cn(FIELD_CLASS, 'font-mono')}
 					defaultValue={slot.model}
 					id={`${providerId}-${role}-model`}
 					name={`${providerId}-${role}-model`}
-					placeholder="CLI default"
+					placeholder={catalog.models.cliDefault}
 				/>
 			</label>
 			<label
 				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
 				htmlFor={`${providerId}-${role}-effort`}
 			>
-				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — effort</span>
+				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.effort}</span>
 				<input
 					className={cn(FIELD_CLASS, 'font-mono')}
 					defaultValue={slot.effort}
 					id={`${providerId}-${role}-effort`}
 					name={`${providerId}-${role}-effort`}
-					placeholder="CLI default"
+					placeholder={catalog.models.cliDefault}
 				/>
 			</label>
 		</div>
@@ -1252,8 +1248,10 @@ function ModelSlotFields({
 function ModelProviderFields({
 	providerId,
 	modelSettings,
+	catalog,
 }: Pick<AppProps, 'modelSettings'> & {
 	providerId: ProviderStatusView['id'];
+	catalog: SettingsCatalog;
 }): React.ReactElement {
 	return (
 		<fieldset className="flex flex-col gap-3">
@@ -1264,10 +1262,11 @@ function ModelProviderFields({
 				rel="noreferrer noopener"
 				target="_blank"
 			>
-				{MODEL_PROVIDER_LABELS[providerId]} models in the official documentation
+				{catalog.models.documentation(MODEL_PROVIDER_LABELS[providerId])}
 			</a>
 			{MODEL_ROLE_NAMES.map((role) => (
 				<ModelSlotFields
+					catalog={catalog}
 					key={role}
 					providerId={providerId}
 					role={role}
@@ -1287,16 +1286,14 @@ function ModelSettingsPanel({
 	modelSettings,
 	pending,
 	onSaveModelSettings,
-}: Pick<AppProps, 'modelSettings' | 'pending' | 'onSaveModelSettings'>): React.ReactElement {
+	catalog,
+}: Pick<AppProps, 'modelSettings' | 'pending' | 'onSaveModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			description={
-				'Applies to the next agent started, without restarting the service. ' +
-				'An empty field keeps the CLI default. The field is free text: the CLI itself ' +
-				'rejects an invalid value with its own error, not Gateship.'
-			}
+			actionLabels={catalog.disclosure}
+			description={catalog.models.description}
 			open
-			title="Model and effort by role"
+			title={catalog.models.title}
 		>
 			<form
 				className="flex flex-col gap-6"
@@ -1310,13 +1307,14 @@ function ModelSettingsPanel({
 			>
 				{MODEL_PROVIDER_IDS.map((providerId) => (
 					<ModelProviderFields
+						catalog={catalog}
 						key={providerId}
 						modelSettings={modelSettings}
 						providerId={providerId}
 					/>
 				))}
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Save models
+					{catalog.models.save}
 				</button>
 			</form>
 		</ContextPanel>
@@ -1335,12 +1333,14 @@ function ChainRunsPanel({
 	chainRuns,
 	pending,
 	onSetChainRuns,
-}: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'>): React.ReactElement {
+	catalog,
+}: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			description="When a run finishes in done, starts the next approved issue automatically in ID order."
+			actionLabels={catalog.disclosure}
+			description={catalog.chain.description}
 			open
-			title="Automatic run chaining"
+			title={catalog.chain.title}
 		>
 			<label className="flex items-center gap-2 text-sm">
 				<input
@@ -1350,7 +1350,7 @@ function ChainRunsPanel({
 						onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
 					type="checkbox"
 				/>
-				<span className="font-medium">Chain approved runs automatically</span>
+				<span className="font-medium">{catalog.chain.label}</span>
 			</label>
 		</ContextPanel>
 	);
@@ -1360,15 +1360,18 @@ function DiagnosticSchedulePanel({
 	diagnostics,
 	pending,
 	onSaveDiagnosticSchedule,
+	catalog,
+	locale,
 }: Pick<
 	AppProps,
 	'diagnostics' | 'pending' | 'onSaveDiagnosticSchedule'
->): React.ReactElement {
+> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	const { schedule } = diagnostics;
 	return (
 		<ContextPanel
-			description="Runs at most one overdue diagnostic, and only while this project is idle."
-			title="Diagnostic schedule"
+			actionLabels={catalog.disclosure}
+			description={catalog.diagnostics.description}
+			title={catalog.diagnostics.title}
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1391,10 +1394,10 @@ function DiagnosticSchedulePanel({
 						name="diagnostic-schedule-enabled"
 						type="checkbox"
 					/>
-					<span className="font-medium">Run diagnostics periodically</span>
+					<span className="font-medium">{catalog.diagnostics.label}</span>
 				</label>
 				<label className="flex max-w-sm flex-col gap-1 text-sm" htmlFor="diagnostic-schedule-cadence">
-					<span className="font-medium">Cadence</span>
+					<span className="font-medium">{catalog.diagnostics.cadence}</span>
 					<select
 						className={FIELD_CLASS}
 						defaultValue={schedule.cadence}
@@ -1402,27 +1405,27 @@ function DiagnosticSchedulePanel({
 						id="diagnostic-schedule-cadence"
 						name="diagnostic-schedule-cadence"
 					>
-						<option value="daily">Daily</option>
-						<option value="weekly">Weekly</option>
+						<option value="daily">{catalog.diagnostics.cadenceLabels.daily}</option>
+						<option value="weekly">{catalog.diagnostics.cadenceLabels.weekly}</option>
 					</select>
 				</label>
 				<div className="flex flex-wrap items-center gap-2 text-sm">
 					<Badge variant="outline">{schedule.analyzer}</Badge>
 					{!schedule.enabled ? (
-						<span className="text-muted-foreground">Disabled.</span>
+						<span className="text-muted-foreground">{catalog.diagnostics.disabled}</span>
 					) : schedule.overdue ? (
-						<Badge variant="warning">overdue</Badge>
+						<Badge variant="warning">{catalog.diagnostics.overdue}</Badge>
 					) : (
 						<span className="text-muted-foreground">
-							Next run: {schedule.nextRunAt ?? 'calculating'}
+							{catalog.diagnostics.nextRun(schedule.nextRunAt === null ? catalog.diagnostics.calculating : formatUsageTime(schedule.nextRunAt, locale))}
 						</span>
 					)}
 				</div>
 				<p className="text-muted-foreground text-xs">
-					A manual scan also resets the window. Missed periods do not create catch-up runs.
+					{catalog.diagnostics.guidance}
 				</p>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Save schedule
+					{catalog.diagnostics.save}
 				</button>
 			</form>
 		</ContextPanel>
@@ -1433,12 +1436,15 @@ function SelfUpdatePanel({
 	selfUpdate,
 	pending,
 	onSetSelfUpdate,
-}: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'>): React.ReactElement {
+	catalog,
+	locale,
+}: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	const unavailable = selfUpdate.availability.kind !== 'native';
 	return (
 		<ContextPanel
-			description="Checks official releases at most daily and applies a verified native binary only while the project is idle."
-			title="Gateship updates"
+			actionLabels={catalog.disclosure}
+			description={catalog.updates.description}
+			title={catalog.updates.title}
 		>
 			<label className="flex items-center gap-2 text-sm">
 				<input
@@ -1449,25 +1455,25 @@ function SelfUpdatePanel({
 					)}
 					type="checkbox"
 				/>
-				<span className="font-medium">Install verified native updates automatically</span>
+				<span className="font-medium">{catalog.updates.label}</span>
 			</label>
 			<p className="text-muted-foreground text-xs">
-				Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.
+				{catalog.updates.guidance}
 			</p>
 			{unavailable ? (
 				<p className="text-muted-foreground text-sm">{selfUpdate.availability.reason}</p>
 			) : null}
 			{selfUpdate.available !== null ? (
-				<p className="text-sm">Available: v{selfUpdate.available.version} ({selfUpdate.available.commit})</p>
+				<p className="text-sm">{catalog.updates.available}: v{selfUpdate.available.version} ({selfUpdate.available.commit})</p>
 			) : null}
 			{selfUpdate.result !== null ? (
 				<div className="flex flex-col gap-1 text-sm">
 					<Badge variant={selfUpdate.result.status === 'success' ? 'success' : 'warning'}>
-						{selfUpdate.result.status}
+						{catalog.updates.statusLabels[selfUpdate.result.status]}
 					</Badge>
 					<p>{selfUpdate.result.reason}</p>
 					<p className="text-muted-foreground text-xs">
-						{selfUpdate.result.previousVersion} → {selfUpdate.result.targetVersion ?? 'unknown'} at {selfUpdate.result.at}
+						{catalog.updates.result(selfUpdate.result.previousVersion, selfUpdate.result.targetVersion ?? catalog.updates.unknown, formatUsageTime(selfUpdate.result.at, locale))}
 					</p>
 				</div>
 			) : null}
@@ -1475,45 +1481,31 @@ function SelfUpdatePanel({
 	);
 }
 
-const NOTIFICATION_CHANNEL_LABELS: Readonly<Record<NotificationChannelId, string>> = {
-	ntfy: 'ntfy',
-	resend: 'email (Resend)',
-};
-
 /**
  * ntfy's own publish docs, and Resend's own API-key and domain-verification
  * pages: DNS verification happens outside Gateship (GSHIP-653), which is the
  * part an operator following this panel actually gets stuck on, so both of
  * Resend's pages are linked, not just the key page.
  */
-const NOTIFICATION_CHANNEL_DOCS: Readonly<Record<NotificationChannelId, ReadonlyArray<{ label: string; href: string }>>> = {
-	ntfy: [{ label: 'ntfy documentation', href: 'https://docs.ntfy.sh/publish/' }],
+const NOTIFICATION_CHANNEL_DOCS: Readonly<Record<NotificationChannelId, ReadonlyArray<{ label: 'ntfy' | 'resendApiKeys' | 'resendDomain'; href: string }>>> = {
+	ntfy: [{ label: 'ntfy', href: 'https://docs.ntfy.sh/publish/' }],
 	resend: [
-		{ label: 'Resend API keys', href: 'https://resend.com/api-keys' },
-		{ label: 'Resend domain verification', href: 'https://resend.com/domains' },
+		{ label: 'resendApiKeys', href: 'https://resend.com/api-keys' },
+		{ label: 'resendDomain', href: 'https://resend.com/domains' },
 	],
 };
 
 /** Setup instructions text, the one part of the row that differs enough per channel to branch on directly. */
-function NotificationChannelInstructions({ channelId }: { channelId: NotificationChannelId }): React.ReactElement {
-	if (channelId === 'resend') {
-		return (
-			<>
-				Save the API key in <code className="break-all">.gship/resend-api-key</code> at the project root
-				 with mode 600, or set <code className="break-all">GATESHIP_RESEND_API_KEY</code>, which takes
-				 precedence over the file. Also set <code className="break-all">GATESHIP_RESEND_FROM</code>{' '}
-				(sender at a verified domain) and <code className="break-all">GATESHIP_RESEND_TO</code>{' '}
-				(recipient).{' '}
-			</>
-		);
-	}
-	return (
-		<>
-			Save the topic URL in <code className="break-all">.gship/ntfy-url</code> at the project root with
-			 mode 600, or set <code className="break-all">GATESHIP_NTFY_URL</code>, which takes precedence over
-			 the file.{' '}
-		</>
-	);
+const NOTIFICATION_INSTRUCTION_VALUES: Readonly<Record<string, string>> = {
+	file: '', url: 'GATESHIP_NTFY_URL', key: 'GATESHIP_RESEND_API_KEY', from: 'GATESHIP_RESEND_FROM', to: 'GATESHIP_RESEND_TO',
+};
+
+function NotificationChannelInstructions({ channelId, catalog }: { channelId: NotificationChannelId; catalog: SettingsCatalog }): React.ReactElement {
+	const values: Readonly<Record<string, string>> = { ...NOTIFICATION_INSTRUCTION_VALUES, file: channelId === 'resend' ? '.gship/resend-api-key' : '.gship/ntfy-url' };
+	return <>{catalog.notifications.instructions[channelId].split(/(\{(?:file|url|key|from|to)\})/).map((part) => {
+		const key = part.startsWith('{') ? part.slice(1, -1) : null;
+		return key === null ? part : <code className="break-all" key={key}>{values[key]}</code>;
+	})}</>;
 }
 
 /**
@@ -1528,33 +1520,35 @@ function NotificationChannelRow({
 	channel,
 	pending,
 	onSendNotificationTest,
+	catalog,
 }: {
 	channelId: NotificationChannelId;
 	channel: NotificationChannelView;
 	pending: boolean;
 	onSendNotificationTest: (channelId: NotificationChannelId) => void;
+	catalog: SettingsCatalog;
 }): React.ReactElement {
-	const label = NOTIFICATION_CHANNEL_LABELS[channelId];
+	const label = catalog.notifications.channelLabels[channelId];
 	return (
 		<div className="flex flex-col gap-2">
 			<div className="flex items-center justify-between gap-3">
 				<p className="text-sm">
-					{label}: {channel.configured ? 'configured' : 'not configured'}
-					{!channel.configured && channel.missing.length > 0 ? ` (missing: ${channel.missing.join(', ')})` : null}
+					{label}: {channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}
+					{!channel.configured && channel.missing.length > 0 ? catalog.notifications.missing(channel.missing.join(', ')) : null}
 				</p>
 				<ActionButton
 					enabled={channel.configured && !pending}
-					label="Send test"
+					label={catalog.notifications.sendTest}
 					onClick={() => onSendNotificationTest(channelId)}
 				/>
 			</div>
 			<p className="text-muted-foreground text-sm">
-				<NotificationChannelInstructions channelId={channelId} />
+				<NotificationChannelInstructions catalog={catalog} channelId={channelId} />
 				{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc, index) => (
 					<React.Fragment key={doc.href}>
 						{index > 0 ? ' ' : null}
 						<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
-							{doc.label}
+							{catalog.notifications.docLabels[doc.label]}
 						</a>
 					</React.Fragment>
 				))}
@@ -1569,33 +1563,23 @@ function NotificationsPanel({
 	onEnableNotifications,
 	onSendNotificationTest,
 	pending,
+	catalog,
 }: Pick<
 	AppProps,
 	'notificationChannels' | 'notificationPermission' | 'onEnableNotifications' | 'onSendNotificationTest' | 'pending'
->): React.ReactElement {
-	const active = notificationPermission === 'granted';
-	const unavailable = notificationPermission === 'unsupported';
-	const denied = notificationPermission === 'denied';
-	const actionLabel = active
-		? 'Notifications active'
-		: denied
-			? 'Notifications blocked'
-			: unavailable
-				? 'Notifications unavailable'
-				: 'Enable notifications';
+> & { catalog: SettingsCatalog }): React.ReactElement {
+	const actionLabel = catalog.notifications.actionLabels[notificationPermission];
 	return (
 		<ContextPanel
-			description="The browser alerts you when a run needs you or finishes; remote channels alert you even when the tab is closed."
+			actionLabels={catalog.disclosure}
+			description={catalog.notifications.description}
 			open
-			title="Notifications"
+			title={catalog.notifications.title}
 		>
 			<div className="flex flex-col gap-4">
 				<div className="flex items-center justify-between gap-3">
 					<p className="text-muted-foreground text-sm">
-						{active ? 'Active in this browser.' : null}
-						{denied ? 'Blocked in this browser\'s permissions.' : null}
-						{unavailable ? 'Unavailable in this browser.' : null}
-						{notificationPermission === 'default' ? 'Permission not requested yet.' : null}
+						{catalog.notifications.permissionStates[notificationPermission]}
 					</p>
 					<ActionButton
 						enabled={notificationPermission === 'default'}
@@ -1606,6 +1590,7 @@ function NotificationsPanel({
 				<div className="flex flex-col gap-3 border-border border-t pt-4">
 					{NOTIFICATION_CHANNEL_IDS.map((channelId) => (
 						<NotificationChannelRow
+							catalog={catalog}
 							channel={notificationChannels[channelId]}
 							channelId={channelId}
 							key={channelId}
@@ -1977,11 +1962,10 @@ function IssueSpecifyPanel({
  */
 const BRIEF_LISTS: readonly {
 	name: 'decisions' | 'constraints' | 'openItems';
-	label: string;
 }[] = [
-	{ name: 'decisions', label: 'Decisions' },
-	{ name: 'constraints', label: 'Constraints' },
-	{ name: 'openItems', label: 'Open items' },
+	{ name: 'decisions' },
+	{ name: 'constraints' },
+	{ name: 'openItems' },
 ];
 
 /** One item per line; blank lines are what an operator leaves while typing. */
@@ -2001,12 +1985,14 @@ function ProjectBriefPanel({
 	brief,
 	pending,
 	onSaveBrief,
-}: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'>): React.ReactElement {
+	catalog,
+}: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Authoritative human context, maintained by you. The orchestrator reads it and never writes it."
+			actionLabels={catalog.disclosure}
+			description={catalog.brief.description}
 			open
-			title="Project brief"
+			title={catalog.brief.title}
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -2025,7 +2011,7 @@ function ProjectBriefPanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
-					<span className="font-medium">Objective</span>
+					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
 					<textarea
 						className={cn(FIELD_CLASS, 'min-h-16')}
 						defaultValue={brief.objective}
@@ -2039,18 +2025,18 @@ function ProjectBriefPanel({
 						htmlFor={`brief-${field.name}`}
 						key={field.name}
 					>
-						<span className="font-medium">{field.label}</span>
+						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
 						<textarea
 							className={cn(FIELD_CLASS, 'min-h-20')}
 							defaultValue={brief[field.name].join('\n')}
 							id={`brief-${field.name}`}
 							name={field.name}
-							placeholder="One item per line"
+							placeholder={catalog.brief.linePlaceholder}
 						/>
 					</label>
 				))}
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Save brief
+					{catalog.brief.save}
 				</button>
 			</form>
 		</ContextPanel>
@@ -2063,31 +2049,32 @@ function ProjectBriefPanel({
  * brief above already says, and when the two disagree the brief is the one that
  * counts -- which is why this panel offers nothing to type into.
  */
-function HandoffPanel({ handoff }: Pick<AppProps, 'handoff'>): React.ReactElement {
+function HandoffPanel({ handoff, catalog }: Pick<AppProps, 'handoff'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Session state observed and generated by the orchestrator. It may be stale; the brief above prevails."
-			title="Automatic handoff"
+			actionLabels={catalog.disclosure}
+			description={catalog.handoff.description}
+			title={catalog.handoff.title}
 		>
 			<div className="flex flex-col gap-3">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">read-only</Badge>
+					<Badge variant="outline">{catalog.handoff.readOnly}</Badge>
 					<span className="text-muted-foreground text-sm">
-						Rewritten after each orchestrator turn.
+						{catalog.handoff.rewritten}
 					</span>
 				</div>
 				<Separator />
 				<div className="flex flex-col gap-1 text-sm">
-					<span className="font-medium">Objective</span>
+					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
 					<p className="whitespace-pre-wrap break-words text-muted-foreground">
-						{handoff.objective === '' ? 'Nothing recorded yet.' : handoff.objective}
+						{handoff.objective === '' ? catalog.handoff.nothingRecorded : handoff.objective}
 					</p>
 				</div>
 				{BRIEF_LISTS.map((field) => (
 					<div className="flex flex-col gap-1 text-sm" key={field.name}>
-						<span className="font-medium">{field.label}</span>
+						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
 						{handoff[field.name].length === 0 ? (
-							<p className="text-muted-foreground">Nothing recorded yet.</p>
+							<p className="text-muted-foreground">{catalog.handoff.nothingRecorded}</p>
 						) : (
 							<ul className="flex flex-col gap-1">
 								{handoff[field.name].map((item) => (
@@ -3056,26 +3043,27 @@ function WorkSurface(props: AppProps): React.ReactElement {
 	);
 }
 
-function ProjectPanel({ project }: Pick<AppProps, 'project'>): React.ReactElement {
+function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & { catalog: SettingsCatalog }): React.ReactElement {
 	const ready = project.state === 'ready';
 	return (
 		<ContextPanel
-			description="The process operates one local project at a time; this binding is derived from Git, not hidden configuration."
+			actionLabels={catalog.disclosure}
+			description={catalog.project.description}
 			open
-			title="Project"
+			title={catalog.project.title}
 		>
 			<div className="flex flex-col gap-3 text-sm">
 				<div className="flex flex-wrap items-center gap-2">
 					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'secondary' : 'warning'}>
-						{ready ? 'ready' : project.state === 'checking' ? 'checking' : 'attention'}
+						{ready ? catalog.project.stateLabels.ready : project.state === 'checking' ? catalog.project.stateLabels.checking : catalog.project.stateLabels.attention}
 					</Badge>
-					<span className="font-medium">{project.name === '' ? 'Local project' : project.name}</span>
+					<span className="font-medium">{project.name === '' ? catalog.project.localProject : project.name}</span>
 				</div>
 				{ready ? (
 					<dl className="grid gap-2 sm:grid-cols-[8rem_1fr]">
-						<dt className="text-muted-foreground">Repository</dt>
+						<dt className="text-muted-foreground">{catalog.project.repository}</dt>
 						<dd><code className="break-all">{project.repository}</code></dd>
-						<dt className="text-muted-foreground">Run source</dt>
+						<dt className="text-muted-foreground">{catalog.project.runSource}</dt>
 						<dd><code className="break-all">{project.sourceRef}</code></dd>
 					</dl>
 				) : (
@@ -3091,16 +3079,18 @@ function OperatorProfilePanel({
 	pending,
 	suggestedTimezone,
 	onSaveOperatorProfile,
+	catalog,
 }: Pick<
 	AppProps,
 	'operatorProfile' | 'pending' | 'suggestedTimezone' | 'onSaveOperatorProfile'
->): React.ReactElement {
+> & { catalog: SettingsCatalog }): React.ReactElement {
 	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
 	return (
 		<ContextPanel
-			description="Human identity and timezone used as non-authoritative conversation context."
+			actionLabels={catalog.disclosure}
+			description={catalog.operator.description}
 			open
-			title="Operator"
+			title={catalog.operator.title}
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -3115,30 +3105,30 @@ function OperatorProfilePanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
-					<span className="font-medium">Name</span>
+					<span className="font-medium">{catalog.operator.name}</span>
 					<input
 						className={FIELD_CLASS}
 						defaultValue={operatorProfile.name}
 						id="operator-name"
 						name="operator-name"
-						placeholder="What the orchestrator should call you"
+						placeholder={catalog.operator.namePlaceholder}
 					/>
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
-					<span className="font-medium">Timezone</span>
+					<span className="font-medium">{catalog.operator.timezone}</span>
 					<input
 						className={FIELD_CLASS}
 						defaultValue={initialTimezone}
 						id="operator-timezone"
 						name="operator-timezone"
-						placeholder="America/Sao_Paulo"
+						placeholder={catalog.operator.timezonePlaceholder}
 					/>
 					<span className="text-muted-foreground text-xs">
-						IANA identifier. The browser suggestion is saved only when you confirm.
+						{catalog.operator.timezoneGuidance}
 					</span>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Save profile
+					{catalog.operator.save}
 				</button>
 			</form>
 		</ContextPanel>
@@ -3228,16 +3218,20 @@ function OnboardingSurface({
 }
 
 function SettingsSurface(props: AppProps): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].settings;
 	return (
-		<SurfaceColumn label="Settings" status={props.status}>
-			<ProjectPanel project={props.project} />
+		<SurfaceColumn label={catalog.title} status={props.status}>
+			<ProjectPanel catalog={catalog} project={props.project} />
 			<OperatorProfilePanel
+				catalog={catalog}
 				onSaveOperatorProfile={props.onSaveOperatorProfile}
 				operatorProfile={props.operatorProfile}
 				pending={props.pending}
 				suggestedTimezone={props.suggestedTimezone}
 			/>
 			<ProvidersPanel
+				catalog={catalog}
+				locale={props.locale}
 				onConnectCodex={props.onConnectCodex}
 				onSelectProvider={props.onSelectProvider}
 				pending={props.pending}
@@ -3245,26 +3239,33 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				selectedProvider={props.selectedProvider}
 			/>
 			<ModelSettingsPanel
+				catalog={catalog}
 				modelSettings={props.modelSettings}
 				onSaveModelSettings={props.onSaveModelSettings}
 				pending={props.pending}
 			/>
 			<ChainRunsPanel
+				catalog={catalog}
 				chainRuns={props.chainRuns}
 				onSetChainRuns={props.onSetChainRuns}
 				pending={props.pending}
 			/>
 			<SelfUpdatePanel
+				catalog={catalog}
+				locale={props.locale}
 				onSetSelfUpdate={props.onSetSelfUpdate}
 				pending={props.pending}
 				selfUpdate={props.selfUpdate}
 			/>
 			<DiagnosticSchedulePanel
+				catalog={catalog}
 				diagnostics={props.diagnostics}
+				locale={props.locale}
 				onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
 				pending={props.pending}
 			/>
 			<NotificationsPanel
+				catalog={catalog}
 				notificationChannels={props.notificationChannels}
 				notificationPermission={props.notificationPermission}
 				onEnableNotifications={props.onEnableNotifications}
@@ -3273,10 +3274,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 			/>
 			<ProjectBriefPanel
 				brief={props.brief}
+				catalog={catalog}
 				onSaveBrief={props.onSaveBrief}
 				pending={props.pending}
 			/>
-			<HandoffPanel handoff={props.handoff} />
+			<HandoffPanel catalog={catalog} handoff={props.handoff} />
 		</SurfaceColumn>
 	);
 }
