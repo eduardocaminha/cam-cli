@@ -2,8 +2,8 @@
 //
 // CAM-577 acceptance criterion 1: a verified run enters review, a clean
 // verdict reaches ready-to-ship, findings buy exactly one automatic fix with
-// a fresh verification and a fresh review, and persistent findings stop at
-// waiting-user instead of looping or failing.
+// a fresh verification and a fresh review, and persistent findings without a
+// configured cycle resolver stop safely at waiting-user.
 
 import { describe, expect, test } from 'bun:test';
 
@@ -120,7 +120,7 @@ describe('independent review stage', () => {
 		runtime.close();
 	});
 
-	test('persistent findings stop at waiting-user with one fix round, never a second', async () => {
+	test('persistent findings without a cycle resolver stop safely at waiting-user', async () => {
 		const { runtime, executions, reviews } = createRuntime([
 			{ verdict: 'findings', detail: 'first pass finding' },
 			{ verdict: 'findings', detail: 'still broken in src/a.ts' },
@@ -134,7 +134,7 @@ describe('independent review stage', () => {
 			summary: 'still broken in src/a.ts',
 		});
 		const events = runtime.listEvents();
-		expect(events.map((event) => event.kind)).toEqual([
+			expect(events.map((event) => event.kind)).toEqual([
 			'run.created',
 			'run.started',
 			'run.work-completed',
@@ -142,9 +142,19 @@ describe('independent review stage', () => {
 			'run.review-fix-requested',
 			'run.work-completed',
 			'run.review-started',
+			'run.cycle-question',
 			'run.review-fix-limit',
 		]);
-		expect(events.at(-1)?.payload).toEqual({ findings: 'still broken in src/a.ts' });
+		expect(events.at(-2)?.payload).toEqual({
+			questionId: 'run-review',
+			issueId: 'CAM-577',
+			finding: 'still broken in src/a.ts',
+		});
+		expect(events.at(-1)?.payload).toEqual({
+			questionId: 'run-review',
+			findings: 'still broken in src/a.ts',
+			reason: 'Cycle question resolver is unavailable.',
+		});
 		expect(executions).toHaveLength(2);
 		expect(reviews).toHaveLength(2);
 		await runtime.stop();

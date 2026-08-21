@@ -58,8 +58,11 @@ The service:
 - executes optional specification evidence before provider work and explicit
   verification commands after implementation;
 - uses a fresh, mechanically read-only reviewer session;
-- allows one bounded automatic fix and otherwise returns judgment to the
-  operator;
+- allows one bounded automatic fix, then at most two auditable answers from a
+  fresh read-only orchestrator call before returning unresolved authority or
+  product judgment to the operator. Each question/response is linked in the
+  durable run event log; the transport-neutral resolver port is the future MCP
+  seam, while lifecycle authority remains in the deterministic runtime;
 - commits, opens a pull request, arms squash auto-merge, observes the exact
   head it pushed and releases clean merged workspaces;
 - captures out-of-scope implementation discoveries in a proposal inbox. A

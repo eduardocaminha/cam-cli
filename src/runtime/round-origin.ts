@@ -21,7 +21,26 @@ const ROUND_START_KINDS: ReadonlySet<string> = new Set([
 export interface RunRoundOrigins {
 	executor: number;
 	decision: number;
+	orchestrator?: number;
 	indeterminate: number;
+}
+
+function recordRound(
+	origins: RunRoundOrigins,
+	event: RunEvent,
+	previousKind: string | null,
+): void {
+	const { kind } = event;
+	if (kind === 'run.started') {
+		if (previousKind === 'run.operator-guidance') origins.decision += 1;
+		else origins.indeterminate += 1;
+		return;
+	}
+	if (kind === 'run.cycle-response' && event.payload['outcome'] === 'continue') {
+		origins.orchestrator = (origins.orchestrator ?? 0) + 1;
+		return;
+	}
+	origins.executor += 1;
 }
 
 /**
@@ -40,23 +59,31 @@ export interface RunRoundOrigins {
  * immediately before it is `run.operator-guidance` -- exactly what
  * `resumeRun` emits, synchronously, right before it. Any other resume (e.g.
  * recovering an interrupted run with no guidance) matches neither rule, so it
- * is reported `indeterminate` rather than attributed by supposition.
+ * is reported `indeterminate` rather than attributed by supposition. The one
+ * exception is a `run.started` replay while a durable orchestrator continue
+ * response is still unconsumed: that reopens the same correction round and is
+ * not a second origin, with or without recovery guidance.
  */
 export function selectRunRoundOrigins(events: readonly RunEvent[]): RunRoundOrigins {
-	const origins: RunRoundOrigins = { executor: 0, decision: 0, indeterminate: 0 };
+	const origins: RunRoundOrigins = { executor: 0, decision: 0, orchestrator: 0, indeterminate: 0 };
 	let seenFirstRound = false;
 	let previousKind: string | null = null;
+	let unconsumedCycleContinue = false;
 	for (const event of events) {
-		if (ROUND_START_KINDS.has(event.kind)) {
+		const cycleContinue = event.kind === 'run.cycle-response'
+			&& event.payload['outcome'] === 'continue';
+		const replayingCycleContinue = event.kind === 'run.started' && unconsumedCycleContinue;
+		const startsRound = (ROUND_START_KINDS.has(event.kind) && !replayingCycleContinue)
+			|| cycleContinue;
+		if (startsRound) {
 			if (!seenFirstRound) {
 				seenFirstRound = true;
-			} else if (event.kind === 'run.started') {
-				if (previousKind === 'run.operator-guidance') origins.decision += 1;
-				else origins.indeterminate += 1;
 			} else {
-				origins.executor += 1;
+				recordRound(origins, event, previousKind);
 			}
 		}
+		if (cycleContinue) unconsumedCycleContinue = true;
+		if (event.kind === 'run.work-completed') unconsumedCycleContinue = false;
 		previousKind = event.kind;
 	}
 	return origins;

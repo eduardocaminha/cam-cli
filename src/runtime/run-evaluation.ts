@@ -22,12 +22,14 @@ export interface RunEvaluation {
 	attentionRequests: number;
 	operatorInterventions: number;
 	providerHolds: number;
+	resolvedCycleQuestions?: number;
 	roles: RunRoleConfiguration[];
 }
 
 const MODEL_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'provider.model': 'executor',
 	'review.model': 'reviewer',
+	'run.cycle-response': 'orchestrator',
 };
 
 function normalizedText(value: unknown): string | null {
@@ -87,6 +89,7 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 			event.toState === 'waiting-user' && event.fromState !== 'waiting-user').length,
 		operatorInterventions: events.filter((event) => event.kind === 'run.operator-guidance').length,
 		providerHolds: events.filter((event) => event.kind === 'run.provider-waiting').length,
+		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
 		roles: roleConfigurations(events),
 	};
 }

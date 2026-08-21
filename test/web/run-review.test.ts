@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { createDefaultRunRuntimeOptions, startWebServer } from '../../src/commands/web.ts';
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
+import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { GitIssueVerifier } from '../../src/runtime/git-runtime.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -43,6 +44,7 @@ describe('web composition of the independent reviewer', () => {
 			expect(options.executor).toBeInstanceOf(AgentExecutorRouter);
 			expect(options.verifier).toBeInstanceOf(GitIssueVerifier);
 			expect(options.reviewer).toBeInstanceOf(AgentReviewerRouter);
+			expect(options.cycleQuestionResolver).toBeInstanceOf(AgentCycleQuestionResolver);
 			expect(options.workflowRevision).toBe('revision-production');
 		} finally {
 			options.store.close();

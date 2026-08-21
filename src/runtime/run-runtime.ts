@@ -117,6 +117,45 @@ export interface RuntimeReviewer {
 	review: (input: RuntimeExecutionInput) => Promise<RuntimeReviewResult>;
 }
 
+export interface RuntimeCycleResponseUsage {
+	model: string;
+	effort: string;
+	totalCostUsd?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheCreationInputTokens?: number;
+	cacheReadInputTokens?: number;
+	thinkingTokens?: number;
+	modelUsage?: readonly Record<string, unknown>[];
+}
+
+export interface RuntimeCycleResponse {
+	questionId: string;
+	outcome: 'continue' | 'operator';
+	text: string;
+	createdAt: string;
+}
+
+export interface RuntimeCycleQuestionInput {
+	runId: string;
+	issueId: string;
+	workspace: string;
+	finding: string;
+	priorResponses: readonly RuntimeCycleResponse[];
+	providerId: AgentProviderId;
+	signal: AbortSignal;
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
+}
+
+export type RuntimeCycleQuestionResult =
+	| { outcome: 'continue'; guidance: string; usage: RuntimeCycleResponseUsage }
+	| { outcome: 'operator'; reason: string; usage: RuntimeCycleResponseUsage };
+
+/** Transport-neutral, fresh read-only answer to one unresolved review cycle. */
+export interface RuntimeCycleQuestionResolver {
+	resolve: (input: RuntimeCycleQuestionInput) => Promise<RuntimeCycleQuestionResult>;
+}
+
 /** What shipping one run needs: its own worktree, and a channel for progress. */
 export interface RuntimeShipInput {
 	runId: string;
@@ -146,6 +185,7 @@ export interface RunRuntimeOptions {
 	executor?: RuntimeExecutor;
 	verifier?: RuntimeVerifier;
 	reviewer?: RuntimeReviewer;
+	cycleQuestionResolver?: RuntimeCycleQuestionResolver;
 	/**
 	 * The project's full verification manifest (GSHIP-649), run once the
 	 * issue's own verify and the independent review are both clean and before
@@ -258,6 +298,39 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function compactDefined(entries: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined));
+}
+
+function cycleUsageEventPayload(usage: RuntimeCycleResponseUsage): Record<string, unknown> {
+	const invocationUsage = compactDefined({
+		inputTokens: usage.inputTokens,
+		outputTokens: usage.outputTokens,
+		cacheCreationInputTokens: usage.cacheCreationInputTokens,
+		cacheReadInputTokens: usage.cacheReadInputTokens,
+		thinkingTokens: usage.thinkingTokens,
+	});
+	const synthesizedModelUsage = usage.model === undefined || usage.totalCostUsd === undefined
+		? undefined
+		: [{
+			...compactDefined({
+				model: usage.model,
+				costUsd: usage.totalCostUsd,
+				inputTokens: usage.inputTokens,
+				outputTokens: usage.outputTokens,
+				cacheCreationInputTokens: usage.cacheCreationInputTokens,
+				cacheReadInputTokens: usage.cacheReadInputTokens,
+			}),
+		}];
+	return compactDefined({
+		model: usage.model,
+		effort: usage.effort,
+		totalCostUsd: usage.totalCostUsd,
+		modelUsage: usage.modelUsage ?? synthesizedModelUsage,
+		usage: Object.keys(invocationUsage).length === 0 ? undefined : invocationUsage,
+	});
+}
+
 export class RunRuntime {
 	readonly #cwd: string;
 	readonly #store: RunStore;
@@ -265,6 +338,7 @@ export class RunRuntime {
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
+	readonly #cycleQuestionResolver: RuntimeCycleQuestionResolver | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #now: () => string;
@@ -289,6 +363,7 @@ export class RunRuntime {
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
+		this.#cycleQuestionResolver = options.cycleQuestionResolver;
 		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
 		this.#now = options.now ?? (() => new Date().toISOString());
@@ -365,8 +440,10 @@ export class RunRuntime {
 		if (guidance !== undefined && guidance.length > 0) {
 			this.#emit(run.id, 'run.operator-guidance', { text: guidance });
 		}
+		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		this.#launch(run, {
 			resume: true,
+			...(recoveredCycle ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
 				: { operatorGuidance: guidance }),
@@ -994,6 +1071,10 @@ export class RunRuntime {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.verified');
 		}
 		this.#transition(run.id, 'review', startKind);
+		const pendingQuestion = this.#pendingCycleQuestion(run.id);
+		if (pendingQuestion !== null) {
+			return this.#answerCycleQuestion(run, signal, pendingQuestion.questionId, pendingQuestion.finding);
+		}
 		const review = await reviewer.review(executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
@@ -1003,16 +1084,168 @@ export class RunRuntime {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.review-clean');
 		}
 		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
-			this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
-				summary: review.detail,
-				payload: { findings: review.detail },
+			if (this.#cycleContinues(run.id) >= 2) {
+				this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
+					summary: review.detail,
+					payload: { findings: review.detail },
+				});
+				return null;
+			}
+			const questionId = this.#newId();
+			this.#emit(run.id, 'run.cycle-question', {
+				questionId,
+				issueId: run.issueId,
+				finding: review.detail,
 			});
-			return null;
+			return this.#answerCycleQuestion(run, signal, questionId, review.detail);
 		}
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
 			payload: { findings: review.detail },
 		});
 		return { resume: true, reviewFeedback: review.detail };
+	}
+
+	#cycleResponses(runId: string): RuntimeCycleResponse[] {
+		return this.#store.listRunDecisionEvents(runId)
+			.filter((event) => event.kind === 'run.cycle-response')
+			.flatMap((event) => {
+				const questionId = event.payload['questionId'];
+				const outcome = event.payload['outcome'];
+				const text = outcome === 'continue' ? event.payload['guidance'] : event.payload['reason'];
+				if (typeof questionId !== 'string'
+					|| (outcome !== 'continue' && outcome !== 'operator')
+					|| typeof text !== 'string') return [];
+				return [{ questionId, outcome, text, createdAt: event.createdAt }];
+			});
+	}
+
+	#cycleContinues(runId: string): number {
+		return this.#cycleResponses(runId).filter((response) => response.outcome === 'continue').length;
+	}
+
+	#recoveredCycleAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback'> | null {
+		if (run.state !== 'interrupted') return null;
+		return this.#unconsumedCycleAttempt(run.id);
+	}
+
+	/**
+	 * A `continue` response and its review -> working transition are one durable
+	 * event. If the process dies before that working attempt records
+	 * `run.work-completed`, recovery must put the same binding guidance back in
+	 * front of the existing executor session instead of reviewing unchanged
+	 * work or spending another cycle response.
+	 */
+	#unconsumedCycleAttempt(runId: string): Pick<RunAttempt, 'reviewFeedback'> | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const responseIndex = events.findLastIndex((event) =>
+			event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue');
+		if (responseIndex < 0) return null;
+		if (events.slice(responseIndex + 1).some((event) => event.kind === 'run.work-completed')) {
+			return null;
+		}
+		const response = events[responseIndex];
+		const finding = response?.payload['findings'];
+		const guidance = response?.payload['guidance'];
+		if (typeof finding !== 'string' || typeof guidance !== 'string') return null;
+		return { reviewFeedback: this.#cycleReviewFeedback(finding, guidance) };
+	}
+
+	#cycleReviewFeedback(finding: string, guidance: string): string {
+		return `${finding}\n\nBinding orchestrator guidance:\n${guidance}\n\nA no-change response is allowed only when backed by concrete evidence.`;
+	}
+
+	#pendingCycleQuestion(runId: string): { questionId: string; finding: string } | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const answered = new Set(this.#cycleResponses(runId).map((response) => response.questionId));
+		let supersededByOperator = false;
+		for (let index = events.length - 1; index >= 0; index -= 1) {
+			const event = events[index];
+			if (event?.kind === 'run.operator-guidance') supersededByOperator = true;
+			if (event?.kind !== 'run.cycle-question') continue;
+			const questionId = event.payload['questionId'];
+			const finding = event.payload['finding'];
+			if (typeof questionId === 'string' && typeof finding === 'string'
+				&& !answered.has(questionId) && !supersededByOperator) {
+				return { questionId, finding };
+			}
+			return null;
+		}
+		return null;
+	}
+
+	async #answerCycleQuestion(
+		run: RunRecord,
+		signal: AbortSignal,
+		questionId: string,
+		finding: string,
+	): Promise<RunAttempt | null> {
+		const resolver = this.#cycleQuestionResolver;
+		if (resolver === undefined) {
+			this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
+				summary: finding,
+				payload: { questionId, findings: finding, reason: 'Cycle question resolver is unavailable.' },
+			});
+			return null;
+		}
+		const started = performance.now();
+		const result = await resolver.resolve({
+			runId: run.id,
+			issueId: run.issueId,
+			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+			finding,
+			priorResponses: this.#cycleResponses(run.id),
+			providerId: run.providerId,
+			signal,
+			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
+		});
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return null;
+		}
+		const text = result?.outcome === 'continue' ? result.guidance
+			: result?.outcome === 'operator' ? result.reason : '';
+		const normalized = typeof text === 'string' ? text.trim() : '';
+		const validAudit = typeof result?.usage?.model === 'string' && result.usage.model.trim().length > 0
+			&& typeof result.usage.effort === 'string' && result.usage.effort.trim().length > 0;
+		if ((result?.outcome !== 'continue' && result?.outcome !== 'operator')
+			|| normalized.length === 0 || !validAudit) {
+			const reason = 'Cycle question resolver returned an invalid response.';
+			this.#transition(run.id, 'waiting-user', 'run.cycle-response-invalid', {
+				summary: reason,
+				payload: {
+					questionId,
+					findings: finding,
+					reason,
+					latencyMs: Math.max(0, Math.round(performance.now() - started)),
+					provider: run.providerId,
+				},
+			});
+			return null;
+		}
+		const responsePayload = {
+			questionId,
+			responder: 'orchestrator',
+			source: 'internal',
+			outcome: result.outcome,
+			...(result.outcome === 'continue' ? { guidance: normalized } : { reason: normalized }),
+			latencyMs: Math.max(0, Math.round(performance.now() - started)),
+			provider: run.providerId,
+			...cycleUsageEventPayload(result.usage),
+		};
+		if (result.outcome === 'operator') {
+			this.#transition(run.id, 'waiting-user', 'run.cycle-response', {
+				summary: normalized,
+				payload: { ...responsePayload, findings: finding },
+			});
+			return null;
+		}
+		this.#transition(run.id, 'working', 'run.cycle-response', {
+			payload: { ...responsePayload, findings: finding },
+		});
+		return {
+			resume: true,
+			reviewFeedback: this.#cycleReviewFeedback(finding, normalized),
+		};
 	}
 
 	/**

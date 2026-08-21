@@ -219,8 +219,8 @@ export interface RecordProposalsInput {
 	createdAt: string;
 }
 
-/** Which provider invocation reported the cost: GSHIP-617's two run roles. */
-export type RunCostRole = 'executor' | 'reviewer';
+/** Which run-owned provider invocation reported the API-equivalent cost. */
+export type RunCostRole = 'executor' | 'reviewer' | 'orchestrator';
 
 /** One (role, model) pair's cost and token counts, summed across every invocation that reported it. */
 export interface RunCostBreakdownEntry {
@@ -289,6 +289,7 @@ export interface DiagnosticFindingStats {
 const USAGE_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'provider.usage': 'executor',
 	'review.usage': 'reviewer',
+	'run.cycle-response': 'orchestrator',
 };
 
 function decodeUsageNumber(value: unknown): number | undefined {
@@ -915,7 +916,7 @@ export class RunStore {
 		const apply = this.#db.transaction(() => {
 			const current = this.getRun(input.runId);
 			if (current === null) throw new Error(`run not found: ${input.runId}`);
-			const fixRounds = nextFixRounds(current, input.toState);
+			const fixRounds = nextFixRounds(current, input.toState, input.kind);
 			this.#db.query(`
 				UPDATE runs
 				SET state = $toState,
@@ -1662,7 +1663,7 @@ export class RunStore {
 	/**
 	 * A run's total reported cost, its breakdown by role and model, and its
 	 * effort/thinking totals by role (GSHIP-623, GSHIP-628), derived by summing
-	 * every `provider.usage`/`review.usage` event the run has -- deliberately
+	 * every executor, reviewer and cycle-orchestrator usage record the run has -- deliberately
 	 * unbounded, unlike `listRunEvents`'s display window, so a run with more
 	 * events than that limit still reports its true total instead of a
 	 * silently truncated one.
@@ -1670,7 +1671,7 @@ export class RunStore {
 	getRunCostSummary(runId: string): RunCostSummary {
 		const rows = this.#db.query(`
 			SELECT kind, payload_json FROM run_events
-			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage')
+			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage', 'run.cycle-response')
 			ORDER BY seq ASC
 		`).all({ runId }) as Array<{ kind: string; payload_json: string }>;
 
