@@ -191,7 +191,7 @@ export function buildWorkPrompt(
 			: `Implement Gateship issue ${issueId}.`,
 		'Inspect the current working tree before editing and keep the change limited to this issue.',
 		'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
-		'Run focused tests for the changed surface. The service will perform independent verification afterward.',
+		"Run only the smallest relevant checks while editing, then run the human-approved issue verification command once before completion; do not add `bun run check:all`, the full test suite, or other broad gates unless that exact command is already in the human-approved verification, because the service runs the project's `verify` script once after a clean review at the ship boundary.",
 		'Return status completed when the issue work is ready for verification.',
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
