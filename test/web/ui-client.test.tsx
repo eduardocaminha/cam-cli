@@ -1466,6 +1466,138 @@ describe('runs surface', () => {
 });
 
 describe('work surface', () => {
+	test('the typed work catalog renders representative empty and actionable states in both locales', () => {
+		const timestamp = '2026-08-20T12:00:00.000Z';
+		const finding = {
+			id: 'diagnostic-authored',
+			analyzer: 'analyzer-factual',
+			rule: 'regra-autoral',
+			severity: 'warning' as const,
+			file: 'src/arquivo-autoral.tsx',
+			evidence: 'Evidência do operador sem tradução.',
+			toolVersion: '0.9.12',
+			sourceSha: 'b'.repeat(40),
+			status: 'pending' as const,
+			promotedIssueId: null,
+			occurrenceCount: 2,
+			firstSeenAt: timestamp,
+			lastSeenAt: timestamp,
+			updatedAt: timestamp,
+		};
+		const diagnostics: AppProps['diagnostics'] = {
+			...emptyDiagnostics(),
+			analyzers: [{
+				id: 'analyzer-factual',
+				label: 'Analyzer Factual',
+				version: '0.9.12',
+				description: 'Descrição factual do analyzer.',
+			}],
+			findings: [finding],
+			resolvedFindings: [{
+				...finding,
+				id: 'diagnostic-resolved',
+				status: 'promoted',
+				promotedIssueId: 'GSHIP-999',
+			}],
+			resolvedFindingsOmittedCount: 1_234,
+			stats: { total: 2, pending: 1, dismissed: 0, promoted: 1, cleared: 0, recurring: 1 },
+		};
+		const authored = [
+			'GSHIP-AUTHORED',
+			'Título autoral sem tradução',
+			'Escopo autoral sem tradução',
+			'bun test --filter autoral',
+			'Evidência proposta sem tradução.',
+			'Evidência do operador sem tradução.',
+			'regra-autoral',
+			'src/arquivo-autoral.tsx',
+			'Analyzer Factual',
+			'Descrição factual do analyzer.',
+			'GSHIP-999',
+		];
+		const cases = [
+			{
+				locale: 'en-US',
+				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'No resolved proposals yet.', 'New issue'],
+				actionable: [
+					'Start run', 'Gateship Diagnostics', '1 pending finding.', 'Advisory: never fixes, approves or blocks shipping.',
+					'warning', 'tool 0.9.12', 'Dismiss', 'Promote', 'regra-autoral in src/arquivo-autoral.tsx',
+					'Resolved (1)', 'Promoted', '+1,234 not shown.', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
+					'1 finding recurred in another scan.', 'Dismissal does not mean false positive', 'Review and approve',
+					'1 open and specified issue.', 'stale', 'Scope and expected outcome', 'Verification command',
+					'Save revision', 'I confirm the persisted scope and verificationCommand.', 'Approve', 'Reason for abandonment',
+					'Abandon', 'Derived proposals', '1 pending proposal.', 'Title', 'Resolved proposals', 'read-only',
+					'Dismissal and promotion cannot be undone here.', 'became', 'Specify existing idea', 'Idea', 'Specify idea',
+					'New issue', 'Create issue',
+				],
+				analyzerDescription: 'Errors, security, performance and accessibility in React projects.',
+			},
+			{
+				locale: 'pt-BR',
+				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nenhuma proposta resolvida ainda.', 'Nova issue'],
+				actionable: [
+					'Iniciar execução', 'Diagnósticos do Gateship', '1 achado pendente.', 'Consultivo: nunca corrige, aprova nem bloqueia o envio.',
+					'aviso', 'ferramenta 0.9.12', 'Descartar', 'Promover', 'regra-autoral em src/arquivo-autoral.tsx',
+					'Resolvidos (1)', 'Promovido', '+1.234 não exibidos.', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
+					'1 achado voltou a ocorrer em outra análise.', 'Descartar não significa falso positivo', 'Revisar e aprovar',
+					'1 issue aberta e especificada.', 'desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
+					'Salvar revisão', 'Confirmo o escopo e o verificationCommand persistidos.', 'Aprovar', 'Motivo do abandono',
+					'Abandonar', 'Propostas derivadas', '1 proposta pendente.', 'Título', 'Propostas resolvidas', 'somente leitura',
+					'O descarte e a promoção não podem ser desfeitos aqui.', 'virou', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
+					'Nova issue', 'Criar issue',
+				],
+				analyzerDescription: 'Erros, segurança, desempenho e acessibilidade em projetos React.',
+			},
+		] as const satisfies readonly { locale: Locale; empty: readonly string[]; actionable: readonly string[]; analyzerDescription: string }[];
+
+		for (const expected of cases) {
+			const empty = workPage({ locale: expected.locale });
+			for (const label of expected.empty) expect(empty).toContain(label);
+			const knownAnalyzer = workPage({
+				locale: expected.locale,
+				diagnostics: {
+					...emptyDiagnostics(),
+					analyzers: [{ id: 'react', label: 'React Doctor', version: '0.9.12', description: 'server baseline' }],
+				},
+			});
+			expect(knownAnalyzer).toContain(expected.analyzerDescription);
+			expect(knownAnalyzer).toContain('React Doctor');
+
+			const populated = workPage({
+				locale: expected.locale,
+				diagnostics,
+				drafts: [{
+					id: 'GSHIP-AUTHORED',
+					title: 'Título autoral sem tradução',
+					scope: 'Escopo autoral sem tradução',
+					verificationCommand: 'bun test --filter autoral',
+					state: 'stale',
+				}],
+				ideas: [{ id: 'GSHIP-IDEA', title: 'Título autoral sem tradução' }],
+				proposals: [{
+					id: 'proposal-authored',
+					title: 'Título autoral sem tradução',
+					evidence: 'Evidência proposta sem tradução.',
+					sourceRunId: 'run-factual',
+					sourceIssueId: 'GSHIP-AUTHORED',
+				}],
+				resolvedProposals: [{
+					id: 'proposal-resolved',
+					title: 'Título autoral sem tradução',
+					evidence: 'Evidência proposta sem tradução.',
+					sourceRunId: 'run-factual',
+					sourceIssueId: 'GSHIP-AUTHORED',
+					status: 'promoted',
+					promotedIssueId: 'GSHIP-999',
+				}],
+				resolvedProposalsOmittedCount: 1_234,
+				selectedIssueId: 'CAM-900',
+			});
+			for (const label of expected.actionable) expect(populated).toContain(label);
+			for (const value of authored) expect(populated).toContain(value);
+		}
+	});
+
 	test('reviews specified drafts in a closed disclosure and requires persisted confirmation', () => {
 		const html = workPage({ drafts: [{
 			id: 'CAM-42',

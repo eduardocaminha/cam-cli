@@ -5,8 +5,8 @@
 > Inspect `origin/main` for the shipped Git baseline and `/api/snapshot` for the
 > installed service version and current runtime facts.
 > Stable phase: the shell, primary conversation and all product-owned `/runs`
-> panel content are internally localized; `/work`, `/settings` and onboarding
-> remain before any locale selector can be approved.
+> panel content and `/work` are internally localized; `/settings` and
+> onboarding remain before any locale selector can be approved.
 
 ## How to use this file
 
@@ -103,9 +103,9 @@ GSHIP-668 shipped the dependency-free typed locale foundation for shell
 navigation and skip-link labels, with `en-US` as the production default and a
 truthful initial document language. The stable phase now extends that same
 type-complete catalog through the primary conversation column, the shared run
-inspector and every product-owned `/runs` panel, including workflow signals and
-replayable benchmarks. `/work`, `/settings` and onboarding remain uncataloged,
-so `pt-BR` stays internal and test-only: there is still no visible selector,
+inspector, every product-owned `/runs` panel and the complete `/work` surface,
+including diagnostics and issue/proposal workflows. `/settings` and onboarding
+remain uncataloged, so `pt-BR` stays internal and test-only: there is still no visible selector,
 persistence or browser-language inference. This records stable direction, not
 execution authority; only an operator-approved issue specification authorizes
 another slice.

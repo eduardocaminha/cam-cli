@@ -165,12 +165,93 @@ export interface RunsWorkflowCatalog {
 	};
 }
 
+export interface WorkCatalog {
+	backlog: {
+		title: string;
+		description: (count: number, formattedCount: string) => string;
+		start: string;
+	};
+	form: {
+		title: string;
+		scope: string;
+		verificationCommand: string;
+		verificationPlaceholder: string;
+		promote: string;
+	};
+	intake: {
+		title: string;
+		description: string;
+		create: string;
+	};
+	specification: {
+		title: string;
+		description: string;
+		idea: string;
+		submit: string;
+	};
+	review: {
+		title: string;
+		description: (count: number, formattedCount: string) => string;
+		draft: string;
+		selectDraft: string;
+		stateLabels: Readonly<Record<'draft' | 'approved' | 'stale', string>>;
+		ownedByRun: (issueId: string) => string;
+		evidence: string;
+		saveRevision: string;
+		confirmPersisted: string;
+		approve: string;
+		abandonReason: string;
+		confirmAbandon: (issueId: string) => string;
+		abandon: string;
+	};
+	diagnostics: {
+		title: string;
+		analyzing: string;
+		pendingCount: (count: number, formattedCount: string) => string;
+		running: string;
+		advisory: string;
+		analyzerDescriptions: Readonly<Record<'react', string>>;
+		scanStateLabels: Readonly<Record<'queued' | 'running' | 'completed' | 'failed' | 'cancelled', string>>;
+		partial: string;
+		runNow: string;
+		cancel: string;
+		severityLabels: Readonly<Record<'error' | 'warning' | 'info', string>>;
+		statusLabels: Readonly<Record<'pending' | 'dismissed' | 'promoted' | 'cleared', string>>;
+		occurrences: (formattedCount: string) => string;
+		toolVersion: (version: string) => string;
+		dismiss: string;
+		defaultIssueTitle: (rule: string, file: string) => string;
+		noPending: string;
+		resolved: (formattedCount: string) => string;
+		omitted: (formattedCount: string) => string;
+		noHistory: string;
+		history: (promoted: string, dismissed: string, cleared: string, pending: string) => string;
+		recurring: (count: number, formattedCount: string) => string;
+		dismissalDisclaimer: string;
+	};
+	proposals: {
+		pendingTitle: string;
+		pendingCount: (count: number, formattedCount: string) => string;
+		emptyPending: string;
+		dismiss: string;
+		resolvedTitle: string;
+		resolvedCount: (count: number, formattedCount: string) => string;
+		readOnly: string;
+		settledNote: string;
+		emptyResolved: string;
+		statusLabels: Readonly<Record<'promoted' | 'dismissed', string>>;
+		became: string;
+		omitted: (count: number, formattedCount: string) => string;
+	};
+}
+
 export interface LocaleCatalog {
 	shell: ShellCatalog;
 	conversation: ConversationCatalog;
 	runInspector: RunInspectorCatalog;
 	runsOperational: RunsOperationalCatalog;
 	runsWorkflow: RunsWorkflowCatalog;
+	work: WorkCatalog;
 }
 
 export const LOCALE_CATALOG = {
@@ -383,6 +464,89 @@ export const LOCALE_CATALOG = {
 				},
 			},
 		},
+		work: {
+			backlog: {
+				title: 'Executable backlog',
+				description: (count, formattedCount) =>
+					`${formattedCount} ${count === 1 ? 'admissible issue' : 'admissible issues'} right now.`,
+				start: 'Start run',
+			},
+			form: {
+				title: 'Title',
+				scope: 'Scope and expected outcome',
+				verificationCommand: 'Verification command',
+				verificationPlaceholder: 'bun test',
+				promote: 'Promote',
+			},
+			intake: {
+				title: 'New issue',
+				description: 'Goes directly to the executable backlog; the command is the deterministic gate.',
+				create: 'Create issue',
+			},
+			specification: {
+				title: 'Specify existing idea',
+				description: 'Promotes the idea with the same direct contract, without an intermediate planner.',
+				idea: 'Idea',
+				submit: 'Specify idea',
+			},
+			review: {
+				title: 'Review and approve',
+				description: (count, formattedCount) =>
+					`${formattedCount} ${count === 1 ? 'open and specified issue' : 'open and specified issues'}.`,
+				draft: 'Draft',
+				selectDraft: 'Select a draft',
+				stateLabels: { draft: 'draft', approved: 'approved', stale: 'stale' },
+				ownedByRun: (issueId) => `${issueId} is being executed by a run. The issue file belongs to it until the run ends, so review, approval and abandonment return only after that.`,
+				evidence: 'Evidence checked in the run workspace',
+				saveRevision: 'Save revision',
+				confirmPersisted: 'I confirm the persisted scope and verificationCommand.',
+				approve: 'Approve',
+				abandonReason: 'Reason for abandonment',
+				confirmAbandon: (issueId) => `I confirm abandoning ${issueId} for this reason.`,
+				abandon: 'Abandon',
+			},
+			diagnostics: {
+				title: 'Gateship Diagnostics',
+				analyzing: 'Analyzing an isolated checkout…',
+				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'pending finding' : 'pending findings'}.`,
+				running: 'running',
+				advisory: "Advisory: never fixes, approves or blocks shipping. The first run downloads the pinned analyzer only into Gateship's local state.",
+				analyzerDescriptions: {
+					react: 'Errors, security, performance and accessibility in React projects.',
+				},
+				scanStateLabels: { queued: 'queued', running: 'running', completed: 'completed', failed: 'failed', cancelled: 'cancelled' },
+				partial: 'partial',
+				runNow: 'Run now',
+				cancel: 'Cancel diagnostic',
+				severityLabels: { error: 'error', warning: 'warning', info: 'info' },
+				statusLabels: { pending: 'Pending', dismissed: 'Dismissed', promoted: 'Promoted', cleared: 'Did not recur' },
+				occurrences: (formattedCount) => `×${formattedCount}`,
+				toolVersion: (version) => `tool ${version}`,
+				dismiss: 'Dismiss',
+				defaultIssueTitle: (rule, file) => `${rule} in ${file}`,
+				noPending: 'No pending findings.',
+				resolved: (formattedCount) => `Resolved (${formattedCount})`,
+				omitted: (formattedCount) => `+${formattedCount} not shown.`,
+				noHistory: "There is not enough history yet to measure this analyzer's usefulness.",
+				history: (promoted, dismissed, cleared, pending) => `Local history: ${promoted} promoted, ${dismissed} dismissed, ${cleared} that did not recur and ${pending} pending.`,
+				recurring: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'finding' : 'findings'} recurred in another scan.`,
+				dismissalDisclaimer: 'Dismissal does not mean false positive; that can only be measured when the operator explicitly classifies the reason.',
+			},
+			proposals: {
+				pendingTitle: 'Derived proposals',
+				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'pending proposal' : 'pending proposals'}.`,
+				emptyPending: 'No pending proposals. A run records out-of-scope discoveries here.',
+				dismiss: 'Dismiss',
+				resolvedTitle: 'Resolved proposals',
+				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'}.`,
+				readOnly: 'read-only',
+				settledNote: 'Dismissal and promotion cannot be undone here.',
+				emptyResolved: 'No resolved proposals yet.',
+				statusLabels: { promoted: 'Promoted', dismissed: 'Dismissed' },
+				became: 'became',
+				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'} not shown.`,
+			},
+		},
 	},
 	'pt-BR': {
 		shell: {
@@ -591,6 +755,89 @@ export const LOCALE_CATALOG = {
 						}).format(count)} h`,
 					},
 				},
+			},
+		},
+		work: {
+			backlog: {
+				title: 'Backlog executável',
+				description: (count, formattedCount) =>
+					`${formattedCount} ${count === 1 ? 'issue admissível' : 'issues admissíveis'} agora.`,
+				start: 'Iniciar execução',
+			},
+			form: {
+				title: 'Título',
+				scope: 'Escopo e resultado esperado',
+				verificationCommand: 'Comando de verificação',
+				verificationPlaceholder: 'bun test',
+				promote: 'Promover',
+			},
+			intake: {
+				title: 'Nova issue',
+				description: 'Vai diretamente para o backlog executável; o comando é o controle determinístico.',
+				create: 'Criar issue',
+			},
+			specification: {
+				title: 'Especificar ideia existente',
+				description: 'Promove a ideia com o mesmo contrato direto, sem um planejador intermediário.',
+				idea: 'Ideia',
+				submit: 'Especificar ideia',
+			},
+			review: {
+				title: 'Revisar e aprovar',
+				description: (count, formattedCount) =>
+					`${formattedCount} ${count === 1 ? 'issue aberta e especificada' : 'issues abertas e especificadas'}.`,
+				draft: 'Rascunho',
+				selectDraft: 'Selecione um rascunho',
+				stateLabels: { draft: 'rascunho', approved: 'aprovada', stale: 'desatualizada' },
+				ownedByRun: (issueId) => `${issueId} está sendo executada por uma execução. O arquivo da issue pertence a ela até a execução terminar; depois disso, revisão, aprovação e abandono voltam a ficar disponíveis.`,
+				evidence: 'Evidências verificadas no workspace da execução',
+				saveRevision: 'Salvar revisão',
+				confirmPersisted: 'Confirmo o escopo e o verificationCommand persistidos.',
+				approve: 'Aprovar',
+				abandonReason: 'Motivo do abandono',
+				confirmAbandon: (issueId) => `Confirmo o abandono de ${issueId} por este motivo.`,
+				abandon: 'Abandonar',
+			},
+			diagnostics: {
+				title: 'Diagnósticos do Gateship',
+				analyzing: 'Analisando um checkout isolado…',
+				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'achado pendente' : 'achados pendentes'}.`,
+				running: 'em andamento',
+				advisory: 'Consultivo: nunca corrige, aprova nem bloqueia o envio. A primeira execução baixa o analisador fixado apenas no estado local do Gateship.',
+				analyzerDescriptions: {
+					react: 'Erros, segurança, desempenho e acessibilidade em projetos React.',
+				},
+				scanStateLabels: { queued: 'na fila', running: 'em andamento', completed: 'concluído', failed: 'falhou', cancelled: 'cancelado' },
+				partial: 'parcial',
+				runNow: 'Executar agora',
+				cancel: 'Cancelar diagnóstico',
+				severityLabels: { error: 'erro', warning: 'aviso', info: 'informação' },
+				statusLabels: { pending: 'Pendente', dismissed: 'Descartado', promoted: 'Promovido', cleared: 'Não voltou a ocorrer' },
+				occurrences: (formattedCount) => `×${formattedCount}`,
+				toolVersion: (version) => `ferramenta ${version}`,
+				dismiss: 'Descartar',
+				defaultIssueTitle: (rule, file) => `${rule} em ${file}`,
+				noPending: 'Nenhum achado pendente.',
+				resolved: (formattedCount) => `Resolvidos (${formattedCount})`,
+				omitted: (formattedCount) => `+${formattedCount} não exibidos.`,
+				noHistory: 'Ainda não há histórico suficiente para medir a utilidade deste analisador.',
+				history: (promoted, dismissed, cleared, pending) => `Histórico local: ${promoted} promovidos, ${dismissed} descartados, ${cleared} que não voltaram a ocorrer e ${pending} pendentes.`,
+				recurring: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'achado voltou' : 'achados voltaram'} a ocorrer em outra análise.`,
+				dismissalDisclaimer: 'Descartar não significa falso positivo; isso só pode ser medido quando o operador classifica explicitamente o motivo.',
+			},
+			proposals: {
+				pendingTitle: 'Propostas derivadas',
+				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta pendente' : 'propostas pendentes'}.`,
+				emptyPending: 'Nenhuma proposta pendente. Uma execução registra aqui as descobertas fora do escopo.',
+				dismiss: 'Descartar',
+				resolvedTitle: 'Propostas resolvidas',
+				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'}.`,
+				readOnly: 'somente leitura',
+				settledNote: 'O descarte e a promoção não podem ser desfeitos aqui.',
+				emptyResolved: 'Nenhuma proposta resolvida ainda.',
+				statusLabels: { promoted: 'Promovida', dismissed: 'Descartada' },
+				became: 'virou',
+				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'} não exibidas.`,
 			},
 		},
 	},
