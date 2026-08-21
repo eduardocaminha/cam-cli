@@ -1683,9 +1683,10 @@ export class RunStore {
 	 * `review.rate-limit` events a real invocation already emitted -- reading
 	 * this never itself calls Claude. Ascending order means the last event for
 	 * a given window overwrites the map entry, so each window keeps only its
-	 * single freshest observation.
+	 * single freshest observation. A freshest observation with a factual reset
+	 * at or before `now` is no longer current and is omitted.
 	 */
-	getClaudeUsageWindows(): ClaudeUsageWindow[] {
+	getClaudeUsageWindows(now: string): ClaudeUsageWindow[] {
 		const rows = this.#db.query(`
 			SELECT payload_json, created_at FROM run_events
 			WHERE kind IN ('provider.rate-limit', 'review.rate-limit')
@@ -1709,7 +1710,12 @@ export class RunStore {
 				...(resetsAt === undefined ? {} : { resetsAt }),
 			});
 		}
-		return [...byWindow.values()];
+		const nowMs = Date.parse(now);
+		return [...byWindow.values()].filter((usageWindow) => {
+			if (usageWindow.resetsAt === undefined) return true;
+			const resetsAtMs = Date.parse(usageWindow.resetsAt);
+			return !Number.isFinite(nowMs) || !Number.isFinite(resetsAtMs) || resetsAtMs > nowMs;
+		});
 	}
 
 	/**

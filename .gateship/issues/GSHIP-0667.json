@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-667",
   "title": "Hide expired Claude usage windows",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T05:01:36.296Z",
-  "updatedAt": "2026-08-21T05:21:03.396Z",
+  "updatedAt": "2026-08-21T05:23:57.711Z",
   "description": "Stop surfacing a Claude subscription usage window after the latest recorded reset time has passed, without polling Claude or adding a timer. Change RunStore.getClaudeUsageWindows to accept an explicit current ISO timestamp, select the latest event per window exactly as today, and then omit a window only when its latest resetsAt is a parseable timestamp less than or equal to now. A missing or unparseable reset remains visible because Gateship has no factual expiration boundary. RunRuntime passes its existing injected clock to the store, so the API and UI receive absence through the current response shape with no new field. Add deterministic coverage in the existing run-store test for a window before reset and at the reset boundary, and pin the existing provider API test clock before its fixture reset so the test cannot become calendar-dependent. Reuse the existing test files; do not add a UI test or new test file. Out of scope: Codex usage, background refresh, polling, timers, notification behavior, database/schema changes, event mutation, new endpoints, new UI states, or treating an absent reset as expired.",
   "specSource": "operator",
   "spec": {

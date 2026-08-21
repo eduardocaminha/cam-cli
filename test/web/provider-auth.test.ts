@@ -127,6 +127,7 @@ describe('provider auth web API', () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-provider-usage-runtime-'),
 			store,
+			now: () => '2026-08-20T09:06:00.000Z',
 		});
 		const handle = startWebServer({
 			port: 0,

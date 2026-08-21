@@ -457,7 +457,7 @@ export class RunRuntime {
 
 	/** The latest observed state of every Claude subscription rate-limit window (GSHIP-664). */
 	getClaudeUsageWindows(): ClaudeUsageWindow[] {
-		return this.#store.getClaudeUsageWindows();
+		return this.#store.getClaudeUsageWindows(this.#now());
 	}
 
 	/**
