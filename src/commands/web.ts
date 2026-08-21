@@ -600,11 +600,19 @@ async function listProviders(
 	runtime: RunRuntime,
 ): Promise<Response> {
 	try {
+		// Claude's usage is derived from this process's own event log (GSHIP-664),
+		// never from a live provider call -- the opposite of Codex's `usage`,
+		// which the ProviderAuth implementation already attached per provider.
+		const claudeUsageWindows = runtime.getClaudeUsageWindows();
 		const providers = (await providerAuth.list()).map((provider) => {
 			const availability = runtime.getProviderWait(provider.id);
+			const claudeUsage = provider.id === 'claude' && claudeUsageWindows.length > 0
+				? { windows: claudeUsageWindows }
+				: undefined;
 			return {
 				...provider,
 				...(availability === null ? {} : { availability }),
+				...(claudeUsage === undefined ? {} : { usage: claudeUsage }),
 			};
 		});
 		return Response.json({

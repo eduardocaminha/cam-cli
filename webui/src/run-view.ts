@@ -97,6 +97,41 @@ export interface RunProviderWaitView {
 	retryAt?: string;
 }
 
+/**
+ * One reported usage window, credit summary, spend-limit summary and
+ * reset-credit count (GSHIP-664). Mirrors ProviderUsage and its nested types
+ * in src/runtime/provider-auth.ts. A field the source never reported stays
+ * absent, never a fabricated zero.
+ */
+export interface ProviderUsageWindowView {
+	window: string;
+	status?: 'allowed' | 'allowed_warning' | 'rejected';
+	usedPercent?: number;
+	windowMinutes?: number;
+	observedAt: string;
+	resetsAt?: string;
+}
+
+export interface ProviderUsageCreditsView {
+	hasCredits: boolean;
+	unlimited: boolean;
+	balance?: string;
+}
+
+export interface ProviderUsageSpendLimitView {
+	limit: string;
+	used: string;
+	remainingPercent: number;
+	resetsAt?: string;
+}
+
+export interface ProviderUsageView {
+	windows: ProviderUsageWindowView[];
+	credits?: ProviderUsageCreditsView;
+	spendLimit?: ProviderUsageSpendLimitView;
+	resetCreditCount?: number;
+}
+
 /** Mirrors the provider-neutral replay derived in src/runtime/run-evaluation.ts. */
 export interface RunEvaluationView {
 	workflowRevision: string | null;

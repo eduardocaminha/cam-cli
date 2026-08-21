@@ -106,6 +106,79 @@ describe('provider auth web API', () => {
 		}
 	});
 
+	// GSHIP-664: Claude's usage is derived from this process's own event log --
+	// never a live provider call -- so a rate-limit event a real invocation
+	// already recorded is enough, with no run in flight and no executor at all.
+	test('attaches Claude usage windows derived from recorded rate-limit events', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-usage-api',
+			issueId: 'GSHIP-701',
+			sessionId: 'session-usage-api',
+			workspacePath: '/workspaces/run-usage-api',
+			createdAt: '2026-08-20T09:00:00.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-usage-api',
+			kind: 'provider.rate-limit',
+			createdAt: '2026-08-20T09:05:00.000Z',
+			payload: { status: 'allowed_warning', limit: 'seven_day', usedPercent: 78, retryAt: '2026-08-27T09:05:00.000Z' },
+		});
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-provider-usage-runtime-'),
+			store,
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-provider-usage-web-'),
+			runRuntime: runtime,
+			providerAuth: fakeAuth(),
+		});
+		try {
+			const payload = await (await fetch(
+				`http://${handle.hostname}:${handle.port}/api/providers`,
+			)).json() as { providers: Array<Record<string, unknown>> };
+			expect(payload.providers[0]).toMatchObject({
+				id: 'claude',
+				usage: {
+					windows: [{
+						window: 'seven_day',
+						status: 'allowed_warning',
+						usedPercent: 78,
+						observedAt: '2026-08-20T09:05:00.000Z',
+						resetsAt: '2026-08-27T09:05:00.000Z',
+					}],
+				},
+			});
+			expect(payload.providers[1]).not.toHaveProperty('usage');
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('leaves Claude usage absent when no invocation has ever reported a window', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-provider-no-usage-runtime-'),
+			store: new RunStore(':memory:'),
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-provider-no-usage-web-'),
+			runRuntime: runtime,
+			providerAuth: fakeAuth(),
+		});
+		try {
+			const payload = await (await fetch(
+				`http://${handle.hostname}:${handle.port}/api/providers`,
+			)).json() as { providers: Array<Record<string, unknown>> };
+			expect(payload.providers[0]).not.toHaveProperty('usage');
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('selects only a connected subscription for future runs', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-provider-select-runtime-'),

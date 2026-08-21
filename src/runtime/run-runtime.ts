@@ -20,6 +20,7 @@ import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
+	type ClaudeUsageWindow,
 	type OrchestratorHandoff,
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
@@ -452,6 +453,11 @@ export class RunRuntime {
 	 */
 	getRunCost(runId: string): RunCostSummary {
 		return this.#store.getRunCostSummary(runId);
+	}
+
+	/** The latest observed state of every Claude subscription rate-limit window (GSHIP-664). */
+	getClaudeUsageWindows(): ClaudeUsageWindow[] {
+		return this.#store.getClaudeUsageWindows();
 	}
 
 	/**

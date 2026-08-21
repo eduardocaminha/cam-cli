@@ -98,12 +98,26 @@ interface ClaudeRateLimitInfo {
 	status: 'allowed' | 'allowed_warning' | 'rejected';
 	rateLimitType?: string;
 	retryAt?: string;
+	usedPercent?: number;
 }
 
 function retryAtFromUnixSeconds(value: unknown): string | undefined {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
 	const date = new Date(value * 1_000);
 	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+/**
+ * `rate_limit_info.utilization` is a 0-1 fraction of the reported window
+ * (measured on a real Gateship Claude invocation, 2026-08-21: `{"status":
+ * "allowed_warning","resetsAt":..,"rateLimitType":"seven_day","utilization":
+ * 0.78,...}`). Normalized into a clamped 0-100 percentage here so a
+ * malformed or out-of-range value -- never observed, but not contractual --
+ * cannot render as a false reading instead of simply being dropped.
+ */
+function usedPercentFromUtilization(value: unknown): number | undefined {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+	return Math.min(100, Math.max(0, value * 100));
 }
 
 function readClaudeRateLimit(raw: Record<string, unknown>): ClaudeRateLimitInfo | null {
@@ -116,10 +130,12 @@ function readClaudeRateLimit(raw: Record<string, unknown>): ClaudeRateLimitInfo 
 		? info['rateLimitType']
 		: undefined;
 	const retryAt = retryAtFromUnixSeconds(info['resetsAt']);
+	const usedPercent = usedPercentFromUtilization(info['utilization']);
 	return {
 		status,
 		...(rateLimitType === undefined ? {} : { rateLimitType }),
 		...(retryAt === undefined ? {} : { retryAt }),
+		...(usedPercent === undefined ? {} : { usedPercent }),
 	};
 }
 
@@ -140,6 +156,16 @@ interface ClaudeStreamState {
 	summary: string;
 	structuredOutput: unknown;
 	rateLimitFailure?: ProviderCallError;
+}
+
+function rateLimitEventPayload(info: ClaudeRateLimitInfo | null): Record<string, unknown> {
+	if (info === null) return {};
+	return {
+		status: info.status,
+		...(info.rateLimitType === undefined ? {} : { limit: info.rateLimitType }),
+		...(info.retryAt === undefined ? {} : { retryAt: info.retryAt }),
+		...(info.usedPercent === undefined ? {} : { usedPercent: info.usedPercent }),
+	};
 }
 
 function consumeClaudeLine(
@@ -167,11 +193,7 @@ function consumeClaudeLine(
 			return;
 		case 'rate_limit_event': {
 			const info = readClaudeRateLimit(event.raw);
-			input.emit(`${input.eventPrefix}.rate-limit`, info === null ? {} : {
-				status: info.status,
-				...(info.rateLimitType === undefined ? {} : { limit: info.rateLimitType }),
-				...(info.retryAt === undefined ? {} : { retryAt: info.retryAt }),
-			});
+			input.emit(`${input.eventPrefix}.rate-limit`, rateLimitEventPayload(info));
 			if (info?.status === 'rejected') state.rateLimitFailure = claudeUsageLimitError(info);
 			return;
 		}

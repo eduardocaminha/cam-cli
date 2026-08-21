@@ -1001,6 +1001,77 @@ describe('run cost summary', () => {
 	});
 });
 
+// GSHIP-664: the subscription's rate-limit windows are shared across the whole
+// install, not owned by one run, so this reads across every run's events --
+// never invoking Claude itself, only replaying what a real invocation already
+// reported through provider.rate-limit / review.rate-limit.
+describe('claude usage windows', () => {
+	function appendRateLimit(
+		store: RunStore,
+		runId: string,
+		kind: 'provider.rate-limit' | 'review.rate-limit',
+		createdAt: string,
+		payload: Record<string, unknown>,
+	): void {
+		store.appendEvent({ runId, kind, createdAt, payload });
+	}
+
+	test('reads as empty, never fabricated, when no invocation ever reported a window', () => {
+		const store = storeWithRun('run-usage-none', 'CAM-70');
+		expect(store.getClaudeUsageWindows()).toEqual([]);
+		store.close();
+	});
+
+	test('keeps only the freshest observation per window across both roles', () => {
+		const store = storeWithRun('run-usage-latest', 'CAM-71');
+		appendRateLimit(store, 'run-usage-latest', 'provider.rate-limit', '2026-08-17T10:00:00.000Z', {
+			status: 'allowed',
+			limit: 'five_hour',
+			usedPercent: 10,
+		});
+		// A later reviewer invocation reports the same window at a higher
+		// utilization: this is the observation that must survive, not the first.
+		appendRateLimit(store, 'run-usage-latest', 'review.rate-limit', '2026-08-17T11:00:00.000Z', {
+			status: 'allowed_warning',
+			limit: 'five_hour',
+			usedPercent: 78,
+			retryAt: '2026-08-17T15:00:00.000Z',
+		});
+		// A distinct window is kept alongside it, not merged into it.
+		appendRateLimit(store, 'run-usage-latest', 'provider.rate-limit', '2026-08-17T10:30:00.000Z', {
+			status: 'allowed',
+			limit: 'seven_day',
+			usedPercent: 20,
+		});
+
+		expect(store.getClaudeUsageWindows()).toEqual([
+			{
+				window: 'five_hour',
+				status: 'allowed_warning',
+				usedPercent: 78,
+				observedAt: '2026-08-17T11:00:00.000Z',
+				resetsAt: '2026-08-17T15:00:00.000Z',
+			},
+			{
+				window: 'seven_day',
+				status: 'allowed',
+				usedPercent: 20,
+				observedAt: '2026-08-17T10:30:00.000Z',
+			},
+		]);
+		store.close();
+	});
+
+	test('drops an event with no reported window instead of inventing one', () => {
+		const store = storeWithRun('run-usage-unnamed', 'CAM-72');
+		// The malformed-payload shape consumeClaudeLine emits when readClaudeRateLimit
+		// returned null (an unrecognized status, e.g.): no `limit`, no `status`.
+		appendRateLimit(store, 'run-usage-unnamed', 'provider.rate-limit', '2026-08-17T10:00:00.000Z', {});
+		expect(store.getClaudeUsageWindows()).toEqual([]);
+		store.close();
+	});
+});
+
 // GSHIP-634: orchestrator_messages already wrote exactly one row per turn, so
 // its usage columns are added to that table instead of a new one, migrated by
 // PRAGMA the same way promoted_issue_id was.
