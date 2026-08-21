@@ -23,6 +23,7 @@ import {
 	dismissProposal,
 	emptyDiagnostics,
 	emptyNotificationChannels,
+	emptySelfUpdate,
 	EVENTS_PATH,
 	fetchBacklog,
 	fetchBrief,
@@ -37,6 +38,7 @@ import {
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
+	fetchSelfUpdate,
 	fetchRuns,
 	type GitIdentityView,
 	type DiagnosticsView,
@@ -59,6 +61,7 @@ import {
 	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
+	saveSelfUpdate,
 	sendChat,
 	sendNotificationTest,
 	selectProvider,
@@ -67,6 +70,7 @@ import {
 	startDiagnostic,
 	startRun,
 	type StaleServiceView,
+	type SelfUpdateView,
 	type WorkspaceNoticeView,
 } from './client.ts';
 import {
@@ -134,6 +138,7 @@ function useOperationalRun(): {
 	project: ProjectStatusView;
 	operatorProfile: OperatorProfileView;
 	diagnostics: DiagnosticsView;
+	selfUpdate: SelfUpdateView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -169,6 +174,7 @@ function useOperationalRun(): {
 		EMPTY_OPERATOR_PROFILE,
 	);
 	const [diagnostics, setDiagnostics] = useState<DiagnosticsView>(emptyDiagnostics);
+	const [selfUpdate, setSelfUpdate] = useState<SelfUpdateView>(emptySelfUpdate);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
@@ -188,6 +194,7 @@ function useOperationalRun(): {
 			fetchProjectStatus(),
 			fetchOperatorProfile(),
 			fetchDiagnostics(),
+			fetchSelfUpdate(),
 		])
 			.then(async ([
 				runSnapshot,
@@ -203,6 +210,7 @@ function useOperationalRun(): {
 				projectSnapshot,
 				operatorProfileSnapshot,
 				diagnosticsSnapshot,
+				selfUpdateSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
@@ -228,6 +236,7 @@ function useOperationalRun(): {
 				setProject(projectSnapshot);
 				setOperatorProfile(operatorProfileSnapshot);
 				setDiagnostics(diagnosticsSnapshot);
+				setSelfUpdate(selfUpdateSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -287,6 +296,18 @@ function useOperationalRun(): {
 		return () => clearInterval(interval);
 	}, [diagnostics.scan?.state]);
 
+	// Release checks and the restart helper do not emit run events. A small
+	// read-only poll keeps Settings current across detection, handoff, rollback,
+	// and the automatic EventSource reconnect after a successful restart.
+	useEffect(() => {
+		const interval = setInterval(() => {
+			void fetchSelfUpdate()
+				.then(setSelfUpdate)
+				.catch((error: unknown) => setStatus(String(error)));
+		}, selfUpdate.applying ? 1_500 : 30_000);
+		return () => clearInterval(interval);
+	}, [selfUpdate.applying]);
+
 	return {
 		backlog,
 		ideas,
@@ -311,6 +332,7 @@ function useOperationalRun(): {
 		project,
 		operatorProfile,
 		diagnostics,
+		selfUpdate,
 		version,
 		status,
 		pending,
@@ -344,6 +366,7 @@ function Screen(): ReactElement {
 		project,
 		operatorProfile,
 		diagnostics,
+		selfUpdate,
 		version,
 		status,
 		pending,
@@ -432,6 +455,8 @@ function Screen(): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
 			modelSettings={modelSettings}
+			selfUpdate={selfUpdate}
+			onSetSelfUpdate={(enabled) => send(() => saveSelfUpdate(enabled))}
 			onSaveOperatorProfile={(profile) => send(() => saveOperatorProfile(profile))}
 			pending={pending}
 			proposals={proposals}

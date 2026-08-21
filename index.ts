@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
 
 import process from 'node:process';
+import { readFileSync, rmSync } from 'node:fs';
 
 import { DEFAULT_WEB_PORT, runWeb } from './src/commands/web.ts';
 import { printError, printFatalHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { GSHIP_VERSION } from './src/version.ts';
+import { executeSelfUpdateHandoff, type HandoffPlan } from './src/runtime/self-update.ts';
 
 const HELP = renderHelp({
 	title: 'gship',
@@ -64,6 +66,17 @@ async function launchWeb(args: string[]): Promise<number> {
 
 export async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
+	if (command === '__self-update-handoff') {
+		const planPath = argv[3];
+		if (planPath === undefined) return 1;
+		try {
+			const plan = JSON.parse(readFileSync(planPath, 'utf8')) as HandoffPlan;
+			const result = await executeSelfUpdateHandoff(plan);
+			return result.status === 'success' || result.status === 'rollback' ? 0 : 1;
+		} finally {
+			rmSync(planPath, { force: true });
+		}
+	}
 	if (command === undefined || command.startsWith('--port')) return launchWeb(argv.slice(2));
 	if (command === 'help' || command === '--help' || command === '-h') {
 		process.stdout.write(HELP);

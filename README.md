@@ -68,8 +68,19 @@ one with `GATESHIP_VERSION`:
 curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | GATESHIP_VERSION=vX.Y.Z bash
 ```
 
-Gateship never updates itself and never checks for new versions; updating is
-always this explicit command.
+Native installations can opt in under **Settings → Gateship updates**. The
+switch is off by default. The existing Gateship process checks official
+releases at most once a day, verifies the release tag's commit, the current
+platform asset, `SHA256SUMS.txt`, and the candidate's own `--version`, then
+hands off only while there is no non-terminal run or active diagnostic.
+
+The handoff blocks new work, atomically replaces both installed names from
+files prepared on the same filesystem, and verifies `/api/snapshot` after the
+restart. A candidate that does not return the exact release version and commit
+is stopped; the previous binary is restored, restarted, and verified. Success,
+rollback, check errors, and explicit rollback failures remain visible in
+Settings. The manual installer above remains the recovery and explicit-update
+path.
 
 ## Quick start
 
@@ -147,6 +158,12 @@ The image pins both provider CLI releases. Gateship also disables Claude Code
 self-updates in child sessions, so a run cannot silently replace the executable
 behind its recorded workflow revision; rebuilding the image is the explicit
 upgrade boundary.
+
+The update panel may report a newer release from a container, but automatic
+apply is unavailable there. Gateship never receives the Docker socket and does
+not attempt to recreate its own container; selecting a new image remains a
+host-side operation. Source checkouts likewise report why native apply is
+unavailable instead of rewriting development files.
 
 ```bash
 GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up

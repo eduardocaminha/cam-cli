@@ -181,23 +181,25 @@ export interface RemoteNotifierOptions {
 }
 
 /** One ntfy delivery; swallowed after being counted against the request itself (a settled, failed fetch) rather than left an unhandled rejection -- the channel is optional, so its own failure carries no further consequence. */
-function sendNtfyDelivery(
+async function sendNtfyDelivery(
 	topicUrl: URL,
 	notification: RemoteNotification,
 	fetchImpl: typeof fetch,
 	timeoutMs: number,
-): void {
+): Promise<void> {
 	const target = new URL(topicUrl);
 	target.searchParams.set('title', notification.title);
-	fetchImpl(target, {
-		method: 'POST',
-		body: notification.body,
-		signal: AbortSignal.timeout(timeoutMs),
-	}).catch(() => {
+	try {
+		await fetchImpl(target, {
+			method: 'POST',
+			body: notification.body,
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+	} catch {
 		// Swallowed after being counted against the request itself (a settled,
 		// failed fetch) rather than left an unhandled rejection: the channel is
 		// optional, so its own failure carries no further consequence.
-	});
+	}
 }
 
 /**
@@ -230,11 +232,35 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 		if (notification === null) return;
 
 		const topicUrl = resolveNtfyTopicUrl(cwd, env);
-		if (topicUrl !== null) sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs);
+		if (topicUrl !== null) void sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs);
 
 		const { config } = resolveResendConfig(cwd, env);
-		if (config !== null) sendResendDelivery(config, notification, fetchImpl, timeoutMs);
+		if (config !== null) void sendResendDelivery(config, notification, fetchImpl, timeoutMs);
 	};
+}
+
+/**
+ * Final service-lifecycle outcomes use the same optional server-side channels
+ * as run alerts. The caller supplies only public result text; channel secrets
+ * remain resolved here and never enter SQLite, a browser response, or a child
+ * environment assembled for an agent.
+ */
+export async function sendRemoteServiceNotification(
+	cwd: string,
+	title: string,
+	body: string,
+	options: Omit<RemoteNotifierOptions, 'cwd'> = {},
+): Promise<void> {
+	const env = options.env ?? process.env;
+	const fetchImpl = options.fetchImpl ?? fetch;
+	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const notification = { title, body };
+	const deliveries: Promise<void>[] = [];
+	const topicUrl = resolveNtfyTopicUrl(cwd, env);
+	if (topicUrl !== null) deliveries.push(sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs));
+	const { config } = resolveResendConfig(cwd, env);
+	if (config !== null) deliveries.push(sendResendDelivery(config, notification, fetchImpl, timeoutMs));
+	await Promise.all(deliveries);
 }
 
 /** What Ajustes' "send test" button reports; `detail` never carries the topic URL, only the delivery's own outcome. */
@@ -389,28 +415,30 @@ export function resolveResendMissingFields(
 }
 
 /** One Resend HTTP API delivery; swallowed exactly like ntfy's own -- the channel is optional, so its failure carries no further consequence. */
-function sendResendDelivery(
+async function sendResendDelivery(
 	config: ResendConfig,
 	notification: RemoteNotification,
 	fetchImpl: typeof fetch,
 	timeoutMs: number,
-): void {
-	fetchImpl(RESEND_API_URL, {
-		method: 'POST',
-		headers: {
-			authorization: `Bearer ${config.apiKey}`,
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify({
-			from: config.from,
-			to: [config.to],
-			subject: notification.title,
-			text: notification.body,
-		}),
-		signal: AbortSignal.timeout(timeoutMs),
-	}).catch(() => {
+): Promise<void> {
+	try {
+		await fetchImpl(RESEND_API_URL, {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${config.apiKey}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				from: config.from,
+				to: [config.to],
+				subject: notification.title,
+				text: notification.body,
+			}),
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+	} catch {
 		// Swallowed for the same reason as ntfy's own delivery above.
-	});
+	}
 }
 
 /** What Ajustes' "send test" button reports for Resend; never carries the API key, on any outcome. */
