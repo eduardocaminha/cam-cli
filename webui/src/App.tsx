@@ -69,6 +69,7 @@ import {
 	DEFAULT_LOCALE,
 	LOCALE_CATALOG,
 	type Locale,
+	type OnboardingCatalog,
 	type RunInspectorCatalog,
 	type RunsOperationalCatalog,
 	type RunsWorkflowCatalog,
@@ -3159,17 +3160,16 @@ function CommandLine({ children }: { children: string }): React.ReactElement {
  * Gateship from the intended local clone.
  */
 function OnboardingSurface({
+	catalog,
 	project,
 	status,
-}: Pick<AppProps, 'project' | 'status'>): React.ReactElement {
+}: Pick<AppProps, 'project' | 'status'> & { catalog: OnboardingCatalog }): React.ReactElement {
 	return (
-		<SurfaceColumn label="Set up project" status={status}>
+		<SurfaceColumn label={catalog.title} status={status}>
 			<Card>
 				<CardHeader>
-					<CardTitle>Connect a GitHub project</CardTitle>
-					<CardDescription>
-						Gateship runs inside a local clone and uses origin/main as its deterministic source.
-					</CardDescription>
+					<CardTitle>{catalog.cardTitle}</CardTitle>
+					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
 				<CardPanel className="flex flex-col gap-5">
 					{project.state === 'checking' ? (
@@ -3179,17 +3179,17 @@ function OnboardingSurface({
 						<>
 							<p className="text-muted-foreground text-sm">{project.detail}</p>
 							<section className="flex flex-col gap-2">
-								<h3 className="font-medium text-sm">Existing project</h3>
+								<h3 className="font-medium text-sm">{catalog.existingProject.title}</h3>
 								<p className="text-muted-foreground text-sm">
-									Stop this process and start Gateship inside the clone.
+									{catalog.existingProject.guidance}
 								</p>
 								<CommandLine>cd /path/to/project && gship</CommandLine>
 							</section>
 							<Separator />
 							<section className="flex flex-col gap-2">
-								<h3 className="font-medium text-sm">New project</h3>
+								<h3 className="font-medium text-sm">{catalog.newProject.title}</h3>
 								<p className="text-muted-foreground text-sm">
-									Create the repository with a main branch, enter the clone and start Gateship.
+									{catalog.newProject.guidance}
 								</p>
 								<CommandLine>gh repo create OWNER/REPO --private --add-readme --clone</CommandLine>
 								<CommandLine>cd REPO && gship</CommandLine>
@@ -3199,17 +3199,21 @@ function OnboardingSurface({
 					{project.state === 'needs-attention' ? (
 						<>
 							<div className="flex flex-col gap-2">
-								<Badge variant="warning">incomplete configuration</Badge>
+								<Badge variant="warning">{catalog.incompleteBadge}</Badge>
 								<p className="text-sm">{project.detail}</p>
 							</div>
 							<CommandLine>{PROJECT_RECOVERY_COMMAND[project.reason]}</CommandLine>
 							<p className="text-muted-foreground text-sm">
-								After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.
+								{catalog.recoveryGuidance}
 							</p>
 						</>
 					) : null}
 					<p className="text-muted-foreground text-sm">
-						Agent and subscription settings remain available under <a className={TEXT_LINK_CLASS} href="/settings">Settings</a>.
+						{catalog.settingsGuidance.beforeLink}
+						<a className={TEXT_LINK_CLASS} href="/settings">
+							{catalog.settingsGuidance.linkLabel}
+						</a>
+						{catalog.settingsGuidance.afterLink}
 					</p>
 				</CardPanel>
 			</Card>
@@ -3308,7 +3312,13 @@ export function App(props: AppProps): React.ReactElement {
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
 			/>
-			{projectBlocksSurface ? <OnboardingSurface project={props.project} status={props.status} /> : null}
+			{projectBlocksSurface ? (
+				<OnboardingSurface
+					catalog={localeCatalog.onboarding}
+					project={props.project}
+					status={props.status}
+				/>
+			) : null}
 			{!projectBlocksSurface && props.route === '/runs' ? <RunsSurface {...props} /> : null}
 			{!projectBlocksSurface && props.route === '/work' ? <WorkSurface {...props} /> : null}
 			{props.route === '/settings' ? <SettingsSurface {...props} /> : null}

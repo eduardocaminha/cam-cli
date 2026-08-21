@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-678",
   "title": "Complete the onboarding locale catalog",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T16:10:44.384Z",
-  "updatedAt": "2026-08-21T16:46:41.033Z",
+  "updatedAt": "2026-08-21T16:51:50.568Z",
   "description": "Extend the existing dependency-free typed locale catalog with one complete OnboardingCatalog and use it across the current project-blocking onboarding surface. Catalog every Gateship-authored visible title, description, section heading, badge, guidance sentence and link label rendered by OnboardingSurface for checking, empty and needs-attention project states. Keep the existing en-US wording and behavior as the production baseline and add complete pt-BR equivalents. Pass the already-selected catalog directly into the existing surface without adding context, a translation runtime or state. Preserve runtime/factual project detail and all recovery commands verbatim, including repository placeholders, origin/main, gship, gh commands and GATESHIP_PROJECT_DIR; translate only Gateship-owned framing around them. Extend the existing project-onboarding static-render tests in place to cover empty and needs-attention states in both locales across the routes they replace, assert exact translated labels, unchanged detail/commands and continued Settings availability, and retain the ready-project exclusion. Do not add a wording grep, snapshot test or score. Update HANDOFF.md only to record that all current product-owned shell, conversation, /runs, /work, /settings and onboarding surfaces are cataloged; pt-BR remains internal until the separate selector slice is approved. Preserve project blocking, route access, recovery commands and every existing readiness contract. Out of scope: locale selection or persistence, browser-language inference, translation of project.detail or server/API/error messages, project inspection, Settings, new endpoints, dependencies, panels, routes, database or runtime lifecycle changes.",
   "specSource": "operator",
   "spec": {
