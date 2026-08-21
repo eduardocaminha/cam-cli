@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T21:08:33.220Z",
-  "updatedAt": "2026-08-21T21:08:33.220Z",
+  "updatedAt": "2026-08-21T21:08:37.295Z",
   "description": "Make a run's GitHub delivery trace visible and auditable without adding another lifecycle owner. At pull-request creation, write a compact Gateship evidence section containing the run id, issue id, Gateship workflow revision, the exact human-approved verification commands and their passed outcome, the independent review outcome, and whether full-project verification passed or was not applicable. Never publish model reasoning, complete agent transcripts, raw command output, cost, credentials or secrets. Capture GitHub's canonical pull-request URL for both newly opened and reused pull requests and preserve it in the existing durable event log. Derive a typed pull-request delivery projection from that log and expose it on the existing run response, without a database column, table or endpoint. Show a clickable PR #n link and a compact CI indication on the current-run card and /runs. Extend the shipper's existing gh pr view read to include url and statusCheckRollup, aggregate CI as not-reported, pending, passed or failed, and persist an event only when that aggregate changes; a failed transition names and links the failed checks when GitHub reports them. Empty or absent checks are never reported as passed. Preserve the existing required-check failure handling, pinned auto-merge, head-divergence protection, retry classification and exact-source cleanup. Add focused shipper, runtime projection, API and UI coverage. Use the existing ship polling loop only; do not add a webhook, timer, poller, database migration, endpoint, dependency, notification channel or composite delivery score.",
   "specSource": "operator",
   "spec": {
@@ -27,5 +27,9 @@
         "output": "payload: { prNumber: result.prNumber },"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "9383ed8dbdbdd175197446722a91bbb38bf03d49355b4589b17df33d725adc42",
+    "approvedAt": "2026-08-21T21:08:37.295Z"
   }
 }
