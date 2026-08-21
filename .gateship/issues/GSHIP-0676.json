@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T15:25:06.633Z",
-  "updatedAt": "2026-08-21T15:25:06.633Z",
+  "updatedAt": "2026-08-21T15:27:15.890Z",
   "description": "Extend the existing dependency-free typed locale catalog with one complete WorkCatalog and use it across the current /work surface. Catalog every Gateship-authored visible label, title, description, status, button, placeholder, empty state, fallback and pluralized count rendered by WorkSurface and its existing Backlog, Diagnostics, issue review, proposal inbox/history, issue specification and issue intake panels. Keep the existing en-US wording and behavior as the production baseline and add complete pt-BR equivalents. Thread the already-selected Locale/catalog through those existing components without adding a second context, state store or translation runtime. Locale-sensitive dates and numbers on this surface must use the selected locale. Preserve operator-authored titles, scopes, evidence, verification commands and proposal text verbatim; also preserve issue/run/finding identifiers, provider or analyzer names, Git values and shell commands as factual data rather than translating them. Extend the existing static-render tests in place with representative populated, empty and actionable /work states in both locales, asserting exact product-owned labels and that authored values survive unchanged. Do not add a wording grep, snapshot test or score. Update HANDOFF.md only to record that /work is cataloged and that /settings plus onboarding remain before a production locale selector. Preserve run authority, proposal promotion, diagnostic advisory behavior, bounded lists and every existing form/action contract. Out of scope: /settings, onboarding, locale selection or persistence, browser-language inference, server/API/error localization, new endpoints, dependencies, panels, routes, database or runtime lifecycle changes.",
   "specSource": "operator",
   "spec": {
@@ -27,5 +27,9 @@
         "output": "export interface LocaleCatalog {"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "8cff44b14848194836087613adacdcd4a02137d35186d6c7a371ae2cebf2fbfc",
+    "approvedAt": "2026-08-21T15:27:15.890Z"
   }
 }
