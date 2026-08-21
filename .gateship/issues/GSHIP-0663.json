@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T02:34:32.517Z",
-  "updatedAt": "2026-08-21T02:34:32.517Z",
+  "updatedAt": "2026-08-21T02:34:58.793Z",
   "description": "Update only the two obsolete workflow state labels in README.md: replace Precisa de você with Needs you and Trabalhando with Working. Do not change runtime code, tests, historical ADRs, or operator-authored content.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "111:3. let decisions interrupt the work and wait for you as `Precisa de você`;\n112:4. follow progress as `Trabalhando`, with public agent text, tool names,"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "c66bba74dae6788457bae378df72e3f21e60d4ad77311028518afc53b6d6a09c",
+    "approvedAt": "2026-08-21T02:34:58.793Z"
   }
 }
