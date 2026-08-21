@@ -28,10 +28,19 @@ RUN bun install --frozen-lockfile
 # genuine `bun run`/`bun test` source run and stay silent instead of comparing
 # against a boot-time ref read that would belong to the project the container
 # manages, not to Gateship's own source (see resolveBootSourceSha).
+#
+# GSHIP_RELEASE_VERSION is the same version-injection contract
+# scripts/build-release.sh uses for the native binaries (GSHIP-665): the
+# release workflow passes the exact `v*` tag's MAJOR.MINOR.PATCH here, and
+# GSHIP_VERSION (src/version.ts) validates and reports it. Left unset -- every
+# non-release build, including this image's own CI verification build -- the
+# binary stays an explicit development build (`0.0.0-dev`).
 ARG GSHIP_BUILD_SHA=""
+ARG GSHIP_RELEASE_VERSION=""
 RUN bun build --compile --minify \
 	--define "GSHIP_BUILD_SHA=\"${GSHIP_BUILD_SHA}\"" \
 	--define "GSHIP_CONTAINER_BUILD=\"1\"" \
+	--define "GSHIP_RELEASE_VERSION=\"${GSHIP_RELEASE_VERSION}\"" \
 	./index.ts --outfile /out/gateship
 
 # --- Runtime -------------------------------------------------------------

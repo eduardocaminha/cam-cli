@@ -59,14 +59,26 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-# --- Read the version literal from src/version.ts --------------------------
-VERSION_LINE="$(grep -E "^export const GSHIP_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/version.ts || true)"
-if [[ -z "${VERSION_LINE}" ]]; then
-	echo "ERROR: could not parse GSHIP_VERSION from src/version.ts" >&2
-	exit 1
+# --- Resolve the release version from the exact tag on HEAD, if any --------
+# A checkout sitting on a valid vMAJOR.MINOR.PATCH tag -- the release
+# workflow's case, whether the tag was pushed manually or created by its
+# automatic path (GSHIP-665) -- is a release build and gets that version
+# baked in below via GSHIP_RELEASE_VERSION. Every other checkout (local dev,
+# an ordinary CI run) has no such tag, so it stays an explicit development
+# build: RELEASE_VERSION_DEFINE stays blank, the same "unset" shape the
+# Dockerfile's own ARG default uses, so resolveReleaseVersion (src/version.ts)
+# degrades to its '0.0.0-dev' runtime default instead of throwing -- it only
+# throws on a *non-blank* value that fails MAJOR.MINOR.PATCH validation.
+RELEASE_TAG="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+if [[ -n "${RELEASE_TAG}" ]]; then
+	VERSION="${RELEASE_TAG#v}"
+	RELEASE_VERSION_DEFINE="${VERSION}"
+	echo "[build-release] gateship v${VERSION} (release build)"
+else
+	VERSION="0.0.0-dev"
+	RELEASE_VERSION_DEFINE=""
+	echo "[build-release] gateship ${VERSION} (development build)"
 fi
-VERSION="$(echo "${VERSION_LINE}" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")"
-echo "[build-release] gateship v${VERSION}"
 
 # --- Resolve the commit being compiled (GSHIP-648) --------------------------
 # Baked into every binary below via `--define`, so the running process can
@@ -110,7 +122,10 @@ for entry in "${TARGETS[@]}"; do
 	BIN="dist/${OUT_NAME}"
 
 	echo "[build-release] compiling ${BIN} (--target=${BUN_TARGET})"
-	bun build --compile --target="${BUN_TARGET}" --define "GSHIP_BUILD_SHA=\"${BUILD_SHA}\"" --minify ./index.ts --outfile "${BIN}"
+	bun build --compile --target="${BUN_TARGET}" \
+		--define "GSHIP_BUILD_SHA=\"${BUILD_SHA}\"" \
+		--define "GSHIP_RELEASE_VERSION=\"${RELEASE_VERSION_DEFINE}\"" \
+		--minify ./index.ts --outfile "${BIN}"
 
 	# --- Ad-hoc re-sign darwin artifacts only (US-001) ------------------------
 	# bun --compile produces a binary whose codesign signature reads invalid;

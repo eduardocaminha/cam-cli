@@ -65,7 +65,20 @@ The service:
 - runs optional diagnostics against an exact source SHA in an isolated
   checkout and keeps every finding advisory until a human settles it.
 - records the Gateship revision that created each new run and replays factual
-  workflow cohorts from the existing durable decision log.
+  workflow cohorts from the existing durable decision log;
+- releases itself: `.github/workflows/release.yml` still accepts a manually
+  pushed `v*` tag, and also observes completed CI runs, tagging and
+  publishing automatically only once GitHub's commit-associated-pulls API
+  confirms the exact CI head SHA is the merge commit of a merged PR into
+  main. Direct issue/spec/approval commits and pull-request CI runs finish
+  green with no tag. The next version always increments the highest existing
+  tag's MINOR and resets PATCH, via one deterministic, unit-tested script; a
+  rerun reuses an existing tag on the same commit instead of minting a
+  second one. Source and package metadata read `0.0.0-dev`; only the
+  released native binaries and container image carry the real version,
+  validated through a compile-time define, and `gship --version` reports it.
+  There is still no PAT, release bot, source-version commit, second release
+  workflow or daemon.
 
 The browser conversation is the primary operator surface. Explicit controls
 remain deterministic fallbacks. The right architecture is a typed provider

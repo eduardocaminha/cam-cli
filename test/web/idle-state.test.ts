@@ -13,6 +13,7 @@ import process from 'node:process';
 import {
 	resolveBootSourceSha,
 	resolveWorkflowRevision,
+	resolveWorkflowRevisionSha,
 	startWebServer,
 } from '../../src/commands/web.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
@@ -165,6 +166,22 @@ function sourceSha(cwd: string): string {
 }
 
 /**
+ * The Gateship checkout's own HEAD -- what `readRuntimeSourceSha` in web.ts
+ * reads for a genuine source run with no compiled-in build sha (GSHIP-648).
+ * Whenever a test calls `withSnapshotServer`/`getSnapshot` without a
+ * `buildSha` override, this is the sha the snapshot's `version` field
+ * carries as SemVer build metadata (GSHIP-665).
+ */
+function runtimeSourceSha(): string {
+	const result = Bun.spawnSync(
+		['git', '-C', join(import.meta.dir, '..', '..'), 'rev-parse', '--verify', 'HEAD'],
+		{ stdout: 'pipe', stderr: 'pipe' },
+	);
+	if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stderr));
+	return new TextDecoder().decode(result.stdout).trim();
+}
+
+/**
  * Land one more commit on the remote's main that touches `src/`, the shape of
  * an ordinary code change, and refresh the tracking ref.
  */
@@ -242,7 +259,9 @@ describe('GET /api/snapshot idle state', () => {
 		const idleState = payload['idleState'] as Record<string, unknown>;
 
 		expect(Object.keys(payload)).toEqual(['idleState', 'version']);
-		expect(payload['version']).toBe(GSHIP_VERSION);
+		// No buildSha override, so the snapshot resolves the runtime sha itself
+		// (GSHIP-648) and appends it as SemVer build metadata (GSHIP-665).
+		expect(payload['version']).toBe(`${GSHIP_VERSION}+${runtimeSourceSha()}`);
 		expect(idleState).toBeDefined();
 		expect(Object.keys(idleState)).toEqual(['backlog']);
 			expect(idleState['backlog']).toEqual({
@@ -433,7 +452,7 @@ describe('GET /api/snapshot service freshness', () => {
 
 			const payload = await readSnapshot();
 			expect(payload['staleService']).toBeUndefined();
-			expect(payload['version']).toBe(GSHIP_VERSION);
+			expect(payload['version']).toBe(`${GSHIP_VERSION}+${runtimeSourceSha()}`);
 		});
 	});
 
@@ -516,7 +535,7 @@ describe('GET /api/snapshot service freshness', () => {
 
 			const payload = await readSnapshot();
 			expect(payload['staleService']).toBeUndefined();
-			expect(payload['version']).toBe(GSHIP_VERSION);
+			expect(payload['version']).toBe(`${GSHIP_VERSION}+${runtimeSourceSha()}`);
 		});
 	});
 });
@@ -574,7 +593,10 @@ describe('GET /api/snapshot service freshness -- compiled build sha (GSHIP-648)'
 
 			const payload = await readSnapshot();
 			expect(payload['staleService']).toBeUndefined();
-			expect(payload['version']).toBe(GSHIP_VERSION);
+			// The build sha is known (it just doesn't resolve locally, a separate
+			// concern from the staleService notice above), so it is still appended
+			// as SemVer build metadata (GSHIP-665).
+			expect(payload['version']).toBe(`${GSHIP_VERSION}+${unresolvableBuildSha}`);
 		}, unresolvableBuildSha);
 	});
 });
@@ -640,6 +662,36 @@ describe('resolveWorkflowRevision', () => {
 			containerReads += 1;
 			return 'managed-project-sha';
 		})).toBe(`v${GSHIP_VERSION}`);
+		expect(containerReads).toBe(0);
+	});
+});
+
+// GSHIP-665: the /api/snapshot `version` field appends this sha as SemVer
+// build metadata when one is known, and must never append
+// resolveWorkflowRevision's own `v${GSHIP_VERSION}` fallback -- which is not
+// a sha -- so the two functions share this lower-level resolver and only
+// resolveWorkflowRevision applies the fallback.
+describe('resolveWorkflowRevisionSha', () => {
+	test('prefers the embedded build over any source checkout', () => {
+		let reads = 0;
+		expect(resolveWorkflowRevisionSha('build-sha', false, () => {
+			reads += 1;
+			return 'runtime-sha';
+		})).toBe('build-sha');
+		expect(reads).toBe(0);
+	});
+
+	test('a development run reads Gateship itself, never the managed project ref', () => {
+		expect(resolveWorkflowRevisionSha(null, false, () => 'runtime-sha')).toBe('runtime-sha');
+	});
+
+	test('an unidentified package or container says nothing, never inventing a sha', () => {
+		let containerReads = 0;
+		expect(resolveWorkflowRevisionSha(null, false, () => null)).toBeNull();
+		expect(resolveWorkflowRevisionSha(null, true, () => {
+			containerReads += 1;
+			return 'managed-project-sha';
+		})).toBeNull();
 		expect(containerReads).toBe(0);
 	});
 });

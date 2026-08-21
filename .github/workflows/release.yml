@@ -1,13 +1,45 @@
 name: Release
 
-# Triggered by a version tag push. Cross-compiles all four release targets from
-# one macOS runner and publishes them as prerelease assets, and separately
-# builds and publishes the matching versioned container image from a Linux
-# runner (the macOS-hosted runner has no Docker daemon).
+# Two ways in (GSHIP-665):
+#   1. A manually pushed vX.Y.Z tag -- unchanged from before this workflow
+#      also observed CI.
+#   2. A completed run of the CI workflow. `resolve-release` below is the
+#      single gate: it only produces a tag when that run's conclusion was
+#      success, its own triggering event was a push, its head branch was
+#      main, and GitHub's commit-associated-pulls API confirms the exact head
+#      sha is the merge commit of a merged pull request into main. Direct
+#      issue/spec/approval commits pushed straight to main, and every
+#      pull_request CI run, have no such pull request and exit this workflow
+#      successfully with no tag and no release.
+#
+# GITHUB_TOKEN-authored tag pushes never retrigger this workflow (GitHub
+# suppresses that recursive trigger), so the automatic path tags and then
+# continues in the SAME run to build and publish, rather than depending on a
+# second run picking up the new tag.
+#
+# Cross-compiles all four release targets from one macOS runner and publishes
+# them as prerelease assets, and separately builds and publishes the matching
+# versioned container image from a Linux runner (the macOS-hosted runner has
+# no Docker daemon).
 on:
   push:
     tags:
       - 'v*'
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+# Keyed to the resolved commit, not a fixed literal: two different merges
+# building at once must not contend for one slot, or GitHub would cancel the
+# older *pending* run when a newer one queues -- including a skip-only run
+# (an unrelated pull_request CI completion, say) queued behind a real
+# in-progress release build, silently dropping that release. Multiple
+# triggers that do resolve to the very same commit (a rerun, or more than one
+# CI-completion event landing on one sha) still serialize under the same
+# group, which is exactly the duplicate-work protection this exists for.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
 
 permissions:
   artifact-metadata: write
@@ -16,10 +48,111 @@ permissions:
   id-token: write
 
 jobs:
+  resolve-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Fetch all tags
+        run: git fetch --tags --force
+      - name: Resolve the release tag and commit for this trigger
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          PUSH_SHA: ${{ github.sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            # Manual path: an operator pushed a tag directly. The trigger's
+            # own `v*` glob is looser than a real release tag -- `v1`,
+            # `v1.2` and `v1.2.3-rc1` all match `v*` but are not a valid
+            # vMAJOR.MINOR.PATCH version. Fail closed rather than emit a
+            # malformed tag/version downstream to the build and publish jobs.
+            if [[ ! "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: pushed tag '${REF_NAME}' is not a valid vMAJOR.MINOR.PATCH release tag" >&2
+              exit 1
+            fi
+            echo "tag=${REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "sha=${PUSH_SHA}" >> "$GITHUB_OUTPUT"
+            echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Automatic path: eligible only when the triggering CI run
+          # succeeded, was itself triggered by a push, landed on main, and is
+          # confirmed by the commit-associated-pulls API to be the merge
+          # commit of a merged PR into main. Everything else -- direct
+          # issue/spec/approval commits pushed straight to main, and every
+          # pull_request CI run -- exits here with no tag, and this workflow
+          # still finishes successfully.
+          if [[ "${RUN_CONCLUSION}" != "success" ]]; then
+            echo "skip: triggering CI run concluded '${RUN_CONCLUSION}', not success"
+            exit 0
+          fi
+          if [[ "${RUN_EVENT}" != "push" ]]; then
+            echo "skip: triggering CI run's own event was '${RUN_EVENT}', not push"
+            exit 0
+          fi
+          if [[ "${RUN_HEAD_BRANCH}" != "main" ]]; then
+            echo "skip: triggering CI run's head branch was '${RUN_HEAD_BRANCH}', not main"
+            exit 0
+          fi
+
+          MERGED_COUNT="$(gh api "repos/${REPO}/commits/${RUN_HEAD_SHA}/pulls" \
+            --jq "[.[] | select(.merged_at != null and .base.ref == \"main\" and .merge_commit_sha == \"${RUN_HEAD_SHA}\")] | length")"
+          if [[ "${MERGED_COUNT}" -lt 1 ]]; then
+            echo "skip: ${RUN_HEAD_SHA} is not the merge commit of a merged PR into main"
+            exit 0
+          fi
+
+          # Idempotency: a rerun of this same CI result must reuse a valid
+          # version tag that already points at this exact commit rather than
+          # minting a second one for it.
+          EXISTING_TAG="$(git tag --points-at "${RUN_HEAD_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+          if [[ -n "${EXISTING_TAG}" ]]; then
+            echo "reusing existing tag ${EXISTING_TAG} already at ${RUN_HEAD_SHA}"
+            echo "tag=${EXISTING_TAG}" >> "$GITHUB_OUTPUT"
+            echo "sha=${RUN_HEAD_SHA}" >> "$GITHUB_OUTPUT"
+            echo "version=${EXISTING_TAG#v}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NEXT_TAG="$(git tag -l 'v*' | bun run scripts/next-release-version.ts)"
+          git tag "${NEXT_TAG}" "${RUN_HEAD_SHA}"
+          git push origin "refs/tags/${NEXT_TAG}"
+          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${RUN_HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${NEXT_TAG#v}" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: [resolve-release]
+    if: needs.resolve-release.outputs.tag != ''
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-release.outputs.sha }}
+      - name: Fetch all tags
+        run: git fetch --tags --force
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
@@ -38,19 +171,33 @@ jobs:
       - name: Publish prerelease with the four binaries and checksum manifest
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.resolve-release.outputs.tag }}
         run: |
-          gh release create "$TAG" \
-            dist/gateship-darwin-arm64 \
-            dist/gateship-darwin-x64 \
-            dist/gateship-linux-x64 \
-            dist/gateship-linux-arm64 \
-            dist/SHA256SUMS.txt \
-            --prerelease \
-            --title "$TAG" \
-            --generate-notes
+          set -euo pipefail
+          ASSETS=(
+            dist/gateship-darwin-arm64
+            dist/gateship-darwin-x64
+            dist/gateship-linux-x64
+            dist/gateship-linux-arm64
+            dist/SHA256SUMS.txt
+          )
+          # Idempotency: a rerun must be safe to repeat. An existing release
+          # for this tag (a prior attempt, or the version tag being reused
+          # for this same commit) gets its assets replaced in place; only a
+          # genuinely new tag creates a new release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              "${ASSETS[@]}" \
+              --prerelease \
+              --title "$TAG" \
+              --generate-notes
+          fi
 
   release-image:
+    needs: [resolve-release]
+    if: needs.resolve-release.outputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       artifact-metadata: write
@@ -60,6 +207,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-release.outputs.sha }}
       - uses: docker/setup-buildx-action@v3
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@v3
@@ -71,6 +220,9 @@ jobs:
       # in via `--define`, and the Dockerfile's own ARG of the same name (see
       # compose.yaml) -- so resolveBootSourceSha's old-service warning reads
       # the released commit inside this image exactly as it does outside it.
+      # GSHIP_RELEASE_VERSION is the same version this run's tag names, so
+      # `gship --version` inside the image reports the released version, not
+      # the development sentinel (GSHIP-665).
       - name: Build and push the versioned container image
         id: build
         uses: docker/build-push-action@v6
@@ -78,10 +230,11 @@ jobs:
           context: .
           push: true
           build-args: |
-            GSHIP_BUILD_SHA=${{ github.sha }}
+            GSHIP_BUILD_SHA=${{ needs.resolve-release.outputs.sha }}
+            GSHIP_RELEASE_VERSION=${{ needs.resolve-release.outputs.version }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.tag }}
+            ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.sha }}
       - name: Attest build provenance for the container image
         uses: actions/attest-build-provenance@v4
         with:
