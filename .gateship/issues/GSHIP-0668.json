@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-668",
+  "title": "Add a typed shell locale foundation",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T06:26:34.165Z",
+  "updatedAt": "2026-08-21T06:26:34.165Z",
+  "description": "Create the first internal, typed internationalization seam while correcting the document's false language declaration. Add one dependency-free web UI module that exports the closed locale union en-US | pt-BR, the en-US default, and a type-complete shell catalog whose deliberately small key set contains only the operator-navigation accessible label, the skip-link label, and the four route labels. Both locale entries must satisfy the same closed keys at compile time; do not add a string-key fallback or duplicate registry. Thread the locale into App as an explicit prop, have main pass the en-US default, and make ShellSidebar plus the skip link read only those labels from the catalog. routeOf and the route paths remain unchanged. Change webui/index.html from lang=pt-BR to the truthful en-US initial value and synchronize document.documentElement.lang from the same explicit locale at bootstrap so the next slice has one owner for visible and semantic language. Production must remain the same complete English surface because there is no selector yet. Extend the existing static-render tests in place to prove the unchanged English shell and an explicitly rendered pt-BR shell, including its accessible navigation and skip-link labels; assert the served document's initial language in the existing embedded-bundle test and rebuild the tracked Vite assets. Do not translate panel content in this slice. Reconcile the authoritative current-state portions of HANDOFF.md so they no longer say GSHIP-662 is deferred or that v0.295-era work is current: record v0.297.0/GSHIP-662 as shipped, this typed shell seam as the current next stage, and preserve the rule that roadmap text is not execution authority. Keep historical implementation evidence rather than rewriting it. Out of scope: a visible locale selector, persistence, browser-language inference, partial translation of any route body, server/API/notification/orchestrator messages, operator-authored content, a localization package, a new endpoint or table, and any lifecycle change.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Create the first internal, typed internationalization seam while correcting the document's false language declaration. Add one dependency-free web UI module that exports the closed locale union en-US | pt-BR, the en-US default, and a type-complete shell catalog whose deliberately small key set contains only the operator-navigation accessible label, the skip-link label, and the four route labels. Both locale entries must satisfy the same closed keys at compile time; do not add a string-key fallback or duplicate registry. Thread the locale into App as an explicit prop, have main pass the en-US default, and make ShellSidebar plus the skip link read only those labels from the catalog. routeOf and the route paths remain unchanged. Change webui/index.html from lang=pt-BR to the truthful en-US initial value and synchronize document.documentElement.lang from the same explicit locale at bootstrap so the next slice has one owner for visible and semantic language. Production must remain the same complete English surface because there is no selector yet. Extend the existing static-render tests in place to prove the unchanged English shell and an explicitly rendered pt-BR shell, including its accessible navigation and skip-link labels; assert the served document's initial language in the existing embedded-bundle test and rebuild the tracked Vite assets. Do not translate panel content in this slice. Reconcile the authoritative current-state portions of HANDOFF.md so they no longer say GSHIP-662 is deferred or that v0.295-era work is current: record v0.297.0/GSHIP-662 as shipped, this typed shell seam as the current next stage, and preserve the rule that roadmap text is not execution authority. Keep historical implementation evidence rather than rewriting it. Out of scope: a visible locale selector, persistence, browser-language inference, partial translation of any route body, server/API/notification/orchestrator messages, operator-authored content, a localization package, a new endpoint or table, and any lifecycle change.",
+    "verify": [
+      "bun run build:ui && bun test test/web/ui-client.test.tsx test/web/embedded-ui.test.ts && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -F '<html lang=\"pt-BR\">' webui/index.html",
+        "output": "<html lang=\"pt-BR\">"
+      },
+      {
+        "command": "grep -oF 'const SURFACES: readonly { path: OperatorRoute; label: string }[] = [' webui/src/App.tsx",
+        "output": "const SURFACES: readonly { path: OperatorRoute; label: string }[] = ["
+      }
+    ]
+  }
+}
