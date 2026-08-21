@@ -44,6 +44,7 @@ import {
 	type ProposalView,
 	type ProviderStatusView,
 	type ResolvedProposalView,
+	type SelfUpdateView,
 	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
@@ -152,6 +153,7 @@ export interface AppProps {
 	notificationPermission: BrowserNotificationPermission;
 	/** Whether each remote channel resolved a secret; never the secret itself (GSHIP-652). */
 	notificationChannels: NotificationChannelsView;
+	selfUpdate: SelfUpdateView;
 	/** Newest first, exactly as /api/runs returned it. */
 	runs: readonly RunView[];
 	selectedIssueId: string | null;
@@ -201,6 +203,7 @@ export interface AppProps {
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
 	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
 	onSetChainRuns: (enabled: boolean) => void;
+	onSetSelfUpdate: (enabled: boolean) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -1297,6 +1300,52 @@ function DiagnosticSchedulePanel({
 					Save schedule
 				</button>
 			</form>
+		</ContextPanel>
+	);
+}
+
+function SelfUpdatePanel({
+	selfUpdate,
+	pending,
+	onSetSelfUpdate,
+}: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'>): React.ReactElement {
+	const unavailable = selfUpdate.availability.kind !== 'native';
+	return (
+		<ContextPanel
+			description="Checks official releases at most daily and applies a verified native binary only while the project is idle."
+			title="Gateship updates"
+		>
+			<label className="flex items-center gap-2 text-sm">
+				<input
+					checked={selfUpdate.enabled}
+					disabled={pending || unavailable || selfUpdate.applying}
+					onChange={(event) => onSetSelfUpdate(
+						(event.currentTarget as unknown as { checked: boolean }).checked,
+					)}
+					type="checkbox"
+				/>
+				<span className="font-medium">Install verified native updates automatically</span>
+			</label>
+			<p className="text-muted-foreground text-xs">
+				Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.
+			</p>
+			{unavailable ? (
+				<p className="text-muted-foreground text-sm">{selfUpdate.availability.reason}</p>
+			) : null}
+			{selfUpdate.available !== null ? (
+				<p className="text-sm">Available: v{selfUpdate.available.version} ({selfUpdate.available.commit})</p>
+			) : null}
+			{selfUpdate.result !== null ? (
+				<div className="flex flex-col gap-1 text-sm">
+					<Badge variant={selfUpdate.result.status === 'success' ? 'success' : 'warning'}>
+						{selfUpdate.result.status}
+					</Badge>
+					<p>{selfUpdate.result.reason}</p>
+					<p className="text-muted-foreground text-xs">
+						{selfUpdate.result.previousVersion} → {selfUpdate.result.targetVersion ?? 'unknown'} at {selfUpdate.result.at}
+					</p>
+				</div>
+			) : null}
 		</ContextPanel>
 	);
 }
@@ -2976,6 +3025,11 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				chainRuns={props.chainRuns}
 				onSetChainRuns={props.onSetChainRuns}
 				pending={props.pending}
+			/>
+			<SelfUpdatePanel
+				onSetSelfUpdate={props.onSetSelfUpdate}
+				pending={props.pending}
+				selfUpdate={props.selfUpdate}
 			/>
 			<DiagnosticSchedulePanel
 				diagnostics={props.diagnostics}

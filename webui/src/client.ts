@@ -30,6 +30,7 @@ export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
 export const CHAIN_RUNS_PATH = '/api/chain-runs';
 export const NOTIFICATIONS_PATH = '/api/notifications';
+export const UPDATE_PATH = '/api/update';
 
 /**
  * One command run while specifying, and the output observed then -- the
@@ -118,6 +119,36 @@ export type ProjectStatusView =
 export interface OperatorProfileView {
 	name: string;
 	timezone: string;
+}
+
+export interface SelfUpdateView {
+	enabled: boolean;
+	currentVersion: string;
+	currentCommit: string | null;
+	available: { version: string; tag: string; commit: string } | null;
+	availability: { kind: 'native' | 'container' | 'development'; reason?: string };
+	lastCheckedAt: string | null;
+	result: {
+		status: 'success' | 'rollback' | 'failed' | 'check-failed' | 'deferred';
+		at: string;
+		previousVersion: string;
+		targetVersion: string | null;
+		reason: string;
+	} | null;
+	applying: boolean;
+}
+
+export function emptySelfUpdate(): SelfUpdateView {
+	return {
+		enabled: false,
+		currentVersion: '',
+		currentCommit: null,
+		available: null,
+		availability: { kind: 'development', reason: 'Checking installation…' },
+		lastCheckedAt: null,
+		result: null,
+		applying: false,
+	};
 }
 
 export type DiagnosticScanStateView = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -768,6 +799,48 @@ export async function saveModelSettings(settings: ModelSettingsView): Promise<st
 	if (!response.ok) return payload.message ?? `Configuration rejected (${response.status}).`;
 	const notes = describeModelProbes(payload.probes);
 	return notes.length === 0 ? 'Models by role updated.' : `Models by role updated. ${notes}`;
+}
+
+interface SelfUpdatePayload extends CommandPayload {
+	update?: Partial<SelfUpdateView>;
+}
+
+function selfUpdateRecord(value: Partial<SelfUpdateView> | undefined): SelfUpdateView {
+	const empty = emptySelfUpdate();
+	if (value === undefined) return empty;
+	const availability = value.availability;
+	return {
+		...empty,
+		enabled: value.enabled === true,
+		currentVersion: typeof value.currentVersion === 'string' ? value.currentVersion : '',
+		currentCommit: typeof value.currentCommit === 'string' ? value.currentCommit : null,
+		available: value.available !== null && typeof value.available?.version === 'string'
+			&& typeof value.available.tag === 'string' && typeof value.available.commit === 'string'
+			? value.available : null,
+		availability: availability?.kind === 'native'
+			|| availability?.kind === 'container'
+			|| availability?.kind === 'development'
+			? availability : empty.availability,
+		lastCheckedAt: typeof value.lastCheckedAt === 'string' ? value.lastCheckedAt : null,
+		result: value.result ?? null,
+		applying: value.applying === true,
+	};
+}
+
+export async function fetchSelfUpdate(): Promise<SelfUpdateView> {
+	const payload = await readJson<SelfUpdatePayload>(await fetch(UPDATE_PATH), 'Updates');
+	return selfUpdateRecord(payload.update);
+}
+
+export async function saveSelfUpdate(enabled: boolean): Promise<string> {
+	const response = await fetch(UPDATE_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ enabled }),
+	});
+	const payload = await response.json() as SelfUpdatePayload;
+	if (!response.ok) throw new Error(payload.message ?? `Update policy rejected (${response.status}).`);
+	return enabled ? 'Automatic native updates enabled.' : 'Automatic native updates disabled.';
 }
 
 /**

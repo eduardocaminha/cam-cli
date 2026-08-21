@@ -101,6 +101,7 @@ import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.
 import { ensureCodexHome } from '../runtime/provider-env.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
+import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
 import { GSHIP_VERSION } from '../version.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
@@ -127,6 +128,8 @@ export interface WebServerOptions {
 	runRuntime?: RunRuntime;
 	/** Injectable in-process diagnostic owner. Production uses the same SQLite file. */
 	diagnostics?: DiagnosticsRuntime;
+	/** Injectable native updater. Production owns one over the runtime database. */
+	selfUpdate?: SelfUpdateAccess;
 	/** Test seam for the remote-main operator issue writer. */
 	issueIntake?: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
@@ -166,6 +169,14 @@ export interface WebServerOptions {
 	 * sha that does not resolve in the local repository.
 	 */
 	buildSha?: string | null;
+}
+
+export interface SelfUpdateAccess {
+	snapshot(): SelfUpdateSnapshot;
+	setEnabled(enabled: boolean): SelfUpdateSnapshot;
+	startScheduler(): void;
+	stop(): Promise<void>;
+	close?(): void;
 }
 
 export interface OrchestratorRuntime {
@@ -913,6 +924,26 @@ async function writeDiagnosticSchedule(
 	diagnostics.setSchedule({ enabled, cadence: cadence as DiagnosticCadence });
 	const outcome = diagnostics.runScheduledIfDue();
 	return Response.json({ ok: true, schedule: diagnostics.getSchedule(), outcome });
+}
+
+async function writeSelfUpdatePolicy(
+	request: Request,
+	selfUpdate: SelfUpdateAccess,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json({ ok: false, message: 'A JSON object is required.' }, { status: 400 });
+	}
+	const enabled = body !== null && typeof body === 'object' && !Array.isArray(body)
+		? (body as Record<string, unknown>)['enabled']
+		: undefined;
+	if (typeof enabled !== 'boolean') {
+		return Response.json({ ok: false, message: 'enabled must be boolean.' }, { status: 400 });
+	}
+	return Response.json({ ok: true, update: selfUpdate.setEnabled(enabled) });
 }
 
 async function cancelDiagnosticFromOperator(
@@ -1826,10 +1857,63 @@ export function resolveBindHostname(env: Record<string, string | undefined> = pr
 	return raw !== undefined && raw.length > 0 ? raw : WEB_HOSTNAME;
 }
 
+interface DefaultSelfUpdateInput {
+	options: WebServerOptions;
+	runRuntime: RunRuntime;
+	diagnostics: DiagnosticsRuntime;
+	workflowRevisionSha: string | null;
+	containerBuild: boolean;
+	hostname: string;
+	port: number;
+	ownsRunRuntime: boolean;
+}
+
+function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
+	if (input.options.selfUpdate !== undefined) return input.options.selfUpdate;
+	const databasePath = join(input.options.cwd, '.gship', 'runtime.sqlite');
+	const updaterStore = new RunStore(input.ownsRunRuntime ? databasePath : ':memory:');
+	const isIdle = () => input.runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state))
+		&& !input.diagnostics.isActive();
+	return new SelfUpdateRuntime({
+		store: updaterStore,
+		databasePath,
+		cwd: input.options.cwd,
+		currentVersion: GSHIP_VERSION,
+		currentCommit: input.workflowRevisionSha,
+		port: input.port,
+		hostname: input.hostname,
+		isContainer: input.containerBuild,
+		isIdle,
+		acquireAdmission: () => {
+			const reason = 'Gateship is handing off a native update; new work is temporarily unavailable.';
+			input.runRuntime.setAdmissionBlocked(reason);
+			input.diagnostics.setAdmissionBlocked(reason);
+			return () => {
+				input.runRuntime.setAdmissionBlocked(null);
+				input.diagnostics.setAdmissionBlocked(null);
+			};
+		},
+		requestShutdown: () => setTimeout(() => process.kill(process.pid, 'SIGTERM'), 0),
+	});
+}
+
+function readSelfUpdate(selfUpdate: SelfUpdateAccess | undefined): Response {
+	return selfUpdate === undefined
+		? Response.json({ ok: false }, { status: 503 })
+		: Response.json({ update: selfUpdate.snapshot() });
+}
+
+function updateSelfUpdate(request: Request, selfUpdate: SelfUpdateAccess | undefined): Response | Promise<Response> {
+	return selfUpdate === undefined
+		? Response.json({ ok: false }, { status: 503 })
+		: writeSelfUpdatePolicy(request, selfUpdate);
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
 	const ownsDiagnostics = options.diagnostics === undefined;
+	const ownsSelfUpdate = options.selfUpdate === undefined;
 	const ownsProviderAuth = options.providerAuth === undefined;
 	const ownsOrchestrator = options.orchestrator === undefined;
 	// Read once before constructing the runtime: every run this process creates
@@ -1882,6 +1966,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		adapters: [new ReactDoctorAdapter(options.cwd)],
 		isProjectIdle: () => runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state)),
 	});
+	let selfUpdate = options.selfUpdate;
 	// The same durable event log the SSE stream below reads per-connection
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
 	// makes this a no-op subscriber.
@@ -1945,6 +2030,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(snapshot);
 			},
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/update': {
+				GET: () => readSelfUpdate(selfUpdate),
+				PUT: (request) => updateSelfUpdate(request, selfUpdate),
+			},
 			'/api/operator-profile': {
 				GET: () => Response.json({ profile: runRuntime.getOperatorProfile() }),
 				PUT: (request) => writeOperatorProfile(request, runRuntime),
@@ -2126,7 +2215,18 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	if (hostname === undefined || port === undefined) {
 		throw new Error('Bun.serve did not report its resolved TCP address');
 	}
+	selfUpdate = resolveSelfUpdate({
+		options,
+		runRuntime,
+		diagnostics,
+		workflowRevisionSha,
+		containerBuild,
+		hostname,
+		port,
+		ownsRunRuntime,
+	});
 	diagnostics.startScheduler();
+	selfUpdate.startScheduler();
 
 	let stopped = false;
 	return {
@@ -2136,12 +2236,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			if (stopped) return;
 			stopped = true;
 			unsubscribeRemoteNotifier();
+			await selfUpdate.stop();
 			if (ownsOrchestrator) await orchestrator.stop();
 			await diagnostics.stop();
 			await runRuntime.stop();
 			if (ownsProviderAuth) await providerAuth.close();
 			await server.stop(true);
 			if (ownsDiagnostics) diagnostics.close();
+			if (ownsSelfUpdate) selfUpdate.close?.();
 			if (ownsRunRuntime) runRuntime.close();
 		},
 	};

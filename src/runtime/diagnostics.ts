@@ -391,6 +391,7 @@ export class DiagnosticsRuntime {
 	readonly #scanTimeoutMs: number;
 	#active: ActiveDiagnostic | null = null;
 	#scheduleTimer: ReturnType<typeof setInterval> | null = null;
+	#admissionBlockedReason: string | null = null;
 
 	constructor(options: DiagnosticsRuntimeOptions) {
 		this.#store = options.store;
@@ -404,6 +405,9 @@ export class DiagnosticsRuntime {
 	}
 
 	start(analyzerId = 'react'): DiagnosticScan {
+		if (this.#admissionBlockedReason !== null) {
+			throw new DiagnosticRuntimeError('project-busy', this.#admissionBlockedReason, 409);
+		}
 		if (this.#active !== null) {
 			throw new DiagnosticRuntimeError('diagnostic-busy', 'A diagnostic is already running.', 409);
 		}
@@ -442,6 +446,15 @@ export class DiagnosticsRuntime {
 			});
 		this.#active = active;
 		return scan;
+	}
+
+	isActive(): boolean {
+		return this.#active !== null;
+	}
+
+	/** Synchronous admission fence shared with RunRuntime during update handoff. */
+	setAdmissionBlocked(reason: string | null): void {
+		this.#admissionBlockedReason = reason;
 	}
 
 	async cancel(scanId: string): Promise<DiagnosticScan> {

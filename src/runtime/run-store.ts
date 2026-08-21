@@ -1369,6 +1369,21 @@ export class RunStore {
 		`).run({ providerId });
 	}
 
+	/** Opaque storage for a bounded runtime that owns its own JSON schema. */
+	getRuntimeSetting(key: string): string | null {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key }) as { value: string } | null;
+		return row?.value ?? null;
+	}
+
+	setRuntimeSetting(key: string, value: string): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({ key, value });
+	}
+
 	/** Off by default (GSHIP-638): autonomy never turns itself on. */
 	getChainRunsEnabled(): boolean {
 		const row = this.#db.query(`

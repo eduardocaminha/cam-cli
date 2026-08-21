@@ -277,6 +277,7 @@ export class RunRuntime {
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
 	#workspaceNotices: WorkspaceNotice[] = [];
+	#admissionBlockedReason: string | null = null;
 
 	constructor(options: RunRuntimeOptions) {
 		this.#cwd = options.cwd;
@@ -306,6 +307,9 @@ export class RunRuntime {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
+		if (this.#admissionBlockedReason !== null) {
+			throw new RuntimeConflictError(this.#admissionBlockedReason);
+		}
 		const normalizedIssueId = issueId.trim();
 		if (normalizedIssueId.length === 0) throw new Error('issueId is required');
 		const blockingRun = this.#store.listRuns().find((run) => !isTerminalRunState(run.state));
@@ -334,9 +338,17 @@ export class RunRuntime {
 		return created.run;
 	}
 
+	/** Synchronous admission fence used only during the native update handoff. */
+	setAdmissionBlocked(reason: string | null): void {
+		this.#admissionBlockedReason = reason;
+	}
+
 	resumeRun(runId: string, operatorGuidance?: string): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
+		}
+		if (this.#admissionBlockedReason !== null) {
+			throw new RuntimeConflictError(this.#admissionBlockedReason);
 		}
 		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
 		const run = this.#store.getRun(runId);

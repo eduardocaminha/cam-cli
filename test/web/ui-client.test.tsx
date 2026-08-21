@@ -32,6 +32,7 @@ import {
 	emptyDiagnostics,
 	emptyModelSettings,
 	emptyNotificationChannels,
+	emptySelfUpdate,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
@@ -45,6 +46,7 @@ import {
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
+	fetchSelfUpdate,
 	fetchRuns,
 	ISSUES_PATH,
 	MODEL_SETTINGS_PATH,
@@ -69,6 +71,7 @@ import {
 	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
+	saveSelfUpdate,
 	selectProvider,
 	sendChat,
 	sendNotificationTest,
@@ -76,6 +79,7 @@ import {
 	startCodexLogin,
 	startDiagnostic,
 	startRun,
+	UPDATE_PATH,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
 import {
@@ -193,6 +197,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
 			modelSettings={EMPTY_MODEL_SETTINGS}
+			selfUpdate={emptySelfUpdate()}
 			notificationChannels={EMPTY_NOTIFICATION_CHANNELS}
 			notificationPermission="default"
 			onSaveOperatorProfile={() => {}}
@@ -213,6 +218,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSaveDiagnosticSchedule={() => {}}
 			onSaveModelSettings={() => {}}
 			onSetChainRuns={() => {}}
+			onSetSelfUpdate={() => {}}
 			onSelectIssue={() => {}}
 			onSelectProvider={() => {}}
 			onSendMessage={() => {}}
@@ -1825,6 +1831,40 @@ describe('settings surface', () => {
 		expect(checkbox).toContain('disabled=""');
 	});
 
+	test('native self update is off by default with one fixed daily policy', () => {
+		const updates = panel(settingsPage({
+			selfUpdate: {
+				...emptySelfUpdate(),
+				availability: { kind: 'native' },
+				currentVersion: '1.0.0',
+			},
+		}), 'Gateship updates');
+		expect(updates).not.toContain('checked=""');
+		expect(updates).toContain('Fixed cadence: daily');
+		expect(updates).not.toMatch(/weekly|cron/i);
+	});
+
+	test('container apply is disabled and a rollback remains explicit', () => {
+		const updates = panel(settingsPage({
+			selfUpdate: {
+				...emptySelfUpdate(),
+				enabled: true,
+				availability: { kind: 'container', reason: 'A host must replace this container.' },
+				result: {
+					status: 'rollback',
+					at: '2026-08-21T12:00:00.000Z',
+					previousVersion: '1.0.0',
+					targetVersion: '2.0.0',
+					reason: 'Candidate failed. The previous version was restored and verified.',
+				},
+			},
+		}), 'Gateship updates');
+		expect(elementWith(updates, 'type="checkbox"')).toContain('disabled=""');
+		expect(updates).toContain('A host must replace this container.');
+		expect(updates).toContain('rollback');
+		expect(updates).toContain('1.0.0 → 2.0.0');
+	});
+
 	test('the diagnostic schedule is bounded, off by default and closed by default', () => {
 		const html = settingsPage();
 		const schedule = panel(html, 'Diagnostic schedule');
@@ -2348,6 +2388,27 @@ describe('same-origin transport', () => {
 		expect(CHAIN_RUNS_PATH).toBe('/api/chain-runs');
 		expect(DIAGNOSTIC_SCHEDULE_PATH).toBe('/api/diagnostics/schedule');
 		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
+		expect(UPDATE_PATH).toBe('/api/update');
+	});
+
+	test('native update policy reads and writes only its same-origin route', async () => {
+		const update = {
+			...emptySelfUpdate(),
+			availability: { kind: 'native' as const },
+			currentVersion: '1.0.0',
+		};
+		await withRecordedFetch({ update }, 200, async (calls) => {
+			expect(await fetchSelfUpdate()).toEqual(update);
+			expect(calls).toEqual([{ url: UPDATE_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({ ok: true, update: { ...update, enabled: true } }, 200, async (calls) => {
+			expect(await saveSelfUpdate(true)).toBe('Automatic native updates enabled.');
+			expect(calls).toEqual([{
+				url: UPDATE_PATH,
+				method: 'PUT',
+				body: JSON.stringify({ enabled: true }),
+			}]);
+		});
 	});
 
 	test('operator profile is read and saved on its own same-origin route', async () => {
