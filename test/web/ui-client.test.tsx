@@ -82,6 +82,7 @@ import {
 	UPDATE_PATH,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
+import { DEFAULT_LOCALE } from '../../webui/src/shell-locale.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -196,6 +197,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			gitIdentity={null}
 			handoff={EMPTY_BRIEF}
 			ideas={[]}
+			locale={DEFAULT_LOCALE}
 			modelSettings={EMPTY_MODEL_SETTINGS}
 			selfUpdate={emptySelfUpdate()}
 			notificationChannels={EMPTY_NOTIFICATION_CHANNELS}
@@ -1919,6 +1921,10 @@ describe('operator shell', () => {
 			const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
 			const active = openingTags(nav).find((tag) => tag.includes(`href="${route}"`));
 
+			expect(nav).toContain('aria-label="Operator surfaces"');
+			for (const label of ['Conversation', 'Runs', 'Work', 'Settings']) {
+				expect(nav).toContain(`>${label}</a>`);
+			}
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
 			expect(active).toContain('aria-current="page"');
 			expect(nav.split('aria-current="page"')).toHaveLength(2);
@@ -1926,6 +1932,19 @@ describe('operator shell', () => {
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
 		}
+	});
+
+	test('an explicit pt-BR locale translates the shell but not route content', () => {
+		const html = home({ locale: 'pt-BR' });
+		const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
+
+		expect(nav).toContain('aria-label="Superfícies do operador"');
+		for (const label of ['Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
+			expect(nav).toContain(`>${label}</a>`);
+		}
+		expect(html).toContain('>Pular para o conteúdo</a>');
+		// Panel content remains the same complete English surface in this slice.
+		expect(html).toContain('Conversation with the orchestrator');
 	});
 
 	test('keyboard navigation starts with one skip link targeting the route main', () => {
