@@ -213,6 +213,8 @@ export interface AppProps {
 	onConnectCodex: () => void;
 	onEnableNotifications: () => void;
 	onSendNotificationTest: (channelId: NotificationChannelId) => void;
+	onSaveResendSettings: (input: { from: string; to: string; apiKey: string }) => void;
+	onRemoveResendCredential: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
@@ -1615,15 +1617,78 @@ function NotificationChannelRow({
 	channel,
 	pending,
 	onSendNotificationTest,
+	onSaveResendSettings,
+	onRemoveResendCredential,
 	catalog,
 }: {
 	channelId: NotificationChannelId;
 	channel: NotificationChannelView;
 	pending: boolean;
 	onSendNotificationTest: (channelId: NotificationChannelId) => void;
+	onSaveResendSettings: AppProps['onSaveResendSettings'];
+	onRemoveResendCredential: AppProps['onRemoveResendCredential'];
 	catalog: SettingsCatalog;
 }): React.ReactElement {
 	const label = catalog.notifications.channelLabels[channelId];
+	const resendForm = channelId === 'resend' ? (
+		<form
+			className="grid gap-3 sm:grid-cols-2"
+			key={JSON.stringify(channel)}
+			onSubmit={(event) => {
+				event.preventDefault();
+				const read = fieldReader(event.currentTarget);
+				onSaveResendSettings({ from: read('resend-from'), to: read('resend-to'), apiKey: read('resend-api-key') });
+			}}
+		>
+			{(['from', 'to'] as const).map((field) => (
+				<label className="flex flex-col gap-1 text-sm" key={field}>
+					<span className="font-medium">
+						{catalog.notifications.resendFields[field]}
+						{channel.externallyManaged[field] ? ` · ${catalog.notifications.externallyManaged}` : null}
+					</span>
+					<input
+						className={FIELD_CLASS}
+						defaultValue={channel[field] ?? ''}
+						disabled={pending}
+						maxLength={512}
+						name={`resend-${field}`}
+						placeholder={catalog.notifications.resendPlaceholders[field]}
+						required
+					/>
+				</label>
+			))}
+			<label className="flex flex-col gap-1 text-sm sm:col-span-2">
+				<span className="font-medium">
+					{catalog.notifications.resendFields.apiKey}
+					{channel.externallyManaged.apiKey ? ` · ${catalog.notifications.externallyManaged}` : null}
+				</span>
+				<input
+					autoComplete="new-password"
+					className={FIELD_CLASS}
+					disabled={pending}
+					name="resend-api-key"
+					placeholder={catalog.notifications.resendPlaceholders.apiKey}
+					type="password"
+				/>
+			</label>
+			<p className="text-muted-foreground text-xs sm:col-span-2">
+				{channel.fileCredentialExists ? catalog.notifications.fileCredentialPresent : catalog.notifications.fileCredentialAbsent}
+			</p>
+			<div className="flex flex-wrap gap-2 sm:col-span-2">
+				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+					{catalog.notifications.saveResend}
+				</button>
+				<button
+					className={BUTTON_CLASS}
+					disabled={pending || !channel.fileCredentialExists}
+					onClick={onRemoveResendCredential}
+					type="button"
+				>
+					{catalog.notifications.removeResendCredential}
+				</button>
+			</div>
+		</form>
+	) : null;
 	return (
 		<div className="flex flex-col gap-2">
 			<div className="flex items-center justify-between gap-3">
@@ -1648,6 +1713,7 @@ function NotificationChannelRow({
 					</React.Fragment>
 				))}
 			</p>
+			{resendForm}
 		</div>
 	);
 }
@@ -1657,11 +1723,13 @@ function NotificationsPanel({
 	notificationPermission,
 	onEnableNotifications,
 	onSendNotificationTest,
+	onSaveResendSettings,
+	onRemoveResendCredential,
 	pending,
 	catalog,
 }: Pick<
 	AppProps,
-	'notificationChannels' | 'notificationPermission' | 'onEnableNotifications' | 'onSendNotificationTest' | 'pending'
+	'notificationChannels' | 'notificationPermission' | 'onEnableNotifications' | 'onSendNotificationTest' | 'onSaveResendSettings' | 'onRemoveResendCredential' | 'pending'
 > & { catalog: SettingsCatalog }): React.ReactElement {
 	const actionLabel = catalog.notifications.actionLabels[notificationPermission];
 	return (
@@ -1690,6 +1758,8 @@ function NotificationsPanel({
 							channelId={channelId}
 							key={channelId}
 							onSendNotificationTest={onSendNotificationTest}
+							onSaveResendSettings={onSaveResendSettings}
+							onRemoveResendCredential={onRemoveResendCredential}
 							pending={pending}
 						/>
 					))}
@@ -3379,6 +3449,8 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				notificationPermission={props.notificationPermission}
 				onEnableNotifications={props.onEnableNotifications}
 				onSendNotificationTest={props.onSendNotificationTest}
+				onSaveResendSettings={props.onSaveResendSettings}
+				onRemoveResendCredential={props.onRemoveResendCredential}
 				pending={props.pending}
 			/>
 			<ProjectBriefPanel

@@ -362,6 +362,13 @@ export interface SettingsCatalog {
 		notConfigured: string;
 		missing: (values: string) => string;
 		sendTest: string;
+		resendFields: Readonly<Record<'from' | 'to' | 'apiKey', string>>;
+		resendPlaceholders: Readonly<Record<'from' | 'to' | 'apiKey', string>>;
+		saveResend: string;
+		removeResendCredential: string;
+		externallyManaged: string;
+		fileCredentialPresent: string;
+		fileCredentialAbsent: string;
 		instructions: Readonly<Record<'ntfy' | 'resend', string>>;
 		docLabels: Readonly<Record<'ntfy' | 'resendApiKeys' | 'resendDomain', string>>;
 	};
@@ -723,7 +730,10 @@ export const LOCALE_CATALOG = {
 			diagnostics: { title: 'Diagnostic schedule', description: 'Runs at most one overdue diagnostic, and only while this project is idle.', label: 'Run diagnostics periodically', cadence: 'Cadence', cadenceLabels: { daily: 'Daily', weekly: 'Weekly' }, disabled: 'Disabled.', overdue: 'overdue', nextRun: (value) => `Next run: ${value}`, calculating: 'calculating', guidance: 'A manual scan also resets the window. Missed periods do not create catch-up runs.', save: 'Save schedule' },
 			notifications: {
 				title: 'Notifications', description: 'The browser alerts you when a run needs you or finishes; remote channels alert you even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
-				instructions: { ntfy: 'Save the topic URL in {file} at the project root with mode 600, or set {url}, which takes precedence over the file. ', resend: 'Save the API key in {file} at the project root with mode 600, or set {key}, which takes precedence over the file. Also set {from} (sender at a verified domain) and {to} (recipient). ' },
+				resendFields: { from: 'Sender', to: 'Recipient', apiKey: 'Replacement API key (optional)' },
+				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operator@example.com', apiKey: 'Blank keeps the current credential' },
+				saveResend: 'Save Resend settings', removeResendCredential: 'Remove credential', externallyManaged: 'Managed by the environment', fileCredentialPresent: 'A file-backed credential is present.', fileCredentialAbsent: 'No file credential is present.',
+				instructions: { ntfy: 'Save the topic URL in {file} at the project root with mode 600, or set {url}, which takes precedence over the file. ', resend: 'Settings saves non-secret sender and recipient locally and writes an optional replacement key to {file} with mode 600. {key}, {from}, and {to} each override the corresponding file value. ' },
 				docLabels: { ntfy: 'ntfy documentation', resendApiKeys: 'Resend API keys', resendDomain: 'Resend domain verification' },
 			},
 			brief: { title: 'Project brief', description: 'Authoritative human context. Save it here or explicitly confirm a conversational update; a successful write clears the automatic handoff.', fieldLabels: { objective: 'Objective', decisions: 'Decisions', constraints: 'Constraints', openItems: 'Open items' }, linePlaceholder: 'One item per line', save: 'Save brief' },
@@ -1059,7 +1069,10 @@ export const LOCALE_CATALOG = {
 			diagnostics: { title: 'Agenda de diagnósticos', description: 'Executa no máximo um diagnóstico atrasado e somente enquanto este projeto está ocioso.', label: 'Executar diagnósticos periodicamente', cadence: 'Cadência', cadenceLabels: { daily: 'Diária', weekly: 'Semanal' }, disabled: 'Desativada.', overdue: 'atrasado', nextRun: (value) => `Próxima execução: ${value}`, calculating: 'calculando', guidance: 'Uma análise manual também reinicia a janela. Períodos perdidos não criam execuções de compensação.', save: 'Salvar agenda' },
 			notifications: {
 				title: 'Notificações', description: 'O navegador avisa quando uma execução precisa de você ou termina; canais remotos avisam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
-				instructions: { ntfy: 'Salve a URL do tópico em {file} na raiz do projeto com modo 600 ou defina {url}, que tem precedência sobre o arquivo. ', resend: 'Salve a chave da API em {file} na raiz do projeto com modo 600 ou defina {key}, que tem precedência sobre o arquivo. Defina também {from} (remetente em um domínio verificado) e {to} (destinatário). ' },
+				resendFields: { from: 'Remetente', to: 'Destinatário', apiKey: 'Chave de API substituta (opcional)' },
+				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operador@example.com', apiKey: 'Em branco mantém a credencial atual' },
+				saveResend: 'Salvar configurações do Resend', removeResendCredential: 'Remover credencial', externallyManaged: 'Gerenciado pelo ambiente', fileCredentialPresent: 'Há uma credencial armazenada em arquivo.', fileCredentialAbsent: 'Não há credencial em arquivo.',
+				instructions: { ntfy: 'Salve a URL do tópico em {file} na raiz do projeto com modo 600 ou defina {url}, que tem precedência sobre o arquivo. ', resend: 'As Configurações salvam localmente o remetente e destinatário não secretos e gravam uma chave substituta opcional em {file} com modo 600. {key}, {from} e {to} substituem individualmente o valor correspondente do arquivo. ' },
 				docLabels: { ntfy: 'documentação do ntfy', resendApiKeys: 'chaves de API do Resend', resendDomain: 'verificação de domínio do Resend' },
 			},
 			brief: { title: 'Brief do projeto', description: 'Contexto humano autoritativo. Salve-o aqui ou confirme explicitamente uma atualização na conversa; uma gravação bem-sucedida limpa o handoff automático.', fieldLabels: { objective: 'Objetivo', decisions: 'Decisões', constraints: 'Restrições', openItems: 'Itens em aberto' }, linePlaceholder: 'Um item por linha', save: 'Salvar brief' },

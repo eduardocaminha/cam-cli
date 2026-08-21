@@ -54,6 +54,7 @@ import {
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
+	removeResendCredential,
 	type ResolvedProposalView,
 	type RunAction,
 	type SelfUpdateView,
@@ -63,6 +64,7 @@ import {
 	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
+	saveResendSettings,
 	saveSelfUpdate,
 	selectProvider,
 	sendChat,
@@ -442,6 +444,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				}));
 			}}
 			onEnableNotifications={enableNotifications}
+			onRemoveResendCredential={() => send(removeResendCredential)}
+			onSaveResendSettings={(input) => send(() => saveResendSettings(input))}
 			onSendNotificationTest={(channelId) => send(() => sendNotificationTest(channelId))}
 			onResume={(operatorGuidance) => {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));

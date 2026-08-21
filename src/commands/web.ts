@@ -81,11 +81,14 @@ import {
 import {
 	createRemoteNotifier,
 	isNtfyConfigured,
-	isResendConfigured,
 	RESEND_FIELD_LABELS,
-	resolveResendMissingFields,
+	RESEND_SETTING_MAX_LENGTH,
+	removeResendApiKey,
+	resolveResendStatus,
 	sendNtfyTestNotification,
 	sendResendTestNotification,
+	writeResendApiKey,
+	writeResendSettings,
 } from '../runtime/remote-notifier.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
@@ -459,15 +462,86 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 	return Response.json({ ok: true, ...chainRunsSnapshot(runtime) });
 }
 
-/** ntfy and Resend (GSHIP-653): each channel resolves and reports on its own configuration, independent of the other. */
-function notificationChannelsSnapshot(cwd: string): Record<string, { configured: boolean; missing: string[] }> {
+/** Safe notification status; the Resend key itself is structurally absent. */
+function notificationChannelsSnapshot(cwd: string): Record<string, unknown> {
+	const resend = resolveResendStatus(cwd);
 	return {
 		ntfy: { configured: isNtfyConfigured(cwd), missing: [] },
 		resend: {
-			configured: isResendConfigured(cwd),
-			missing: resolveResendMissingFields(cwd).map((field) => RESEND_FIELD_LABELS[field]),
+			configured: resend.configured,
+			missing: resend.missing.map((field) => RESEND_FIELD_LABELS[field]),
+			from: resend.from,
+			to: resend.to,
+			fileCredentialExists: resend.fileCredentialExists,
+			externallyManaged: resend.externallyManaged,
 		},
 	};
+}
+
+function resendSettingsValue(body: Record<string, unknown>, field: 'from' | 'to'): string | null {
+	const value = body[field];
+	if (typeof value !== 'string') return null;
+	const trimmed = value.trim();
+	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
+}
+
+async function writeResendConfiguration(request: Request, cwd: string): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let input: unknown;
+	try {
+		input = await request.json();
+	} catch {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A JSON object is required.' }, { status: 400 });
+	}
+	if (input === null || typeof input !== 'object') {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A JSON object is required.' }, { status: 400 });
+	}
+	const body = input as Record<string, unknown>;
+	const from = resendSettingsValue(body, 'from');
+	const to = resendSettingsValue(body, 'to');
+	const apiKey = body.apiKey;
+	if (from === null || to === null || typeof apiKey !== 'string') {
+		return Response.json({
+			ok: false,
+			code: 'invalid-request',
+			message: `Sender and recipient must be non-empty strings of at most ${RESEND_SETTING_MAX_LENGTH} characters; API key must be a string.`,
+		}, { status: 400 });
+	}
+
+	try {
+		writeResendSettings(cwd, from, to);
+		if (apiKey.trim().length > 0) writeResendApiKey(cwd, apiKey);
+	} catch {
+		return Response.json({ ok: false, code: 'write-failed', message: 'Resend settings could not be saved.' }, { status: 500 });
+	}
+	const status = resolveResendStatus(cwd);
+	const external = Object.entries(status.externallyManaged)
+		.filter(([, managed]) => managed)
+		.map(([field]) => RESEND_FIELD_LABELS[field as keyof typeof RESEND_FIELD_LABELS]);
+	return Response.json({
+		ok: true,
+		message: external.length === 0
+			? 'Resend settings saved.'
+			: `Resend file settings saved. Environment-managed ${external.join(', ')} remain effective.`,
+		channels: notificationChannelsSnapshot(cwd),
+	});
+}
+
+function removeResendCredential(request: Request, cwd: string): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let removed: boolean;
+	try {
+		removed = removeResendApiKey(cwd);
+	} catch {
+		return Response.json({ ok: false, code: 'remove-failed', message: 'The file-backed Resend credential could not be removed.' }, { status: 500 });
+	}
+	const environmentWins = resolveResendStatus(cwd).externallyManaged.apiKey;
+	const action = removed ? 'File-backed Resend credential removed.' : 'No file-backed Resend credential was present.';
+	return Response.json({
+		ok: true,
+		message: environmentWins ? `${action} The environment-managed API key remains effective.` : action,
+		channels: notificationChannelsSnapshot(cwd),
+	});
 }
 
 interface NotificationChannelTest {
@@ -2126,10 +2200,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// unguarded like every other GET and returns a boolean plus any named
 			// missing values per channel, never a secret itself -- those live only
 			// in the env vars or project-local files `createRemoteNotifier` also
-			// reads. There is no write route here -- editing a secret from the
-			// screen is out of scope; the operator places it themselves.
+			// reads. Resend's dedicated same-origin routes accept a write-only key
+			// and non-secret sender/recipient settings without involving SQLite.
 			'/api/notifications': {
 				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd) }),
+			},
+			'/api/notifications/resend': {
+				PUT: (request) => writeResendConfiguration(request, options.cwd),
+			},
+			'/api/notifications/resend/credential': {
+				DELETE: (request) => removeResendCredential(request, options.cwd),
 			},
 			'/api/notifications/:channelId/test': {
 				POST: (request) => sendNotificationChannelTest(request, options.cwd, request.params.channelId),

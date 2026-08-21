@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -14,13 +14,17 @@ import {
 	RESEND_API_KEY_FILE_PATH,
 	RESEND_FIELD_LABELS,
 	RESEND_FROM_ENV_VAR,
+	RESEND_SETTINGS_FILE_PATH,
 	RESEND_TO_ENV_VAR,
 	resolveNtfyUrl,
 	resolveResendApiKey,
 	resolveResendMissingFields,
+	resolveResendStatus,
 	type ResendConfigField,
 	sendNtfyTestNotification,
 	sendResendTestNotification,
+	writeResendApiKey,
+	writeResendSettings,
 } from '../../src/runtime/remote-notifier.ts';
 import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
 import type { RunState } from '../../src/runtime/run-state.ts';
@@ -690,5 +694,51 @@ describe('the project-local Resend API key file (GSHIP-653)', () => {
 		expect(resolveResendApiKey(cwd, {})).toBeNull();
 		expect(resolveResendMissingFields(cwd, { [RESEND_FROM_ENV_VAR]: RESEND_FROM, [RESEND_TO_ENV_VAR]: RESEND_TO }))
 			.toEqual(['apiKey']);
+	});
+});
+
+describe('browser-managed Resend files (GSHIP-688)', () => {
+	test('writes and atomically replaces the key at mode 0600 without returning it', () => {
+		const cwd = createTestTmpdir('gship-resend-write-');
+		writeResendApiKeyFile(cwd, 'old-valid-key');
+
+		expect(writeResendApiKey(cwd, RESEND_API_KEY)).toBeUndefined();
+		expect(statSync(join(cwd, RESEND_API_KEY_FILE_PATH)).mode & 0o777).toBe(0o600);
+		expect(readFileSync(join(cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe(`${RESEND_API_KEY}\n`);
+		expect(() => writeResendApiKey(cwd, '   ')).toThrow();
+		expect(resolveResendApiKey(cwd, {})).toBe(RESEND_API_KEY);
+	});
+
+	test('persists only bounded non-secret values and resolves every field fresh with independent env precedence', () => {
+		const cwd = createTestTmpdir('gship-resend-settings-');
+		writeResendApiKey(cwd, RESEND_API_KEY);
+		writeResendSettings(cwd, RESEND_FROM, RESEND_TO);
+
+		expect(JSON.parse(readFileSync(join(cwd, RESEND_SETTINGS_FILE_PATH), 'utf8'))).toEqual({
+			from: RESEND_FROM,
+			to: RESEND_TO,
+		});
+		expect(readFileSync(join(cwd, RESEND_SETTINGS_FILE_PATH), 'utf8')).not.toContain(RESEND_API_KEY);
+		expect(resolveResendStatus(cwd, {})).toMatchObject({
+			configured: true,
+			from: RESEND_FROM,
+			to: RESEND_TO,
+			fileCredentialExists: true,
+			externallyManaged: { apiKey: false, from: false, to: false },
+		});
+
+		writeResendSettings(cwd, 'New file sender <new@example.com>', 'new@example.com');
+		const status = resolveResendStatus(cwd, {
+			[RESEND_FROM_ENV_VAR]: 'Environment <env@example.com>',
+		});
+		expect(status.from).toBe('Environment <env@example.com>');
+		expect(status.to).toBe('new@example.com');
+		expect(status.externallyManaged).toEqual({ apiKey: false, from: true, to: false });
+	});
+
+	test('accepts display-name senders without applying a brittle email regex', () => {
+		const cwd = createTestTmpdir('gship-resend-settings-');
+		expect(() => writeResendSettings(cwd, 'Operations via verified domain', 'transaction recipient')).not.toThrow();
+		expect(resolveResendStatus(cwd, {}).from).toBe('Operations via verified domain');
 	});
 });

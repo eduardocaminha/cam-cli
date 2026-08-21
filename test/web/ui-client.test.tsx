@@ -69,6 +69,7 @@ import {
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
+	removeResendCredential,
 	RESOLVED_PROPOSALS_PATH,
 	type ResolvedProposalView,
 	RUNS_PATH,
@@ -78,6 +79,7 @@ import {
 	saveDiagnosticSchedule,
 	saveModelSettings,
 	saveOperatorProfile,
+	saveResendSettings,
 	saveSelfUpdate,
 	selectProvider,
 	sendChat,
@@ -232,6 +234,8 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onDismissProposal={() => {}}
 			onDismissDiagnosticFinding={() => {}}
 			onEnableNotifications={() => {}}
+			onRemoveResendCredential={() => {}}
+			onSaveResendSettings={() => {}}
 			onSendNotificationTest={() => {}}
 			onPromoteProposal={() => {}}
 			onPromoteDiagnosticFinding={() => {}}
@@ -2103,7 +2107,7 @@ describe('settings surface', () => {
 				plan: 'team-plan',
 				usage: { windows: [{ window: 'seven_day', usedPercent: 78.4, observedAt: '2026-08-20T09:05:00.000Z' }], resetCreditCount: 2_000 },
 			}],
-			notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+			notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true } },
 			handoff: EMPTY_BRIEF,
 		};
 		const english = settingsPage({ ...overrides, locale: 'en-US' });
@@ -2315,7 +2319,11 @@ describe('settings surface', () => {
 		const granted = settingsPage({ notificationPermission: 'granted' });
 		expect(granted).toContain('Active in this browser.');
 		expect(buttonIsEnabled(granted, 'Notifications active')).toBe(false);
-		expect(granted).not.toContain('type="password"');
+		const localNotificationRow = granted.slice(
+			granted.indexOf('Active in this browser.'),
+			granted.indexOf('ntfy:'),
+		);
+		expect(localNotificationRow).not.toContain('type="password"');
 		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
 	});
 
@@ -2337,7 +2345,7 @@ describe('settings surface', () => {
 
 		const configured = panel(
 			settingsPage({
-				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true } },
 			}),
 			'Notifications',
 		);
@@ -2355,7 +2363,7 @@ describe('settings surface', () => {
 			settingsPage({
 				notificationChannels: {
 					...EMPTY_NOTIFICATION_CHANNELS,
-					resend: { configured: false, missing: ['API key', 'recipient'] },
+					resend: { ...EMPTY_NOTIFICATION_CHANNELS.resend, missing: ['API key', 'recipient'] },
 				},
 			}),
 			'Notifications',
@@ -2367,6 +2375,14 @@ describe('settings surface', () => {
 		expect(partial).toContain('GATESHIP_RESEND_API_KEY');
 		expect(partial).toContain('GATESHIP_RESEND_FROM');
 		expect(partial).toContain('GATESHIP_RESEND_TO');
+		expect(partial).toContain('Sender');
+		expect(partial).toContain('Recipient');
+		expect(partial).toContain('Replacement API key (optional)');
+		expect(partial).toContain('Save Resend settings');
+		expect(partial).toContain('Remove credential');
+		const keyInput = openingTags(partial).find((tag) => tag.includes('name="resend-api-key"'));
+		expect(keyInput).toContain('type="password"');
+		expect(keyInput).not.toContain('value=');
 
 		const apiKeysLink = openingTags(partial).find((tag) => tag.includes('resend.com/api-keys'));
 		const domainsLink = openingTags(partial).find((tag) => tag.includes('resend.com/domains'));
@@ -2377,19 +2393,37 @@ describe('settings surface', () => {
 
 		const configured = panel(
 			settingsPage({
-				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, resend: { configured: true, missing: [] } },
+				notificationChannels: {
+					...EMPTY_NOTIFICATION_CHANNELS,
+					resend: {
+						...EMPTY_NOTIFICATION_CHANNELS.resend,
+						configured: true,
+						from: 'Gateship <ops@example.com>',
+						to: 'operator@example.com',
+						fileCredentialExists: true,
+					},
+				},
 			}),
 			'Notifications',
 		);
 		expect(configured).toContain('email (Resend): configured');
 		expect(configured).not.toContain('falta:');
 		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Send test')).toBe(true);
+		expect(configured).not.toContain('resend-secret');
+		expect(buttonIsEnabled(configured, 'Remove credential')).toBe(true);
+
+		const portuguese = panel(settingsPage({ locale: 'pt-BR' }), 'Notificações');
+		expect(portuguese).toContain('Remetente');
+		expect(portuguese).toContain('Destinatário');
+		expect(portuguese).toContain('Chave de API substituta (opcional)');
+		expect(portuguese).toContain('Salvar configurações do Resend');
+		expect(portuguese).toContain('Remover credencial');
 	});
 
 	test('the remote channel test action is held while a command is in flight, like every other', () => {
 		const html = panel(
 			settingsPage({
-				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
+				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true } },
 				pending: true,
 			}),
 			'Notifications',
@@ -3764,18 +3798,15 @@ describe('same-origin transport', () => {
 			200,
 			async (calls) => {
 				expect(await fetchNotificationChannels()).toEqual({
-					ntfy: { configured: true, missing: [] },
-					resend: { configured: false, missing: ['API key'] },
+					ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true },
+					resend: { ...EMPTY_NOTIFICATION_CHANNELS.resend, missing: ['API key'] },
 				});
 				expect(calls).toEqual([{ url: NOTIFICATIONS_PATH, method: 'GET', body: null }]);
 			},
 		);
 		// A payload missing a channel, or a field, reads as not configured.
 		await withRecordedFetch({}, 200, async () => {
-			expect(await fetchNotificationChannels()).toEqual({
-				ntfy: { configured: false, missing: [] },
-				resend: { configured: false, missing: [] },
-			});
+			expect(await fetchNotificationChannels()).toEqual(EMPTY_NOTIFICATION_CHANNELS);
 		});
 		await withRecordedFetch(
 			{ ok: true, outcome: 'sent', message: 'Mensagem de teste entregue ao ntfy.' },
@@ -3811,6 +3842,26 @@ describe('same-origin transport', () => {
 				}]);
 			},
 		);
+		await withRecordedFetch({ ok: true, message: 'Resend settings saved.' }, 200, async (calls) => {
+			expect(await saveResendSettings({
+				from: 'Gateship <ops@example.com>',
+				to: 'operator@example.com',
+				apiKey: '',
+			})).toBe('Resend settings saved.');
+			expect(calls).toEqual([{
+				url: `${NOTIFICATIONS_PATH}/resend`,
+				method: 'PUT',
+				body: JSON.stringify({ from: 'Gateship <ops@example.com>', to: 'operator@example.com', apiKey: '' }),
+			}]);
+		});
+		await withRecordedFetch({ ok: true, message: 'File-backed Resend credential removed.' }, 200, async (calls) => {
+			expect(await removeResendCredential()).toBe('File-backed Resend credential removed.');
+			expect(calls).toEqual([{
+				url: `${NOTIFICATIONS_PATH}/resend/credential`,
+				method: 'DELETE',
+				body: null,
+			}]);
+		});
 	});
 
 	test('start posts the issue id to the runs route', async () => {
