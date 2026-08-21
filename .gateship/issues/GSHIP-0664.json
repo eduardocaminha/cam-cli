@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T02:57:23.644Z",
-  "updatedAt": "2026-08-21T02:57:57.936Z",
+  "updatedAt": "2026-08-21T02:58:12.955Z",
   "description": "Expose truthful subscription-usage telemetry in the existing local-agent settings surface. Extend the optional ProviderStatus payload instead of adding a route, table, daemon, sidecar, or polling model call. For Claude, parse the structured rate-limit utilization emitted by real Gateship Claude invocations, persist a safe normalized used percentage on provider.rate-limit and review.rate-limit events, and derive the latest observation per reported window with its observation and reset times; never invoke Claude only to refresh usage. For Codex, add a credential-blind account/usage/read request through the existing app-server session and normalize only provider-supplied windows, used percentages, reset times, credit summary, spend-limit summary, and reset-credit count. A missing, null, malformed, or failed usage read must display as unavailable and must not make provider authentication fail or be represented as zero. Do not expose emails, account identifiers, opaque limit identifiers, tokens, OAuth data, API keys, or raw provider payloads. Render usage in Settings > Local agents as compact progressive detail with source/freshness, percentages, and reset times only when present. Preserve the current provider selection and authentication behavior. Add focused parser, runtime/event, API, and UI tests for reported, unavailable, malformed, and failure cases.",
   "specSource": "operator",
   "spec": {
@@ -27,5 +27,9 @@
         "output": "plan?: string;"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "9cced440b09d13eba9ce187361993b3fe202ccc9abacb02b3147bbf5cea4efbc",
+    "approvedAt": "2026-08-21T02:58:12.955Z"
   }
 }
