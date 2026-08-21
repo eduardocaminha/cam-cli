@@ -1,0 +1,118 @@
+name: Beta feedback
+description: Share a bug, workflow problem, or idea from the Gateship external beta
+title: "[Beta feedback]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!WARNING]
+        > Do not paste tokens, credentials, private source code, or sensitive logs. Sanitize every excerpt before submitting it publicly.
+
+        If this is an undisclosed vulnerability, stop here and use [private vulnerability reporting](https://github.com/gateship-dev/gateship/security/advisories/new) instead.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Feedback kind
+      description: Choose the closest match.
+      options:
+        - Bug or unexpected behavior
+        - Difficult or confusing workflow
+        - Feature or workflow request
+        - Documentation feedback
+        - Other beta feedback
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome you were trying to achieve
+      description: What result did you need from Gateship?
+      placeholder: I wanted to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happened? Include sanitized error text only when it is useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect Gateship to do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-or-workflow
+    attributes:
+      label: Reproduction steps or desired workflow
+      description: For a problem, list the smallest reproducible steps. For a request, describe the workflow you wish existed.
+      placeholder: |
+        1. Start with...
+        2. Then...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Gateship version
+      description: Run `gship --version` or copy the version shown in the web header.
+      placeholder: v0.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Installation and environment
+      description: Tell us how Gateship was installed and the relevant OS, architecture, container/native mode, browser, and project setup facts.
+      placeholder: Native install on macOS 15, Apple Silicon, Safari...
+    validations:
+      required: true
+
+  - type: textarea
+    id: run-context
+    attributes:
+      label: Run and agent context (optional)
+      description: If relevant, provide a sanitized run reference plus the provider, model, and effort setting. Do not paste private run content.
+      placeholder: Run reference; Claude or Codex; model; effort...
+
+  - type: dropdown
+    id: operator-attention
+    attributes:
+      label: Operator attention required
+      description: What was the highest level of attention this experience required from you?
+      options:
+        - None; Gateship completed without my attention
+        - Clarification or an explicit decision
+        - Correction, retry, or repeated instruction
+        - Manual recovery outside the normal flow
+        - I could not complete the outcome
+    validations:
+      required: true
+
+  - type: textarea
+    id: operator-attention-detail
+    attributes:
+      label: Operator attention details (optional)
+      description: Briefly describe what you had to do or decide.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Public report confirmations
+      options:
+        - label: I sanitized all shared material and did not include tokens, credentials, private source code, or sensitive logs.
+          required: true
+        - label: I searched existing issues for duplicates before submitting this report.
+          required: true
+
