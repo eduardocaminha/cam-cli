@@ -380,6 +380,11 @@ Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md), the
 [Code of Conduct](./CODE_OF_CONDUCT.md), and [SECURITY.md](./SECURITY.md)
 before opening a pull request or reporting a vulnerability.
 
+External beta users can submit sanitized observations through the public
+[beta feedback path](./docs/beta-feedback.md). Maintainers triage that feedback
+manually; accepting it does not approve or start work, which still requires an
+explicitly operator-approved executable specification.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

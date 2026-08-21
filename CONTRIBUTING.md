@@ -34,3 +34,11 @@ bun run check:all
 Keep pull requests focused, explain the behavior change, and add the smallest
 test that would fail without it. Git history owns historical provenance; keep
 the published documentation centered on the current product.
+
+## Beta feedback
+
+External beta observations use the public [beta feedback path](./docs/beta-feedback.md).
+The issue author and URL remain provenance when maintainers manually translate
+an accepted report into a Gateship issue. Translation does not approve, start,
+reprioritize, or expand a run; the executable specification still requires
+explicit operator approval.
