@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-663",
+  "title": "Align README workflow states with the English beta UI",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T02:34:32.517Z",
+  "updatedAt": "2026-08-21T02:34:32.517Z",
+  "description": "Update only the two obsolete workflow state labels in README.md: replace Precisa de você with Needs you and Trabalhando with Working. Do not change runtime code, tests, historical ADRs, or operator-authored content.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Update only the two obsolete workflow state labels in README.md: replace Precisa de você with Needs you and Trabalhando with Working. Do not change runtime code, tests, historical ADRs, or operator-authored content.",
+    "verify": [
+      "! rg -n 'Precisa de você|Trabalhando' README.md && rg -n 'Needs you|Working' README.md"
+    ],
+    "evidence": [
+      {
+        "command": "rg -n 'Precisa de você|Trabalhando' README.md",
+        "output": "111:3. let decisions interrupt the work and wait for you as `Precisa de você`;\n112:4. follow progress as `Trabalhando`, with public agent text, tool names,"
+      }
+    ]
+  }
+}
