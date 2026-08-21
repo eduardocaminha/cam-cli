@@ -1485,6 +1485,93 @@ describe('settings surface', () => {
 		expect(html).toContain('Currently unavailable: Authentication required');
 	});
 
+	// GSHIP-664: compact progressive detail -- each piece renders only when the
+	// source actually reported it, never a fabricated zero standing in for it.
+	test('renders reported usage as compact progressive detail, and nothing when unavailable', () => {
+		const html = settingsPage({
+			providers: [
+				{
+					id: 'claude',
+					installed: true,
+					subscription: true,
+					label: 'Claude Code',
+					plan: 'max',
+					login: 'external',
+					usage: {
+						windows: [
+							{
+								window: 'seven_day',
+								status: 'allowed_warning',
+								usedPercent: 78.4,
+								observedAt: '2026-08-20T09:05:00.000Z',
+								resetsAt: '2026-08-27T09:05:00.000Z',
+							},
+							{
+								// No percentage or reset time reported for this window yet.
+								window: 'five_hour',
+								status: 'allowed',
+								observedAt: '2026-08-20T09:05:00.000Z',
+							},
+						],
+					},
+				},
+				{
+					id: 'codex',
+					installed: true,
+					subscription: false,
+					label: 'Codex',
+					login: 'web',
+				},
+			],
+		});
+		const providers = panel(html, 'Local agents');
+
+		expect(providers).toContain('7 day');
+		expect(providers).toContain('78% used');
+		expect(providers).toContain('dateTime="2026-08-27T09:05:00.000Z"');
+		expect(providers).toContain('dateTime="2026-08-20T09:05:00.000Z"');
+		expect(providers).toContain('5 hour');
+		// Codex reported nothing: no usage section for its row at all.
+		expect(providers).not.toContain('reset credit');
+		expect(providers).not.toContain('Spend limit');
+		expect(providers).not.toContain('Credits:');
+	});
+
+	test('renders credit summary, spend-limit summary and reset-credit count for Codex', () => {
+		const html = settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', login: 'external' },
+				{
+					id: 'codex',
+					installed: true,
+					subscription: true,
+					label: 'Codex',
+					login: 'web',
+					usage: {
+						windows: [{
+							window: 'primary',
+							usedPercent: 21,
+							windowMinutes: 10_080,
+							observedAt: '2026-08-21T09:00:00.000Z',
+							resetsAt: '2026-08-27T14:38:18.000Z',
+						}],
+						credits: { hasCredits: true, unlimited: false, balance: '$5.00' },
+						spendLimit: { limit: '$100.00', used: '$42.00', remainingPercent: 58, resetsAt: '2026-08-27T14:38:18.000Z' },
+						resetCreditCount: 2,
+					},
+				},
+			],
+		});
+		const providers = panel(html, 'Local agents');
+
+		expect(providers).toContain('7 day');
+		expect(providers).toContain('21% used');
+		expect(providers).toContain('Credits: $5.00');
+		expect(providers).toContain('Spend limit: $42.00 of $100.00');
+		expect(providers).toContain('58% remaining');
+		expect(providers).toContain('2 reset credit(s) available');
+	});
+
 	test('local notifications show the browser permission state without a secret field', () => {
 		expect(buttonIsEnabled(settingsPage(), 'Enable notifications')).toBe(true);
 

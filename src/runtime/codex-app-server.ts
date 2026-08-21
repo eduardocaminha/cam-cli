@@ -50,6 +50,21 @@ export class CodexAppServer {
 		return this.#request('account/read', { refreshToken: false });
 	}
 
+	/**
+	 * Plan rate-limit windows, credit summary, spend-limit summary and
+	 * reset-credit count (GSHIP-664), credential-blind like `readAccount`.
+	 * Measured on the installed app-server (codex-cli 0.144.6, 2026-08-21):
+	 * carries `rateLimits.{primary,secondary}.{usedPercent,resetsAt}`,
+	 * `rateLimits.credits`, `rateLimits.individualLimit` and
+	 * `rateLimitResetCredits.availableCount` -- no email, account id or
+	 * token. `rateLimits.limitId`/`limitName` and the per-limit-id breakdown
+	 * are opaque backend identifiers the caller must not forward.
+	 */
+	async readRateLimits(): Promise<unknown> {
+		await this.#initialize();
+		return this.#request('account/rateLimits/read', {});
+	}
+
 	async startChatGptLogin(): Promise<CodexLoginStart> {
 		await this.#initialize();
 		const value = await this.#request('account/login/start', {

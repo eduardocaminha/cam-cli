@@ -7,6 +7,7 @@
 
 import type {
 	PlannableIssue,
+	ProviderUsageView,
 	RunEventView,
 	RunProviderWaitView,
 	RunView,
@@ -256,6 +257,8 @@ export interface ProviderStatusView {
 	login: 'external' | 'web';
 	/** An observed active hold; absence does not claim remaining subscription quota. */
 	availability?: RunProviderWaitView;
+	/** Truthful subscription-usage telemetry (GSHIP-664); absent means unavailable, never a fabricated zero. */
+	usage?: ProviderUsageView;
 }
 
 /**

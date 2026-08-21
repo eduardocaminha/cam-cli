@@ -71,6 +71,8 @@ import {
 	attentionToneOf,
 	type PlannableIssue,
 	phaseOf,
+	type ProviderUsageView,
+	type ProviderUsageWindowView,
 	progressOf,
 	type RunCostRole,
 	type RunCostRoleUsage,
@@ -894,6 +896,97 @@ function providerDescription(provider: ProviderStatusView): string {
 	return provider.installed ? 'Installed, without a connected subscription' : 'Client not found';
 }
 
+/** Friendly labels for Claude's own window names; Codex's primary/secondary fall back to their reported duration. */
+const USAGE_WINDOW_LABELS: Readonly<Record<string, string>> = {
+	five_hour: '5 hour',
+	seven_day: '7 day',
+	seven_day_opus: '7 day (Opus)',
+	seven_day_sonnet: '7 day (Sonnet)',
+	seven_day_overage_included: '7 day (overage)',
+	overage: 'Overage',
+};
+
+function formatUsageWindowDuration(minutes: number): string {
+	if (minutes % 1_440 === 0) return `${minutes / 1_440} day`;
+	if (minutes % 60 === 0) return `${minutes / 60} hour`;
+	return `${minutes} min`;
+}
+
+function usageWindowLabel(window: ProviderUsageWindowView): string {
+	const known = USAGE_WINDOW_LABELS[window.window];
+	if (known !== undefined) return known;
+	return window.windowMinutes === undefined ? window.window : formatUsageWindowDuration(window.windowMinutes);
+}
+
+function usageWindowVariant(status: ProviderUsageWindowView['status']): BadgeVariant {
+	if (status === 'rejected') return 'error';
+	if (status === 'allowed_warning') return 'warning';
+	return 'outline';
+}
+
+function formatUsageTime(value: string): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/** One window's percentage and reset time, each shown only when the source actually reported it. */
+function ProviderUsageWindowRow({ window }: { window: ProviderUsageWindowView }): React.ReactElement {
+	return (
+		<li className="flex flex-wrap items-center gap-2">
+			<span>{usageWindowLabel(window)}</span>
+			{window.usedPercent === undefined ? null : (
+				<Badge variant={usageWindowVariant(window.status)}>{Math.round(window.usedPercent)}% used</Badge>
+			)}
+			{window.resetsAt === undefined ? null : (
+				<span>resets <time dateTime={window.resetsAt}>{formatUsageTime(window.resetsAt)}</time></span>
+			)}
+			<span className="text-muted-foreground">
+				as of <time dateTime={window.observedAt}>{formatUsageTime(window.observedAt)}</time>
+			</span>
+		</li>
+	);
+}
+
+/** Compact progressive detail (GSHIP-664): each piece of the source's telemetry renders only when present, never absent as a fabricated zero. */
+function ProviderUsageDetail({ usage }: { usage: ProviderUsageView | undefined }): React.ReactElement | null {
+	if (usage === undefined) return null;
+	const hasContent = usage.windows.length > 0
+		|| usage.credits !== undefined
+		|| usage.spendLimit !== undefined
+		|| usage.resetCreditCount !== undefined;
+	if (!hasContent) return null;
+	return (
+		<div className="mt-1 flex flex-col gap-1 text-xs">
+			{usage.windows.length === 0 ? null : (
+				<ul className="flex flex-col gap-1">
+					{usage.windows.map((window) => <ProviderUsageWindowRow key={window.window} window={window} />)}
+				</ul>
+			)}
+			{usage.credits === undefined ? null : (
+				<p className="text-muted-foreground">
+					Credits: {usage.credits.unlimited
+						? 'unlimited'
+						: usage.credits.hasCredits
+							? (usage.credits.balance ?? 'available')
+							: 'none'}
+				</p>
+			)}
+			{usage.spendLimit === undefined ? null : (
+				<p className="text-muted-foreground">
+					Spend limit: {usage.spendLimit.used} of {usage.spendLimit.limit}
+					{' '}({usage.spendLimit.remainingPercent}% remaining)
+					{usage.spendLimit.resetsAt === undefined ? null : (
+						<> · resets <time dateTime={usage.spendLimit.resetsAt}>{formatUsageTime(usage.spendLimit.resetsAt)}</time></>
+					)}
+				</p>
+			)}
+			{usage.resetCreditCount === undefined ? null : (
+				<p className="text-muted-foreground">{usage.resetCreditCount} reset credit(s) available</p>
+			)}
+		</div>
+	);
+}
+
 function ProviderRow({
 	provider,
 	selectedProvider,
@@ -909,6 +1002,7 @@ function ProviderRow({
 					{provider.id === selectedProvider ? <Badge variant="secondary">in use</Badge> : null}
 				</p>
 				<p className="break-words text-muted-foreground">{providerDescription(provider)}</p>
+				<ProviderUsageDetail usage={provider.usage} />
 			</div>
 			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
 				<ActionButton enabled={!pending} label="Connect ChatGPT" onClick={onConnectCodex} />

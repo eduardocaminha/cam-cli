@@ -259,6 +259,22 @@ export interface RunCostSummary {
 	roles: RunCostRoleUsage[];
 }
 
+/**
+ * One rate-limit window's latest reported state (GSHIP-664), derived across
+ * every `provider.rate-limit`/`review.rate-limit` event ever recorded --
+ * never from invoking Claude to ask, since neither event kind is emitted for
+ * that purpose. `window` is the CLI's own `rateLimitType` (e.g. `five_hour`),
+ * not an identifier Gateship invents. A field the CLI never reported for this
+ * observation stays absent, never a fabricated zero.
+ */
+export interface ClaudeUsageWindow {
+	window: string;
+	status: 'allowed' | 'allowed_warning' | 'rejected';
+	usedPercent?: number;
+	observedAt: string;
+	resetsAt?: string;
+}
+
 /** Raw diagnostic outcomes; no disposition is reinterpreted as a quality score. */
 export interface DiagnosticFindingStats {
 	total: number;
@@ -1657,6 +1673,43 @@ export class RunStore {
 			.map(([role, acc]) => toRoleUsage(role, acc))
 			.filter((usage): usage is RunCostRoleUsage => usage !== undefined);
 		return { totalCostUsd, breakdown: [...breakdown.values()], roles: roleUsage };
+	}
+
+	/**
+	 * The latest observed state of every Claude subscription rate-limit window
+	 * (GSHIP-664), across every run: never scoped to one run's own events,
+	 * unlike `getRunCostSummary`, because the subscription's usage is shared
+	 * across the whole install. Derived purely from `provider.rate-limit` and
+	 * `review.rate-limit` events a real invocation already emitted -- reading
+	 * this never itself calls Claude. Ascending order means the last event for
+	 * a given window overwrites the map entry, so each window keeps only its
+	 * single freshest observation.
+	 */
+	getClaudeUsageWindows(): ClaudeUsageWindow[] {
+		const rows = this.#db.query(`
+			SELECT payload_json, created_at FROM run_events
+			WHERE kind IN ('provider.rate-limit', 'review.rate-limit')
+			ORDER BY seq ASC
+		`).all() as Array<{ payload_json: string; created_at: string }>;
+
+		const byWindow = new Map<string, ClaudeUsageWindow>();
+		for (const row of rows) {
+			const payload = decodePayload(row.payload_json);
+			const window = payload['limit'];
+			const status = payload['status'];
+			if (typeof window !== 'string' || window.length === 0) continue;
+			if (status !== 'allowed' && status !== 'allowed_warning' && status !== 'rejected') continue;
+			const usedPercent = typeof payload['usedPercent'] === 'number' ? payload['usedPercent'] : undefined;
+			const resetsAt = typeof payload['retryAt'] === 'string' ? payload['retryAt'] : undefined;
+			byWindow.set(window, {
+				window,
+				status,
+				...(usedPercent === undefined ? {} : { usedPercent }),
+				observedAt: row.created_at,
+				...(resetsAt === undefined ? {} : { resetsAt }),
+			});
+		}
+		return [...byWindow.values()];
 	}
 
 	/**

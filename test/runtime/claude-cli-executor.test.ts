@@ -166,6 +166,66 @@ describe('Claude CLI runtime executor', () => {
 		expect((failure as ProviderCallError).retryAt).toBeUndefined();
 	});
 
+	// GSHIP-664: the structured `utilization` fraction a real invocation reports
+	// is normalized into a 0-100 usedPercent on the same rate-limit event,
+	// without ever calling Claude a second time to ask for it.
+	test('normalizes a reported utilization fraction into a used percentage', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-usage=0.42'],
+		});
+		await session.run({
+			sessionId: 'session-usage-reported',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-usage-reported-'),
+			prompt: 'continue',
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({
+				kind,
+				...(payload === undefined ? {} : { payload }),
+			}),
+			eventPrefix: 'provider',
+		});
+
+		expect(events).toContainEqual({
+			kind: 'provider.rate-limit',
+			payload: {
+				status: 'allowed_warning',
+				limit: 'seven_day',
+				retryAt: '2027-01-15T08:00:00.000Z',
+				usedPercent: 42,
+			},
+		});
+	});
+
+	test('drops a malformed utilization without losing the rest of the observation', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-usage=malformed'],
+		});
+		await session.run({
+			sessionId: 'session-usage-malformed',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-usage-malformed-'),
+			prompt: 'continue',
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({
+				kind,
+				...(payload === undefined ? {} : { payload }),
+			}),
+			eventPrefix: 'provider',
+		});
+
+		expect(events).toContainEqual({
+			kind: 'provider.rate-limit',
+			payload: {
+				status: 'allowed_warning',
+				limit: 'seven_day',
+				retryAt: '2027-01-15T08:00:00.000Z',
+			},
+		});
+	});
+
 	// GSHIP-617: the operator's per-role choice, pushed as flags only when set.
 	test('pushes --model and --effort only when the slot is configured', () => {
 		const invocation = {

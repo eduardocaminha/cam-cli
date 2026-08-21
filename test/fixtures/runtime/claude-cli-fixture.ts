@@ -71,6 +71,21 @@ if (mode === 'wait') {
 } else {
 	const summary = JSON.stringify({ argv: process.argv.slice(2), input });
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
+	// GSHIP-664: --fixture-usage=<0-1 fraction|"malformed"> emits a non-rejecting
+	// rate_limit_event carrying `utilization`, so a test can observe the derived
+	// usedPercent without going through the usage-limit failure path above.
+	const usage = fixtureArgument('usage');
+	if (usage !== undefined) {
+		process.stdout.write(`${JSON.stringify({
+			type: 'rate_limit_event',
+			rate_limit_info: {
+				status: 'allowed_warning',
+				rateLimitType: 'seven_day',
+				resetsAt: 1_800_000_000,
+				utilization: usage === 'malformed' ? 'not-a-number' : Number(usage),
+			},
+		})}\n`);
+	}
 	process.stdout.write(`${JSON.stringify({
 		type: 'assistant',
 		message: {
