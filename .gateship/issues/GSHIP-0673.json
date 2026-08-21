@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T14:33:02.051Z",
-  "updatedAt": "2026-08-21T14:33:02.051Z",
+  "updatedAt": "2026-08-21T15:14:56.420Z",
   "description": "Change only the shell presentation of the runtime version beneath the Gateship logo. When the snapshot version contains SemVer build metadata such as `0.302.0+8146b060...`, render only `v0.302.0` in the sidebar. Preserve an ordinary version without build metadata unchanged apart from the existing `v` prefix, and keep the empty-version behavior hidden. Strip only the `+...` build-metadata suffix; do not reinterpret, validate or rewrite prerelease text or arbitrary non-empty runtime values. Keep the exact full version string flowing through the existing snapshot/client/AppProps contract so diagnostic identity remains available to the runtime and existing APIs; this slice must not alter version generation, stale-service comparison, self-update identity, release metadata or any server response. Implement the display rule as a small pure presentation helper owned by the UI and extend the existing shell static-render tests in place to prove a full `0.302.0+<commit>` value renders exactly `v0.302.0`, does not expose the commit beneath the logo, while plain and empty versions retain their current behavior. Do not add a tooltip, disclosure, settings row, endpoint, dependency, regex gate or snapshot test. Update HANDOFF.md only to record the stable post-merge presentation rule: the shell shows human SemVer while exact build identity remains in the APIs. Preserve its resilient header, history and approval boundary. Out of scope: locale selection, localization of another surface, /settings diagnostics, version parsing outside presentation, release or update behavior, database or lifecycle changes.",
   "specSource": "operator",
   "spec": {
@@ -27,5 +27,9 @@
         "output": "version: payload.version ?? '',"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "73299ed28d628653c71439a2e3e8a5abd46047d9ea0aeaa8fca9ef968626fa66",
+    "approvedAt": "2026-08-21T15:14:56.420Z"
   }
 }
