@@ -1,0 +1,31 @@
+{
+  "id": "GSHIP-677",
+  "title": "Complete the Settings locale catalog",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T15:44:52.056Z",
+  "updatedAt": "2026-08-21T15:44:52.056Z",
+  "description": "Extend the existing dependency-free typed locale catalog with one complete SettingsCatalog and use it across the current /settings surface. Catalog every Gateship-authored visible label, title, description, state label, button, placeholder, empty state, fallback and pluralized count rendered by SettingsSurface and its existing Project, Operator, Providers, Model settings, Chained runs, Self-update, Diagnostic schedule, Notifications, Project brief and Handoff panels. Keep existing en-US wording and behavior as the production baseline and add complete pt-BR equivalents. Thread the already-selected catalog through those existing components without adding a context, translation runtime or state store. Locale-sensitive dates, times, percentages and counts on this surface must use the selected locale. Preserve factual and operator-authored values verbatim: repository/ref, project detail, name, IANA timezone, provider/model/effort/plan identifiers, usage facts, channel ids, version/commit, brief and handoff contents, commands and runtime error detail. Translate only the Gateship-owned framing around those values. Extend existing static-render tests in place with representative populated, empty, enabled/disabled and actionable /settings states in both locales, asserting exact product-owned labels and unchanged factual/authored values. Do not add a wording grep, snapshot test or score. Update HANDOFF.md only to record that /settings is cataloged and onboarding remains before a production locale selector. Preserve provider selection/login, model writes, chain policy, self-update, diagnostic schedule, notification tests, brief writes and every same-origin/action contract. Out of scope: onboarding, locale selection or persistence, browser-language inference, server/API/error localization, new endpoints, dependencies, panels, routes, database or runtime lifecycle changes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Extend the existing dependency-free typed locale catalog with one complete SettingsCatalog and use it across the current /settings surface. Catalog every Gateship-authored visible label, title, description, state label, button, placeholder, empty state, fallback and pluralized count rendered by SettingsSurface and its existing Project, Operator, Providers, Model settings, Chained runs, Self-update, Diagnostic schedule, Notifications, Project brief and Handoff panels. Keep existing en-US wording and behavior as the production baseline and add complete pt-BR equivalents. Thread the already-selected catalog through those existing components without adding a context, translation runtime or state store. Locale-sensitive dates, times, percentages and counts on this surface must use the selected locale. Preserve factual and operator-authored values verbatim: repository/ref, project detail, name, IANA timezone, provider/model/effort/plan identifiers, usage facts, channel ids, version/commit, brief and handoff contents, commands and runtime error detail. Translate only the Gateship-owned framing around those values. Extend existing static-render tests in place with representative populated, empty, enabled/disabled and actionable /settings states in both locales, asserting exact product-owned labels and unchanged factual/authored values. Do not add a wording grep, snapshot test or score. Update HANDOFF.md only to record that /settings is cataloged and onboarding remains before a production locale selector. Preserve provider selection/login, model writes, chain policy, self-update, diagnostic schedule, notification tests, brief writes and every same-origin/action contract. Out of scope: onboarding, locale selection or persistence, browser-language inference, server/API/error localization, new endpoints, dependencies, panels, routes, database or runtime lifecycle changes.",
+    "verify": [
+      "bun run build:ui && bun test test/web/ui-client.test.tsx test/web/embedded-ui.test.ts && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -oF \"function SettingsSurface(props: AppProps): React.ReactElement {\" webui/src/App.tsx",
+        "output": "function SettingsSurface(props: AppProps): React.ReactElement {"
+      },
+      {
+        "command": "grep -oF \"<SurfaceColumn label=\\\"Settings\\\" status={props.status}>\" webui/src/App.tsx",
+        "output": "<SurfaceColumn label=\"Settings\" status={props.status}>"
+      },
+      {
+        "command": "grep -oF \"export interface LocaleCatalog {\" webui/src/locale.ts",
+        "output": "export interface LocaleCatalog {"
+      }
+    ]
+  }
+}
