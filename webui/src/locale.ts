@@ -245,6 +245,114 @@ export interface WorkCatalog {
 	};
 }
 
+export interface SettingsCatalog {
+	title: string;
+	disclosure: { open: string; close: string };
+	project: {
+		title: string;
+		description: string;
+		stateLabels: { ready: string; checking: string; attention: string };
+		localProject: string;
+		repository: string;
+		runSource: string;
+	};
+	operator: {
+		title: string;
+		description: string;
+		name: string;
+		namePlaceholder: string;
+		timezone: string;
+		timezonePlaceholder: string;
+		timezoneGuidance: string;
+		save: string;
+	};
+	providers: {
+		title: string;
+		description: string;
+		inUse: string;
+		connectedUnavailable: (reason: string) => string;
+		unavailable: (reason: string) => string;
+		connected: (plan?: string) => string;
+		installedDisconnected: string;
+		clientMissing: string;
+		connectChatGpt: string;
+		useProvider: (label: string) => string;
+		waitReasons: Readonly<Record<RunProviderWaitView['kind'], string>>;
+		usageWindowLabels: Readonly<Record<string, string>>;
+		duration: { days: (count: number, formatted: string) => string; hours: (count: number, formatted: string) => string; minutes: (formatted: string) => string };
+		usedPercent: (formatted: string) => string;
+		resets: string;
+		asOf: string;
+		credits: string;
+		unlimited: string;
+		available: string;
+		none: string;
+		spendLimit: (used: string, limit: string, remainingPercent: string) => string;
+		resetCredits: (count: number, formatted: string) => string;
+	};
+	models: {
+		title: string;
+		description: string;
+		roleLabels: Readonly<Record<'orchestrator' | 'executor' | 'reviewer', string>>;
+		model: string;
+		effort: string;
+		cliDefault: string;
+		documentation: (provider: string) => string;
+		save: string;
+	};
+	chain: { title: string; description: string; label: string };
+	updates: {
+		title: string;
+		description: string;
+		label: string;
+		guidance: string;
+		available: string;
+		unknown: string;
+		statusLabels: Readonly<Record<'success' | 'rollback' | 'failed' | 'check-failed' | 'deferred', string>>;
+		result: (previous: string, target: string, at: string) => string;
+	};
+	diagnostics: {
+		title: string;
+		description: string;
+		label: string;
+		cadence: string;
+		cadenceLabels: Readonly<Record<'daily' | 'weekly', string>>;
+		disabled: string;
+		overdue: string;
+		nextRun: (value: string) => string;
+		calculating: string;
+		guidance: string;
+		save: string;
+	};
+	notifications: {
+		title: string;
+		description: string;
+		permissionStates: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
+		actionLabels: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
+		channelLabels: Readonly<Record<'ntfy' | 'resend', string>>;
+		configured: string;
+		notConfigured: string;
+		missing: (values: string) => string;
+		sendTest: string;
+		instructions: Readonly<Record<'ntfy' | 'resend', string>>;
+		docLabels: Readonly<Record<'ntfy' | 'resendApiKeys' | 'resendDomain', string>>;
+	};
+	brief: {
+		title: string;
+		description: string;
+		fieldLabels: Readonly<Record<'objective' | 'decisions' | 'constraints' | 'openItems', string>>;
+		linePlaceholder: string;
+		save: string;
+	};
+	handoff: {
+		title: string;
+		description: string;
+		readOnly: string;
+		rewritten: string;
+		nothingRecorded: string;
+	};
+}
+
 export interface LocaleCatalog {
 	shell: ShellCatalog;
 	conversation: ConversationCatalog;
@@ -252,6 +360,7 @@ export interface LocaleCatalog {
 	runsOperational: RunsOperationalCatalog;
 	runsWorkflow: RunsWorkflowCatalog;
 	work: WorkCatalog;
+	settings: SettingsCatalog;
 }
 
 export const LOCALE_CATALOG = {
@@ -547,6 +656,31 @@ export const LOCALE_CATALOG = {
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'} not shown.`,
 			},
 		},
+		settings: {
+			title: 'Settings',
+			disclosure: { open: 'open', close: 'close' },
+			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
+			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
+			providers: {
+				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients and never receives tokens.', inUse: 'in use',
+				connectedUnavailable: (reason) => `Subscription connected, but currently unavailable: ${reason}.`, unavailable: (reason) => `Currently unavailable: ${reason}.`, connected: (plan) => `Subscription connected${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Installed, without a connected subscription', clientMissing: 'Client not found', connectChatGpt: 'Connect ChatGPT', useProvider: (label) => `Use ${label}`,
+				waitReasons: { 'auth-required': 'Authentication required', 'usage-limit': 'Subscription usage limit reached', 'rate-limited': 'Calls temporarily rate-limited', overloaded: 'Provider temporarily overloaded', 'model-refused': 'Model or effort rejected', 'transport-unavailable': 'Provider connection unavailable', 'protocol-invalid': 'Invalid provider response', cancelled: 'Call cancelled', unknown: 'Provider unavailable' },
+				usageWindowLabels: { five_hour: '5 hour', seven_day: '7 day', seven_day_opus: '7 day (Opus)', seven_day_sonnet: '7 day (Sonnet)', seven_day_overage_included: '7 day (overage)', overage: 'Overage' },
+				duration: { days: (_count, formatted) => `${formatted} day`, hours: (_count, formatted) => `${formatted} hour`, minutes: (formatted) => `${formatted} min` },
+				usedPercent: (formatted) => `${formatted} used`, resets: 'resets', asOf: 'as of', credits: 'Credits', unlimited: 'unlimited', available: 'available', none: 'none', spendLimit: (used, limit, remainingPercent) => `Spend limit: ${used} of ${limit} (${remainingPercent} remaining)`, resetCredits: (_count, formatted) => `${formatted} reset credit(s) available`,
+			},
+			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Orchestrator', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
+			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
+			updates: { title: 'Gateship updates', description: 'Checks official releases at most daily and applies a verified native binary only while the project is idle.', label: 'Install verified native updates automatically', guidance: 'Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.', available: 'Available', unknown: 'unknown', statusLabels: { success: 'success', rollback: 'rollback', failed: 'failed', 'check-failed': 'check-failed', deferred: 'deferred' }, result: (previous, target, at) => `${previous} → ${target} at ${at}` },
+			diagnostics: { title: 'Diagnostic schedule', description: 'Runs at most one overdue diagnostic, and only while this project is idle.', label: 'Run diagnostics periodically', cadence: 'Cadence', cadenceLabels: { daily: 'Daily', weekly: 'Weekly' }, disabled: 'Disabled.', overdue: 'overdue', nextRun: (value) => `Next run: ${value}`, calculating: 'calculating', guidance: 'A manual scan also resets the window. Missed periods do not create catch-up runs.', save: 'Save schedule' },
+			notifications: {
+				title: 'Notifications', description: 'The browser alerts you when a run needs you or finishes; remote channels alert you even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
+				instructions: { ntfy: 'Save the topic URL in {file} at the project root with mode 600, or set {url}, which takes precedence over the file. ', resend: 'Save the API key in {file} at the project root with mode 600, or set {key}, which takes precedence over the file. Also set {from} (sender at a verified domain) and {to} (recipient). ' },
+				docLabels: { ntfy: 'ntfy documentation', resendApiKeys: 'Resend API keys', resendDomain: 'Resend domain verification' },
+			},
+			brief: { title: 'Project brief', description: 'Authoritative human context, maintained by you. The orchestrator reads it and never writes it.', fieldLabels: { objective: 'Objective', decisions: 'Decisions', constraints: 'Constraints', openItems: 'Open items' }, linePlaceholder: 'One item per line', save: 'Save brief' },
+			handoff: { title: 'Automatic handoff', description: 'Session state observed and generated by the orchestrator. It may be stale; the brief above prevails.', readOnly: 'read-only', rewritten: 'Rewritten after each orchestrator turn.', nothingRecorded: 'Nothing recorded yet.' },
+		},
 	},
 	'pt-BR': {
 		shell: {
@@ -839,6 +973,31 @@ export const LOCALE_CATALOG = {
 				became: 'virou',
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'} não exibidas.`,
 			},
+		},
+		settings: {
+			title: 'Ajustes',
+			disclosure: { open: 'abrir', close: 'fechar' },
+			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
+			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
+			providers: {
+				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados e nunca recebe tokens.', inUse: 'em uso',
+				connectedUnavailable: (reason) => `Assinatura conectada, mas indisponível no momento: ${reason}.`, unavailable: (reason) => `Indisponível no momento: ${reason}.`, connected: (plan) => `Assinatura conectada${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Instalado, sem uma assinatura conectada', clientMissing: 'Cliente não encontrado', connectChatGpt: 'Conectar ChatGPT', useProvider: (label) => `Usar ${label}`,
+				waitReasons: { 'auth-required': 'Autenticação necessária', 'usage-limit': 'Limite de uso da assinatura atingido', 'rate-limited': 'Chamadas temporariamente limitadas', overloaded: 'Provedor temporariamente sobrecarregado', 'model-refused': 'Modelo ou esforço rejeitado', 'transport-unavailable': 'Conexão com o provedor indisponível', 'protocol-invalid': 'Resposta inválida do provedor', cancelled: 'Chamada cancelada', unknown: 'Provedor indisponível' },
+				usageWindowLabels: { five_hour: '5 horas', seven_day: '7 dias', seven_day_opus: '7 dias (Opus)', seven_day_sonnet: '7 dias (Sonnet)', seven_day_overage_included: '7 dias (excedente)', overage: 'Excedente' },
+				duration: { days: (count, formatted) => `${formatted} ${count === 1 ? 'dia' : 'dias'}`, hours: (count, formatted) => `${formatted} ${count === 1 ? 'hora' : 'horas'}`, minutes: (formatted) => `${formatted} min` },
+				usedPercent: (formatted) => `${formatted} usados`, resets: 'reinicia', asOf: 'observado em', credits: 'Créditos', unlimited: 'ilimitados', available: 'disponíveis', none: 'nenhum', spendLimit: (used, limit, remainingPercent) => `Limite de gastos: ${used} de ${limit} (${remainingPercent} restantes)`, resetCredits: (count, formatted) => `${formatted} ${count === 1 ? 'crédito de reinício disponível' : 'créditos de reinício disponíveis'}`,
+			},
+			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Orquestrador', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
+			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },
+			updates: { title: 'Atualizações do Gateship', description: 'Verifica lançamentos oficiais no máximo uma vez por dia e aplica um binário nativo verificado somente enquanto o projeto está ocioso.', label: 'Instalar atualizações nativas verificadas automaticamente', guidance: 'Cadência fixa: diária. Execuções, estados de espera preservados, diagnósticos, contêineres e checkouts de código-fonte nunca são atualizados no lugar.', available: 'Disponível', unknown: 'desconhecida', statusLabels: { success: 'sucesso', rollback: 'reversão', failed: 'falhou', 'check-failed': 'verificação falhou', deferred: 'adiada' }, result: (previous, target, at) => `${previous} → ${target} em ${at}` },
+			diagnostics: { title: 'Agenda de diagnósticos', description: 'Executa no máximo um diagnóstico atrasado e somente enquanto este projeto está ocioso.', label: 'Executar diagnósticos periodicamente', cadence: 'Cadência', cadenceLabels: { daily: 'Diária', weekly: 'Semanal' }, disabled: 'Desativada.', overdue: 'atrasado', nextRun: (value) => `Próxima execução: ${value}`, calculating: 'calculando', guidance: 'Uma análise manual também reinicia a janela. Períodos perdidos não criam execuções de compensação.', save: 'Salvar agenda' },
+			notifications: {
+				title: 'Notificações', description: 'O navegador avisa quando uma execução precisa de você ou termina; canais remotos avisam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
+				instructions: { ntfy: 'Salve a URL do tópico em {file} na raiz do projeto com modo 600 ou defina {url}, que tem precedência sobre o arquivo. ', resend: 'Salve a chave da API em {file} na raiz do projeto com modo 600 ou defina {key}, que tem precedência sobre o arquivo. Defina também {from} (remetente em um domínio verificado) e {to} (destinatário). ' },
+				docLabels: { ntfy: 'documentação do ntfy', resendApiKeys: 'chaves de API do Resend', resendDomain: 'verificação de domínio do Resend' },
+			},
+			brief: { title: 'Brief do projeto', description: 'Contexto humano autoritativo, mantido por você. O orquestrador o lê e nunca o escreve.', fieldLabels: { objective: 'Objetivo', decisions: 'Decisões', constraints: 'Restrições', openItems: 'Itens em aberto' }, linePlaceholder: 'Um item por linha', save: 'Salvar brief' },
+			handoff: { title: 'Handoff automático', description: 'Estado da sessão observado e gerado pelo orquestrador. Pode estar desatualizado; o brief acima prevalece.', readOnly: 'somente leitura', rewritten: 'Reescrito após cada turno do orquestrador.', nothingRecorded: 'Nada registrado ainda.' },
 		},
 	},
 } as const satisfies Record<Locale, LocaleCatalog>;
