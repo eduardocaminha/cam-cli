@@ -73,6 +73,7 @@ import {
 	type RunsOperationalCatalog,
 	type RunsWorkflowCatalog,
 	type ShellCatalog,
+	type WorkCatalog,
 } from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
 import {
@@ -101,8 +102,8 @@ export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
 
 const MAIN_CONTENT_ID = 'main-content';
 
-function countLabel(count: number, singular: string, plural = `${singular}s`): string {
-	return `${count} ${count === 1 ? singular : plural}`;
+function formatCount(count: number, locale: Locale): string {
+	return new Intl.NumberFormat(locale).format(count);
 }
 
 const SURFACES: readonly { path: OperatorRoute; label: keyof ShellCatalog['routeLabels'] }[] = [
@@ -126,7 +127,7 @@ export function routeOf(pathname: string): OperatorRoute {
 export interface AppProps {
 	/** Which of the four surfaces this document is showing. */
 	route: OperatorRoute;
-	/** The explicit locale shared by the cataloged shell and conversation surfaces. */
+	/** The explicit locale shared by every cataloged surface. */
 	locale: Locale;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
@@ -1826,18 +1827,22 @@ export function ConversationColumn({
 
 function BacklogPanel({
 	backlog,
+	catalog,
+	locale,
 	selectedIssueId,
 	canStart,
 	onSelectIssue,
 	onStart,
 }: Pick<AppProps, 'backlog' | 'selectedIssueId' | 'onSelectIssue' | 'onStart'> & {
 	canStart: boolean;
+	catalog: WorkCatalog['backlog'];
+	locale: Locale;
 }): React.ReactElement {
 	return (
 		<ContextPanel
-			description={`${countLabel(backlog.length, 'admissible issue')} right now.`}
+			description={catalog.description(backlog.length, formatCount(backlog.length, locale))}
 			open
-			title="Executable backlog"
+			title={catalog.title}
 		>
 			<div className="flex flex-col gap-3">
 				<ul className="flex flex-col gap-1">
@@ -1859,20 +1864,21 @@ function BacklogPanel({
 						</li>
 					))}
 				</ul>
-				<ActionButton enabled={canStart} label="Start run" onClick={onStart} />
+				<ActionButton enabled={canStart} label={catalog.start} onClick={onStart} />
 			</div>
 		</ContextPanel>
 	);
 }
 
 function IssueIntakePanel({
+	catalog,
 	pending,
 	onCreateIssue,
-}: Pick<AppProps, 'pending' | 'onCreateIssue'>): React.ReactElement {
+}: Pick<AppProps, 'pending' | 'onCreateIssue'> & { catalog: WorkCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Goes directly to the executable backlog; the command is the deterministic gate."
-			title="New issue"
+			description={catalog.intake.description}
+			title={catalog.intake.title}
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1887,25 +1893,25 @@ function IssueIntakePanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-title">
-					<span className="font-medium">Title</span>
+					<span className="font-medium">{catalog.form.title}</span>
 					<input className={FIELD_CLASS} id="issue-title" name="title" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-scope">
-					<span className="font-medium">Scope and expected outcome</span>
+					<span className="font-medium">{catalog.form.scope}</span>
 					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="issue-scope" name="scope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-command">
-					<span className="font-medium">Verification command</span>
+					<span className="font-medium">{catalog.form.verificationCommand}</span>
 					<input
 						className={cn(FIELD_CLASS, 'font-mono')}
 						id="issue-command"
 						name="verificationCommand"
-						placeholder="bun test"
+						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Create issue
+					{catalog.intake.create}
 				</button>
 			</form>
 		</ContextPanel>
@@ -1913,15 +1919,16 @@ function IssueIntakePanel({
 }
 
 function IssueSpecifyPanel({
+	catalog,
 	ideas,
 	pending,
 	onSpecifyIssue,
-}: Pick<AppProps, 'ideas' | 'pending' | 'onSpecifyIssue'>): React.ReactElement | null {
+}: Pick<AppProps, 'ideas' | 'pending' | 'onSpecifyIssue'> & { catalog: WorkCatalog }): React.ReactElement | null {
 	if (ideas.length === 0) return null;
 	return (
 		<ContextPanel
-			description="Promotes the idea with the same direct contract, without an intermediate planner."
-			title="Specify existing idea"
+			description={catalog.specification.description}
+			title={catalog.specification.title}
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1935,7 +1942,7 @@ function IssueSpecifyPanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-id">
-					<span className="font-medium">Idea</span>
+					<span className="font-medium">{catalog.specification.idea}</span>
 					<select className={FIELD_CLASS} id="idea-id" name="ideaId" required>
 						{ideas.map((idea) => (
 							<option key={idea.id} value={idea.id}>{idea.id} — {idea.title}</option>
@@ -1943,21 +1950,21 @@ function IssueSpecifyPanel({
 					</select>
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-scope">
-					<span className="font-medium">Scope and expected outcome</span>
+					<span className="font-medium">{catalog.form.scope}</span>
 					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="idea-scope" name="ideaScope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-command">
-					<span className="font-medium">Verification command</span>
+					<span className="font-medium">{catalog.form.verificationCommand}</span>
 					<input
 						className={cn(FIELD_CLASS, 'font-mono')}
 						id="idea-command"
 						name="ideaVerificationCommand"
-						placeholder="bun test"
+						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Specify idea
+					{catalog.specification.submit}
 				</button>
 			</form>
 		</ContextPanel>
@@ -2381,24 +2388,20 @@ function RunsSurface(props: AppProps): React.ReactElement {
 	);
 }
 
-const DRAFT_LABEL: Record<IssueReviewDraft['state'], string> = {
-	draft: 'draft',
-	approved: 'approved',
-	stale: 'stale',
-};
-
 function draftChanged(draft: IssueReviewDraft, scope: string, command: string): boolean {
 	return scope !== draft.scope || command !== draft.verificationCommand;
 }
 
 /** The editable contract of one draft: its revision, its approval, and its abandonment. */
 function IssueReviewForm({
+	catalog,
 	draft,
 	pending,
 	onReviewIssue,
 	onApproveIssue,
 	onAbandonIssue,
 }: Pick<AppProps, 'pending' | 'onReviewIssue' | 'onApproveIssue' | 'onAbandonIssue'> & {
+	catalog: WorkCatalog;
 	draft: IssueReviewDraft;
 }): React.ReactElement {
 	const [scope, setScope] = useState(draft.scope);
@@ -2422,18 +2425,18 @@ function IssueReviewForm({
 				});
 			}}
 		>
-			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[draft.state]}</Badge></div>
+			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
-				<span className="font-medium">Scope and expected outcome</span>
+				<span className="font-medium">{catalog.form.scope}</span>
 				<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
 			</label>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
-				<span className="font-medium">Verification command</span>
+				<span className="font-medium">{catalog.form.verificationCommand}</span>
 				<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
 			</label>
 			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
 				<div className="flex flex-col gap-2 text-sm">
-					<span className="font-medium">Evidence checked in the run workspace</span>
+					<span className="font-medium">{catalog.review.evidence}</span>
 					<ul className="flex flex-col gap-2">
 						{draft.evidence.map((item, index) => (
 							<li className="flex flex-col gap-1" key={index}>
@@ -2444,24 +2447,24 @@ function IssueReviewForm({
 					</ul>
 				</div>
 			)}
-			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Save revision</button>
+			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
-				<span>I confirm the persisted scope and verificationCommand.</span>
+				<span>{catalog.review.confirmPersisted}</span>
 			</label>
 			<button
 				className={PRIMARY_BUTTON_CLASS}
 				disabled={pending || dirty || !confirmed}
 				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
 				type="button"
-			>Approve</button>
+			>{catalog.review.approve}</button>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="abandon-reason">
-				<span className="font-medium">Reason for abandonment</span>
+				<span className="font-medium">{catalog.review.abandonReason}</span>
 				<textarea className={cn(FIELD_CLASS, 'min-h-20')} id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
 			</label>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
-				<span>I confirm abandoning {draft.id} for this reason.</span>
+				<span>{catalog.review.confirmAbandon(draft.id)}</span>
 			</label>
 			<button
 				className={BUTTON_CLASS}
@@ -2471,13 +2474,15 @@ function IssueReviewForm({
 					onAbandonIssue(draft.id, abandonReason.trim());
 				}}
 				type="button"
-			>Abandon</button>
+			>{catalog.review.abandon}</button>
 		</form>
 	);
 }
 
 function IssueReviewPanel({
+	catalog,
 	drafts,
+	locale,
 	pending,
 	runs,
 	onReviewIssue,
@@ -2485,8 +2490,8 @@ function IssueReviewPanel({
 	onAbandonIssue,
 }: Pick<
 	AppProps,
-	'drafts' | 'pending' | 'runs' | 'onReviewIssue' | 'onApproveIssue' | 'onAbandonIssue'
->): React.ReactElement {
+	'drafts' | 'locale' | 'pending' | 'runs' | 'onReviewIssue' | 'onApproveIssue' | 'onAbandonIssue'
+> & { catalog: WorkCatalog }): React.ReactElement {
 	const [selectedId, setSelectedId] = useState<string | null>(drafts[0]?.id ?? null);
 	const selected = drafts.find((draft) => draft.id === selectedId) ?? null;
 	// The run owns the issue file while it is in flight: revising, approving or
@@ -2496,13 +2501,13 @@ function IssueReviewPanel({
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Review and approve</CardTitle>
-				<CardDescription>{countLabel(drafts.length, 'open and specified issue')}.</CardDescription>
-				<CardAction><Badge variant="secondary">{drafts.length}</Badge></CardAction>
+				<CardTitle>{catalog.review.title}</CardTitle>
+				<CardDescription>{catalog.review.description(drafts.length, formatCount(drafts.length, locale))}</CardDescription>
+				<CardAction><Badge variant="secondary">{formatCount(drafts.length, locale)}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
-					<span className="font-medium">Draft</span>
+					<span className="font-medium">{catalog.review.draft}</span>
 					<select
 						className={FIELD_CLASS}
 						id="review-issue"
@@ -2510,7 +2515,7 @@ function IssueReviewPanel({
 							setSelectedId((event.currentTarget as unknown as { value: string }).value || null)}
 						value={selectedId ?? ''}
 					>
-						<option value="">Select a draft</option>
+						<option value="">{catalog.review.selectDraft}</option>
 						{drafts.map((draft) => (
 							<option key={draft.id} value={draft.id}>{draft.id} — {draft.title}</option>
 						))}
@@ -2518,12 +2523,12 @@ function IssueReviewPanel({
 				</label>
 				{selected === null || !ownedByRun ? null : (
 					<p className="text-muted-foreground text-sm">
-						{selected.id} is being executed by a run. The issue file belongs to it until the
-						 run ends, so review, approval and abandonment return only after that.
+						{catalog.review.ownedByRun(selected.id)}
 					</p>
 				)}
 				{selected === null || ownedByRun ? null : (
 					<IssueReviewForm
+						catalog={catalog}
 						draft={selected}
 						key={JSON.stringify([selected.id, selected.scope, selected.verificationCommand])}
 						onAbandonIssue={onAbandonIssue}
@@ -2542,13 +2547,6 @@ function diagnosticFindingLocation(finding: DiagnosticFindingView): string {
 	return `${finding.file}:${finding.line}${finding.column === undefined ? '' : `:${finding.column}`}`;
 }
 
-function diagnosticStatusLabel(status: DiagnosticFindingView['status']): string {
-	if (status === 'promoted') return 'Promoted';
-	if (status === 'dismissed') return 'Dismissed';
-	if (status === 'cleared') return 'Did not recur';
-	return 'Pending';
-}
-
 function diagnosticSeverityVariant(severity: DiagnosticFindingView['severity']): BadgeVariant {
 	if (severity === 'error') return 'error';
 	if (severity === 'warning') return 'warning';
@@ -2565,15 +2563,16 @@ function diagnosticScanVariant(
 }
 
 function DiagnosticScanSummary({
+	catalog,
 	scan,
-}: Pick<DiagnosticsView, 'scan'>): React.ReactElement | null {
+}: Pick<DiagnosticsView, 'scan'> & { catalog: WorkCatalog['diagnostics'] }): React.ReactElement | null {
 	if (scan === null) return null;
 	return (
 		<div className="flex flex-col gap-1 text-sm">
 			<div className="flex flex-wrap items-center gap-2">
-				<Badge variant={diagnosticScanVariant(scan.state)}>{scan.state}</Badge>
+				<Badge variant={diagnosticScanVariant(scan.state)}>{catalog.scanStateLabels[scan.state]}</Badge>
 				{scan.sourceSha === null ? null : <code className="text-xs">{scan.sourceSha.slice(0, 12)}</code>}
-				{scan.state === 'completed' && !scan.coverageComplete ? <Badge variant="warning">partial</Badge> : null}
+				{scan.state === 'completed' && !scan.coverageComplete ? <Badge variant="warning">{catalog.partial}</Badge> : null}
 			</div>
 			{scan.error === null ? null : <p className="text-destructive-foreground">{scan.error}</p>}
 		</div>
@@ -2581,12 +2580,16 @@ function DiagnosticScanSummary({
 }
 
 function DiagnosticFindingCard({
+	catalog,
 	finding,
+	locale,
 	pending,
 	onDismiss,
 	onPromote,
 }: {
 	finding: DiagnosticFindingView;
+	catalog: WorkCatalog;
+	locale: Locale;
 	pending: boolean;
 	onDismiss: AppProps['onDismissDiagnosticFinding'];
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
@@ -2594,18 +2597,18 @@ function DiagnosticFindingCard({
 	return (
 		<details className="rounded-md border border-border p-3 text-sm">
 			<summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
-				<Badge variant={diagnosticSeverityVariant(finding.severity)}>{finding.severity}</Badge>
+				<Badge variant={diagnosticSeverityVariant(finding.severity)}>{catalog.diagnostics.severityLabels[finding.severity]}</Badge>
 				<span className="font-medium">{finding.rule}</span>
 				<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
-				{finding.occurrenceCount > 1 ? <Badge variant="outline">×{finding.occurrenceCount}</Badge> : null}
+				{finding.occurrenceCount > 1 ? <Badge variant="outline">{catalog.diagnostics.occurrences(formatCount(finding.occurrenceCount, locale))}</Badge> : null}
 			</summary>
 			<div className="mt-4 flex flex-col gap-4">
 				<p className="whitespace-pre-wrap break-words text-muted-foreground">{finding.evidence}</p>
 				<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-					<span>tool {finding.toolVersion}</span>
+					<span>{catalog.diagnostics.toolVersion(finding.toolVersion)}</span>
 					<code>{finding.sourceSha.slice(0, 12)}</code>
 				</div>
-				<ActionButton enabled={!pending} label="Dismiss" onClick={() => onDismiss(finding.id)} />
+				<ActionButton enabled={!pending} label={catalog.diagnostics.dismiss} onClick={() => onDismiss(finding.id)} />
 				<form
 					className="flex flex-col gap-3"
 					onSubmit={(event) => {
@@ -2619,18 +2622,18 @@ function DiagnosticFindingCard({
 					}}
 				>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Title</span>
-						<input className={FIELD_CLASS} defaultValue={`${finding.rule} in ${finding.file}`.slice(0, 120)} name="diagnosticTitle" required />
+						<span className="font-medium">{catalog.form.title}</span>
+						<input className={FIELD_CLASS} defaultValue={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} name="diagnosticTitle" required />
 					</label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Scope and expected outcome</span>
+						<span className="font-medium">{catalog.form.scope}</span>
 						<textarea className={cn(FIELD_CLASS, 'min-h-24')} name="diagnosticScope" required />
 					</label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Verification command</span>
-						<input className={cn(FIELD_CLASS, 'font-mono')} name="diagnosticVerificationCommand" placeholder="bun test" required />
+						<span className="font-medium">{catalog.form.verificationCommand}</span>
+						<input className={cn(FIELD_CLASS, 'font-mono')} name="diagnosticVerificationCommand" placeholder={catalog.form.verificationPlaceholder} required />
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending} type="submit">Promote</button>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">{catalog.form.promote}</button>
 				</form>
 			</div>
 		</details>
@@ -2638,24 +2641,28 @@ function DiagnosticFindingCard({
 }
 
 function PendingDiagnosticFindings({
+	catalog,
 	findings,
+	locale,
 	pending,
 	onDismiss,
 	onPromote,
 }: {
 	findings: readonly DiagnosticFindingView[];
+	catalog: WorkCatalog;
+	locale: Locale;
 	pending: boolean;
 	onDismiss: AppProps['onDismissDiagnosticFinding'];
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	if (findings.length === 0) {
-		return <p className="text-muted-foreground text-sm">No pending findings.</p>;
+		return <p className="text-muted-foreground text-sm">{catalog.diagnostics.noPending}</p>;
 	}
 	return (
 		<ul className="flex flex-col gap-3">
 			{findings.map((finding) => (
 				<li key={finding.id}>
-					<DiagnosticFindingCard finding={finding} onDismiss={onDismiss} onPromote={onPromote} pending={pending} />
+					<DiagnosticFindingCard catalog={catalog} finding={finding} locale={locale} onDismiss={onDismiss} onPromote={onPromote} pending={pending} />
 				</li>
 			))}
 		</ul>
@@ -2663,52 +2670,61 @@ function PendingDiagnosticFindings({
 }
 
 function ResolvedDiagnosticFindings({
+	catalog,
 	findings,
+	locale,
 	omittedCount,
 }: {
 	findings: readonly DiagnosticFindingView[];
+	catalog: WorkCatalog['diagnostics'];
+	locale: Locale;
 	omittedCount: number;
 }): React.ReactElement {
 	return (
 		<details className="text-sm">
-			<summary className="cursor-pointer text-muted-foreground">Resolved ({findings.length})</summary>
+			<summary className="cursor-pointer text-muted-foreground">{catalog.resolved(formatCount(findings.length, locale))}</summary>
 			<ul className="mt-3 flex flex-col gap-2">
 				{findings.map((finding) => (
 					<li className="flex flex-wrap items-center gap-2" key={finding.id}>
-						<Badge variant="secondary">{diagnosticStatusLabel(finding.status)}</Badge>
+						<Badge variant="secondary">{catalog.statusLabels[finding.status]}</Badge>
 						<span>{finding.rule}</span>
 						<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
 						{finding.promotedIssueId === null ? null : <Badge variant="info">{finding.promotedIssueId}</Badge>}
 					</li>
 				))}
 			</ul>
-			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">+{omittedCount} not shown.</p> : null}
+			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">{catalog.omitted(formatCount(omittedCount, locale))}</p> : null}
 		</details>
 	);
 }
 
 function DiagnosticOutcomeSummary({
+	catalog,
+	locale,
 	stats,
-}: Pick<DiagnosticsView, 'stats'>): React.ReactElement {
+}: Pick<DiagnosticsView, 'stats'> & { catalog: WorkCatalog['diagnostics']; locale: Locale }): React.ReactElement {
 	if (stats.total === 0) {
 		return (
 			<p className="text-muted-foreground text-sm">
-				There is not enough history yet to measure this analyzer's usefulness.
+				{catalog.noHistory}
 			</p>
 		);
 	}
 	return (
 		<div className="flex flex-col gap-1 text-sm">
 			<p>
-				Local history: {stats.promoted} promoted, {stats.dismissed} dismissed,{' '}
-				{stats.cleared} that did not recur and {stats.pending} pending.
+				{catalog.history(
+					formatCount(stats.promoted, locale),
+					formatCount(stats.dismissed, locale),
+					formatCount(stats.cleared, locale),
+					formatCount(stats.pending, locale),
+				)}
 			</p>
 			{stats.recurring === 0 ? null : (
-				<p className="text-muted-foreground">{countLabel(stats.recurring, 'finding')} recurred in another scan.</p>
+				<p className="text-muted-foreground">{catalog.recurring(stats.recurring, formatCount(stats.recurring, locale))}</p>
 			)}
 			<p className="text-muted-foreground text-xs">
-				Dismissal does not mean false positive; that can only be measured when the operator
-				explicitly classifies the reason.
+				{catalog.dismissalDisclaimer}
 			</p>
 		</div>
 	);
@@ -2719,7 +2735,9 @@ function DiagnosticOutcomeSummary({
  * evidence and issue promotion live behind per-finding disclosure.
  */
 function DiagnosticsPanel({
+	catalog,
 	diagnostics,
+	locale,
 	pending,
 	onStartDiagnostic,
 	onCancelDiagnostic,
@@ -2733,46 +2751,50 @@ function DiagnosticsPanel({
 	| 'onCancelDiagnostic'
 	| 'onDismissDiagnosticFinding'
 	| 'onPromoteDiagnosticFinding'
->): React.ReactElement {
+	| 'locale'
+> & { catalog: WorkCatalog }): React.ReactElement {
 	const scan = diagnostics.scan;
 	const active = scan?.state === 'queued' || scan?.state === 'running';
 	const analyzer = diagnostics.analyzers[0];
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Gateship Diagnostics</CardTitle>
+				<CardTitle>{catalog.diagnostics.title}</CardTitle>
 				<CardDescription>
-					{active ? 'Analyzing an isolated checkout…' : `${countLabel(diagnostics.findings.length, 'pending finding')}.`}
+					{active ? catalog.diagnostics.analyzing : catalog.diagnostics.pendingCount(diagnostics.findings.length, formatCount(diagnostics.findings.length, locale))}
 				</CardDescription>
-				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? 'running' : diagnostics.findings.length}</Badge></CardAction>
+				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? catalog.diagnostics.running : formatCount(diagnostics.findings.length, locale)}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				<div className="flex flex-col gap-2 text-sm">
 					<p className="text-muted-foreground">
-						Advisory: never fixes, approves or blocks shipping. The first run downloads the
-						pinned analyzer only into Gateship's local state.
+						{catalog.diagnostics.advisory}
 					</p>
 					{analyzer === undefined ? null : (
 						<div className="flex flex-wrap items-center gap-2">
 							<Badge variant="outline">{analyzer.label}</Badge>
 							<code className="text-xs">v{analyzer.version}</code>
-							<span className="text-muted-foreground">{analyzer.description}</span>
+							<span className="text-muted-foreground">
+								{analyzer.id === 'react'
+									? catalog.diagnostics.analyzerDescriptions.react
+									: analyzer.description}
+							</span>
 						</div>
 					)}
 				</div>
-				<DiagnosticScanSummary scan={scan} />
+				<DiagnosticScanSummary catalog={catalog.diagnostics} scan={scan} />
 				<div className="flex flex-wrap gap-2">
 					{!active && analyzer !== undefined ? (
 						<ActionButton
 							enabled={!pending}
-							label="Run now"
+							label={catalog.diagnostics.runNow}
 							onClick={() => onStartDiagnostic(analyzer.id)}
 						/>
 					) : null}
 					{active && scan !== null ? (
 						<ActionButton
 							enabled={!pending}
-							label="Cancel diagnostic"
+							label={catalog.diagnostics.cancel}
 							onClick={() => onCancelDiagnostic(scan.id)}
 						/>
 					) : null}
@@ -2780,16 +2802,20 @@ function DiagnosticsPanel({
 				{diagnostics.workspaceNotices.map((notice) => (
 					<p className="text-warning-foreground text-sm" key={notice}>{notice}</p>
 				))}
-				<DiagnosticOutcomeSummary stats={diagnostics.stats} />
+				<DiagnosticOutcomeSummary catalog={catalog.diagnostics} locale={locale} stats={diagnostics.stats} />
 				<Separator />
 				<PendingDiagnosticFindings
+					catalog={catalog}
 					findings={diagnostics.findings}
+					locale={locale}
 					onDismiss={onDismissDiagnosticFinding}
 					onPromote={onPromoteDiagnosticFinding}
 					pending={pending}
 				/>
 				<ResolvedDiagnosticFindings
+					catalog={catalog.diagnostics}
 					findings={diagnostics.resolvedFindings}
+					locale={locale}
 					omittedCount={diagnostics.resolvedFindingsOmittedCount}
 				/>
 			</CardPanel>
@@ -2805,25 +2831,27 @@ function DiagnosticsPanel({
  * started by this screen. A settled proposal leaves the list.
  */
 function ProposalsPanel({
+	catalog,
+	locale,
 	proposals,
 	pending,
 	onDismissProposal,
 	onPromoteProposal,
 }: Pick<
 	AppProps,
-	'proposals' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
->): React.ReactElement {
+	'locale' | 'proposals' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
+> & { catalog: WorkCatalog }): React.ReactElement {
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Derived proposals</CardTitle>
-				<CardDescription>{countLabel(proposals.length, 'pending proposal')}.</CardDescription>
-				<CardAction><Badge variant="secondary">{proposals.length}</Badge></CardAction>
+				<CardTitle>{catalog.proposals.pendingTitle}</CardTitle>
+				<CardDescription>{catalog.proposals.pendingCount(proposals.length, formatCount(proposals.length, locale))}</CardDescription>
+				<CardAction><Badge variant="secondary">{formatCount(proposals.length, locale)}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				{proposals.length === 0 ? (
 					<p className="text-muted-foreground text-sm">
-						No pending proposals. A run records out-of-scope discoveries here.
+						{catalog.proposals.emptyPending}
 					</p>
 				) : (
 					<ul className="flex flex-col gap-6">
@@ -2841,7 +2869,7 @@ function ProposalsPanel({
 								</div>
 								<ActionButton
 									enabled={!pending}
-									label="Dismiss"
+									label={catalog.proposals.dismiss}
 									onClick={() => onDismissProposal(proposal.id)}
 								/>
 								<form
@@ -2860,7 +2888,7 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-title-${proposal.id}`}
 									>
-										<span className="font-medium">Title</span>
+										<span className="font-medium">{catalog.form.title}</span>
 										<input
 											className={FIELD_CLASS}
 											defaultValue={proposal.title}
@@ -2873,7 +2901,7 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-scope-${proposal.id}`}
 									>
-										<span className="font-medium">Scope and expected outcome</span>
+										<span className="font-medium">{catalog.form.scope}</span>
 										<textarea
 											className={cn(FIELD_CLASS, 'min-h-24')}
 											id={`proposal-scope-${proposal.id}`}
@@ -2885,17 +2913,17 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-command-${proposal.id}`}
 									>
-										<span className="font-medium">Verification command</span>
+										<span className="font-medium">{catalog.form.verificationCommand}</span>
 										<input
 											className={cn(FIELD_CLASS, 'font-mono')}
 											id={`proposal-command-${proposal.id}`}
 											name="proposalVerificationCommand"
-											placeholder="bun test"
+											placeholder={catalog.form.verificationPlaceholder}
 											required
 										/>
 									</label>
 									<button className={BUTTON_CLASS} disabled={pending} type="submit">
-										Promote
+										{catalog.form.promote}
 									</button>
 								</form>
 							</li>
@@ -2915,27 +2943,29 @@ function ProposalsPanel({
  * re-promotion -- only the outcome.
  */
 function ResolvedProposalsPanel({
+	catalog,
+	locale,
 	resolvedProposals,
 	resolvedProposalsOmittedCount,
-}: Pick<AppProps, 'resolvedProposals' | 'resolvedProposalsOmittedCount'>): React.ReactElement {
+}: Pick<AppProps, 'locale' | 'resolvedProposals' | 'resolvedProposalsOmittedCount'> & { catalog: WorkCatalog }): React.ReactElement {
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Resolved proposals</CardTitle>
-				<CardDescription>{countLabel(resolvedProposals.length, 'resolved proposal')}.</CardDescription>
-				<CardAction><Badge variant="secondary">{resolvedProposals.length}</Badge></CardAction>
+				<CardTitle>{catalog.proposals.resolvedTitle}</CardTitle>
+				<CardDescription>{catalog.proposals.resolvedCount(resolvedProposals.length, formatCount(resolvedProposals.length, locale))}</CardDescription>
+				<CardAction><Badge variant="secondary">{formatCount(resolvedProposals.length, locale)}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">read-only</Badge>
+					<Badge variant="outline">{catalog.proposals.readOnly}</Badge>
 					<span className="text-muted-foreground text-sm">
-						Dismissal and promotion cannot be undone here.
+						{catalog.proposals.settledNote}
 					</span>
 				</div>
 				<Separator />
 				{resolvedProposals.length === 0 ? (
 					<p className="text-muted-foreground text-sm">
-						No resolved proposals yet.
+						{catalog.proposals.emptyResolved}
 					</p>
 				) : (
 					<ul className="flex flex-col gap-4">
@@ -2944,9 +2974,9 @@ function ResolvedProposalsPanel({
 								<div className="flex flex-wrap items-center gap-2">
 									<span className="break-words font-medium">{proposal.title}</span>
 									{proposal.status === 'promoted' ? (
-										<Badge variant="success">Promoted</Badge>
+										<Badge variant="success">{catalog.proposals.statusLabels.promoted}</Badge>
 									) : (
-										<Badge variant="secondary">Dismissed</Badge>
+										<Badge variant="secondary">{catalog.proposals.statusLabels.dismissed}</Badge>
 									)}
 								</div>
 								<p className="whitespace-pre-wrap break-words text-muted-foreground">
@@ -2957,7 +2987,7 @@ function ResolvedProposalsPanel({
 									<code className="break-all text-xs">{proposal.sourceRunId}</code>
 									{proposal.status === 'promoted' && proposal.promotedIssueId !== null ? (
 										<span className="break-words">
-											became <Badge variant="info">{proposal.promotedIssueId}</Badge>
+											{catalog.proposals.became} <Badge variant="info">{proposal.promotedIssueId}</Badge>
 										</span>
 									) : null}
 								</div>
@@ -2967,7 +2997,7 @@ function ResolvedProposalsPanel({
 				)}
 				{resolvedProposalsOmittedCount > 0 ? (
 					<p className="text-muted-foreground text-sm">
-						+{countLabel(resolvedProposalsOmittedCount, 'resolved proposal')} not shown.
+						{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}
 					</p>
 				) : null}
 			</CardPanel>
@@ -2977,40 +3007,51 @@ function ResolvedProposalsPanel({
 
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
+	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const catalog = localeCatalog.work;
 	return (
-		<SurfaceColumn label="Work" status={props.status}>
+		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
 			<BacklogPanel
 				backlog={props.backlog}
 				canStart={actions.start && !props.pending}
+				catalog={catalog.backlog}
+				locale={props.locale}
 				onSelectIssue={props.onSelectIssue}
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
 			/>
 			<DiagnosticsPanel
+				catalog={catalog}
 				diagnostics={props.diagnostics}
+				locale={props.locale}
 				onCancelDiagnostic={props.onCancelDiagnostic}
 				onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
 				onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
 				onStartDiagnostic={props.onStartDiagnostic}
 				pending={props.pending}
 			/>
-			<IssueReviewPanel drafts={props.drafts} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
+			<IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
 			<ProposalsPanel
+				catalog={catalog}
+				locale={props.locale}
 				onDismissProposal={props.onDismissProposal}
 				onPromoteProposal={props.onPromoteProposal}
 				pending={props.pending}
 				proposals={props.proposals}
 			/>
 			<ResolvedProposalsPanel
+				catalog={catalog}
+				locale={props.locale}
 				resolvedProposals={props.resolvedProposals}
 				resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
 			/>
 			<IssueSpecifyPanel
+				catalog={catalog}
 				ideas={props.ideas}
 				onSpecifyIssue={props.onSpecifyIssue}
 				pending={props.pending}
 			/>
-			<IssueIntakePanel onCreateIssue={props.onCreateIssue} pending={props.pending} />
+			<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
 		</SurfaceColumn>
 	);
 }
