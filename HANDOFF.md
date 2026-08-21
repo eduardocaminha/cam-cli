@@ -1,10 +1,10 @@
 # Gateship project handoff
 
-> Last operator checkpoint: 2026-08-20
+> Last operator checkpoint: 2026-08-21
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `origin/main` at `622d6202` (complete external-beta English surface, PR #522)
-> Active implementation branch: none
-> Current stage: accumulate real revision-tagged terminal runs before any soft ratchet
+> Shipped baseline: `v0.297.0` at `2b727089` (GSHIP-662 self-update, PR #529)
+> Active implementation branch: GSHIP-668 typed shell locale foundation
+> Current stage: add the approved internal typed shell locale seam; no selector or persisted preference
 
 ## How to use this file
 
@@ -86,6 +86,20 @@ adapter plus one runtime, not a second orchestration server duplicating domain
 logic.
 
 ## Current observation stage
+
+GSHIP-662 shipped in `v0.297.0` as PR #529. The single service can now stage a
+newer stable image while idle and hand replacement to a short-lived helper,
+with bounded rollback and explicit operator policy. This supersedes the earlier
+checkpoint decision that deferred host-side self-replacement; it does not
+change the one-service product boundary or authorize lifecycle work in another
+slice.
+
+The current approved next stage is GSHIP-668: introduce one dependency-free,
+typed catalog for shell navigation and skip-link labels, keep `en-US` as the
+production default, and make the initial document language truthful. There is
+still no visible locale selector, persistence, browser-language inference or
+translation of route bodies. This roadmap entry records current direction; the
+operator-approved issue specification remains the execution authority.
 
 PR #522 shipped the external-beta language decision as squash commit
 `622d6202`:
@@ -310,10 +324,10 @@ already investigate and call typed runtime commands. A second MCP/HTTP adapter
 would add another command registry and authority surface before demand proves
 that browser conversation is insufficient.
 
-GSHIP-662 (host-side automatic image updater) is deferred. Self-replacement
-requires a host supervisor, rollback and another lifecycle owner, conflicting
-with the one-service design. For now updates stay explicit and the stale-service
-warning remains the honest mechanism.
+GSHIP-662 was deferred at this checkpoint, then was respecified and shipped in
+`v0.297.0` as PR #529 with a bounded idle-window handoff and rollback inside the
+approved one-service lifecycle. The historical queue evidence above remains
+useful, but this former deferral is no longer current direction.
 
 Do not reapprove any of these three without reviewing its specification with
 the operator.
@@ -441,16 +455,20 @@ Completed foundations:
 10. bounded daily/weekly diagnostics inside the existing service;
 11. replayable revision cohorts without an evaluator model or composite score;
 12. immutable provider-CLI identity during a recorded workflow revision;
-13. beta navigation, keyboard accessibility and document branding.
+13. beta navigation, keyboard accessibility and document branding;
+14. one complete external-beta English product surface;
+15. bounded stable-image self-update during an idle run window.
 
 Next product stages, in current order:
 
-1. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
+1. add the typed `en-US` / `pt-BR` shell locale foundation without a selector,
+   persistence or partial route-body translation;
+2. accumulate real revision-tagged terminal runs; keep the soft ratchet dormant
    until two comparable cohorts exist;
-2. add measured self-improvement and community proposal intake without
+3. add measured self-improvement and community proposal intake without
    automatic rule mutation;
-3. multiproject selection and parallelism across independent repositories;
-4. external-user validation before Product Hunt or a YC-style launch push.
+4. multiproject selection and parallelism across independent repositories;
+5. external-user validation before Product Hunt or a YC-style launch push.
 
 This order is not ceremonial. Change it when product evidence or an
 implementation discovery supports a better sequence, and record why.
@@ -460,15 +478,17 @@ implementation discovery supports a better sequence, and record why.
 For a fresh Codex, Claude Code or Gateship orchestrator session:
 
 > Read `AGENTS.md`, `CLAUDE.md` and `HANDOFF.md`; inspect `git status`,
-> `origin/main`, the latest commits and the running service. Confirm PR #522 is
-> present and the service has no stale warning. There is no active code slice:
-> accumulate real revision-tagged terminal runs before designing a soft
-> ratchet. Preserve the complete English product surface without adding an i18n
-> framework, locale switch or rewrite of operator-authored data. Do not
+> `origin/main`, the latest commits and the running service. Confirm
+> `v0.297.0`/PR #529 is present. Continue only the explicitly approved GSHIP-668
+> typed shell locale slice; roadmap text is not execution authority. Preserve
+> the complete English production surface without adding an i18n framework,
+> locale switch, persistence, route-body translation or rewrite of
+> operator-authored data. After that bounded slice, accumulate real
+> revision-tagged terminal runs before designing a soft ratchet. Do not
 > dismiss/promote the real diagnostic findings. Keep the soft ratchet
 > dormant until two comparable recorded cohorts exist. Do not add an evaluator
 > LLM, synthetic score, remote telemetry, new event pipeline, endpoint, table
 > or queue. Do not publish without explicit operator authorization. Do not
-> start or reapprove GSHIP-660/661/662. Preserve the one-service architecture.
+> start or reapprove GSHIP-660/661. Preserve the one-service architecture.
 > Run focused checks while editing and `bun run check:all` once at the ship
 > boundary.

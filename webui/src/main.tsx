@@ -12,6 +12,7 @@
 import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, routeOf } from './App.tsx';
+import { DEFAULT_LOCALE, type Locale } from './shell-locale.ts';
 import {
 	abandonIssue,
 	approveIssue,
@@ -341,7 +342,7 @@ function useOperationalRun(): {
 	};
 }
 
-function Screen(): ReactElement {
+function Screen({ locale }: { locale: Locale }): ReactElement {
 	const {
 		backlog,
 		ideas,
@@ -391,6 +392,7 @@ function Screen(): ReactElement {
 			gitIdentity={gitIdentity}
 			handoff={handoff}
 			ideas={ideas}
+			locale={locale}
 			notificationChannels={notificationChannels}
 			notificationPermission={notificationPermission}
 			onAbandon={command('abandon')}
@@ -484,8 +486,11 @@ if (!rootElement) {
 	throw new Error('Missing #root element');
 }
 
+const locale = DEFAULT_LOCALE;
+document.documentElement.lang = locale;
+
 createRoot(rootElement).render(
 	<StrictMode>
-		<Screen />
+		<Screen locale={locale} />
 	</StrictMode>,
 );

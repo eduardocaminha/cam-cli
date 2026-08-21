@@ -33,6 +33,7 @@ describe('embedded web bundle', () => {
 			expect(html).toContain('/app.js');
 			expect(html).toContain('/app.css');
 			expect(html).toContain('id="root"');
+			expect(html).toContain('<html lang="en-US">');
 			expect(html).toContain('<title>Gateship</title>');
 			expect(html).toContain('rel="icon" href="data:image/svg+xml,');
 			// The inline diagnostic page is gone: no script body, no raw JSON dump.
@@ -42,7 +43,13 @@ describe('embedded web bundle', () => {
 			const script = await get(handle, '/app.js');
 			expect(script.status).toBe(200);
 			expect(script.headers.get('content-type')).toContain('text/javascript');
-			expect(await script.text()).toBe(readFileSync(join(DIST_DIR, 'app.js'), 'utf8'));
+			const scriptText = await script.text();
+			expect(scriptText).toBe(readFileSync(join(DIST_DIR, 'app.js'), 'utf8'));
+			// dist is generated before embedding rather than tracked (PR #486). Prove
+			// the bytes production serves contain this slice's locale seam.
+			expect(scriptText).toContain('Superfícies do operador');
+			expect(scriptText).toContain('Pular para o conteúdo');
+			expect(scriptText).toContain('document.documentElement.lang');
 
 			const style = await get(handle, '/app.css');
 			expect(style.status).toBe(200);

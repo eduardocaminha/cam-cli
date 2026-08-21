@@ -85,6 +85,7 @@ import {
 	summarizeWorkflowCohorts,
 	toneOf,
 } from './run-view.ts';
+import { type Locale, SHELL_CATALOG, type ShellCatalog } from './shell-locale.ts';
 
 /** The four paths the server answers with this document, and nothing else. */
 export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
@@ -95,11 +96,11 @@ function countLabel(count: number, singular: string, plural = `${singular}s`): s
 	return `${count} ${count === 1 ? singular : plural}`;
 }
 
-const SURFACES: readonly { path: OperatorRoute; label: string }[] = [
-	{ path: '/', label: 'Conversation' },
-	{ path: '/runs', label: 'Runs' },
-	{ path: '/work', label: 'Work' },
-	{ path: '/settings', label: 'Settings' },
+const SURFACES: readonly { path: OperatorRoute; label: keyof ShellCatalog['routeLabels'] }[] = [
+	{ path: '/', label: 'conversation' },
+	{ path: '/runs', label: 'runs' },
+	{ path: '/work', label: 'work' },
+	{ path: '/settings', label: 'settings' },
 ];
 
 /**
@@ -116,6 +117,8 @@ export function routeOf(pathname: string): OperatorRoute {
 export interface AppProps {
 	/** Which of the four surfaces this document is showing. */
 	route: OperatorRoute;
+	/** The explicit locale shared by the visible shell and document language. */
+	locale: Locale;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
 	drafts: readonly IssueReviewDraft[];
@@ -2057,12 +2060,13 @@ function ChainPauseCallout({
 function ShellSidebar({
 	chainRuns,
 	gitIdentity,
+	locale,
 	route,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'staleService' | 'workspaceNotices'> & {
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'staleService' | 'workspaceNotices'> & {
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
@@ -2074,6 +2078,7 @@ function ShellSidebar({
 	// something else stopped it, never for the switch simply being off.
 	const stoppedQueue = stoppedQueuePause(chainRuns);
 	const attention = attentionOf(run, workspaceNotices, stoppedQueue !== null);
+	const catalog = SHELL_CATALOG[locale];
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
 			<div className="flex flex-col items-start gap-3">
@@ -2091,7 +2096,7 @@ function ShellSidebar({
 			<StaleServiceCallout staleService={staleService} />
 			<GitIdentityCallout gitIdentity={gitIdentity} />
 			<Separator />
-			<nav aria-label="Operator surfaces">
+			<nav aria-label={catalog.operatorNavigationLabel}>
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
 					{SURFACES.map((surface) => (
 						<li key={surface.path}>
@@ -2103,7 +2108,7 @@ function ShellSidebar({
 								)}
 								href={surface.path}
 							>
-								{surface.label}
+								{catalog.routeLabels[surface.label]}
 							</a>
 						</li>
 					))}
@@ -3058,17 +3063,19 @@ export function App(props: AppProps): React.ReactElement {
 	// history below it is the same array, read once.
 	const run = props.runs[0] ?? null;
 	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
+	const catalog = SHELL_CATALOG[props.locale];
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<a
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}
 			>
-				Skip to content
+				{catalog.skipLinkLabel}
 			</a>
 			<ShellSidebar
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}
+				locale={props.locale}
 				route={props.route}
 				run={run}
 				staleService={props.staleService}
