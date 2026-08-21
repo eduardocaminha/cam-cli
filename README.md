@@ -342,7 +342,10 @@ The conversational orchestrator is mechanically read-only: Claude exposes only
 Read/Grep/Glob with MCP and slash commands disabled; Codex runs in its read-only
 sandbox with user configuration/MCP disabled. Review uses the same restrictions
 in a fresh independent session. Only the service interprets and executes the
-orchestrator's typed command.
+orchestrator's typed command. An explicitly requested project-brief update is
+therefore persisted by the service, not the agent process; the same atomic
+operation used by the trusted editor also clears the generated automatic
+handoff, while preserving the transcript and provider sessions.
 
 Agent and GitHub CLI children receive an environment allowlist, so unrelated
 PATs and API keys are not inherited accidentally. Verification commands are

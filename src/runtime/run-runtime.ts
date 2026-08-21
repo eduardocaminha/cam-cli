@@ -730,6 +730,8 @@ export class RunRuntime {
 	}
 
 	setProjectBrief(brief: ProjectBrief): void {
+		// One transport-neutral store operation persists operator intent and
+		// invalidates the generated handoff atomically.
 		this.#store.setProjectBrief(brief, this.#now());
 	}
 

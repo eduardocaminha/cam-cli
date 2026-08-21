@@ -1980,8 +1980,9 @@ function briefLines(value: string): string[] {
 
 /**
  * The context the operator owns. It is the authority the orchestrator reads
- * before every turn, so correcting it here is how stale intent gets fixed --
- * without touching the conversation, the runs, or the handoff below it.
+ * before every turn, so correcting it here is how stale intent gets fixed.
+ * A successful write clears the generated handoff below without touching the
+ * conversation, runs, or provider sessions.
  */
 function ProjectBriefPanel({
 	brief,
@@ -1998,8 +1999,8 @@ function ProjectBriefPanel({
 		>
 			<form
 				className="flex flex-col gap-4"
-				// Re-synced with the server's answer after a save, which is the only
-				// thing that can change a brief while the operator is looking at it.
+				// Re-synced with the server's answer after either the editor or an
+				// explicitly authorized conversational brief write.
 				key={JSON.stringify(brief)}
 				onSubmit={(event) => {
 					event.preventDefault();

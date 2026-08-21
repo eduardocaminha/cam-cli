@@ -151,7 +151,8 @@ export function normalizeOrchestratorHandoff(value: unknown): OrchestratorHandof
 
 /**
  * Small brief maintained by the operator. It carries the same four fields as
- * the handoff, but it is authored by a human and never by an orchestrator turn.
+ * the handoff, but every write is explicitly human-authorized rather than
+ * generated automatically from an orchestrator turn.
  */
 export type ProjectBrief = OrchestratorHandoff;
 
@@ -1537,13 +1538,20 @@ export class RunStore {
 
 	setProjectBrief(brief: ProjectBrief, updatedAt: string): void {
 		const normalized = normalizeProjectBrief(brief);
-		this.#db.query(`
-			INSERT INTO project_brief (id, brief_json, updated_at)
-			VALUES (1, $briefJson, $updatedAt)
-			ON CONFLICT(id) DO UPDATE SET
-				brief_json = excluded.brief_json,
-				updated_at = excluded.updated_at
-		`).run({ briefJson: JSON.stringify(normalized), updatedAt });
+		const replace = this.#db.transaction(() => {
+			this.#db.query(`
+				INSERT INTO project_brief (id, brief_json, updated_at)
+				VALUES (1, $briefJson, $updatedAt)
+				ON CONFLICT(id) DO UPDATE SET
+					brief_json = excluded.brief_json,
+					updated_at = excluded.updated_at
+			`).run({ briefJson: JSON.stringify(normalized), updatedAt });
+			// Human-authorized intent supersedes session-derived memory immediately.
+			// Keeping both writes in this transaction prevents either record from
+			// surviving alone if SQLite refuses the other one.
+			this.setOrchestratorHandoff(emptyOrchestratorHandoff(), updatedAt);
+		});
+		replace();
 	}
 
 	appendOrchestratorMessage(input: {

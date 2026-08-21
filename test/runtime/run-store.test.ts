@@ -728,22 +728,61 @@ describe('operator profile', () => {
 });
 
 describe('project brief', () => {
-	test('round-trips the four fields as a single overwritten record', () => {
+	test('round-trips the brief and clears the generated handoff in the same write', () => {
 		const store = new RunStore(':memory:');
 		expect(store.getProjectBrief()).toEqual(EMPTY_BRIEF);
 
 		const brief = {
 			objective: 'Manter o brief do produto sob controle do operador.',
 			decisions: ['O brief é um registro único, não um histórico.'],
-			constraints: ['Nenhum turno do orquestrador escreve o brief.'],
+			constraints: ['Somente o serviço determinístico persiste o brief.'],
 			openItems: ['Construir o editor web na fatia 2.'],
 		};
+		store.setOrchestratorHandoff({
+			objective: 'Memória automática antiga.',
+			decisions: ['Uma decisão gerada.'],
+			constraints: [],
+			openItems: [],
+		}, '2026-08-16T20:59:00.000Z');
 		store.setProjectBrief(brief, '2026-08-16T21:00:00.000Z');
 		expect(store.getProjectBrief()).toEqual(brief);
+		expect(store.getOrchestratorHandoff()).toEqual(EMPTY_BRIEF);
 
 		const rewritten = { ...brief, objective: 'Objetivo substituído.', openItems: [] };
 		store.setProjectBrief(rewritten, '2026-08-16T21:05:00.000Z');
 		expect(store.getProjectBrief()).toEqual(rewritten);
+		store.close();
+	});
+
+	test('rolls back the brief when SQLite refuses the handoff invalidation', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-brief-atomic-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		const original = {
+			objective: 'Brief anterior.', decisions: [], constraints: [], openItems: [],
+		};
+		const handoff = {
+			objective: 'Handoff anterior.', decisions: [], constraints: [], openItems: [],
+		};
+		store.setProjectBrief(original, '2026-08-16T21:00:00.000Z');
+		store.setOrchestratorHandoff(handoff, '2026-08-16T21:01:00.000Z');
+
+		const guard = new Database(dbPath);
+		guard.exec(`
+			CREATE TRIGGER refuse_empty_handoff
+			BEFORE UPDATE ON orchestrator_handoff
+			WHEN NEW.handoff_json = '{"objective":"","decisions":[],"constraints":[],"openItems":[]}'
+			BEGIN
+				SELECT RAISE(ABORT, 'refused handoff invalidation');
+			END;
+		`);
+		guard.close();
+
+		expect(() => store.setProjectBrief(
+			{ ...original, objective: 'Não pode sobreviver sozinho.' },
+			'2026-08-16T21:02:00.000Z',
+		)).toThrow('refused handoff invalidation');
+		expect(store.getProjectBrief()).toEqual(original);
+		expect(store.getOrchestratorHandoff()).toEqual(handoff);
 		store.close();
 	});
 

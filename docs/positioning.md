@@ -25,9 +25,10 @@ The loop is deliberately short:
 6. a fresh capability-restricted session reviews the change;
 7. a clean run can be committed, pushed, and squash-merged.
 
-SQLite records state, public activity, and the shared conversational transcript,
-so provider switches and process restarts have an explicit handoff instead of a
-lost terminal session or a duplicate worker.
+SQLite records state, public activity, the operator-owned project brief, and the
+shared conversational transcript. A successful brief write atomically clears
+the generated handoff, so explicit operator intent replaces stale session
+memory while provider switches and process restarts remain durable.
 
 ## Differentiation
 
