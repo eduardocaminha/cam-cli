@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T04:32:50.747Z",
-  "updatedAt": "2026-08-21T04:32:50.747Z",
+  "updatedAt": "2026-08-21T04:53:12.249Z",
   "description": "Align the shared executor contract with the existing Gateship verification policy, using one prompt sentence rather than adding a command interceptor, new gate, telemetry event, or policy engine. In buildWorkPrompt, which both Claude and Codex use, tell the executor to run the approved issue verification command once before completion and only the smallest relevant checks while editing. It must explicitly not add bun run check:all, the full test suite, or other broad gates unless that exact command is already present in the human-approved verification; the runtime continues to run the project verify script once after a clean review at the ship boundary. Preserve automatic review and fix, operator guidance, full-verify repair, proposals, and every lifecycle transition. Update the existing byte-for-byte prompt test in place; do not add another registry, wording scan, command filter, or test file. HANDOFF.md already records this policy and needs no prose change. Out of scope: mechanically blocking commands, changing package scripts or test manifests, changing reviewer scope or context, changing model or effort settings in source, changing provider adapters, or adding telemetry. Provider selection and effort remain reversible runtime settings controlled separately.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "Run focused tests for the changed surface. The service will perform independent verification afterward."
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "12e6dc63e79f762e859ac640dd8c957b87821824165b7f7b0bfbaffca411be7f",
+    "approvedAt": "2026-08-21T04:53:12.249Z"
   }
 }
