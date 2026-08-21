@@ -92,6 +92,32 @@ authorizes the bounded next slice.
 
 ## Evaluation radar
 
+- Keep one specification and approval contract whose depth scales with delivery
+  risk, not two workflows. Simple, reversible work may carry a minimal contract;
+  shipped AI behavior, sensitive data, security boundaries or irreversible
+  effects require proportionate evaluation cases, limits, observable success,
+  containment or rollback and stronger evidence. Agent-assisted implementation
+  alone does not make an otherwise simple task high risk.
+- Type evaluation evidence by origin: deterministic check, human judgment or
+  model evaluation. Preserve provenance and review; for model evaluations also
+  record provider, model, effort and known cost. Keep the signals separate and
+  never collapse them into one composite score.
+- Make project verification multistack through detection and approved project
+  commands, not by bundling every language or ML tool into Gateship. Confirm the
+  required runtime is available, then execute the project's own explicit
+  evidence and verification contract. A JavaScript-and-Python proof remains the
+  first portability benchmark.
+- Shape the build in the pre-approval conversation: help the operator make the
+  objective, tradeoffs, risk and observable success explicit, then approve that
+  result as the executable brief. Do not recreate planner/auditor convergence
+  or let shaping mutate an approved run.
+- Feed real failures and traces into error analysis. Workflow changes remain
+  small, versioned, evidence-backed proposals compared with an immutable
+  baseline; a human approves them and rollback remains possible. Never perform
+  online self-modification.
+- Let production evidence drive roadmap priority: real usage, provider
+  failures, latency, known cost, operator attention and regressions. Accumulate
+  comparable real runs before enabling a soft ratchet or inventing thresholds.
 - Benchmark worktree ownership against per-acquisition leases, fail-closed
   recycling, state recovery, machine-readable status and safe pruning before
   multiproject work. Gateship keeps ownership of its lifecycle.
