@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T21:52:01.255Z",
-  "updatedAt": "2026-08-21T21:52:01.255Z",
+  "updatedAt": "2026-08-21T21:52:09.644Z",
   "description": "Update only HANDOFF.md from the current origin/main checkpoint. Under Evaluation radar, incorporate the six already operator-approved decisions preserved in commit 5a101b63: one specification contract whose depth scales with delivery risk; evaluation evidence typed as deterministic, human, or model-derived with provenance and model metadata kept separate; multistack verification through detected runtimes and project-approved commands rather than bundled toolchains; pre-approval shaping of objective, tradeoffs, risk, and observable success without planner/auditor convergence; real failures feeding small versioned human-approved workflow proposals against an immutable baseline; and production evidence driving roadmap priority before any soft ratchet. Keep the handoff concise, do not add release history, dependencies, runtime behavior, gates, scores, or a second workflow, and do not modify any other file.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "git diff --check"
     ]
+  },
+  "approval": {
+    "fingerprint": "790977427d8cd752cf3e17d8417dd72088172c411311d5fb4f48bcbaacd4edaa",
+    "approvedAt": "2026-08-21T21:52:09.644Z"
   }
 }
