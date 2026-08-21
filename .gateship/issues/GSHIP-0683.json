@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T18:50:28.809Z",
-  "updatedAt": "2026-08-21T18:50:28.809Z",
+  "updatedAt": "2026-08-21T19:01:10.417Z",
   "description": "Add one English GitHub Issue Form at .github/ISSUE_TEMPLATE/beta-feedback.yml as the public external-beta intake. It must collect the feedback kind, the outcome the user was trying to achieve, observed and expected behavior, reproduction steps or desired workflow, Gateship version, installation/environment facts, optional run/provider/model/effort context, and the operator attention the experience required. Start with a clear warning not to paste tokens, credentials, private source, or sensitive logs; link undisclosed vulnerabilities to the existing private security reporting path and require submitters to confirm that shared material is sanitized and that they searched for duplicates. Add .github/ISSUE_TEMPLATE/config.yml to disable unstructured blank issues and expose the private security contact link without requiring any repository label, assignee, project, or external configuration. Add docs/beta-feedback.md and concise README.md/CONTRIBUTING.md links explaining the triage contract: the public issue author and URL are provenance; maintainers may clarify, close, or manually translate an accepted report into a Gateship issue that cites that URL; promotion never approves, starts, reprioritizes, or expands a run, and the executable specification still requires explicit operator approval. Keep the form a replaceable GitHub-edge adapter: do not add runtime code, an API, table, webhook, bot, account system, automatic deduplication, remote rule ingestion, telemetry upload, or a dependency from Gateship lifecycle behavior to issue-form availability.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "test -f .github/ISSUE_TEMPLATE/beta-feedback.yml && test -f .github/ISSUE_TEMPLATE/config.yml && test -f docs/beta-feedback.md && git diff --check"
     ]
+  },
+  "approval": {
+    "fingerprint": "93d82f5e6acde9dfd7a8705d6c5541334c15af7b4b5f8553144f963890becf12",
+    "approvedAt": "2026-08-21T19:01:10.417Z"
   }
 }
