@@ -215,6 +215,7 @@ interface WorkspaceIssue {
 	title: string;
 	/** True when this attempt is the one that wrote stage:'shipped'. */
 	closed: boolean;
+	verificationCommands: string[];
 }
 
 interface PullRequestView {
@@ -222,6 +223,8 @@ interface PullRequestView {
 	mergeStateStatus: string;
 	/** The head GitHub currently records for the branch, empty when unreported. */
 	headRefOid: string;
+	url: string;
+	statusCheckRollup: unknown[];
 }
 
 /** The branch's most recent pull request, in whatever state it is now. */
@@ -229,6 +232,17 @@ interface ExistingPullRequest {
 	number: number;
 	state: string;
 	headRefOid: string;
+	url: string;
+}
+
+interface FailedCheck {
+	name: string;
+	url?: string;
+}
+
+interface CiAggregate {
+	status: 'not-reported' | 'pending' | 'passed' | 'failed';
+	failedChecks: FailedCheck[];
 }
 
 /** One required check as `gh pr checks --required` buckets it: `fail` is the only bucket this file acts on. */
@@ -293,10 +307,16 @@ function closeIssueInWorkspace(cwd: string, issueId: string): WorkspaceIssue {
 	}
 	const record = parsed as Record<string, unknown>;
 	const title = typeof record['title'] === 'string' ? record['title'] : issueId;
-	if (record['stage'] === 'shipped') return { title, closed: false };
+	const spec = record['spec'] !== null && typeof record['spec'] === 'object'
+		? record['spec'] as Record<string, unknown>
+		: {};
+	const verificationCommands = Array.isArray(spec['verify'])
+		? spec['verify'].filter((command): command is string => typeof command === 'string')
+		: [];
+	if (record['stage'] === 'shipped') return { title, closed: false, verificationCommands };
 	const shipped = { ...record, stage: 'shipped', updatedAt: new Date().toISOString() };
 	writeFileSync(path, `${JSON.stringify(shipped, null, 2)}\n`);
-	return { title, closed: true };
+	return { title, closed: true, verificationCommands };
 }
 
 function parseExistingPullRequest(json: string): ExistingPullRequest | null {
@@ -307,19 +327,24 @@ function parseExistingPullRequest(json: string): ExistingPullRequest | null {
 		throw new Error(`gh pr list returned invalid JSON: ${json.slice(0, 200)}`);
 	}
 	if (!Array.isArray(parsed) || parsed.length === 0) return null;
-	const first = parsed[0] as { number?: unknown; state?: unknown; headRefOid?: unknown };
+	const first = parsed[0] as { number?: unknown; state?: unknown; headRefOid?: unknown; url?: unknown };
 	if (typeof first?.number !== 'number') return null;
+	if (typeof first.url !== 'string' || first.url.length === 0) {
+		throw new Error('gh pr list did not report the pull request URL');
+	}
 	return {
 		number: first.number,
 		state: typeof first.state === 'string' ? first.state : 'UNKNOWN',
 		headRefOid: typeof first.headRefOid === 'string' ? first.headRefOid : '',
+		url: first.url,
 	};
 }
 
-function parseCreatedPullRequest(output: string): number | null {
-	const match = /\/pull\/(\d+)/.exec(output);
-	const number = match === null ? Number.NaN : Number.parseInt(match[1] ?? '', 10);
-	return Number.isSafeInteger(number) ? number : null;
+function parseCreatedPullRequest(output: string): { number: number; url: string } | null {
+	const match = /(https?:\/\/\S+\/pull\/(\d+)(?:\/?(?:[?#]\S*)?))/.exec(output);
+	const url = match?.[1] ?? '';
+	const number = match === null ? Number.NaN : Number.parseInt(match[2] ?? '', 10);
+	return Number.isSafeInteger(number) ? { number, url } : null;
 }
 
 function parsePullRequestView(json: string): PullRequestView {
@@ -329,12 +354,65 @@ function parsePullRequestView(json: string): PullRequestView {
 	} catch {
 		throw new Error(`gh pr view returned invalid JSON: ${json.slice(0, 200)}`);
 	}
-	const view = parsed as { state?: unknown; mergeStateStatus?: unknown; headRefOid?: unknown };
+	const view = parsed as {
+		state?: unknown;
+		mergeStateStatus?: unknown;
+		headRefOid?: unknown;
+		url?: unknown;
+		statusCheckRollup?: unknown;
+	};
 	return {
 		state: typeof view?.state === 'string' ? view.state : 'UNKNOWN',
 		mergeStateStatus: typeof view?.mergeStateStatus === 'string' ? view.mergeStateStatus : 'UNKNOWN',
 		headRefOid: typeof view?.headRefOid === 'string' ? view.headRefOid : '',
+		url: typeof view?.url === 'string' ? view.url : '',
+		statusCheckRollup: Array.isArray(view?.statusCheckRollup) ? view.statusCheckRollup : [],
 	};
+}
+
+const FAILED_CHECK_CONCLUSIONS = new Set([
+	'ACTION_REQUIRED', 'CANCELLED', 'FAILURE', 'STARTUP_FAILURE', 'STALE', 'TIMED_OUT',
+]);
+
+function checkField(check: Record<string, unknown>, field: string): string {
+	const value = check[field];
+	return typeof value === 'string' ? value : '';
+}
+
+function checkRecord(candidate: unknown): Record<string, unknown> {
+	return candidate !== null && typeof candidate === 'object'
+		? candidate as Record<string, unknown>
+		: {};
+}
+
+function failedCheck(candidate: unknown): FailedCheck | null {
+	const check = checkRecord(candidate);
+	const conclusion = checkField(check, 'conclusion').toUpperCase();
+	const state = checkField(check, 'state').toUpperCase();
+	if (!FAILED_CHECK_CONCLUSIONS.has(conclusion) && state !== 'ERROR' && state !== 'FAILURE') {
+		return null;
+	}
+	const name = checkField(check, 'name') || checkField(check, 'context') || 'Unnamed check';
+	const url = checkField(check, 'detailsUrl') || checkField(check, 'targetUrl');
+	return { name, ...(url.length === 0 ? {} : { url }) };
+}
+
+function checkPending(candidate: unknown): boolean {
+	const check = checkRecord(candidate);
+	const conclusion = checkField(check, 'conclusion').toUpperCase();
+	const state = checkField(check, 'state').toUpperCase();
+	const status = checkField(check, 'status').toUpperCase();
+	return state === 'PENDING'
+		|| state === 'EXPECTED'
+		|| (status !== '' && status !== 'COMPLETED')
+		|| (conclusion === '' && state === '');
+}
+
+function ciAggregate(rollup: readonly unknown[]): CiAggregate {
+	if (rollup.length === 0) return { status: 'not-reported', failedChecks: [] };
+	const failedChecks = rollup.flatMap((candidate) => failedCheck(candidate) ?? []);
+	if (failedChecks.length > 0) return { status: 'failed', failedChecks };
+	return { status: rollup.some(checkPending) ? 'pending' : 'passed', failedChecks: [] };
 }
 
 /**
@@ -361,13 +439,28 @@ function parseRequiredChecks(json: string): RequiredCheck[] | null {
 	return checks;
 }
 
-function pullRequestBody(runId: string, issueId: string): string {
+function pullRequestBody(
+	input: RuntimeShipInput,
+	verificationCommands: readonly string[],
+): string {
+	const commands = verificationCommands.length === 0
+		? ['- No human-approved verification command was recorded.']
+		: verificationCommands.flatMap((command, index) => [
+			`${index + 1}. passed`,
+			'    ````text',
+			...command.split('\n').map((line) => `    ${line}`),
+			'    ````',
+		]);
 	return [
-		`Gateship run \`${runId}\` shipping ${issueId}.`,
+		'## Gateship evidence',
 		'',
-		`This branch carries the change and the \`stage:shipped\` update to`,
-		`${issueFilePath(issueId)}; main learns the issue shipped by merging this`,
-		'pull request, never by a write outside it.',
+		`- Run: \`${input.runId}\``,
+		`- Issue: \`${input.issueId}\``,
+		`- Workflow revision: ${input.evidence.workflowRevision === null ? 'not reported' : `\`${input.evidence.workflowRevision}\``}`,
+		`- Independent review: ${input.evidence.review}`,
+		`- Full-project verification: ${input.evidence.fullVerification}`,
+		'- Human-approved verification:',
+		...commands,
 	].join('\n');
 }
 
@@ -437,7 +530,13 @@ export class GithubShipper implements RuntimeShipper {
 		const headSha = await this.#checked(input, 'git', ['rev-parse', 'HEAD']);
 		input.emit('ship.pushed', { branch, headSha });
 
-		const pullRequest = await this.#resolvePullRequest(input, branch, issue.title, headSha);
+		const pullRequest = await this.#resolvePullRequest(
+			input,
+			branch,
+			issue.title,
+			headSha,
+			issue.verificationCommands,
+		);
 		const settled = await this.#settledPullRequest(input, pullRequest, headSha);
 		if (settled !== null) return settled;
 
@@ -612,17 +711,23 @@ export class GithubShipper implements RuntimeShipper {
 		branch: string,
 		title: string,
 		headSha: string,
+		verificationCommands: readonly string[],
 	): Promise<ExistingPullRequest> {
 		const listed = await this.#checked(input, 'gh', [
 			'pr', 'list',
 			'--head', branch,
 			'--state', 'all',
-			'--json', 'number,state,headRefOid',
+			'--json', 'number,state,headRefOid,url',
 			'--limit', '1',
 		], { retryIdempotent: true });
 		const existing = parseExistingPullRequest(listed);
 		if (existing !== null) {
-			input.emit('ship.pr-reused', { prNumber: existing.number, branch, state: existing.state });
+			input.emit('ship.pr-reused', {
+				prNumber: existing.number,
+				url: existing.url,
+				branch,
+				state: existing.state,
+			});
 			return existing;
 		}
 		const created = await this.#checked(
@@ -633,15 +738,15 @@ export class GithubShipper implements RuntimeShipper {
 				'--base', 'main',
 				'--head', branch,
 				'--title', `${input.issueId}: ${title}`,
-				'--body', pullRequestBody(input.runId, input.issueId),
+				'--body', pullRequestBody(input, verificationCommands),
 			],
 		);
 		const opened = parseCreatedPullRequest(created);
 		if (opened === null) {
 			throw new Error(`gh pr create did not report a pull request number: ${created}`);
 		}
-		input.emit('ship.pr-opened', { prNumber: opened, branch });
-		return { number: opened, state: 'OPEN', headRefOid: headSha };
+		input.emit('ship.pr-opened', { prNumber: opened.number, url: opened.url, branch });
+		return { number: opened.number, url: opened.url, state: 'OPEN', headRefOid: headSha };
 	}
 
 	/**
@@ -662,13 +767,22 @@ export class GithubShipper implements RuntimeShipper {
 	): Promise<RuntimeShipResult> {
 		const deadline = Date.now() + this.#mergeTimeoutMs;
 		let lastStatus = '';
+		let lastCiStatus = input.initialCiStatus;
 		let headSha = initialHeadSha;
 		let branchUpdates = 0;
 		for (;;) {
-			const step = await this.#pollOnce(input, prNumber, branch, headSha, branchUpdates);
+			const step = await this.#pollOnce(
+				input,
+				prNumber,
+				branch,
+				headSha,
+				branchUpdates,
+				lastCiStatus,
+			);
 			if ('result' in step) return step.result;
 			headSha = step.headSha;
 			branchUpdates = step.branchUpdates;
+			lastCiStatus = step.ciStatus;
 			// A poll that resolved BEHIND already reported its own event; it is
 			// not a pending status and does not spend the merge timeout.
 			if (step.pending === null) continue;
@@ -704,14 +818,15 @@ export class GithubShipper implements RuntimeShipper {
 		branch: string,
 		headSha: string,
 		branchUpdates: number,
+		lastCiStatus: CiAggregate['status'],
 	): Promise<
 		| { result: RuntimeShipResult }
-		| { headSha: string; branchUpdates: number; pending: string | null }
+		| { headSha: string; branchUpdates: number; pending: string | null; ciStatus: CiAggregate['status'] }
 	> {
 		let view: PullRequestView;
 		try {
 			view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
+				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
 			], { retryIdempotent: true }));
 		} catch (error) {
 			if (error instanceof GithubUnavailableError) {
@@ -719,13 +834,22 @@ export class GithubShipper implements RuntimeShipper {
 			}
 			throw error;
 		}
+		const ci = ciAggregate(view.statusCheckRollup);
+		if (ci.status !== lastCiStatus) {
+			input.emit('ship.ci-status', {
+				prNumber,
+				url: view.url,
+				status: ci.status,
+				...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
+			});
+		}
 		const behind = await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view);
-		if (behind !== null) return behind;
+		if (behind !== null) return 'result' in behind ? behind : { ...behind, ciStatus: ci.status };
 		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
 		if (blocked !== null) return { result: blocked };
 		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 		if (verdict !== null) return { result: verdict };
-		return { headSha, branchUpdates, pending: view.mergeStateStatus };
+		return { headSha, branchUpdates, pending: view.mergeStateStatus, ciStatus: ci.status };
 	}
 
 	/**
@@ -910,7 +1034,7 @@ export class GithubShipper implements RuntimeShipper {
 	): Promise<PullRequestView> {
 		for (let attempt = 1; ; attempt++) {
 			const view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid',
+				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
 			], { retryIdempotent: true }));
 			if (view.headRefOid !== previousHead) return view;
 			if (attempt >= this.#branchUpdateConfirmAttempts) {

@@ -484,6 +484,36 @@ function RunProgress({
 	);
 }
 
+function PullRequestDelivery({
+	catalog,
+	run,
+}: { catalog: RunInspectorCatalog; run: RunView }): React.ReactElement | null {
+	const delivery = run.pullRequest;
+	if (delivery === null) return null;
+	return (
+		<div className="flex flex-wrap items-center gap-2 text-sm">
+			<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
+				{catalog.pullRequestLabel(delivery.prNumber)}
+			</a>
+			<Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>
+			{delivery.failedChecks.map((check) => check.url === undefined ? (
+				<span className="text-destructive-foreground text-xs" key={check.name}>{check.name}</span>
+			) : (
+				<a className={TEXT_LINK_CLASS} href={check.url} key={check.name} rel="noreferrer" target="_blank">
+					{check.name}
+				</a>
+			))}
+		</div>
+	);
+}
+
+function ciBadgeVariant(status: NonNullable<RunView['pullRequest']>['ciStatus']): BadgeVariant {
+	if (status === 'failed') return 'error';
+	if (status === 'pending') return 'warning';
+	if (status === 'passed') return 'success';
+	return 'outline';
+}
+
 function ProviderWaitCallout({
 	catalog,
 	locale,
@@ -608,38 +638,69 @@ function RunCard({
 			</CardHeader>
 			{run === null && footer === undefined ? null : (
 				<CardPanel className="flex flex-col gap-4">
-					{run === null ? null : <RunProgress catalog={catalog} run={run} />}
 					{run === null ? null : (
-						<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
+						<RunCardContent
+							catalog={catalog}
+							locale={locale}
+							onAbandon={onAbandon}
+							onCancel={onCancel}
+							onResume={onResume}
+							onShip={onShip}
+							pending={pending}
+							run={run}
+						/>
 					)}
-					{run === null || run.cost.totalCostUsd === null ? null : (
-						<p className="text-muted-foreground text-sm">
-							{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
-						</p>
-					)}
-					{run === null || hasNoRounds(run.roundOrigins) ? null : (
-						<p className="text-muted-foreground text-sm">
-							{catalog.correctionRounds(
-								run.roundOrigins.executor,
-								run.roundOrigins.decision,
-								run.roundOrigins.orchestrator ?? 0,
-								run.roundOrigins.indeterminate,
-							)}
-						</p>
-					)}
-					<RunCommands
-						catalog={catalog}
-						onAbandon={onAbandon}
-						onCancel={onCancel}
-						onResume={onResume}
-						onShip={onShip}
-						pending={pending}
-						run={run}
-					/>
 					{footer}
 				</CardPanel>
 			)}
 		</Card>
+	);
+}
+
+function RunCardContent({
+	catalog,
+	locale,
+	run,
+	pending,
+	onResume,
+	onAbandon,
+	onCancel,
+	onShip,
+}: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
+	catalog: RunInspectorCatalog;
+	locale: Locale;
+	run: RunView;
+}): React.ReactElement {
+	return (
+		<>
+			<RunProgress catalog={catalog} run={run} />
+			<PullRequestDelivery catalog={catalog} run={run} />
+			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
+			{run.cost.totalCostUsd === null ? null : (
+				<p className="text-muted-foreground text-sm">
+					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+				</p>
+			)}
+			{hasNoRounds(run.roundOrigins) ? null : (
+				<p className="text-muted-foreground text-sm">
+					{catalog.correctionRounds(
+						run.roundOrigins.executor,
+						run.roundOrigins.decision,
+						run.roundOrigins.orchestrator ?? 0,
+						run.roundOrigins.indeterminate,
+					)}
+				</p>
+			)}
+			<RunCommands
+				catalog={catalog}
+				onAbandon={onAbandon}
+				onCancel={onCancel}
+				onResume={onResume}
+				onShip={onShip}
+				pending={pending}
+				run={run}
+			/>
+		</>
 	);
 }
 
@@ -743,6 +804,42 @@ function RunCostPanel({
 /** How much history the operator needs to place the current run in a session. */
 const PREVIOUS_RUNS_SHOWN = 4;
 
+function PreviousRunRow({
+	locale,
+	run,
+	runInspector,
+}: {
+	locale: Locale;
+	run: RunView;
+	runInspector: RunInspectorCatalog;
+}): React.ReactElement {
+	const delivery = run.pullRequest;
+	return (
+		<li className="flex items-baseline justify-between gap-3 text-sm">
+			<span className="min-w-0 break-all font-medium">{run.issueId}</span>
+			{delivery === null ? null : (
+				<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
+					{runInspector.pullRequestLabel(delivery.prNumber)}
+				</a>
+			)}
+			<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
+			{delivery === null ? null : (
+				<Badge variant={ciBadgeVariant(delivery.ciStatus)}>
+					{runInspector.ciLabels[delivery.ciStatus]}
+				</Badge>
+			)}
+			{run.cost.totalCostUsd === null ? null : (
+				<span className="shrink-0 text-muted-foreground">
+					{runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+				</span>
+			)}
+			<time className="shrink-0 text-muted-foreground">
+				{formatRunTimestamp(run.updatedAt, locale)}
+			</time>
+		</li>
+	);
+}
+
 /**
  * The runs before the one the page above commands, read-only: there is no
  * selection and no command here, only what an operator returning to the screen
@@ -769,18 +866,7 @@ function PreviousRunsPanel({
 		>
 			<ul className="flex flex-col gap-2">
 				{previous.map((run) => (
-					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
-						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
-						<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
-						{run.cost.totalCostUsd === null ? null : (
-							<span className="shrink-0 text-muted-foreground">
-								{runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
-							</span>
-						)}
-						<time className="shrink-0 text-muted-foreground">
-							{formatRunTimestamp(run.updatedAt, locale)}
-						</time>
-					</li>
+					<PreviousRunRow key={run.id} locale={locale} run={run} runInspector={runInspector} />
 				))}
 			</ul>
 		</ContextPanel>

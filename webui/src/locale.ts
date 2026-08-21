@@ -83,6 +83,8 @@ export interface RunInspectorCatalog {
 	};
 	expectedCost: (formattedCost: string) => string;
 	correctionRounds: (executor: number, decision: number, orchestrator: number, indeterminate: number) => string;
+	pullRequestLabel: (number: number) => string;
+	ciLabels: Readonly<Record<'not-reported' | 'pending' | 'passed' | 'failed', string>>;
 	providerHold: {
 		accessibleLabel: string;
 		title: (providerName: string) => string;
@@ -480,6 +482,13 @@ export const LOCALE_CATALOG = {
 				}
 				return `${total === 1 ? 'Correction round' : 'Correction rounds'}: ${parts.join(', ')}`;
 			},
+			pullRequestLabel: (number) => `PR #${number}`,
+			ciLabels: {
+				'not-reported': 'CI not reported',
+				pending: 'CI pending',
+				passed: 'CI passed',
+				failed: 'CI failed',
+			},
 			providerHold: {
 				accessibleLabel: 'Provider on hold',
 				title: (providerName) => `${providerName} on hold`,
@@ -808,6 +817,13 @@ export const LOCALE_CATALOG = {
 					parts.push(`${indeterminate} ${indeterminate === 1 ? 'indeterminada' : 'indeterminadas'}`);
 				}
 				return `${total === 1 ? 'Rodada de correção' : 'Rodadas de correção'}: ${parts.join(', ')}`;
+			},
+			pullRequestLabel: (number) => `PR #${number}`,
+			ciLabels: {
+				'not-reported': 'CI não informada',
+				pending: 'CI pendente',
+				passed: 'CI aprovada',
+				failed: 'CI com falha',
 			},
 			providerHold: {
 				accessibleLabel: 'Provedor em espera',

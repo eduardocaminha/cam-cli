@@ -134,6 +134,54 @@ describe('durable web run API', () => {
 		}
 	});
 
+	test('exposes the durable pull request delivery projection on the existing run response', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-pr-delivery',
+			issueId: 'GSHIP-685',
+			sessionId: 'session-pr-delivery',
+			workspacePath: '/workspaces/run-pr-delivery',
+			createdAt: '2026-08-21T20:00:00.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-pr-delivery',
+			kind: 'ship.pr-opened',
+			payload: {
+				prNumber: 685,
+				url: 'https://github.com/gateship-dev/gateship/pull/685',
+			},
+			createdAt: '2026-08-21T20:01:00.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-pr-delivery',
+			kind: 'ship.ci-status',
+			payload: { status: 'pending' },
+			createdAt: '2026-08-21T20:02:00.000Z',
+		});
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-run-pr-api-'),
+			runRuntime: runtime,
+		});
+		try {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/runs`);
+			expect(await response.json()).toMatchObject({
+				runs: [{
+					id: 'run-pr-delivery',
+					pullRequest: {
+						prNumber: 685,
+						url: 'https://github.com/gateship-dev/gateship/pull/685',
+						ciStatus: 'pending',
+					},
+				}],
+			});
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('resumes waiting-user with a durable operator response', async () => {
 		const guidance: Array<string | undefined> = [];
 		const runtime = new RunRuntime({

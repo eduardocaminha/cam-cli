@@ -1327,6 +1327,7 @@ function listRunsWithInsights(runtime: RunRuntime): unknown[] {
 		roundOrigins: runtime.getRunRoundOrigins(run.id),
 		evaluation: runtime.getRunEvaluation(run.id),
 		providerWait: runtime.getRunProviderWait(run.id),
+		pullRequest: runtime.getPullRequestDelivery(run.id),
 	}));
 }
 

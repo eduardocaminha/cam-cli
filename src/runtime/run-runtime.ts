@@ -15,6 +15,11 @@ import type {
 import type { ModelSettings } from './model-settings.ts';
 import type { OperatorProfile } from './operator-profile.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
+import {
+	type PullRequestCiStatus,
+	type PullRequestDelivery,
+	selectPullRequestDelivery,
+} from './pull-request-delivery.ts';
 import { selectRunRoundOrigins, type RunRoundOrigins } from './round-origin.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
@@ -163,6 +168,12 @@ export interface RuntimeShipInput {
 	cwd: string;
 	signal: AbortSignal;
 	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
+	evidence: {
+		workflowRevision: string | null;
+		review: 'passed' | 'not-applicable';
+		fullVerification: 'passed' | 'not-applicable';
+	};
+	initialCiStatus: PullRequestCiStatus;
 }
 
 /**
@@ -559,6 +570,11 @@ export class RunRuntime {
 		return selectRunRoundOrigins(this.#store.listRunDecisionEvents(runId));
 	}
 
+	/** GitHub delivery state projected from the complete durable decision log. */
+	getPullRequestDelivery(runId: string): PullRequestDelivery | null {
+		return selectPullRequestDelivery(this.#store.listRunDecisionEvents(runId));
+	}
+
 	/** Replay the run's objective evaluation from its unbounded decision log. */
 	getRunEvaluation(runId: string): RunEvaluation | null {
 		const run = this.#store.getRun(runId);
@@ -944,12 +960,24 @@ export class RunRuntime {
 	): Promise<void> {
 		this.#transition(run.id, 'shipping', 'run.ship-started');
 		try {
+			const decisions = this.#store.listRunDecisionEvents(run.id);
+			const created = decisions.find((event) => event.kind === 'run.created');
+			const workflowRevision = created?.payload['workflowRevision'];
+			const delivery = selectPullRequestDelivery(decisions);
 			const result = await shipper.ship({
 				runId: run.id,
 				issueId: run.issueId,
 				cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 				signal,
 				emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
+				evidence: {
+					workflowRevision: typeof workflowRevision === 'string' ? workflowRevision : null,
+					review: decisions.some((event) => event.kind === 'run.review-clean')
+						? 'passed' : 'not-applicable',
+					fullVerification: decisions.some((event) => event.kind === 'run.full-verify-clean')
+						? 'passed' : 'not-applicable',
+				},
+				initialCiStatus: delivery?.ciStatus ?? 'not-reported',
 			});
 			if (signal.aborted) {
 				this.#transition(run.id, 'ready-to-ship', 'run.ship-cancelled');

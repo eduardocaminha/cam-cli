@@ -81,7 +81,7 @@ function seedFixture(): Fixture {
 
 interface Hub {
 	/** Null until `gh pr create` opens the pull request. */
-	pr: { number: number; state: string; headRefOid: string } | null;
+	pr: { number: number; state: string; headRefOid: string; url: string } | null;
 	creates: number;
 	merges: number;
 	/** Break the clone's remote just as GitHub reports the merge. */
@@ -107,6 +107,7 @@ function ghCreate(fixture: Fixture, hub: Hub): CommandResult {
 		number: PR_NUMBER,
 		state: 'OPEN',
 		headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
+		url: `https://github.com/x/y/pull/${PR_NUMBER}`,
 	};
 	return { exitCode: 0, stdout: `https://github.com/x/y/pull/${PR_NUMBER}\n`, stderr: '' };
 }
@@ -128,6 +129,8 @@ function ghView(fixture: Fixture, hub: Hub): CommandResult {
 		stdout: JSON.stringify({
 			state: 'MERGED',
 			mergeStateStatus: 'CLEAN',
+			url: `https://github.com/x/y/pull/${PR_NUMBER}`,
+			statusCheckRollup: [],
 			// The merged head is the one the ship pushed, so the head check
 			// the monitor runs on every poll (GSHIP-615) lets it through.
 			headRefOid: git(fixture.remote, ['rev-parse', `refs/heads/${BRANCH}`]),
@@ -163,6 +166,12 @@ function shipInput(cwd: string, events: string[]): RuntimeShipInput {
 		emit: (kind) => {
 			events.push(kind);
 		},
+		evidence: {
+			workflowRevision: 'revision-test',
+			review: 'passed',
+			fullVerification: 'passed',
+		},
+		initialCiStatus: 'not-reported',
 	};
 }
 

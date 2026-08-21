@@ -145,6 +145,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		cost: EMPTY_RUN_COST,
 		roundOrigins: EMPTY_ROUND_ORIGINS,
 		providerWait: null,
+		pullRequest: null,
 		...overrides,
 	};
 }
@@ -807,6 +808,27 @@ describe('runs surface', () => {
 		expect(done).toContain('100%');
 		expect(hasButton(done, 'Cancel')).toBe(false);
 		expect(hasButton(done, 'Ship')).toBe(false);
+	});
+
+	test('the current-run card and runs surface link the pull request and show compact CI state', () => {
+		const run = runIn('shipping', {
+			pullRequest: {
+				prNumber: 685,
+				url: 'https://github.com/gateship-dev/gateship/pull/685',
+				ciStatus: 'failed',
+				failedChecks: [{
+					name: 'verify',
+					url: 'https://github.com/gateship-dev/gateship/actions/runs/685',
+				}],
+			},
+		});
+		for (const html of [home({ runs: [run] }), runsPage({ runs: [run] })]) {
+			expect(html).toContain('href="https://github.com/gateship-dev/gateship/pull/685"');
+			expect(html).toContain('PR #685');
+			expect(html).toContain('CI failed');
+			expect(html).toContain('href="https://github.com/gateship-dev/gateship/actions/runs/685"');
+			expect(html).toContain('verify');
+		}
 	});
 
 	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
