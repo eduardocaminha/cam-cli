@@ -3,33 +3,29 @@
 // US-011 acceptance criterion 3: `--version` prints `gateship X.Y.Z`
 // The product name is Gateship, not the retired `cam` invocation.
 //
-// Two layers of coverage:
-//   1. The exported constant `GSHIP_VERSION` matches the documented v0.1.0
-//      release shape (`MAJOR.MINOR.PATCH`, no pre-release suffix in this
-//      first release).
-//   2. The CLI dispatcher in `index.ts` accepts all three idiomatic forms
+// GSHIP-665: there is no manually bumped release literal anymore. Every
+// local, package and ordinary-CI build reports the development sentinel
+// `0.0.0-dev`; only a native or container release build, compiled with the
+// `GSHIP_RELEASE_VERSION` define (scripts/build-release.sh, Dockerfile),
+// reports the real released version. Coverage here is:
+//   1. `GSHIP_VERSION` is the development sentinel under `bun test` (no such
+//      define exists outside a compiled binary), and stays in parity with
+//      `package.json`'s own `version` field.
+//   2. `resolveReleaseVersion`, the pure validate-or-default resolver behind
+//      that constant, is exercised directly against every define shape a
+//      real build could produce.
+//   3. The CLI dispatcher in `index.ts` accepts all three idiomatic forms
 //      (`--version`, `-v`, bare `version`) and emits exactly the documented
-//      shape on stdout. We exercise the parser/dispatcher via `main()`
-//      rather than a child-process spawn so the test is deterministic and
-//      fast (no `bun build`/process boundary).
+//      shape on stdout, whatever `GSHIP_VERSION` happens to resolve to.
 
 import { describe, expect, test } from 'bun:test';
 
 import { main } from '../index.ts';
-import { GSHIP_VERSION } from '../src/version.ts';
+import { GSHIP_VERSION, resolveReleaseVersion } from '../src/version.ts';
 
 describe('GSHIP_VERSION constant', () => {
-	test('parses as a clean semver-major.minor.patch literal', () => {
-		expect(GSHIP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-	});
-
-	test('is the v0.1.0 first-release shape (or later)', () => {
-		// Tripwire: a future bump can adjust this assertion. The point is to
-		// make sure nobody accidentally rolls back to 0.0.x once we've
-		// shipped v0.1.0.
-		const [major, minor] = GSHIP_VERSION.split('.').map((n) => Number.parseInt(n, 10));
-		expect(major).toBeGreaterThanOrEqual(0);
-		expect(minor).toBeGreaterThanOrEqual(1);
+	test('is the development sentinel for every source/package build (GSHIP-665)', () => {
+		expect(GSHIP_VERSION).toBe('0.0.0-dev');
 	});
 
 	test('stays in parity with package.json (fails the suite on version drift)', async () => {
@@ -37,6 +33,29 @@ describe('GSHIP_VERSION constant', () => {
 			version: string;
 		};
 		expect(pkg.version).toBe(GSHIP_VERSION);
+	});
+});
+
+describe('resolveReleaseVersion (GSHIP-665)', () => {
+	test('no compile-time define resolves to the development sentinel', () => {
+		expect(resolveReleaseVersion(undefined)).toBe('0.0.0-dev');
+	});
+
+	test('a blank define (an unset build-arg) also resolves to the development sentinel', () => {
+		expect(resolveReleaseVersion('')).toBe('0.0.0-dev');
+		expect(resolveReleaseVersion('   ')).toBe('0.0.0-dev');
+	});
+
+	test('a valid MAJOR.MINOR.PATCH define is used verbatim, trimmed', () => {
+		expect(resolveReleaseVersion('1.2.3')).toBe('1.2.3');
+		expect(resolveReleaseVersion(' 0.294.0 ')).toBe('0.294.0');
+	});
+
+	test('a malformed define throws rather than silently mislabeling the build', () => {
+		expect(() => resolveReleaseVersion('v1.2.3')).toThrow();
+		expect(() => resolveReleaseVersion('1.2')).toThrow();
+		expect(() => resolveReleaseVersion('1.2.3-rc1')).toThrow();
+		expect(() => resolveReleaseVersion('not-a-version')).toThrow();
 	});
 });
 

@@ -1468,22 +1468,50 @@ export function resolveBootSourceSha(
 }
 
 /**
- * Identity of the Gateship workflow, never of the repository it manages.
+ * The known Gateship workflow sha, or null when none can be identified.
  * Release binaries carry a build SHA; source checkouts can read their own
- * HEAD; an installed source package or unlabelled container falls back to the
- * public version rather than inventing a commit identity.
+ * HEAD; an installed source package or unlabelled container has neither and
+ * gets null rather than an invented commit identity. Exported so the
+ * `/api/snapshot` route (GSHIP-665) can tell a real sha apart from
+ * `resolveWorkflowRevision`'s own public-version fallback below, which is
+ * never itself a sha and must never be appended to the reported version as
+ * SemVer build metadata.
+ */
+export function resolveWorkflowRevisionSha(
+	buildSha: string | null,
+	isContainer: boolean,
+	readRuntimeSha: () => string | null,
+): string | null {
+	if (buildSha !== null) return buildSha;
+	if (!isContainer) {
+		const runtimeSha = readRuntimeSha();
+		if (runtimeSha !== null) return runtimeSha;
+	}
+	return null;
+}
+
+/**
+ * Identity of the Gateship workflow, never of the repository it manages. An
+ * installed source package or unlabelled container falls back to the public
+ * version rather than inventing a commit identity.
  */
 export function resolveWorkflowRevision(
 	buildSha: string | null,
 	isContainer: boolean,
 	readRuntimeSha: () => string | null,
 ): string {
-	if (buildSha !== null) return buildSha;
-	if (!isContainer) {
-		const runtimeSha = readRuntimeSha();
-		if (runtimeSha !== null) return runtimeSha;
-	}
-	return `v${GSHIP_VERSION}`;
+	return resolveWorkflowRevisionSha(buildSha, isContainer, readRuntimeSha) ?? `v${GSHIP_VERSION}`;
+}
+
+/**
+ * The snapshot's `version` field: the plain version when no workflow sha is
+ * known, or that version with the sha appended as SemVer build metadata
+ * otherwise (GSHIP-665) -- so the header identifies both release and
+ * revision without a second field. A pure formatter, kept outside
+ * `startWebServer` itself so that function's own branching stays flat.
+ */
+export function formatSnapshotVersion(version: string, workflowRevisionSha: string | null): string {
+	return workflowRevisionSha === null ? version : `${version}+${workflowRevisionSha}`;
 }
 
 /**
@@ -1814,7 +1842,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		containerBuild,
 		() => readSourceSha(options.cwd),
 	);
-	const workflowRevision = resolveWorkflowRevision(buildSha, containerBuild, readRuntimeSourceSha);
+	const workflowRevisionSha = resolveWorkflowRevisionSha(buildSha, containerBuild, readRuntimeSourceSha);
+	const workflowRevision = workflowRevisionSha ?? `v${GSHIP_VERSION}`;
+	const snapshotVersion = formatSnapshotVersion(GSHIP_VERSION, workflowRevisionSha);
 	// Constructed before anything that might commit, and shared by the two
 	// commit paths alone -- the shipper's and issue intake's own writes, each
 	// calling this right before its write (GSHIP-654) -- never by the
@@ -1891,7 +1921,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/snapshot': () => {
 				const snapshot: Record<string, unknown> = {
 					idleState: readIdleSnapshotState(options.cwd),
-					version: GSHIP_VERSION,
+					version: snapshotVersion,
 				};
 				const workspaceNotices = runRuntime.listWorkspaceNotices();
 				if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;

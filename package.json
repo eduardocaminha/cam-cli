@@ -1,6 +1,6 @@
 {
   "name": "gateship",
-  "version": "0.293.0",
+  "version": "0.0.0-dev",
   "module": "index.ts",
   "type": "module",
   "private": false,
