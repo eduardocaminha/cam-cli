@@ -354,56 +354,131 @@ function channelRow(html: string, label: string): string {
 }
 
 describe('project onboarding', () => {
-	test('an empty cwd replaces operational surfaces with two honest setup paths', () => {
+	const cases = [
+		{
+			locale: 'en-US',
+			title: 'Set up project',
+			cardTitle: 'Connect a GitHub project',
+			description: 'Gateship runs inside a local clone and uses origin/main as its deterministic source.',
+			existingTitle: 'Existing project',
+			existingGuidance: 'Stop this process and start Gateship inside the clone.',
+			newTitle: 'New project',
+			newGuidance: 'Create the repository with a main branch, enter the clone and start Gateship.',
+			incompleteBadge: 'incomplete configuration',
+			recoveryGuidance: 'After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.',
+			settingsGuidance: 'Agent and subscription settings remain available under ',
+			settingsLabel: 'Settings',
+			settingsAgents: 'Local agents',
+		},
+		{
+			locale: 'pt-BR',
+			title: 'Configurar projeto',
+			cardTitle: 'Conectar um projeto do GitHub',
+			description: 'O Gateship é executado dentro de um clone local e usa origin/main como sua origem determinística.',
+			existingTitle: 'Projeto existente',
+			existingGuidance: 'Pare este processo e inicie o Gateship dentro do clone.',
+			newTitle: 'Novo projeto',
+			newGuidance: 'Crie o repositório com uma branch main, entre no clone e inicie o Gateship.',
+			incompleteBadge: 'configuração incompleta',
+			recoveryGuidance: 'Depois de corrigir, reinicie o Gateship. Em um contêiner, atualize GATESHIP_PROJECT_DIR e recrie o serviço.',
+			settingsGuidance: 'Os ajustes de agentes e assinaturas continuam disponíveis em ',
+			settingsLabel: 'Ajustes',
+			settingsAgents: 'Agentes locais',
+		},
+	] as const satisfies readonly ({ locale: Locale } & Record<string, string>)[];
+
+	test('an empty cwd renders both setup paths in both locales across every blocked route', () => {
 		const project: ProjectStatusView = {
 			state: 'empty',
 			name: 'workspace',
-			detail: 'This folder does not contain a Git project yet.',
+			detail: 'Runtime detail: /workspace is not a Git project.',
 		};
-		for (const route of ['/', '/runs', '/work'] as const) {
-			const html = renderAt(route, { project });
-			expect(html).toContain('Connect a GitHub project');
-			expect(html).toContain('Existing project');
-			expect(html).toContain('New project');
-			expect(html).toContain('cd /path/to/project &amp;&amp; gship');
-			expect(html).toContain('gh repo create OWNER/REPO --private --add-readme --clone');
-			expect(html).not.toContain('Conversation with the orchestrator');
-			expect(html).not.toContain('Backlog plannable');
-			expect(html).not.toContain('Latest run');
+		for (const expected of cases) {
+			for (const route of ['/', '/runs', '/work'] as const) {
+				const html = renderAt(route, { locale: expected.locale, project });
+				expect(html).toContain(expected.title);
+				expect(html).toContain(expected.cardTitle);
+				expect(html).toContain(expected.description);
+				expect(html).toContain(expected.existingTitle);
+				expect(html).toContain(expected.existingGuidance);
+				expect(html).toContain(expected.newTitle);
+				expect(html).toContain(expected.newGuidance);
+				expect(html).toContain(project.detail);
+				expect(html).toContain('cd /path/to/project &amp;&amp; gship');
+				expect(html).toContain('gh repo create OWNER/REPO --private --add-readme --clone');
+				expect(html).toContain('cd REPO &amp;&amp; gship');
+				expect(html).toContain(expected.settingsGuidance);
+				expect(html).toContain(`href="/settings">${expected.settingsLabel}</a>`);
+				expect(html).not.toContain('Conversation with the orchestrator');
+				expect(html).not.toContain('Backlog plannable');
+				expect(html).not.toContain('Latest run');
+			}
 		}
 	});
 
-	test('a precise prerequisite failure shows its recovery command', () => {
-		const html = home({
-			project: {
-				state: 'needs-attention',
-				name: 'product',
-				reason: 'origin-main-missing',
-				detail: 'The local origin/main reference does not exist yet.',
-			},
-		});
-		expect(html).toContain('The local origin/main reference does not exist yet.');
-		expect(html).toContain('git fetch origin main');
-		expect(html).toContain('GATESHIP_PROJECT_DIR');
+	test('each prerequisite failure preserves its detail and recovery command in both locales', () => {
+		const failures = [
+			{ reason: 'not-repository', detail: 'Runtime detail: /project is not a repository.', command: 'cd /path/to/project &amp;&amp; gship' },
+			{ reason: 'origin-missing', detail: 'Runtime detail: origin is missing.', command: 'git remote add origin git@github.com:OWNER/REPO.git &amp;&amp; git fetch origin main' },
+			{ reason: 'github-origin-required', detail: 'Runtime detail: origin is not on GitHub.', command: 'git remote set-url origin git@github.com:OWNER/REPO.git' },
+			{ reason: 'origin-main-missing', detail: 'Runtime detail: origin/main is missing.', command: 'git fetch origin main' },
+		] as const satisfies readonly {
+			reason: Extract<ProjectStatusView, { state: 'needs-attention' }>['reason'];
+			detail: string;
+			command: string;
+		}[];
+
+		for (const expected of cases) {
+			for (const route of ['/', '/runs', '/work'] as const) {
+				for (const failure of failures) {
+					const { command, ...projectFailure } = failure;
+					const html = renderAt(route, {
+						locale: expected.locale,
+						project: { state: 'needs-attention', name: 'product', ...projectFailure },
+					});
+					expect(html).toContain(expected.title);
+					expect(html).toContain(expected.cardTitle);
+					expect(html).toContain(expected.description);
+					expect(html).toContain(expected.incompleteBadge);
+					expect(html).toContain(failure.detail);
+					expect(html).toContain(command);
+					expect(html).toContain(expected.recoveryGuidance);
+					expect(html).toContain(expected.settingsGuidance);
+					expect(html).toContain(`href="/settings">${expected.settingsLabel}</a>`);
+				}
+			}
+		}
 	});
 
 	test('settings stay available and identify the derived ready project', () => {
-		const ready = settingsPage();
-		expect(ready).toContain('acme/gateship');
-		expect(ready).toContain('origin/main');
-		expect(ready).toContain('Local agents');
+		for (const expected of cases) {
+			const ready = settingsPage({ locale: expected.locale });
+			expect(ready).toContain('acme/gateship');
+			expect(ready).toContain('origin/main');
+			expect(ready).toContain(expected.settingsAgents);
 
-		const blocked = settingsPage({
-			project: {
-				state: 'needs-attention',
-				name: 'product',
-				reason: 'origin-missing',
-				detail: 'The repository does not have a remote named origin.',
-			},
-		});
-		expect(blocked).toContain('The repository does not have a remote named origin.');
-		expect(blocked).toContain('Local agents');
-		expect(blocked).not.toContain('Connect a GitHub project');
+			const detail = 'Runtime detail: the repository does not have an origin remote.';
+			const blocked = settingsPage({
+				locale: expected.locale,
+				project: {
+					state: 'needs-attention',
+					name: 'product',
+					reason: 'origin-missing',
+					detail,
+				},
+			});
+			expect(blocked).toContain(detail);
+			expect(blocked).toContain(expected.settingsAgents);
+			expect(blocked).not.toContain(expected.cardTitle);
+		}
+	});
+
+	test('a ready project continues to exclude onboarding', () => {
+		for (const expected of cases) {
+			for (const route of ['/', '/runs', '/work'] as const) {
+				expect(renderAt(route, { locale: expected.locale })).not.toContain(expected.cardTitle);
+			}
+		}
 	});
 });
 
