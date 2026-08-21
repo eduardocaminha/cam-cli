@@ -356,16 +356,11 @@ provider CLI necessarily receives access to its own login store; “credential
 blind” means Gateship does not parse, copy, return or persist that credential,
 not that the process using it is cryptographically separated from it.
 
-## Retired runtime
-
-The tmux orchestrator, sidecar, per-run container worker, terminal UI,
-installed Claude personas, and their control commands have been removed. The
-web runtime invokes the selected signed-in Claude or Codex CLI directly. The
-[container image](#container) above is a different, later decision: one image
-for the whole service, not a sandbox per run.
-
-Historical decisions remain in `docs/adr/`; the current executable flow is
-summarized in [FLOW.md](./FLOW.md).
+The current executable flow and component ownership are summarized in
+[FLOW.md](./FLOW.md). Git history and
+[GitHub Releases](https://github.com/gateship-dev/gateship/releases) retain
+older implementation and release detail without keeping obsolete runtime
+archives in the published checkout.
 
 ## Development
 

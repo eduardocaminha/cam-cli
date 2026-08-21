@@ -1,8 +1,8 @@
 # Gateship repository instructions
 
-For architecture or cross-session continuation work, read `HANDOFF.md` before
-acting. It records the operator-approved direction and current stage, but it is
-not blanket authorization to implement the roadmap.
+For architecture work, read `HANDOFF.md` before acting. It records the current
+operator-approved direction and evidence, but it is not blanket authorization
+to implement the roadmap.
 
 ## Product boundary
 

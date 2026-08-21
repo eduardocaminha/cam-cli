@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-682",
   "title": "Curate the external-beta repository surface",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T18:36:35.510Z",
-  "updatedAt": "2026-08-21T18:38:29.144Z",
+  "updatedAt": "2026-08-21T18:44:17.902Z",
   "description": "Make the published checkout describe the current web-first Gateship instead of serving as an internal pre-beta archive. Replace CHANGELOG.md with a concise beta baseline for the current release and direct older detail to Git history and GitHub Releases. Rewrite HANDOFF.md as a short current checkpoint containing the product objective, present architecture, current version/evidence, governing decisions, approval boundary, and next ordered stages without historical run-by-run narration or a stale continuation prompt. Remove superseded current-tree archives: docs/adr/, memory/, lessons.archive.md, docs/cam-runtime-web-sugestoes.md, every top-level docs/project_*.md file, and the closed legacy issue snapshots .gateship/issues/GSHIP-0594.json and GSHIP-0596.json; their provenance remains recoverable in immutable Git history. Update README.md, CONTRIBUTING.md, AGENTS.md, CLAUDE.md, FLOW.md and any directly affected links or claims so the remaining public documentation is coherent and has no dead reference to removed material. Preserve LICENSE, security/community files, docs/assets, docs/agent-providers.md, docs/credentials-and-notifications.md, docs/positioning.md, current operational issue records, and all runtime behavior. Do not rewrite Git history, touch dependencies or product code, mechanically rename test fixtures, add a wording/regex gate, or introduce an archive subsystem. The current published tree must contain no branding reference or vendored artifact from the retired UI experiment; Git history is the archive.",
   "specSource": "operator",
   "spec": {
