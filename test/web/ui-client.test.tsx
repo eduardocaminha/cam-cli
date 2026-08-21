@@ -9,7 +9,13 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
+import {
+	App,
+	type AppProps,
+	ConversationColumn,
+	type OperatorRoute,
+	routeOf,
+} from '../../webui/src/App.tsx';
 import {
 	abandonIssue,
 	aggregateChatTurnCosts,
@@ -46,8 +52,8 @@ import {
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEvents,
-	fetchSelfUpdate,
 	fetchRuns,
+	fetchSelfUpdate,
 	ISSUES_PATH,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
@@ -82,7 +88,7 @@ import {
 	UPDATE_PATH,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
-import { DEFAULT_LOCALE } from '../../webui/src/shell-locale.ts';
+import { DEFAULT_LOCALE, LOCALE_CATALOG, type Locale } from '../../webui/src/locale.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -256,6 +262,29 @@ const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/runs'
 const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/work', overrides);
 const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
 
+function conversationAt(
+	locale: Locale,
+	overrides: Partial<{
+		chatMessages: AppProps['chatMessages'];
+		pending: boolean;
+		run: RunView | null;
+		status: string | null;
+	}> = {},
+): string {
+	return renderToStaticMarkup(
+		<ConversationColumn
+			catalog={LOCALE_CATALOG[locale].conversation}
+			chatMessages={overrides.chatMessages ?? []}
+			locale={locale}
+			onResume={() => {}}
+			onSendMessage={() => {}}
+			pending={overrides.pending ?? false}
+			run={overrides.run ?? null}
+			status={overrides.status ?? null}
+		/>,
+	);
+}
+
 /** Whether a command is offered at all, by the label only that button carries. */
 function hasButton(html: string, label: string): boolean {
 	return html.includes(`>${label}<`);
@@ -377,6 +406,91 @@ describe('project onboarding', () => {
 });
 
 describe('conversation surface', () => {
+	test('the typed conversation catalog renders the complete owned surface in both locales', () => {
+		const cases = [
+			{
+				locale: 'en-US',
+				transcript: 'Conversation transcript',
+				empty: 'Describe the goal, ask for an investigation or give a command in natural language.',
+				title: 'Conversation with the orchestrator',
+				description: 'It can investigate the project; actions go through the deterministic runtime.',
+				operator: 'you',
+				orchestrator: 'orchestrator',
+				cost: 'Expected cumulative cost for 1 orchestrator turn: $0.08.',
+				waiting: 'The run is waiting for your decision.',
+				responseLabel: 'Your response',
+				responsePlaceholder: 'Decision or guidance for the agent',
+				responseButton: 'Respond and resume',
+				composerLabel: 'Message for the orchestrator',
+				composerPlaceholder: 'What do you want to do now?',
+				composerButton: 'Send',
+			},
+			{
+				locale: 'pt-BR',
+				transcript: 'Transcrição da conversa',
+				empty: 'Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.',
+				title: 'Conversa com o orquestrador',
+				description: 'Ele pode investigar o projeto; as ações passam pelo runtime determinístico.',
+				operator: 'você',
+				orchestrator: 'orquestrador',
+				cost: 'Custo cumulativo esperado para 1 turno do orquestrador: US$',
+				waiting: 'A execução está aguardando sua decisão.',
+				responseLabel: 'Sua resposta',
+				responsePlaceholder: 'Decisão ou orientação para o agente',
+				responseButton: 'Responder e retomar',
+				composerLabel: 'Mensagem para o orquestrador',
+				composerPlaceholder: 'O que você quer fazer agora?',
+				composerButton: 'Enviar',
+			},
+		] as const satisfies readonly ({ locale: Locale } & Record<string, string>)[];
+
+		for (const expected of cases) {
+			const empty = conversationAt(expected.locale);
+			expect(empty).toContain(`aria-label="${expected.transcript}"`);
+			expect(empty).toContain(expected.empty);
+			expect(empty).toContain(expected.title);
+			expect(empty).toContain(expected.description);
+
+			const populated = conversationAt(expected.locale, {
+				chatMessages: [
+					{
+						seq: 1,
+						providerId: 'codex',
+						role: 'operator',
+						text: 'Preserve esta mensagem.',
+						createdAt: '2026-08-21T10:00:00.000Z',
+					},
+					{
+						seq: 2,
+						providerId: 'claude',
+						role: 'orchestrator',
+						text: 'Keep this message unchanged.',
+						createdAt: '2026-08-21T10:01:00.000Z',
+						usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.08 },
+					},
+				],
+				run: runIn('waiting-user', { summary: 'Durable run summary.' }),
+			});
+			expect(populated).toContain(`>${expected.operator}</span>`);
+			expect(populated).toContain(`>${expected.orchestrator}</span>`);
+			expect(populated).toContain('Preserve esta mensagem.');
+			expect(populated).toContain('Keep this message unchanged.');
+			expect(populated).toContain('codex');
+			expect(populated).toContain('claude');
+			expect(populated).toContain(expected.cost);
+			if (expected.locale === 'pt-BR') expect(populated).toContain('0,08');
+			expect(populated).toContain(expected.waiting);
+			expect(populated).toContain(`>${expected.responseLabel}</label>`);
+			expect(elementWith(populated, 'name="operatorGuidance"'))
+				.toContain(`placeholder="${expected.responsePlaceholder}"`);
+			expect(hasButton(populated, expected.responseButton)).toBe(true);
+			expect(populated).toContain(`>${expected.composerLabel}</label>`);
+			expect(elementWith(populated, 'name="message"'))
+				.toContain(`placeholder="${expected.composerPlaceholder}"`);
+			expect(hasButton(populated, expected.composerButton)).toBe(true);
+		}
+	});
+
 	test('the lateral is the compact inspector and nothing else', () => {
 		const html = home({
 			events: [{
@@ -1935,7 +2049,7 @@ describe('operator shell', () => {
 	});
 
 	test('an explicit pt-BR locale translates the shell but not route content', () => {
-		const html = home({ locale: 'pt-BR' });
+		const html = runsPage({ locale: 'pt-BR' });
 		const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
 
 		expect(nav).toContain('aria-label="Superfícies do operador"');
@@ -1943,8 +2057,8 @@ describe('operator shell', () => {
 			expect(nav).toContain(`>${label}</a>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');
-		// Panel content remains the same complete English surface in this slice.
-		expect(html).toContain('Conversation with the orchestrator');
+		// Route content outside conversation remains English in this slice.
+		expect(html).toContain('Latest run');
 	});
 
 	test('keyboard navigation starts with one skip link targeting the route main', () => {

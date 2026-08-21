@@ -2,9 +2,10 @@
 
 > Last operator checkpoint: 2026-08-21
 > Repository: `/Users/eduardo/Documents/Projects/gateship`
-> Shipped baseline: `v0.297.0` at `2b727089` (GSHIP-662 self-update, PR #529)
-> Active implementation branch: GSHIP-668 typed shell locale foundation
-> Current stage: add the approved internal typed shell locale seam; no selector or persisted preference
+> Inspect `origin/main` for the shipped Git baseline and `/api/snapshot` for the
+> installed service version and current runtime facts.
+> Stable phase: the shell and primary conversation are internally localized;
+> remaining route catalogs stay hidden until a complete selector slice is approved.
 
 ## How to use this file
 
@@ -94,12 +95,15 @@ checkpoint decision that deferred host-side self-replacement; it does not
 change the one-service product boundary or authorize lifecycle work in another
 slice.
 
-The current approved next stage is GSHIP-668: introduce one dependency-free,
-typed catalog for shell navigation and skip-link labels, keep `en-US` as the
-production default, and make the initial document language truthful. There is
-still no visible locale selector, persistence, browser-language inference or
-translation of route bodies. This roadmap entry records current direction; the
-operator-approved issue specification remains the execution authority.
+GSHIP-668 shipped the dependency-free typed locale foundation for shell
+navigation and skip-link labels, with `en-US` as the production default and a
+truthful initial document language. The stable phase now extends that same
+type-complete catalog through the primary conversation column. The
+run inspector and the `/runs`, `/work` and `/settings` route bodies remain
+uncataloged, so `pt-BR` stays internal and test-only: there is still no visible
+selector, persistence or browser-language inference. This records stable
+direction, not execution authority; only an operator-approved issue
+specification authorizes another slice.
 
 PR #522 shipped the external-beta language decision as squash commit
 `622d6202`:
@@ -120,7 +124,7 @@ PR #522 shipped the external-beta language decision as squash commit
   unaccented fallbacks that an accent-only grep missed. Do not replace this
   review with a permanent wording-regex gate.
 
-The final local gate passes 769 tests and 3,111 assertions, both TypeScript
+The GSHIP-668 final local gate passed 769 tests and 3,111 assertions, both TypeScript
 projects, Biome and Knip; Knip reports only its two pre-existing configuration
 hints. The production UI build passes, all four real service routes return 200,
 the service recognizes the mode-0600 project ntfy configuration, and
@@ -128,9 +132,9 @@ the service recognizes the mode-0600 project ntfy configuration, and
 so no visual-browser result is claimed; the live page remains available at
 `http://127.0.0.1:7777` for manual inspection. CI passed in 1m02s, the feature
 branch was removed, and the stable service was rebuilt from the merged commit;
-all four routes return 200 with no stale-service warning. There is no active
-code slice now. Accumulate real terminal runs from at least two workflow
-revisions before proposing any soft ratchet behavior.
+all four routes returned 200 with no stale-service warning. Accumulate real
+terminal runs from at least two workflow revisions before proposing any soft
+ratchet behavior.
 
 ## Previously shipped bounded slices
 
