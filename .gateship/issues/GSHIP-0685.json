@@ -1,0 +1,31 @@
+{
+  "id": "GSHIP-685",
+  "title": "Expose pull request evidence, links and CI status for runs",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-21T21:08:33.220Z",
+  "updatedAt": "2026-08-21T21:08:33.220Z",
+  "description": "Make a run's GitHub delivery trace visible and auditable without adding another lifecycle owner. At pull-request creation, write a compact Gateship evidence section containing the run id, issue id, Gateship workflow revision, the exact human-approved verification commands and their passed outcome, the independent review outcome, and whether full-project verification passed or was not applicable. Never publish model reasoning, complete agent transcripts, raw command output, cost, credentials or secrets. Capture GitHub's canonical pull-request URL for both newly opened and reused pull requests and preserve it in the existing durable event log. Derive a typed pull-request delivery projection from that log and expose it on the existing run response, without a database column, table or endpoint. Show a clickable PR #n link and a compact CI indication on the current-run card and /runs. Extend the shipper's existing gh pr view read to include url and statusCheckRollup, aggregate CI as not-reported, pending, passed or failed, and persist an event only when that aggregate changes; a failed transition names and links the failed checks when GitHub reports them. Empty or absent checks are never reported as passed. Preserve the existing required-check failure handling, pinned auto-merge, head-divergence protection, retry classification and exact-source cleanup. Add focused shipper, runtime projection, API and UI coverage. Use the existing ship polling loop only; do not add a webhook, timer, poller, database migration, endpoint, dependency, notification channel or composite delivery score.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Make a run's GitHub delivery trace visible and auditable without adding another lifecycle owner. At pull-request creation, write a compact Gateship evidence section containing the run id, issue id, Gateship workflow revision, the exact human-approved verification commands and their passed outcome, the independent review outcome, and whether full-project verification passed or was not applicable. Never publish model reasoning, complete agent transcripts, raw command output, cost, credentials or secrets. Capture GitHub's canonical pull-request URL for both newly opened and reused pull requests and preserve it in the existing durable event log. Derive a typed pull-request delivery projection from that log and expose it on the existing run response, without a database column, table or endpoint. Show a clickable PR #n link and a compact CI indication on the current-run card and /runs. Extend the shipper's existing gh pr view read to include url and statusCheckRollup, aggregate CI as not-reported, pending, passed or failed, and persist an event only when that aggregate changes; a failed transition names and links the failed checks when GitHub reports them. Empty or absent checks are never reported as passed. Preserve the existing required-check failure handling, pinned auto-merge, head-divergence protection, retry classification and exact-source cleanup. Add focused shipper, runtime projection, API and UI coverage. Use the existing ship polling loop only; do not add a webhook, timer, poller, database migration, endpoint, dependency, notification channel or composite delivery score.",
+    "verify": [
+      "bun test test/runtime/github-shipper.test.ts test/runtime/run-runtime.test.ts test/runtime/run-store.test.ts test/web/run-api.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run lint"
+    ],
+    "evidence": [
+      {
+        "command": "grep -m1 -oF \"input.emit('ship.pr-opened', { prNumber: opened, branch });\" src/runtime/github-shipper.ts",
+        "output": "input.emit('ship.pr-opened', { prNumber: opened, branch });"
+      },
+      {
+        "command": "grep -m1 -oF \"'--json', 'state,mergeStateStatus,headRefOid',\" src/runtime/github-shipper.ts",
+        "output": "'--json', 'state,mergeStateStatus,headRefOid',"
+      },
+      {
+        "command": "grep -m1 -oF 'payload: { prNumber: result.prNumber },' src/runtime/run-runtime.ts",
+        "output": "payload: { prNumber: result.prNumber },"
+      }
+    ]
+  }
+}
