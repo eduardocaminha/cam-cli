@@ -740,6 +740,69 @@ describe('runs surface', () => {
 		expect(buttonIsEnabled(html, 'Resume')).toBe(true);
 	});
 
+	test('an explicit pt-BR locale translates the shared run inspector and preserves runtime text', () => {
+		const retryAt = '2026-08-20T12:10:00.000Z';
+		const formattedRetryAt = new Date(retryAt).toLocaleString('pt-BR', {
+			dateStyle: 'short',
+			timeStyle: 'short',
+		});
+		const formattedCost = new Intl.NumberFormat('pt-BR', {
+			style: 'currency',
+			currency: 'USD',
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 4,
+		}).format(0.1534);
+		const waitingRun = runIn('waiting-provider', {
+			summary: 'Resumo escrito pelo runtime para CAM-900.',
+			cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+			roundOrigins: { executor: 1, decision: 2, indeterminate: 1 },
+			providerWait: {
+				provider: 'claude',
+				kind: 'usage-limit',
+				message: 'Claude five hour usage limit reached.',
+				phase: 'working',
+				retryAt,
+			},
+		});
+		const html = runsPage({ locale: 'pt-BR', runs: [waitingRun] });
+
+		expect(html).toContain('Execução mais recente');
+		expect(html).toContain('CAM-900');
+		expect(html).toContain('>aguardando provedor<');
+		expect(html).toContain('Fase em andamento');
+		expect(shellHeader(html)).toContain('Precisa de você');
+		expect(html).toContain('Claude Code em espera');
+		expect(html).toContain('Limite de uso da assinatura atingido');
+		expect(html).toContain('Claude five hour usage limit reached.');
+		expect(html).toContain(`dateTime="${retryAt}"`);
+		expect(html).toContain(formattedRetryAt);
+		expect(html).toContain(`Custo esperado: ${formattedCost}`);
+		expect(html).toContain('Rodadas de correção: 1 do executor, 2 de decisões do operador');
+		expect(html).toContain('1 indeterminada');
+		expect(buttonIsEnabled(html, 'Retomar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
+		expect(panel(html, 'Resumo e diagnósticos')).toContain(
+			'O relatório completo do runtime e o identificador técnico da execução.',
+		);
+		expect(panel(html, 'Resumo e diagnósticos')).toContain('Resumo escrito pelo runtime para CAM-900.');
+		expect(panel(html, 'Resumo e diagnósticos')).toContain('run-1');
+
+		const interrupted = runsPage({ locale: 'pt-BR', runs: [runIn('interrupted')] });
+		expect(buttonIsEnabled(interrupted, 'Retomar')).toBe(true);
+		expect(buttonIsEnabled(interrupted, 'Abandonar')).toBe(true);
+		const ready = runsPage({ locale: 'pt-BR', runs: [runIn('ready-to-ship')] });
+		expect(buttonIsEnabled(ready, 'Enviar')).toBe(true);
+		expect(buttonIsEnabled(ready, 'Cancelar')).toBe(true);
+
+		const current = home({ locale: 'pt-BR', runs: [waitingRun] });
+		expect(current).toContain('aria-label="Inspetor da execução"');
+		expect(current).toContain('Execução atual');
+		expect(current).toContain('Ver detalhes da execução');
+		expect(shellHeader(home({ locale: 'pt-BR', runs: [runIn('working')] })))
+			.toContain('Trabalhando');
+		expect(shellHeader(home({ locale: 'pt-BR' }))).toContain('Ocioso');
+	});
+
 	test('the full report and the run id are one disclosure, closed by default', () => {
 		const html = runsPage({ runs: [runIn('done', { summary: 'PR #123 mergeado.' })] });
 
@@ -791,13 +854,14 @@ describe('runs surface', () => {
 		});
 		expect(attributed).toContain('Correction rounds');
 		expect(attributed).toContain('2 from the executor');
-		expect(attributed).toContain('1 from operator decisions');
+		expect(attributed).toContain('1 from an operator decision');
 		expect(attributed).not.toContain('indeterminate');
 
 		const withIndeterminate = runsPage({
 			runs: [runIn('done', { roundOrigins: { executor: 0, decision: 0, indeterminate: 1 } })],
 		});
-		expect(withIndeterminate).toContain('1 indeterminate');
+		expect(withIndeterminate).toContain('Correction round:');
+		expect(withIndeterminate).toContain('1 with indeterminate origin');
 
 		// No correction round happened at all: nothing to report, not a
 		// fabricated zero line.
@@ -2048,7 +2112,7 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('an explicit pt-BR locale translates the shell but not route content', () => {
+	test('an explicit pt-BR locale translates the shell and shared inspector but not deeper route content', () => {
 		const html = runsPage({ locale: 'pt-BR' });
 		const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
 
@@ -2057,8 +2121,18 @@ describe('operator shell', () => {
 			expect(nav).toContain(`>${label}</a>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');
-		// Route content outside conversation remains English in this slice.
-		expect(html).toContain('Latest run');
+		expect(html).toContain('Execução mais recente');
+		expect(html).toContain('Nenhuma execução registrada ainda.');
+
+		const withDeepPanel = runsPage({ locale: 'pt-BR', runs: [runIn('done', {
+			cost: {
+				totalCostUsd: 0.1,
+				breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.1 }],
+				roles: [],
+			},
+		})] });
+		// The cost breakdown is a deeper /runs panel and remains outside this slice.
+		expect(withDeepPanel).toContain('Cost by role and model');
 	});
 
 	test('keyboard navigation starts with one skip link targeting the route main', () => {

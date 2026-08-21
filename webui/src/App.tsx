@@ -69,6 +69,7 @@ import {
 	DEFAULT_LOCALE,
 	LOCALE_CATALOG,
 	type Locale,
+	type RunInspectorCatalog,
 	type ShellCatalog,
 } from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
@@ -277,18 +278,6 @@ const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], stri
 	reviewer: 'Reviewer',
 };
 
-/**
- * The round-origin line beside the cost: how many of this run's correction
- * rounds came from the executor's own automatic fix, how many from an
- * operator decision, and -- only when it happened -- how many the recorded
- * history could not tell apart (GSHIP-659). Never a fabricated attribution.
- */
-function formatRoundOrigins(origins: RunView['roundOrigins']): string {
-	const parts = [`${origins.executor} from the executor`, `${origins.decision} from operator decisions`];
-	if (origins.indeterminate > 0) parts.push(`${origins.indeterminate} indeterminate`);
-	return `Correction rounds: ${parts.join(', ')}`;
-}
-
 /** No correction round yet: nothing to report, not a fabricated zero line. */
 function hasNoRounds(origins: RunView['roundOrigins']): boolean {
 	return origins.executor + origins.decision + origins.indeterminate === 0;
@@ -427,44 +416,49 @@ function RunActivity({
 	);
 }
 
-function RunProgress({ run }: { run: RunView }): React.ReactElement {
+function RunProgress({
+	catalog,
+	run,
+}: { catalog: RunInspectorCatalog; run: RunView }): React.ReactElement {
+	const phase = phaseOf(run.state);
 	return (
-		<Progress label={`Phase ${phaseOf(run.state)}`} value={Math.round(progressOf(run.state) * 100)} />
+		<Progress
+			label={catalog.phaseLabel(catalog.stateLabels[phase])}
+			value={Math.round(progressOf(run.state) * 100)}
+		/>
 	);
 }
 
-const PROVIDER_WAIT_LABELS: Readonly<Record<RunProviderWaitView['kind'], string>> = {
-	'auth-required': 'Authentication required',
-	'usage-limit': 'Subscription usage limit reached',
-	'rate-limited': 'Calls temporarily rate-limited',
-	overloaded: 'Provider temporarily overloaded',
-	'model-refused': 'Model or effort rejected',
-	'transport-unavailable': 'Provider connection unavailable',
-	'protocol-invalid': 'Invalid provider response',
-	cancelled: 'Call cancelled',
-	unknown: 'Provider unavailable',
-};
-
-function ProviderWaitCallout({ wait }: { wait: RunProviderWaitView | null }): React.ReactElement | null {
+function ProviderWaitCallout({
+	catalog,
+	locale,
+	wait,
+}: {
+	catalog: RunInspectorCatalog;
+	locale: Locale;
+	wait: RunProviderWaitView | null;
+}): React.ReactElement | null {
 	if (wait === null) return null;
 	const retryDate = wait.retryAt === undefined ? null : new Date(wait.retryAt);
 	const retryText = retryDate === null || Number.isNaN(retryDate.getTime())
 		? wait.retryAt
-		: retryDate.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+		: retryDate.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
+	const providerName = wait.provider === 'claude' ? 'Claude Code' : 'Codex';
 	return (
 		<section
-			aria-label="Provider on hold"
+			aria-label={catalog.providerHold.accessibleLabel}
 			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
 		>
 			<span className="font-medium text-sm">
-				{wait.provider === 'claude' ? 'Claude Code' : 'Codex'} on hold
+				{catalog.providerHold.title(providerName)}
 			</span>
-			<p className="text-sm">{PROVIDER_WAIT_LABELS[wait.kind]}.</p>
+			<p className="text-sm">{catalog.providerHold.waitReasons[wait.kind]}.</p>
 			<p className="break-words text-xs">{wait.message}</p>
 			{retryText === undefined ? null : (
 				<p className="text-xs">
-					Try again after{' '}
-					<time dateTime={wait.retryAt}>{retryText}</time>.
+					{catalog.providerHold.retryBefore}
+					<time dateTime={wait.retryAt}>{retryText}</time>
+					{catalog.providerHold.retryAfter}
 				</p>
 			)}
 		</section>
@@ -477,6 +471,7 @@ function ProviderWaitCallout({ wait }: { wait: RunProviderWaitView | null }): Re
  * that are offered, so a command in flight cannot be issued twice.
  */
 function RunCommands({
+	catalog,
 	run,
 	pending,
 	onResume,
@@ -484,6 +479,7 @@ function RunCommands({
 	onCancel,
 	onShip,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
+	catalog: RunInspectorCatalog;
 	run: RunView | null;
 }): React.ReactElement | null {
 	// Only `start` depends on a backlog selection, and no run surface offers it.
@@ -494,15 +490,15 @@ function RunCommands({
 		// forwarded: `onResume` takes an optional string, and a SyntheticEvent in
 		// its place would be posted as the operator's message and refused as 400.
 		{
-			label: 'Resume',
+			label: catalog.commandLabels.resume,
 			shown: actions.resume && run?.state !== 'waiting-user',
 			onClick: () => onResume(),
 		},
 		// The other way out of an interrupted run: end it here, without reopening
 		// the provider session, so the next issue is no longer blocked by it.
-		{ label: 'Abandon', shown: actions.abandon, onClick: onAbandon },
-		{ label: 'Cancel', shown: actions.cancel, onClick: onCancel },
-		{ label: 'Ship', shown: actions.ship, onClick: onShip },
+		{ label: catalog.commandLabels.abandon, shown: actions.abandon, onClick: onAbandon },
+		{ label: catalog.commandLabels.cancel, shown: actions.cancel, onClick: onCancel },
+		{ label: catalog.commandLabels.ship, shown: actions.ship, onClick: onShip },
 	].filter((command) => command.shown);
 	if (offered.length === 0) return null;
 	return (
@@ -527,6 +523,8 @@ function RunCommands({
  * /runs, where the depth it refuses is disclosed below it.
  */
 function RunCard({
+	catalog,
+	locale,
 	run,
 	title,
 	footer,
@@ -536,6 +534,8 @@ function RunCard({
 	onCancel,
 	onShip,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
+	catalog: RunInspectorCatalog;
+	locale: Locale;
 	run: RunView | null;
 	title: string;
 	footer?: React.ReactNode;
@@ -545,23 +545,34 @@ function RunCard({
 			<CardHeader>
 				<CardTitle>{title}</CardTitle>
 				<CardDescription className="break-all">
-					{run === null ? 'No runs recorded yet.' : run.issueId}
+					{run === null ? catalog.noRunLabel : run.issueId}
 				</CardDescription>
-				{run === null ? null : <Badge variant={toneOf(run.state)}>{run.state}</Badge>}
+				{run === null ? null : (
+					<Badge variant={toneOf(run.state)}>{catalog.stateLabels[run.state]}</Badge>
+				)}
 			</CardHeader>
 			{run === null && footer === undefined ? null : (
 				<CardPanel className="flex flex-col gap-4">
-					{run === null ? null : <RunProgress run={run} />}
-					{run === null ? null : <ProviderWaitCallout wait={run.providerWait} />}
+					{run === null ? null : <RunProgress catalog={catalog} run={run} />}
+					{run === null ? null : (
+						<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
+					)}
 					{run === null || run.cost.totalCostUsd === null ? null : (
 						<p className="text-muted-foreground text-sm">
-							Expected cost: {formatCostUsd(run.cost.totalCostUsd)}
+							{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
 						</p>
 					)}
 					{run === null || hasNoRounds(run.roundOrigins) ? null : (
-						<p className="text-muted-foreground text-sm">{formatRoundOrigins(run.roundOrigins)}</p>
+						<p className="text-muted-foreground text-sm">
+							{catalog.correctionRounds(
+								run.roundOrigins.executor,
+								run.roundOrigins.decision,
+								run.roundOrigins.indeterminate,
+							)}
+						</p>
 					)}
 					<RunCommands
+						catalog={catalog}
 						onAbandon={onAbandon}
 						onCancel={onCancel}
 						onResume={onResume}
@@ -581,12 +592,15 @@ function RunCard({
  * runtime wrote and the identifier it wrote it under, behind a disclosure that
  * opens only when the operator is reading a run rather than commanding one.
  */
-function RunReport({ run }: { run: RunView }): React.ReactElement | null {
+function RunReport({
+	catalog,
+	run,
+}: { catalog: RunInspectorCatalog; run: RunView }): React.ReactElement | null {
 	if (run.summary === null && run.error === null) return null;
 	return (
 		<ContextPanel
-			description="The complete runtime report and the run's technical identifier."
-			title="Summary and diagnostics"
+			description={catalog.report.description}
+			title={catalog.report.title}
 		>
 			<div className="flex flex-col gap-3">
 				{run.error === null ? null : (
@@ -895,7 +909,9 @@ type ProviderPanelProps = Pick<
 
 function providerDescription(provider: ProviderStatusView): string {
 	if (provider.availability !== undefined) {
-		const reason = PROVIDER_WAIT_LABELS[provider.availability.kind];
+		const reason = LOCALE_CATALOG[DEFAULT_LOCALE].runInspector.providerHold.waitReasons[
+			provider.availability.kind
+		];
 		return provider.subscription
 			? `Subscription connected, but currently unavailable: ${reason}.`
 			: `Currently unavailable: ${reason}.`;
@@ -2085,12 +2101,14 @@ function ShellSidebar({
 	chainRuns,
 	gitIdentity,
 	locale,
+	runInspectorCatalog,
 	route,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
 }: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'staleService' | 'workspaceNotices'> & {
+	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
@@ -2114,7 +2132,9 @@ function ShellSidebar({
 						<span className="font-mono text-muted-foreground text-xs">v{version}</span>
 					)}
 				</div>
-				<Badge variant={attentionToneOf(attention)}>{attention}</Badge>
+				<Badge variant={attentionToneOf(attention)}>
+					{runInspectorCatalog.attentionLabels[attention]}
+				</Badge>
 			</div>
 			<ChainPauseCallout pause={stoppedQueue} />
 			<StaleServiceCallout staleService={staleService} />
@@ -2166,11 +2186,11 @@ function SurfaceColumn({
 
 function HomeSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
-	const conversationCatalog = LOCALE_CATALOG[props.locale].conversation;
+	const localeCatalog = LOCALE_CATALOG[props.locale];
 	return (
 		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
 			<ConversationColumn
-				catalog={conversationCatalog}
+				catalog={localeCatalog.conversation}
 				chatMessages={props.chatMessages}
 				locale={props.locale}
 				onResume={props.onResume}
@@ -2180,22 +2200,24 @@ function HomeSurface(props: AppProps): React.ReactElement {
 				status={props.status}
 			/>
 			<aside
-				aria-label="Run inspector"
+				aria-label={localeCatalog.runInspector.homeAccessibleLabel}
 				className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
 			>
 				<RunCard
+					catalog={localeCatalog.runInspector}
 					footer={
 						<a className={TEXT_LINK_CLASS} href="/runs">
-							View run details
+							{localeCatalog.runInspector.viewDetailsLabel}
 						</a>
 					}
+					locale={props.locale}
 					onAbandon={props.onAbandon}
 					onCancel={props.onCancel}
 					onResume={props.onResume}
 					onShip={props.onShip}
 					pending={props.pending}
 					run={run}
-					title="Current run"
+					title={localeCatalog.runInspector.currentRunTitle}
 				/>
 			</aside>
 		</div>
@@ -2204,18 +2226,21 @@ function HomeSurface(props: AppProps): React.ReactElement {
 
 function RunsSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
+	const catalog = LOCALE_CATALOG[props.locale].runInspector;
 	return (
 		<SurfaceColumn label="Runs" status={props.status}>
 			<RunCard
+				catalog={catalog}
+				locale={props.locale}
 				onAbandon={props.onAbandon}
 				onCancel={props.onCancel}
 				onResume={props.onResume}
 				onShip={props.onShip}
 				pending={props.pending}
 				run={run}
-				title="Latest run"
+				title={catalog.latestRunTitle}
 			/>
-			{run === null ? null : <RunReport run={run} />}
+			{run === null ? null : <RunReport catalog={catalog} run={run} />}
 			{run === null ? null : <RunCostPanel run={run} />}
 			<WorkflowInsightsPanel runs={props.runs} />
 			<WorkflowBenchmarkPanel runs={props.runs} />
@@ -3090,19 +3115,20 @@ export function App(props: AppProps): React.ReactElement {
 	// history below it is the same array, read once.
 	const run = props.runs[0] ?? null;
 	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
-	const catalog = LOCALE_CATALOG[props.locale].shell;
+	const localeCatalog = LOCALE_CATALOG[props.locale];
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<a
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}
 			>
-				{catalog.skipLinkLabel}
+				{localeCatalog.shell.skipLinkLabel}
 			</a>
 			<ShellSidebar
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}
 				locale={props.locale}
+				runInspectorCatalog={localeCatalog.runInspector}
 				route={props.route}
 				run={run}
 				staleService={props.staleService}
