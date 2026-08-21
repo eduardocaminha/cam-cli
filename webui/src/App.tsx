@@ -21,8 +21,8 @@ import {
 	type ChainPauseReason,
 	type ChainRunsView,
 	type ChatMessageView,
-	type DiagnosticFindingView,
 	type DiagnosticCadenceView,
+	type DiagnosticFindingView,
 	type DiagnosticsView,
 	emptyModelSettings,
 	type GitIdentityView,
@@ -64,6 +64,13 @@ import { Progress } from './components/ui/progress.tsx';
 import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import { useLiveEdge } from './live-edge.ts';
+import {
+	type ConversationCatalog,
+	DEFAULT_LOCALE,
+	LOCALE_CATALOG,
+	type Locale,
+	type ShellCatalog,
+} from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
 import {
 	actionsFor,
@@ -71,21 +78,20 @@ import {
 	attentionOf,
 	attentionToneOf,
 	type PlannableIssue,
-	phaseOf,
 	type ProviderUsageView,
 	type ProviderUsageWindowView,
+	phaseOf,
 	progressOf,
 	type RunCostRole,
 	type RunCostRoleUsage,
 	type RunEventView,
 	type RunProviderWaitView,
 	type RunView,
-	type WorkflowCohort,
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 	toneOf,
+	type WorkflowCohort,
 } from './run-view.ts';
-import { type Locale, SHELL_CATALOG, type ShellCatalog } from './shell-locale.ts';
 
 /** The four paths the server answers with this document, and nothing else. */
 export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
@@ -117,7 +123,7 @@ export function routeOf(pathname: string): OperatorRoute {
 export interface AppProps {
 	/** Which of the four surfaces this document is showing. */
 	route: OperatorRoute;
-	/** The explicit locale shared by the visible shell and document language. */
+	/** The explicit locale shared by the cataloged shell and conversation surfaces. */
 	locale: Locale;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
@@ -257,15 +263,13 @@ function isOperational(event: RunEventView): boolean {
  * as the expected cost an equivalent API call would have billed -- never as
  * an amount charged (GSHIP-623).
  */
-const COST_FORMAT = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 2,
-	maximumFractionDigits: 4,
-});
-
-function formatCostUsd(value: number): string {
-	return COST_FORMAT.format(value);
+function formatCostUsd(value: number, locale: Locale = DEFAULT_LOCALE): string {
+	return new Intl.NumberFormat(locale, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 4,
+	}).format(value);
 }
 
 const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], string> = {
@@ -1503,11 +1507,14 @@ function NotificationsPanel({
  * operator stands at the live edge (./live-edge.ts). The empty state lives
  * inside the same region so the region -- and its label -- never moves.
  */
-function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactElement {
+function ChatLog({
+	chatMessages,
+	catalog,
+}: Pick<AppProps, 'chatMessages'> & { catalog: ConversationCatalog }): React.ReactElement {
 	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
 	return (
 		<section
-			aria-label="Conversation transcript"
+			aria-label={catalog.transcriptLabel}
 			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
 			onScroll={liveEdge.onScroll}
 			ref={liveEdge.ref}
@@ -1516,7 +1523,7 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 		>
 			{chatMessages.length === 0 ? (
 				<p className="flex min-h-24 items-center justify-center text-center text-muted-foreground text-sm">
-					Describe the goal, ask for an investigation or give a command in natural language.
+					{catalog.emptyStateGuidance}
 				</p>
 			) : (
 				<ol className="flex flex-col gap-3">
@@ -1529,7 +1536,13 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 							key={message.seq}
 						>
 							<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
-								<span>{message.role === 'operator' ? 'you' : message.role}</span>
+								<span>
+									{message.role === 'operator'
+										? catalog.roleLabels.operator
+										: message.role === 'orchestrator'
+											? catalog.roleLabels.orchestrator
+											: message.role}
+								</span>
 								<span className="shrink-0">{message.providerId}</span>
 							</div>
 							<p className="whitespace-pre-wrap break-words">{message.text}</p>
@@ -1549,13 +1562,18 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
  * entirely when no turn ever reported one, the same absence-over-zero rule
  * the run cost summary already follows.
  */
-function ChatCostSummary({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactElement | null {
+function ChatCostSummary({
+	chatMessages,
+	catalog,
+	locale,
+}: Pick<AppProps, 'chatMessages' | 'locale'> & {
+	catalog: ConversationCatalog;
+}): React.ReactElement | null {
 	const aggregate = aggregateChatTurnCosts(chatMessages);
 	if (aggregate.totalCostUsd === null) return null;
 	return (
 		<p className="text-muted-foreground text-sm">
-			Expected cumulative cost for {countLabel(aggregate.turnCount, 'orchestrator turn')}:{' '}
-			{formatCostUsd(aggregate.totalCostUsd)}. API-equivalent usage, never the subscription charge.
+			{catalog.costSummary(aggregate.turnCount, formatCostUsd(aggregate.totalCostUsd, locale))}
 		</p>
 	);
 }
@@ -1569,11 +1587,15 @@ function OperatorAnswer({
 	run,
 	pending,
 	onResume,
-}: Pick<AppProps, 'pending' | 'onResume'> & { run: RunView | null }): React.ReactElement | null {
+	catalog,
+}: Pick<AppProps, 'pending' | 'onResume'> & {
+	run: RunView | null;
+	catalog: ConversationCatalog;
+}): React.ReactElement | null {
 	if (run === null || run.state !== 'waiting-user') return null;
 	return (
 		<section className="flex flex-col gap-2 rounded-md border border-warning/32 bg-warning/8 p-3">
-			<p className="font-medium text-sm">The run is waiting for your decision.</p>
+			<p className="font-medium text-sm">{catalog.waitingDecisionPrompt}</p>
 			{run.summary === null ? null : (
 				<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
 					{run.summary}
@@ -1588,19 +1610,19 @@ function OperatorAnswer({
 				}}
 			>
 				<label className="font-medium text-sm" htmlFor="operator-guidance">
-					Your response
+					{catalog.response.label}
 				</label>
 				<textarea
 					className={FIELD_CLASS}
 					disabled={pending}
 					id="operator-guidance"
 					name="operatorGuidance"
-					placeholder="Decision or guidance for the agent"
+					placeholder={catalog.response.placeholder}
 					required
 					rows={3}
 				/>
 				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-					Respond and resume
+					{catalog.response.button}
 				</button>
 			</form>
 		</section>
@@ -1622,15 +1644,19 @@ function StatusOutput({ status }: Pick<AppProps, 'status'>): React.ReactElement 
  * right now, the last command outcome, and the composer -- in the order the
  * operator reads them, and filling the column on a wide viewport.
  */
-function ConversationColumn({
+export function ConversationColumn({
 	run,
 	chatMessages,
 	status,
 	pending,
 	onResume,
 	onSendMessage,
+	locale,
+	catalog,
 }: Pick<AppProps, 'chatMessages' | 'status' | 'pending' | 'onResume' | 'onSendMessage'> & {
 	run: RunView | null;
+	locale: Locale;
+	catalog: ConversationCatalog;
 }): React.ReactElement {
 	return (
 		<main
@@ -1640,15 +1666,13 @@ function ConversationColumn({
 		>
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
-					<CardTitle>Conversation with the orchestrator</CardTitle>
-					<CardDescription>
-						It can investigate the project; actions go through the deterministic runtime.
-					</CardDescription>
+					<CardTitle>{catalog.title}</CardTitle>
+					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
 				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
-					<ChatLog chatMessages={chatMessages} />
-					<ChatCostSummary chatMessages={chatMessages} />
-					<OperatorAnswer onResume={onResume} pending={pending} run={run} />
+					<ChatLog catalog={catalog} chatMessages={chatMessages} />
+					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
+					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
 					<StatusOutput status={status} />
 					<form
 						className="flex gap-2"
@@ -1663,18 +1687,18 @@ function ConversationColumn({
 						}}
 					>
 						<label className="sr-only" htmlFor="orchestrator-message">
-							Message for the orchestrator
+							{catalog.composer.label}
 						</label>
 						<input
 							className={cn(FIELD_CLASS, 'min-w-0')}
 							disabled={pending}
 							id="orchestrator-message"
 							name="message"
-							placeholder="What do you want to do now?"
+							placeholder={catalog.composer.placeholder}
 							required
 						/>
 						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-							Send
+							{catalog.composer.button}
 						</button>
 					</form>
 				</CardPanel>
@@ -2078,7 +2102,7 @@ function ShellSidebar({
 	// something else stopped it, never for the switch simply being off.
 	const stoppedQueue = stoppedQueuePause(chainRuns);
 	const attention = attentionOf(run, workspaceNotices, stoppedQueue !== null);
-	const catalog = SHELL_CATALOG[locale];
+	const catalog = LOCALE_CATALOG[locale].shell;
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
 			<div className="flex flex-col items-start gap-3">
@@ -2142,10 +2166,13 @@ function SurfaceColumn({
 
 function HomeSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
+	const conversationCatalog = LOCALE_CATALOG[props.locale].conversation;
 	return (
 		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
 			<ConversationColumn
+				catalog={conversationCatalog}
 				chatMessages={props.chatMessages}
+				locale={props.locale}
 				onResume={props.onResume}
 				onSendMessage={props.onSendMessage}
 				pending={props.pending}
@@ -3063,7 +3090,7 @@ export function App(props: AppProps): React.ReactElement {
 	// history below it is the same array, read once.
 	const run = props.runs[0] ?? null;
 	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
-	const catalog = SHELL_CATALOG[props.locale];
+	const catalog = LOCALE_CATALOG[props.locale].shell;
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<a
