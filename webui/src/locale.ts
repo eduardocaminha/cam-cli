@@ -1,15 +1,41 @@
-// Localization grows by complete, typed product surfaces. en-US remains the
-// only production-selected locale until every visible route is cataloged.
+// Localization grows by complete, typed product surfaces.
 
 import type { OperatorAttention, RunProviderWaitView, RunState } from './run-view.ts';
 
 export type Locale = 'en-US' | 'pt-BR';
 
 export const DEFAULT_LOCALE: Locale = 'en-US';
+export const LOCALE_STORAGE_KEY = 'gateship.locale';
+
+export function localeOf(value: string | null): Locale {
+	return value === 'en-US' || value === 'pt-BR' ? value : DEFAULT_LOCALE;
+}
+
+export function readLocalePreference(read: () => string | null): Locale {
+	try {
+		return localeOf(read());
+	} catch {
+		return DEFAULT_LOCALE;
+	}
+}
+
+export function applyLocalePreference(
+	locale: Locale,
+	setCurrentLocale: (locale: Locale) => void,
+	persist: (key: string, locale: Locale) => void,
+): void {
+	setCurrentLocale(locale);
+	try {
+		persist(LOCALE_STORAGE_KEY, locale);
+	} catch {
+		// The current selection remains usable when persistence is unavailable.
+	}
+}
 
 export interface ShellCatalog {
 	operatorNavigationLabel: string;
 	skipLinkLabel: string;
+	languageLabel: string;
 	routeLabels: {
 		conversation: string;
 		runs: string;
@@ -380,6 +406,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Operator surfaces',
 			skipLinkLabel: 'Skip to content',
+			languageLabel: 'Language',
 			routeLabels: {
 				conversation: 'Conversation',
 				runs: 'Runs',
@@ -708,6 +735,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Superfícies do operador',
 			skipLinkLabel: 'Pular para o conteúdo',
+			languageLabel: 'Idioma',
 			routeLabels: {
 				conversation: 'Conversa',
 				runs: 'Runs',

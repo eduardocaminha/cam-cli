@@ -5,8 +5,8 @@
 > Inspect `origin/main` for the shipped Git baseline and `/api/snapshot` for the
 > installed service version and current runtime facts.
 > Stable phase: all current product-owned shell, conversation, `/runs`, `/work`,
-> `/settings` and onboarding surfaces are internally localized; `pt-BR` remains
-> internal until the separate locale-selector slice is approved.
+> `/settings` and onboarding surfaces are localized; `en-US` and `pt-BR` are
+> user-selectable through one browser-local preference.
 
 ## How to use this file
 
@@ -105,11 +105,11 @@ truthful initial document language. The stable phase now extends that same
 type-complete catalog through the primary conversation column, the shared run
 inspector, every product-owned `/runs` panel and the complete `/work` surface,
 including diagnostics and issue/proposal workflows. `/settings` and onboarding
-are now cataloged, so all current product-owned surfaces are covered. `pt-BR`
-stays internal and test-only until a separate selector slice is approved: there
-is still no visible selector, persistence or browser-language inference. This
-records stable direction, not execution authority; only an
-operator-approved issue specification authorizes another slice.
+are now cataloged, so all current product-owned surfaces are covered. `en-US`
+and `pt-BR` are user-selectable through one browser-local preference; Gateship
+does not infer the browser language. This records stable direction, not
+execution authority; only an operator-approved issue specification authorizes
+another slice.
 
 PR #522 shipped the external-beta language decision as squash commit
 `622d6202`:

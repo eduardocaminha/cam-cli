@@ -50,6 +50,9 @@ describe('embedded web bundle', () => {
 			expect(scriptText).toContain('Superfícies do operador');
 			expect(scriptText).toContain('Pular para o conteúdo');
 			expect(scriptText).toContain('document.documentElement.lang');
+			expect(scriptText).toContain('gateship.locale');
+			expect(scriptText).toContain('English (US)');
+			expect(scriptText).toContain('Português (Brasil)');
 
 			const style = await get(handle, '/app.css');
 			expect(style.status).toBe(200);

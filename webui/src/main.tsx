@@ -73,7 +73,12 @@ import {
 	startRun,
 	type WorkspaceNoticeView,
 } from './client.ts';
-import { DEFAULT_LOCALE, type Locale } from './locale.ts';
+import {
+	applyLocalePreference,
+	LOCALE_STORAGE_KEY,
+	type Locale,
+	readLocalePreference,
+} from './locale.ts';
 import {
 	type BrowserNotificationPermission,
 	browserNotificationPermission,
@@ -342,7 +347,7 @@ function useOperationalRun(): {
 	};
 }
 
-function Screen({ locale }: { locale: Locale }): ReactElement {
+function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	const {
 		backlog,
 		ideas,
@@ -375,7 +380,16 @@ function Screen({ locale }: { locale: Locale }): ReactElement {
 		send,
 	} = useOperationalRun();
 	const run = runs[0] ?? null;
+	const [locale, setLocale] = useState(initialLocale);
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+	const selectLocale = (selectedLocale: Locale) => {
+		applyLocalePreference(
+			selectedLocale,
+			(value) => { document.documentElement.lang = value; },
+			(key, value) => { window.localStorage.setItem(key, value); },
+		);
+		setLocale(selectedLocale);
+	};
 	const command = (action: RunAction) => () => {
 		if (run !== null) send(() => commandRun(run.id, action));
 	};
@@ -438,6 +452,7 @@ function Screen({ locale }: { locale: Locale }): ReactElement {
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
 			onSelectIssue={setSelectedIssueId}
+			onSelectLocale={selectLocale}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
@@ -486,11 +501,11 @@ if (!rootElement) {
 	throw new Error('Missing #root element');
 }
 
-const locale = DEFAULT_LOCALE;
+const locale = readLocalePreference(() => window.localStorage.getItem(LOCALE_STORAGE_KEY));
 document.documentElement.lang = locale;
 
 createRoot(rootElement).render(
 	<StrictMode>
-		<Screen locale={locale} />
+		<Screen initialLocale={locale} />
 	</StrictMode>,
 );
