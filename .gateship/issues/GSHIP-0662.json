@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-20T09:28:47.752Z",
-  "updatedAt": "2026-08-21T05:43:39.684Z",
+  "updatedAt": "2026-08-21T05:44:37.265Z",
   "description": "Atualizar o Gateship sozinho quando houver versao nova e nenhuma run em voo. Depende da GSHIP-657, que publica a imagem versionada; sem alvo publicado nao ha o que puxar, e nao aprovar antes dela shipar.\n\nO limite fisico define o desenho: um container nao se recria, porque o processo que precisa ser substituido morreria no meio da substituicao. O atualizador roda no hospedeiro, nao dentro da imagem, e por isso nao e parte do runtime; ele esta no mesmo nivel do proprio Docker.\n\nA condicao de seguranca e a que ja foi aplicada a mao varias vezes: atualiza apenas quando o servico nao tem run ativa, consultando a propria API para saber. Trocar o codigo debaixo de uma run em voo e o modo de falha que este ciclo mostrou de tres formas distintas, e nenhuma economia de tempo justifica repeti-lo.\n\nNada de atualizacao silenciosa que o operador descubra depois: a troca e registrada, com a versao anterior e a nova, no mesmo lugar em que o aviso de servico velho ja aparece. Se a versao nova nao subir, o atualizador precisa deixar claro o que ficou rodando.\n\nFora de escopo: reverter automaticamente para a versao anterior, atualizar durante run com espera, escolher cadencia configuravel na tela, atualizar o binario nativo alem da imagem, e qualquer alteracao no ciclo de vida da run.",
   "specSource": "operator",
   "spec": {
@@ -20,16 +20,12 @@
       },
       {
         "command": "grep -F \"One image, one volume, one process supervising its children.\" AGENTS.md",
-        "output": "One image, one volume, one process supervising its children. The container is"
+        "output": "- One image, one volume, one process supervising its children. The container is"
       },
       {
         "command": "grep -o 'mv -f \"${STAGED}\" \"${DEST}\"' install.sh",
         "output": "mv -f \"${STAGED}\" \"${DEST}\""
       }
     ]
-  },
-  "approval": {
-    "fingerprint": "3785247c12a71e2f903726d7263db1840608d78a42ba4fb139ebd1b5ed720765",
-    "approvedAt": "2026-08-21T05:43:39.684Z"
   }
 }
