@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-663",
   "title": "Align README workflow states with the English beta UI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T02:34:32.517Z",
-  "updatedAt": "2026-08-21T02:34:58.793Z",
+  "updatedAt": "2026-08-21T02:37:14.616Z",
   "description": "Update only the two obsolete workflow state labels in README.md: replace Precisa de você with Needs you and Trabalhando with Working. Do not change runtime code, tests, historical ADRs, or operator-authored content.",
   "specSource": "operator",
   "spec": {

@@ -108,8 +108,8 @@ From the browser you can:
    investigates the repository;
 2. authorize it explicitly, and that same turn records the task in the backlog
    and starts the run instead of asking you for two separate requests;
-3. let decisions interrupt the work and wait for you as `Precisa de você`;
-4. follow progress as `Trabalhando`, with public agent text, tool names,
+3. let decisions interrupt the work and wait for you as `Needs you`;
+4. follow progress as `Working`, with public agent text, tool names,
    verification, and review over SSE;
 5. enable local browser notifications, so a decision, a failure, or the
    completed run reaches you outside the tab;
