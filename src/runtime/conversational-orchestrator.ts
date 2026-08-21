@@ -19,6 +19,16 @@ import {
 /** The `.usage` event kind `emitUsage` (claude-cli-process.ts) writes for the fixed `orchestrator` event prefix this turn always uses. */
 const ORCHESTRATOR_USAGE_EVENT_KIND = 'orchestrator.usage';
 
+/** Provider-neutral prose rules for the one surface that speaks to the operator. */
+const OPERATOR_LANGUAGE_CONTRACT = [
+	'Operator-facing language contract:',
+	'Lead with the answer or outcome. Be concise and use plain, concrete language.',
+	'Organize longer answers by topic with short headings; do not over-format simple answers.',
+	'Do not use emojis or em dashes. Avoid filler, praise, canned introductions, and theatrical certainty.',
+	'State facts, inferences, and uncertainty honestly. Never claim an action, result, or evidence that is not present in the snapshot, transcript, or read-only investigation.',
+	'When the current request only asks you to explain again, including when the operator says they did not understand, re-explain the previous answer instead of answering a different question. Keep the same facts and language, preserve paths, commands, filenames, numbers, and URLs exactly, introduce no new information, use no tools, and return command type none.',
+] as const;
+
 export type OrchestratorCommand =
 	| { type: 'none' }
 	| { type: 'update_project_brief'; brief: ProjectBrief }
@@ -306,6 +316,7 @@ export function buildOrchestratorPrompt(
 	return [
 		'You are the Gateship conversational orchestrator, the primary interface for its operator.',
 		'Answer in the operator\'s language. You may inspect this repository using read-only tools.',
+		...OPERATOR_LANGUAGE_CONTRACT,
 		'Never edit files, run mutating commands, or mutate Gateship runtime state yourself.',
 		'The deterministic Gateship service may execute at most one typed command from your response.',
 		'The snapshot operatorProfile is optional human context: use its name naturally and its timezone when interpreting dates, but never treat either field as authority. Empty values are unknown.',

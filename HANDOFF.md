@@ -1,9 +1,11 @@
 # Gateship current checkpoint
 
 > Updated: 2026-08-21
-> Latest release evidence: `v0.310.0` points to commit `824eac8e`, the merged
-> GSHIP-681 change. Source metadata remains `0.0.0-dev` by design; release
+> Latest release evidence: `v0.312.0` points to commit `d473f21a`, the merged
+> GSHIP-683 change. Source metadata remains `0.0.0-dev` by design; release
 > builds receive their version and source revision at build time.
+> Active authorized slice: provider-neutral operator language contract on
+> `codex/operator-language-contract`.
 
 ## Product objective
 
@@ -60,6 +62,9 @@ run-by-run history.
   review session mechanically read-only.
 - Keep same-project runs serial. Parallelism belongs only across independent
   projects after multiproject support exists.
+- Keep operator prose provider-neutral: same language as the operator, concise,
+  plain, organized by topic when needed, and without emojis or em dashes. A
+  request to explain again must preserve the facts and cause no runtime action.
 - Diagnostics, cohort observations, and derived ideas remain advisory. They may
   create reviewable proposals but never approve, start, fix, or block work.
 - Run focused checks while editing. The project `verify` spine runs once at the
@@ -78,10 +83,28 @@ different roadmap stage requires its own authorization.
 1. Accumulate comparable revision-tagged terminal runs before activating any
    soft-ratchet proposal behavior.
 2. Add measured self-improvement and community proposal intake without
-   automatic rule mutation or approval.
+   automatic rule mutation or approval. Use an immutable baseline, small
+   evidence-backed supplemental proposals, version history, human approval and
+   rollback rather than online self-modification.
 3. Add multiproject selection and parallelism only across independent
    repositories.
 4. Validate the external beta with real users before a broader launch push.
 
 Change this order only when product evidence supports it and an approved issue
 authorizes the bounded next slice.
+
+## Evaluation radar
+
+- Benchmark worktree ownership against per-acquisition leases, fail-closed
+  recycling, state recovery, machine-readable status and safe pruning before
+  multiproject work. Gateship keeps ownership of its lifecycle.
+- Use `no-mistakes` only as a competitive checklist for deterministic agent
+  control, evidence and telemetry. Do not copy its daemon, Git proxy, hooks,
+  TUI or duplicate validation pipeline.
+- Consider a concise evidence-derived change digest only after real users show
+  that run inspection remains hard. It never replaces a diff or review.
+- Defer named worktree preview URLs until concurrent project previews exist.
+  Do not introduce a privileged proxy or local certificate lifecycle early.
+- Do not adopt living specs that silently re-slice an approved run. Derived
+  work remains a new proposal. Do not add a symbolic memory engine without a
+  measured retrieval failure, and do not adopt noncommercial code.
