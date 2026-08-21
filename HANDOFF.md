@@ -410,6 +410,8 @@ the operator.
 - `/runs` owns run history and detailed event inspection.
 - `/work` owns executable work, reviewable specs and derived proposals.
 - `/settings` owns providers, model/effort, notifications and scheduler policy.
+- Beneath the product mark, the shell omits SemVer build metadata from the
+  human version; exact build identity remains unchanged in snapshots and APIs.
 - Keep default cards readable; details belong behind progressive disclosure,
   not in a mixed right rail.
 - shadcn-compatible primitives are acceptable, but Gateship must not contain
