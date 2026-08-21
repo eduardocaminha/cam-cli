@@ -305,7 +305,7 @@ function panel(html: string, title: string): string {
 
 /**
  * One notification channel's own row, cut at its label so `buttonIsEnabled`
- * finds that row's own "Enviar teste" button -- with two channels (GSHIP-653)
+ * finds that row's own "Send test" button -- with two channels (GSHIP-653)
  * the label is no longer unique across the whole panel, only within a row.
  */
 function channelRow(html: string, label: string): string {
@@ -319,18 +319,18 @@ describe('project onboarding', () => {
 		const project: ProjectStatusView = {
 			state: 'empty',
 			name: 'workspace',
-			detail: 'Esta pasta ainda não contém um projeto Git.',
+			detail: 'This folder does not contain a Git project yet.',
 		};
 		for (const route of ['/', '/runs', '/work'] as const) {
 			const html = renderAt(route, { project });
-			expect(html).toContain('Conecte um projeto GitHub');
-			expect(html).toContain('Projeto existente');
-			expect(html).toContain('Projeto novo');
-			expect(html).toContain('cd /caminho/do/projeto &amp;&amp; gship');
+			expect(html).toContain('Connect a GitHub project');
+			expect(html).toContain('Existing project');
+			expect(html).toContain('New project');
+			expect(html).toContain('cd /path/to/project &amp;&amp; gship');
 			expect(html).toContain('gh repo create OWNER/REPO --private --add-readme --clone');
-			expect(html).not.toContain('Conversa com o orquestrador');
+			expect(html).not.toContain('Conversation with the orchestrator');
 			expect(html).not.toContain('Backlog plannable');
-			expect(html).not.toContain('Último run');
+			expect(html).not.toContain('Latest run');
 		}
 	});
 
@@ -340,10 +340,10 @@ describe('project onboarding', () => {
 				state: 'needs-attention',
 				name: 'product',
 				reason: 'origin-main-missing',
-				detail: 'A referência local origin/main ainda não existe.',
+				detail: 'The local origin/main reference does not exist yet.',
 			},
 		});
-		expect(html).toContain('A referência local origin/main ainda não existe.');
+		expect(html).toContain('The local origin/main reference does not exist yet.');
 		expect(html).toContain('git fetch origin main');
 		expect(html).toContain('GATESHIP_PROJECT_DIR');
 	});
@@ -352,19 +352,19 @@ describe('project onboarding', () => {
 		const ready = settingsPage();
 		expect(ready).toContain('acme/gateship');
 		expect(ready).toContain('origin/main');
-		expect(ready).toContain('Agentes locais');
+		expect(ready).toContain('Local agents');
 
 		const blocked = settingsPage({
 			project: {
 				state: 'needs-attention',
 				name: 'product',
 				reason: 'origin-missing',
-				detail: 'O repositório não tem um remote chamado origin.',
+				detail: 'The repository does not have a remote named origin.',
 			},
 		});
-		expect(blocked).toContain('O repositório não tem um remote chamado origin.');
-		expect(blocked).toContain('Agentes locais');
-		expect(blocked).not.toContain('Conecte um projeto GitHub');
+		expect(blocked).toContain('The repository does not have a remote named origin.');
+		expect(blocked).toContain('Local agents');
+		expect(blocked).not.toContain('Connect a GitHub project');
 	});
 });
 
@@ -405,55 +405,55 @@ describe('conversation surface', () => {
 		// Telemetry, configuration, history and planning are other surfaces.
 		expect(html).not.toContain('run-1');
 		expect(html).not.toContain('Relatório longo do runtime.');
-		expect(html).not.toContain('Atividade');
+		expect(html).not.toContain('Activity');
 		expect(html).not.toContain('Runs anteriores');
-		expect(html).not.toContain('Workspaces preservados');
+		expect(html).not.toContain('Preserved workspaces');
 		expect(html).not.toContain('Backlog plannable');
-		expect(html).not.toContain('Nova tarefa');
-		expect(html).not.toContain('Especificar ideia');
-		expect(html).not.toContain('Agentes locais');
-		expect(html).not.toContain('Notificações locais');
+		expect(html).not.toContain('New issue');
+		expect(html).not.toContain('Specify idea');
+		expect(html).not.toContain('Local agents');
+		expect(html).not.toContain('Notifications');
 	});
 
 	test('the inspector offers the commands the run admits, and renders no others', () => {
 		const idle = home();
-		expect(idle).toContain('Nenhum run registrado ainda.');
-		expect(idle).toContain('Ocioso');
-		expect(hasButton(idle, 'Cancelar')).toBe(false);
-		expect(hasButton(idle, 'Shipar')).toBe(false);
-		expect(hasButton(idle, 'Retomar')).toBe(false);
+		expect(idle).toContain('No runs recorded yet.');
+		expect(idle).toContain('Idle');
+		expect(hasButton(idle, 'Cancel')).toBe(false);
+		expect(hasButton(idle, 'Ship')).toBe(false);
+		expect(hasButton(idle, 'Resume')).toBe(false);
 
 		const working = home({ runs: [runIn('working')] });
-		expect(working).toContain('Fase working');
-		expect(buttonIsEnabled(working, 'Cancelar')).toBe(true);
-		expect(hasButton(working, 'Shipar')).toBe(false);
-		expect(hasButton(working, 'Retomar')).toBe(false);
+		expect(working).toContain('Phase working');
+		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
+		expect(hasButton(working, 'Ship')).toBe(false);
+		expect(hasButton(working, 'Resume')).toBe(false);
 
 		const readyToShip = home({ runs: [runIn('ready-to-ship')] });
-		expect(buttonIsEnabled(readyToShip, 'Shipar')).toBe(true);
-		expect(buttonIsEnabled(readyToShip, 'Cancelar')).toBe(true);
+		expect(buttonIsEnabled(readyToShip, 'Ship')).toBe(true);
+		expect(buttonIsEnabled(readyToShip, 'Cancel')).toBe(true);
 
 		const interrupted = home({ runs: [runIn('interrupted')] });
-		expect(buttonIsEnabled(interrupted, 'Retomar')).toBe(true);
+		expect(buttonIsEnabled(interrupted, 'Resume')).toBe(true);
 		// The interrupted run is the only one that can be ended without resuming.
-		expect(buttonIsEnabled(interrupted, 'Abandonar')).toBe(true);
-		expect(hasButton(working, 'Abandonar')).toBe(false);
-		expect(hasButton(readyToShip, 'Abandonar')).toBe(false);
+		expect(buttonIsEnabled(interrupted, 'Abandon')).toBe(true);
+		expect(hasButton(working, 'Abandon')).toBe(false);
+		expect(hasButton(readyToShip, 'Abandon')).toBe(false);
 
 		const cancelled = home({ runs: [runIn('cancelled')] });
 		expect(cancelled).toContain('cancelled');
-		expect(cancelled).toContain('Ocioso');
-		expect(hasButton(cancelled, 'Abandonar')).toBe(false);
-		expect(hasButton(cancelled, 'Retomar')).toBe(false);
-		expect(hasButton(cancelled, 'Cancelar')).toBe(false);
-		expect(hasButton(cancelled, 'Shipar')).toBe(false);
+		expect(cancelled).toContain('Idle');
+		expect(hasButton(cancelled, 'Abandon')).toBe(false);
+		expect(hasButton(cancelled, 'Resume')).toBe(false);
+		expect(hasButton(cancelled, 'Cancel')).toBe(false);
+		expect(hasButton(cancelled, 'Ship')).toBe(false);
 	});
 
 	test('a command in flight holds the commands that are offered', () => {
 		const html = home({ pending: true, runs: [runIn('ready-to-ship')] });
 
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
+		expect(buttonIsEnabled(html, 'Ship')).toBe(false);
+		expect(buttonIsEnabled(html, 'Cancel')).toBe(false);
 	});
 
 	test('conversation renders the durable cross-provider handoff', () => {
@@ -476,9 +476,9 @@ describe('conversation surface', () => {
 			],
 		});
 
-		expect(html).toContain('Conversa com o orquestrador');
+		expect(html).toContain('Conversation with the orchestrator');
 		expect(html).toContain('for="orchestrator-message"');
-		expect(html).toContain('>Mensagem para o orquestrador</label>');
+		expect(html).toContain('>Message for the orchestrator</label>');
 		expect(html).toContain('name="message"');
 		expect(html).toContain('Investigue o core.');
 		expect(html).toContain('Retomei o contexto e encontrei o loop.');
@@ -528,9 +528,9 @@ describe('conversation surface', () => {
 		expect(aggregate.turnCount).toBe(2);
 
 		const html = home({ chatMessages });
-		expect(html).toContain('Custo esperado acumulado');
-		expect(html).toContain('2 turno(s)');
-		expect(html).toContain('US$');
+		expect(html).toContain('Expected cumulative cost');
+		expect(html).toContain('2 orchestrator turns');
+		expect(html).toContain('$');
 	});
 
 	// A turn that never reported usage stays entirely out of the total and the
@@ -553,7 +553,7 @@ describe('conversation surface', () => {
 			},
 		];
 		expect(aggregateChatTurnCosts(chatMessages)).toEqual({ totalCostUsd: null, turnCount: 0 });
-		expect(home({ chatMessages })).not.toContain('Custo esperado acumulado');
+		expect(home({ chatMessages })).not.toContain('Expected cumulative cost');
 	});
 
 	test('the run asks for its decision on the conversation surface, once', () => {
@@ -563,10 +563,10 @@ describe('conversation surface', () => {
 
 		expect(html).toContain('waiting-user');
 		expect(html).toContain('name="operatorGuidance"');
-		expect(buttonIsEnabled(html, 'Responder e retomar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Respond and resume')).toBe(true);
 		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
 		// Resuming is the answer itself while the run waits, never a bare command.
-		expect(hasButton(html, 'Retomar')).toBe(false);
+		expect(hasButton(html, 'Resume')).toBe(false);
 	});
 
 	test('a transport error is announced where the command was issued', () => {
@@ -578,24 +578,24 @@ describe('conversation surface', () => {
 
 describe('runs surface', () => {
 	test('the detail card shows the phase and the commands the state admits', () => {
-		expect(runsPage()).toContain('Nenhum run registrado ainda.');
+		expect(runsPage()).toContain('No runs recorded yet.');
 
 		const working = runsPage({ runs: [runIn('working')] });
 		expect(working).toContain('CAM-900');
-		expect(working).toContain('Fase working');
-		expect(buttonIsEnabled(working, 'Cancelar')).toBe(true);
-		expect(hasButton(working, 'Shipar')).toBe(false);
+		expect(working).toContain('Phase working');
+		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
+		expect(hasButton(working, 'Ship')).toBe(false);
 
 		// The run is already shipping itself: the command is only the retry.
 		const shipping = runsPage({ runs: [runIn('shipping')] });
-		expect(shipping).toContain('Fase shipping');
-		expect(hasButton(shipping, 'Shipar')).toBe(false);
-		expect(buttonIsEnabled(shipping, 'Cancelar')).toBe(true);
+		expect(shipping).toContain('Phase shipping');
+		expect(hasButton(shipping, 'Ship')).toBe(false);
+		expect(buttonIsEnabled(shipping, 'Cancel')).toBe(true);
 
 		const done = runsPage({ runs: [runIn('done')] });
 		expect(done).toContain('100%');
-		expect(hasButton(done, 'Cancelar')).toBe(false);
-		expect(hasButton(done, 'Shipar')).toBe(false);
+		expect(hasButton(done, 'Cancel')).toBe(false);
+		expect(hasButton(done, 'Ship')).toBe(false);
 	});
 
 	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
@@ -611,31 +611,31 @@ describe('runs surface', () => {
 			})],
 		});
 
-		expect(html).toContain('Claude Code em espera');
-		expect(html).toContain('Limite da assinatura atingido');
+		expect(html).toContain('Claude Code on hold');
+		expect(html).toContain('Subscription usage limit reached');
 		expect(html).toContain('Claude five hour usage limit reached.');
 		expect(html).toContain('dateTime="2026-08-20T12:10:00.000Z"');
-		expect(buttonIsEnabled(html, 'Retomar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Resume')).toBe(true);
 	});
 
 	test('the full report and the run id are one disclosure, closed by default', () => {
 		const html = runsPage({ runs: [runIn('done', { summary: 'PR #123 mergeado.' })] });
 
-		expect(panelIsOpen(html, 'Resumo e diagnóstico')).toBe(false);
+		expect(panelIsOpen(html, 'Summary and diagnostics')).toBe(false);
 		// Closed is a rendering state, not a missing branch.
-		expect(panel(html, 'Resumo e diagnóstico')).toContain('PR #123 mergeado.');
-		expect(panel(html, 'Resumo e diagnóstico')).toContain('run-1');
+		expect(panel(html, 'Summary and diagnostics')).toContain('PR #123 mergeado.');
+		expect(panel(html, 'Summary and diagnostics')).toContain('run-1');
 
 		const failed = runsPage({ runs: [runIn('failed', { error: 'oracle reprovou a story 2' })] });
 		expect(failed).toContain('failed');
-		expect(panel(failed, 'Resumo e diagnóstico')).toContain('oracle reprovou a story 2');
+		expect(panel(failed, 'Summary and diagnostics')).toContain('oracle reprovou a story 2');
 
 		// The question a waiting run is asking belongs to the report as well.
 		const waiting = runsPage({ runs: [runIn('waiting-user', { summary: 'Escolha o seam.' })] });
-		expect(panel(waiting, 'Resumo e diagnóstico')).toContain('Escolha o seam.');
+		expect(panel(waiting, 'Summary and diagnostics')).toContain('Escolha o seam.');
 
 		// Nothing to report: no empty disclosure.
-		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Resumo e diagnóstico');
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Summary and diagnostics');
 	});
 
 	// GSHIP-623: the card shows the total the server already derived, always
@@ -651,13 +651,13 @@ describe('runs surface', () => {
 				},
 			})],
 		});
-		expect(withCost).toContain('Custo esperado');
-		expect(withCost).toContain('US$');
+		expect(withCost).toContain('Expected cost');
+		expect(withCost).toContain('$');
 
 		// No usage event ever reported a cost for this run: the card says nothing
 		// about cost rather than showing a fabricated zero.
 		const withoutCost = runsPage({ runs: [runIn('done')] });
-		expect(withoutCost).not.toContain('Custo esperado');
+		expect(withoutCost).not.toContain('Expected cost');
 	});
 
 	// GSHIP-659: the card shows where the run's correction rounds came from,
@@ -667,20 +667,20 @@ describe('runs surface', () => {
 		const attributed = runsPage({
 			runs: [runIn('done', { roundOrigins: { executor: 2, decision: 1, indeterminate: 0 } })],
 		});
-		expect(attributed).toContain('Rounds de correção');
-		expect(attributed).toContain('2 do executor');
-		expect(attributed).toContain('1 de decisão do operador');
-		expect(attributed).not.toContain('indeterminado');
+		expect(attributed).toContain('Correction rounds');
+		expect(attributed).toContain('2 from the executor');
+		expect(attributed).toContain('1 from operator decisions');
+		expect(attributed).not.toContain('indeterminate');
 
 		const withIndeterminate = runsPage({
 			runs: [runIn('done', { roundOrigins: { executor: 0, decision: 0, indeterminate: 1 } })],
 		});
-		expect(withIndeterminate).toContain('1 indeterminado(s)');
+		expect(withIndeterminate).toContain('1 indeterminate');
 
 		// No correction round happened at all: nothing to report, not a
 		// fabricated zero line.
 		const withoutRounds = runsPage({ runs: [runIn('done')] });
-		expect(withoutRounds).not.toContain('Rounds de correção');
+		expect(withoutRounds).not.toContain('Correction rounds');
 	});
 
 	test('the detail breaks the total down by role and model, with the token counts each reported', () => {
@@ -703,20 +703,20 @@ describe('runs surface', () => {
 			})],
 		});
 
-		const breakdown = panel(html, 'Custo por papel e modelo');
+		const breakdown = panel(html, 'Cost by role and model');
 		expect(breakdown).toContain('Executor');
 		expect(breakdown).toContain('claude-opus-4-6');
-		expect(breakdown).toContain('1100 entrada');
-		expect(breakdown).toContain('210 saída');
-		expect(breakdown).toContain('Revisor');
+		expect(breakdown).toContain('1100 input');
+		expect(breakdown).toContain('210 output');
+		expect(breakdown).toContain('Reviewer');
 		expect(breakdown).toContain('claude-sonnet-4-6');
 		// Honesty requirement: shown as an equivalent, and explicit that it is
 		// never the amount the subscription actually charged.
-		expect(breakdown).toContain('Custo esperado equivalente ao uso via API');
-		expect(breakdown).toContain('Nunca é o valor cobrado da assinatura');
+		expect(breakdown).toContain('Expected API-equivalent usage cost');
+		expect(breakdown).toContain('Never the amount charged to the subscription');
 
 		// No breakdown at all: no empty disclosure, same pattern as the report.
-		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Custo por papel e modelo');
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Cost by role and model');
 	});
 
 	// GSHIP-628: effort and thinking are properties of the invocation, not of
@@ -745,7 +745,7 @@ describe('runs surface', () => {
 			})],
 		});
 
-		const breakdown = panel(html, 'Custo por papel e modelo');
+		const breakdown = panel(html, 'Cost by role and model');
 		expect(breakdown).toContain('Executor (xhigh)');
 		expect(breakdown).toContain('35704 thinking');
 		// The effort and thinking sit on the role heading, not beside the model.
@@ -779,20 +779,20 @@ describe('runs surface', () => {
 			cost: { reportedRunCount: 2, runCount: 3 },
 		});
 
-		const summary = panel(runsPage({ runs }), 'Sinais do workflow');
-		expect(summary).toContain('Janela local dos 3 runs mais recentes');
-		expect(summary).toContain('1 concluído(s)');
-		expect(summary).toContain('3 rodada(s) em 2 run(s)');
-		expect(summary).toContain('2 após decisão humana');
-		expect(summary).toContain('US$');
-		expect(summary).not.toContain('Pontuação');
+		const summary = panel(runsPage({ runs }), 'Workflow signals');
+		expect(summary).toContain('Local window of the latest 3 runs');
+		expect(summary).toContain('1 completed');
+		expect(summary).toContain('3 rounds across 2 runs');
+		expect(summary).toContain('2 after human decisions');
+		expect(summary).toContain('$');
+		expect(summary).not.toContain('Score');
 	});
 
 	test('keeps absent provider cost explicit instead of fabricating zero', () => {
 		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
 		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2 });
-		expect(panel(runsPage({ runs }), 'Sinais do workflow'))
-			.toContain('Nenhum provider reportou custo nesta janela.');
+		expect(panel(runsPage({ runs }), 'Workflow signals'))
+			.toContain('No provider reported cost in this window.');
 	});
 
 	test('replays adjacent workflow revisions as separate factual cohorts, never one score', () => {
@@ -852,18 +852,18 @@ describe('runs surface', () => {
 			configurations: [{ provider: 'claude', runCount: 2 }],
 		});
 
-		const benchmark = panel(runsPage({ runs }), 'Benchmarks replayable');
-		expect(panelIsOpen(runsPage({ runs }), 'Benchmarks replayable')).toBe(false);
-		expect(benchmark).toContain('Coorte mais recente');
-		expect(benchmark).toContain('Baseline anterior');
+		const benchmark = panel(runsPage({ runs }), 'Replayable benchmarks');
+		expect(panelIsOpen(runsPage({ runs }), 'Replayable benchmarks')).toBe(false);
+		expect(benchmark).toContain('Latest cohort');
+		expect(benchmark).toContain('Previous baseline');
 		expect(benchmark).toContain('revision-b');
 		expect(benchmark).toContain('revision-a');
-		expect(benchmark).toContain('3 pedido(s) em 2 run(s)');
+		expect(benchmark).toContain('3 requests across 2 runs');
 		expect(benchmark).toContain('claude-sonnet-5 (xhigh)');
-		expect(benchmark).toContain('Não existe score composto');
+		expect(benchmark).toContain('There is no composite score');
 
-		expect(panel(runsPage({ runs: [runIn('done')] }), 'Benchmarks replayable'))
-			.toContain('anteriores ao registro de revisão');
+		expect(panel(runsPage({ runs: [runIn('done')] }), 'Replayable benchmarks'))
+			.toContain('predate revision tracking');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {
@@ -882,10 +882,10 @@ describe('runs surface', () => {
 			],
 		});
 
-		expect(panelIsOpen(html, 'Atividade')).toBe(true);
+		expect(panelIsOpen(html, 'Activity')).toBe(true);
 		expect(html).toContain('provider.activity');
 		expect(html).toContain('Vou ajustar o parser.');
-		expect(html).toContain('Ferramentas: Read, Edit');
+		expect(html).toContain('Tools: Read, Edit');
 		expect(html).toContain('03:04:05');
 	});
 
@@ -918,7 +918,7 @@ describe('runs surface', () => {
 		expect(html).toContain('verify.command.started');
 		expect(html).toContain('bun run check:all');
 		expect(html).not.toContain('thinking_tokens');
-		expect(html).toContain('1 evento(s) recente(s)');
+		expect(html).toContain('1 recent event');
 	});
 
 	test('activity with public detail survives alongside the noise it is buried in', () => {
@@ -955,22 +955,22 @@ describe('runs surface', () => {
 			],
 		});
 
-		expect(html).toContain('Ferramentas: Grep');
+		expect(html).toContain('Tools: Grep');
 		expect(html).toContain('subtype: init');
-		expect(html).toContain('2 evento(s) recente(s)');
+		expect(html).toContain('2 recent events');
 	});
 
 	test('surfaces preserved workspaces without offering destructive cleanup', () => {
 		const html = runsPage({ workspaceNotices: NOTICES });
 
-		expect(html).toContain('Workspaces preservados');
+		expect(html).toContain('Preserved workspaces');
 		expect(html).toContain('/project/.gship/worktrees/orphan');
 		expect(html).toContain('workspace is not owned by a persisted run');
 		expect(html).not.toContain('Apagar workspace');
 	});
 
 	test('a single run has no history card to show', () => {
-		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Runs anteriores');
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Previous runs');
 	});
 
 	test('previous runs are listed read-only, newest first and without the last run', () => {
@@ -981,10 +981,10 @@ describe('runs surface', () => {
 				runIn('failed', { id: 'run-1', issueId: 'CAM-801', updatedAt: '2026-08-14T09:05:00.000Z' }),
 			],
 		});
-		const card = panel(html, 'Runs anteriores');
+		const card = panel(html, 'Previous runs');
 
-		expect(panelIsOpen(html, 'Runs anteriores')).toBe(false);
-		expect(card).toContain('2 run(s) antes do último');
+		expect(panelIsOpen(html, 'Previous runs')).toBe(false);
+		expect(card).toContain('2 runs before the latest');
 		expect(card).toContain('CAM-802');
 		expect(card).toContain('2026-08-15 18:30');
 		expect(card).toContain('CAM-801');
@@ -1015,14 +1015,14 @@ describe('runs surface', () => {
 				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
 			],
 		});
-		const card = panel(html, 'Runs anteriores');
+		const card = panel(html, 'Previous runs');
 
 		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
-		expect(row802).toContain('Custo esperado');
-		expect(row802).toContain('US$');
+		expect(row802).toContain('Expected cost');
+		expect(row802).toContain('$');
 
 		const row801 = card.slice(card.indexOf('CAM-801'));
-		expect(row801).not.toContain('Custo esperado');
+		expect(row801).not.toContain('Expected cost');
 	});
 
 	test('history stops at four entries however long the list is', () => {
@@ -1031,10 +1031,10 @@ describe('runs surface', () => {
 				runs: Array.from({ length: 9 }, (_, index) =>
 					runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
 			}),
-			'Runs anteriores',
+			'Previous runs',
 		);
 
-		expect(card).toContain('4 run(s) antes do último');
+		expect(card).toContain('4 runs before the latest');
 		for (const issueId of ['CAM-810', 'CAM-820', 'CAM-830', 'CAM-840']) {
 			expect(card).toContain(issueId);
 		}
@@ -1053,21 +1053,21 @@ describe('work surface', () => {
 			verificationCommand: 'bun test focused',
 			state: 'stale',
 		}] });
-		const card = panel(html, 'Revisar e aprovar');
+		const card = panel(html, 'Review and approve');
 
 		expect(card).not.toContain('open=""');
 		expect(card).toContain('CAM-42 — Draft revisável');
 		expect(card).toContain('Escopo persistido');
 		expect(card).toContain('bun test focused');
 		expect(card).toContain('type="checkbox"');
-		expect(buttonIsEnabled(card, 'Salvar revisão')).toBe(false);
-		expect(buttonIsEnabled(card, 'Aprovar')).toBe(false);
+		expect(buttonIsEnabled(card, 'Save revision')).toBe(false);
+		expect(buttonIsEnabled(card, 'Approve')).toBe(false);
 		// Abandoning needs a justification before its own confirmation unlocks.
-		expect(card).toContain('Motivo do abandono');
-		expect(buttonIsEnabled(card, 'Abandonar')).toBe(false);
+		expect(card).toContain('Reason for abandonment');
+		expect(buttonIsEnabled(card, 'Abandon')).toBe(false);
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
-		expect(card).not.toContain('Evidência checada no workspace da run');
+		expect(card).not.toContain('Evidence checked in the run workspace');
 	});
 
 	// GSHIP-629: the spec's executable premise is shown beside the scope and the
@@ -1085,9 +1085,9 @@ describe('work surface', () => {
 			],
 			state: 'stale',
 		}] });
-		const card = panel(html, 'Revisar e aprovar');
+		const card = panel(html, 'Review and approve');
 
-		expect(card).toContain('Evidência checada no workspace da run');
+		expect(card).toContain('Evidence checked in the run workspace');
 		expect(card).toContain('wc -l src/domain-models.ts');
 		expect(card).toContain('3 src/domain-models.ts');
 		expect(card).toContain('git log --oneline -1');
@@ -1106,27 +1106,27 @@ describe('work surface', () => {
 			verificationCommand: 'bun test focused',
 			state: 'approved' as const,
 		};
-		const owned = panel(workPage({ drafts: [draft], runs: [runIn('working')] }), 'Revisar e aprovar');
+		const owned = panel(workPage({ drafts: [draft], runs: [runIn('working')] }), 'Review and approve');
 
 		expect(owned).toContain('CAM-900 — Draft em execução');
-		expect(owned).toContain('CAM-900 está sendo executada por uma run.');
-		expect(hasButton(owned, 'Salvar revisão')).toBe(false);
-		expect(hasButton(owned, 'Aprovar')).toBe(false);
-		expect(hasButton(owned, 'Abandonar')).toBe(false);
+		expect(owned).toContain('CAM-900 is being executed by a run.');
+		expect(hasButton(owned, 'Save revision')).toBe(false);
+		expect(hasButton(owned, 'Approve')).toBe(false);
+		expect(hasButton(owned, 'Abandon')).toBe(false);
 		expect(owned).not.toContain('type="checkbox"');
 
 		// Another draft is untouched by that run, and a settled run returns the
 		// controls to the issue it was executing.
 		const other = panel(
 			workPage({ drafts: [{ ...draft, id: 'CAM-901' }], runs: [runIn('working')] }),
-			'Revisar e aprovar',
+			'Review and approve',
 		);
-		expect(hasButton(other, 'Aprovar')).toBe(true);
-		expect(hasButton(other, 'Abandonar')).toBe(true);
-		const settled = panel(workPage({ drafts: [draft], runs: [runIn('done')] }), 'Revisar e aprovar');
-		expect(hasButton(settled, 'Aprovar')).toBe(true);
-		expect(hasButton(settled, 'Abandonar')).toBe(true);
-		expect(settled).not.toContain('está sendo executada por uma run');
+		expect(hasButton(other, 'Approve')).toBe(true);
+		expect(hasButton(other, 'Abandon')).toBe(true);
+		const settled = panel(workPage({ drafts: [draft], runs: [runIn('done')] }), 'Review and approve');
+		expect(hasButton(settled, 'Approve')).toBe(true);
+		expect(hasButton(settled, 'Abandon')).toBe(true);
+		expect(settled).not.toContain('is being executed by a run');
 	});
 
 	test('offers the plannable backlog and holds start until an issue is chosen', () => {
@@ -1134,29 +1134,29 @@ describe('work surface', () => {
 
 		expect(html).toContain('CAM-900');
 		expect(html).toContain('primeira issue plannable');
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
+		expect(buttonIsEnabled(html, 'Start run')).toBe(false);
 
 		const selected = workPage({ selectedIssueId: 'CAM-901' });
-		expect(buttonIsEnabled(selected, 'Iniciar run')).toBe(true);
+		expect(buttonIsEnabled(selected, 'Start run')).toBe(true);
 		expect(selected).toContain('aria-pressed="true"');
 
 		// A live run blocks a second start even with an issue selected.
 		const live = workPage({ runs: [runIn('waiting-user')], selectedIssueId: 'CAM-900' });
-		expect(buttonIsEnabled(live, 'Iniciar run')).toBe(false);
+		expect(buttonIsEnabled(live, 'Start run')).toBe(false);
 		// A settled one reopens it.
 		const settled = workPage({ runs: [runIn('done')], selectedIssueId: 'CAM-900' });
-		expect(buttonIsEnabled(settled, 'Iniciar run')).toBe(true);
+		expect(buttonIsEnabled(settled, 'Start run')).toBe(true);
 	});
 
 	test('exposes the minimal operator contract for a new task', () => {
 		const html = workPage();
 
-		expect(html).toContain('Nova tarefa');
+		expect(html).toContain('New issue');
 		expect(html).toContain('name="title"');
 		expect(html).toContain('name="scope"');
 		expect(html).toContain('name="verificationCommand"');
-		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
-		expect(buttonIsEnabled(workPage({ pending: true }), 'Criar tarefa')).toBe(false);
+		expect(buttonIsEnabled(html, 'Create issue')).toBe(true);
+		expect(buttonIsEnabled(workPage({ pending: true }), 'Create issue')).toBe(false);
 	});
 
 	test('keeps diagnostics advisory, compact and human-settled on the work surface', () => {
@@ -1227,18 +1227,18 @@ describe('work surface', () => {
 		const html = workPage({ diagnostics });
 
 		expect(panelIsOpen(html, 'Gateship Diagnostics')).toBe(false);
-		expect(html).toContain('Consultivo: nunca corrige, aprova ou bloqueia ship.');
+		expect(html).toContain('Advisory: never fixes, approves or blocks shipping.');
 		expect(html).toContain('no-transition-all');
 		expect(html).toContain('webui/src/App.tsx:42');
 		expect(html).toContain('Avoid animating every CSS property.');
-		expect(buttonIsEnabled(html, 'Executar agora')).toBe(true);
-		expect(buttonIsEnabled(html, 'Descartar')).toBe(true);
-		expect(buttonIsEnabled(html, 'Promover')).toBe(true);
-		expect(html).toContain('Resolvidos (1)');
+		expect(buttonIsEnabled(html, 'Run now')).toBe(true);
+		expect(buttonIsEnabled(html, 'Dismiss')).toBe(true);
+		expect(buttonIsEnabled(html, 'Promote')).toBe(true);
+		expect(html).toContain('Resolved (1)');
 		expect(html).toContain('GSHIP-900');
-		expect(html).toContain('+3 não exibido(s).');
-		expect(html).toContain('Histórico local: 1 promovido(s), 1 descartado(s)');
-		expect(html).toContain('Descartar não significa falso positivo');
+		expect(html).toContain('+3 not shown.');
+		expect(html).toContain('Local history: 1 promoted, 1 dismissed');
+		expect(html).toContain('Dismissal does not mean false positive');
 		expect(html).not.toContain('Pontuação');
 
 		const active = workPage({
@@ -1247,8 +1247,8 @@ describe('work surface', () => {
 				scan: { ...diagnostics.scan!, state: 'running' },
 			},
 		});
-		expect(hasButton(active, 'Executar agora')).toBe(false);
-		expect(buttonIsEnabled(active, 'Cancelar diagnóstico')).toBe(true);
+		expect(hasButton(active, 'Run now')).toBe(false);
+		expect(buttonIsEnabled(active, 'Cancel diagnostic')).toBe(true);
 	});
 
 	// GSHIP-613: the third card of /work, disclosed like the drafts one.
@@ -1260,10 +1260,10 @@ describe('work surface', () => {
 			sourceRunId: 'run-1',
 			sourceIssueId: 'CAM-50',
 		}] });
-		const card = panel(html, 'Propostas derivadas');
+		const card = panel(html, 'Derived proposals');
 
 		expect(card).not.toContain('open=""');
-		expect(card).toContain('1 proposta(s) pendente(s).');
+		expect(card).toContain('1 pending proposal.');
 		expect(card).toContain('Cobrir o retry do shipper');
 		// The evidence and its provenance are printed, and no field can change them.
 		expect(card).toContain('Sem teste no caminho de erro.');
@@ -1274,17 +1274,17 @@ describe('work surface', () => {
 		expect(card).toContain('value="Cobrir o retry do shipper"');
 		expect(card).toContain('name="proposalScope"');
 		expect(card).toContain('name="proposalVerificationCommand"');
-		expect(buttonIsEnabled(card, 'Descartar')).toBe(true);
-		expect(buttonIsEnabled(card, 'Promover')).toBe(true);
+		expect(buttonIsEnabled(card, 'Dismiss')).toBe(true);
+		expect(buttonIsEnabled(card, 'Promote')).toBe(true);
 		// Promoting files a draft: this card never approves and never starts a run.
-		expect(hasButton(card, 'Aprovar')).toBe(false);
-		expect(hasButton(card, 'Iniciar run')).toBe(false);
+		expect(hasButton(card, 'Approve')).toBe(false);
+		expect(hasButton(card, 'Start run')).toBe(false);
 	});
 
 	test('an empty inbox still renders the card, and a command in flight holds both decisions', () => {
-		const empty = panel(workPage(), 'Propostas derivadas');
-		expect(empty).toContain('0 proposta(s) pendente(s).');
-		expect(empty).toContain('Nenhuma proposta pendente.');
+		const empty = panel(workPage(), 'Derived proposals');
+		expect(empty).toContain('0 pending proposals.');
+		expect(empty).toContain('No pending proposals.');
 
 		const held = panel(
 			workPage({
@@ -1297,10 +1297,10 @@ describe('work surface', () => {
 					sourceIssueId: 'CAM-50',
 				}],
 			}),
-			'Propostas derivadas',
+			'Derived proposals',
 		);
-		expect(buttonIsEnabled(held, 'Descartar')).toBe(false);
-		expect(buttonIsEnabled(held, 'Promover')).toBe(false);
+		expect(buttonIsEnabled(held, 'Dismiss')).toBe(false);
+		expect(buttonIsEnabled(held, 'Promote')).toBe(false);
 	});
 
 	// GSHIP-643: a settled proposal is visible, read-only, and distinguishes a
@@ -1317,16 +1317,16 @@ describe('work surface', () => {
 				promotedIssueId: 'CAM-951',
 			}],
 		});
-		const card = panel(html, 'Propostas resolvidas');
+		const card = panel(html, 'Resolved proposals');
 
-		expect(card).toContain('1 proposta(s) resolvida(s).');
+		expect(card).toContain('1 resolved proposal.');
 		expect(card).toContain('Extrair o parser de eventos');
-		expect(card).toContain('Promovida');
+		expect(card).toContain('Promoted');
 		expect(card).toContain('CAM-951');
-		expect(card).not.toContain('Descartada');
+		expect(card).not.toContain('Dismissed');
 		// It is read-only: no decision is offered here, ever.
-		expect(hasButton(card, 'Descartar')).toBe(false);
-		expect(hasButton(card, 'Promover')).toBe(false);
+		expect(hasButton(card, 'Dismiss')).toBe(false);
+		expect(hasButton(card, 'Promote')).toBe(false);
 	});
 
 	test('a dismissed proposal is shown resolved, carrying no issue', () => {
@@ -1340,18 +1340,18 @@ describe('work surface', () => {
 				status: 'dismissed',
 				promotedIssueId: null,
 			}],
-		}), 'Propostas resolvidas');
+		}), 'Resolved proposals');
 
 		expect(card).toContain('Ideia descartada');
-		expect(card).toContain('Descartada');
-		expect(card).not.toContain('Promovida');
+		expect(card).toContain('Dismissed');
+		expect(card).not.toContain('Promoted');
 	});
 
 	test('an empty or truncated resolved history renders as such, never in silence', () => {
-		const empty = panel(workPage(), 'Propostas resolvidas');
-		expect(empty).toContain('0 proposta(s) resolvida(s).');
-		expect(empty).toContain('Nenhuma proposta resolvida ainda.');
-		expect(empty).not.toContain('não exibida(s)');
+		const empty = panel(workPage(), 'Resolved proposals');
+		expect(empty).toContain('0 resolved proposals.');
+		expect(empty).toContain('No resolved proposals yet.');
+		expect(empty).not.toContain('not shown');
 
 		const truncated = panel(
 			workPage({
@@ -1366,9 +1366,9 @@ describe('work surface', () => {
 				}],
 				resolvedProposalsOmittedCount: 5,
 			}),
-			'Propostas resolvidas',
+			'Resolved proposals',
 		);
-		expect(truncated).toContain('+5 proposta(s) resolvida(s) não exibida(s).');
+		expect(truncated).toContain('+5 resolved proposals not shown.');
 	});
 
 	test('a resolved proposal never appears in, or shrinks, the pending inbox', () => {
@@ -1390,12 +1390,12 @@ describe('work surface', () => {
 				promotedIssueId: 'CAM-951',
 			}],
 		});
-		const pendingCard = panel(html, 'Propostas derivadas');
-		expect(pendingCard).toContain('1 proposta(s) pendente(s).');
+		const pendingCard = panel(html, 'Derived proposals');
+		expect(pendingCard).toContain('1 pending proposal.');
 		expect(pendingCard).toContain('Proposta pendente');
 		expect(pendingCard).not.toContain('Proposta promovida');
 
-		const resolvedCard = panel(html, 'Propostas resolvidas');
+		const resolvedCard = panel(html, 'Resolved proposals');
 		expect(resolvedCard).toContain('Proposta promovida');
 		expect(resolvedCard).not.toContain('Proposta pendente');
 	});
@@ -1403,31 +1403,31 @@ describe('work surface', () => {
 	test('ideas are specified directly, without a planner, and only when there are any', () => {
 		const html = workPage({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
 
-		expect(html).toContain('Especificar ideia existente');
+		expect(html).toContain('Specify existing idea');
 		expect(html).toContain('CAM-42 — ideia antiga');
 		expect(html).toContain('name="ideaScope"');
 		expect(html).toContain('name="ideaVerificationCommand"');
-		expect(buttonIsEnabled(html, 'Especificar ideia')).toBe(true);
-		expect(workPage()).not.toContain('Especificar ideia existente');
+		expect(buttonIsEnabled(html, 'Specify idea')).toBe(true);
+		expect(workPage()).not.toContain('Specify existing idea');
 	});
 });
 
 describe('settings surface', () => {
 	test('edits the operator identity and suggests browser timezone without silently saving it', () => {
-		const empty = panel(settingsPage(), 'Operador');
+		const empty = panel(settingsPage(), 'Operator');
 		expect(empty).toContain('name="operator-name"');
 		expect(empty).toContain('name="operator-timezone"');
 		expect(empty).toContain('value="America/Sao_Paulo"');
-		expect(empty).toContain('só é salva quando você confirma');
-		expect(buttonIsEnabled(empty, 'Salvar perfil')).toBe(true);
+		expect(empty).toContain('is saved only when you confirm');
+		expect(buttonIsEnabled(empty, 'Save profile')).toBe(true);
 
 		const stored = panel(settingsPage({
 			operatorProfile: { name: 'Eduardo', timezone: 'Europe/Lisbon' },
-		}), 'Operador');
+		}), 'Operator');
 		expect(stored).toContain('value="Eduardo"');
 		expect(stored).toContain('value="Europe/Lisbon"');
 		expect(stored).not.toContain('value="America/Sao_Paulo"');
-		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar perfil')).toBe(false);
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Save profile')).toBe(false);
 	});
 
 	test('shows subscription state without any credential field', () => {
@@ -1437,13 +1437,13 @@ describe('settings surface', () => {
 				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
 			],
 		});
+		const providers = panel(html, 'Local agents');
 
-		expect(html).toContain('Agentes locais');
-		expect(html).toContain('Claude Code');
-		expect(html).toContain('Assinatura conectada · max');
-		expect(html).toContain('em uso');
-		expect(buttonIsEnabled(html, 'Conectar ChatGPT')).toBe(true);
-		expect(html).not.toMatch(/api key|oauth token/i);
+		expect(providers).toContain('Claude Code');
+		expect(providers).toContain('Subscription connected · max');
+		expect(providers).toContain('in use');
+		expect(buttonIsEnabled(providers, 'Connect ChatGPT')).toBe(true);
+		expect(providers).not.toMatch(/api key|oauth token/i);
 	});
 
 	test('distinguishes a connected subscription from an observed provider hold', () => {
@@ -1480,30 +1480,30 @@ describe('settings surface', () => {
 			],
 		});
 
-		expect(html).toContain('Assinatura conectada, mas indisponível agora');
-		expect(html).toContain('Limite da assinatura atingido');
-		expect(html).toContain('Indisponível agora: Autenticação necessária');
+		expect(html).toContain('Subscription connected, but currently unavailable');
+		expect(html).toContain('Subscription usage limit reached');
+		expect(html).toContain('Currently unavailable: Authentication required');
 	});
 
 	test('local notifications show the browser permission state without a secret field', () => {
-		expect(buttonIsEnabled(settingsPage(), 'Ativar notificações')).toBe(true);
+		expect(buttonIsEnabled(settingsPage(), 'Enable notifications')).toBe(true);
 
 		const granted = settingsPage({ notificationPermission: 'granted' });
-		expect(granted).toContain('Ativas neste navegador.');
-		expect(buttonIsEnabled(granted, 'Notificações ativas')).toBe(false);
-		expect(granted).not.toContain('API key');
-		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
+		expect(granted).toContain('Active in this browser.');
+		expect(buttonIsEnabled(granted, 'Notifications active')).toBe(false);
+		expect(granted).not.toContain('type="password"');
+		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
 	});
 
 	// GSHIP-652: the remote ntfy channel shows only whether it is configured,
 	// a real test-send action, and setup instructions -- never the secret,
 	// which the read-only `configured` boolean makes structurally impossible.
 	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
-		const unconfigured = panel(settingsPage(), 'Notificações locais');
-		expect(unconfigured).toContain('ntfy: não configurado');
-		expect(buttonIsEnabled(unconfigured, 'Enviar teste')).toBe(false);
+		const unconfigured = panel(settingsPage(), 'Notifications');
+		expect(unconfigured).toContain('ntfy: not configured');
+		expect(buttonIsEnabled(unconfigured, 'Send test')).toBe(false);
 		expect(unconfigured).toContain('.gship/ntfy-url');
-		expect(unconfigured).toContain('permissão 600');
+		expect(unconfigured).toContain('mode 600');
 		expect(unconfigured).toContain('GATESHIP_NTFY_URL');
 		const docLink = openingTags(unconfigured).find((tag) => tag.includes('docs.ntfy.sh'));
 		expect(docLink).toBeDefined();
@@ -1515,10 +1515,10 @@ describe('settings surface', () => {
 			settingsPage({
 				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
 			}),
-			'Notificações locais',
+			'Notifications',
 		);
-		expect(configured).toContain('ntfy: configurado');
-		expect(buttonIsEnabled(configured, 'Enviar teste')).toBe(true);
+		expect(configured).toContain('ntfy: configured');
+		expect(buttonIsEnabled(configured, 'Send test')).toBe(true);
 	});
 
 	// GSHIP-653: Resend needs three values, not one -- a partial configuration
@@ -1531,15 +1531,15 @@ describe('settings surface', () => {
 			settingsPage({
 				notificationChannels: {
 					...EMPTY_NOTIFICATION_CHANNELS,
-					resend: { configured: false, missing: ['chave de API', 'destinatário'] },
+					resend: { configured: false, missing: ['API key', 'recipient'] },
 				},
 			}),
-			'Notificações locais',
+			'Notifications',
 		);
-		expect(partial).toContain('email (Resend): não configurado (falta: chave de API, destinatário)');
-		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Enviar teste')).toBe(false);
+		expect(partial).toContain('email (Resend): not configured (missing: API key, recipient)');
+		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Send test')).toBe(false);
 		expect(partial).toContain('.gship/resend-api-key');
-		expect(partial).toContain('permissão 600');
+		expect(partial).toContain('mode 600');
 		expect(partial).toContain('GATESHIP_RESEND_API_KEY');
 		expect(partial).toContain('GATESHIP_RESEND_FROM');
 		expect(partial).toContain('GATESHIP_RESEND_TO');
@@ -1555,11 +1555,11 @@ describe('settings surface', () => {
 			settingsPage({
 				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, resend: { configured: true, missing: [] } },
 			}),
-			'Notificações locais',
+			'Notifications',
 		);
-		expect(configured).toContain('email (Resend): configurado');
+		expect(configured).toContain('email (Resend): configured');
 		expect(configured).not.toContain('falta:');
-		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Enviar teste')).toBe(true);
+		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Send test')).toBe(true);
 	});
 
 	test('the remote channel test action is held while a command is in flight, like every other', () => {
@@ -1568,9 +1568,9 @@ describe('settings surface', () => {
 				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { configured: true, missing: [] } },
 				pending: true,
 			}),
-			'Notificações locais',
+			'Notifications',
 		);
-		expect(buttonIsEnabled(html, 'Enviar teste')).toBe(false);
+		expect(buttonIsEnabled(html, 'Send test')).toBe(false);
 	});
 
 	test('the brief is edited here and the automatic handoff sits beside it, read-only', () => {
@@ -1589,12 +1589,12 @@ describe('settings surface', () => {
 			},
 		});
 		const brief = panel(html, 'Project brief');
-		const handoff = panel(html, 'Handoff automático');
+		const handoff = panel(html, 'Automatic handoff');
 
 		// Two panels, each naming whose context it carries.
-		expect(brief).toContain('Contexto humano autoritativo');
-		expect(handoff).toContain('Estado de sessão observado e gerado pelo orquestrador');
-		expect(handoff).toContain('Pode estar desatualizado; o brief acima prevalece.');
+		expect(brief).toContain('Authoritative human context');
+		expect(handoff).toContain('Session state observed and generated by the orchestrator');
+		expect(handoff).toContain('It may be stale; the brief above prevails.');
 
 		// The form opens already filled with what the server holds, lists one per line.
 		expect(brief).toContain('name="objective"');
@@ -1605,14 +1605,14 @@ describe('settings surface', () => {
 		expect(brief).toContain('O brief é distinto do handoff.\nSó o operador o escreve.');
 		expect(brief).toContain('Nenhuma rota nova.');
 		expect(brief).toContain('Editar o brief pela web.');
-		expect(buttonIsEnabled(html, 'Salvar brief')).toBe(true);
+		expect(buttonIsEnabled(html, 'Save brief')).toBe(true);
 
 		// The orchestrator's record is printed whole, with nothing to type into.
 		expect(handoff).toContain('Implementar a fatia 2 do estágio 2.');
 		expect(handoff).toContain('A leitura devolve os dois registros.');
 		expect(handoff).toContain('A UI apenas lê este registro.');
 		expect(handoff).toContain('Regenerar o bundle.');
-		expect(handoff).toContain('somente leitura');
+		expect(handoff).toContain('read-only');
 		for (const control of ['<form', '<input', '<textarea', '<select', '<button']) {
 			expect(handoff).not.toContain(control);
 		}
@@ -1622,7 +1622,7 @@ describe('settings surface', () => {
 	});
 
 	test('the brief save is held while a command is in flight, like every other', () => {
-		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar brief')).toBe(false);
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Save brief')).toBe(false);
 	});
 
 	// GSHIP-617: the three roles are configurable per provider.
@@ -1641,10 +1641,10 @@ describe('settings surface', () => {
 				},
 			},
 		});
-		const models = panel(html, 'Modelo e effort por papel');
+		const models = panel(html, 'Model and effort by role');
 
-		for (const role of ['Orquestrador', 'Executor', 'Revisor']) {
-			expect(models).toContain(`${role} — modelo`);
+		for (const role of ['Orchestrator', 'Executor', 'Reviewer']) {
+			expect(models).toContain(`${role} — model`);
 			expect(models).toContain(`${role} — effort`);
 		}
 		for (const provider of ['claude', 'codex']) {
@@ -1659,17 +1659,17 @@ describe('settings surface', () => {
 		expect(models).toContain('value="opus"');
 		expect(models).toContain('value="xhigh"');
 		expect(models).toContain('value="gpt-5-codex"');
-		expect(models).toContain('padrão do CLI');
-		expect(models).toContain('Vazio mantém o padrão do CLI.');
+		expect(models).toContain('CLI default');
+		expect(models).toContain('An empty field keeps the CLI default.');
 
 		expect(models).not.toContain('<select');
-		expect(buttonIsEnabled(html, 'Salvar modelos')).toBe(true);
+		expect(buttonIsEnabled(html, 'Save models')).toBe(true);
 	});
 
 	// GSHIP-619: Gateship cannot track vendor releases, so it stopped shipping a
 	// list of its own and points at each vendor's page instead.
 	test('every model field is free text, with no embedded suggestion list', () => {
-		const models = panel(settingsPage(), 'Modelo e effort por papel');
+		const models = panel(settingsPage(), 'Model and effort by role');
 
 		// No datalist survives, and nothing points at one.
 		expect(models).not.toContain('<datalist');
@@ -1689,11 +1689,11 @@ describe('settings surface', () => {
 		}
 
 		// The screen says who refuses an unknown value, so nobody blames Gateship.
-		expect(models).toContain('recusado pelo próprio CLI');
+		expect(models).toContain('the CLI itself rejects');
 	});
 
 	test('each provider links to its own model documentation, in a new tab', () => {
-		const models = panel(settingsPage(), 'Modelo e effort por papel');
+		const models = panel(settingsPage(), 'Model and effort by role');
 		const docs: Readonly<Record<string, string>> = {
 			Claude: 'https://platform.claude.com/docs/en/about-claude/models/overview',
 			Codex: 'https://learn.chatgpt.com/docs/models',
@@ -1706,32 +1706,32 @@ describe('settings surface', () => {
 			expect(link).toContain('<a');
 			expect(link).toContain('target="_blank"');
 			expect(link).toContain('rel="noreferrer noopener"');
-			expect(models).toContain(`Modelos de ${label} na documentação oficial`);
+			expect(models).toContain(`${label} models in the official documentation`);
 		}
 	});
 
 	test('the model save is held while a command is in flight, like every other', () => {
-		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar modelos')).toBe(false);
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Save models')).toBe(false);
 	});
 
 	test('an empty brief and an empty handoff still render both panels', () => {
 		const html = settingsPage();
 
-		expect(panel(html, 'Project brief')).toContain('Um item por linha');
-		expect(buttonIsEnabled(html, 'Salvar brief')).toBe(true);
-		expect(panel(html, 'Handoff automático')).toContain('Nada registrado ainda.');
+		expect(panel(html, 'Project brief')).toContain('One item per line');
+		expect(buttonIsEnabled(html, 'Save brief')).toBe(true);
+		expect(panel(html, 'Automatic handoff')).toContain('Nothing recorded yet.');
 	});
 
 	// GSHIP-638: off by default, and no pause reason to show while it never ran.
 	test('the chain switch is off by default and shows no pause reason', () => {
-		const chainRuns = panel(settingsPage(), 'Encadeamento automático');
+		const chainRuns = panel(settingsPage(), 'Automatic run chaining');
 
 		expect(chainRuns).not.toContain('checked=""');
-		expect(chainRuns).not.toContain('Fila parada');
+		expect(chainRuns).not.toContain('Queue stopped');
 	});
 
 	test('the chain switch reflects the stored setting and is held while a command is in flight', () => {
-		const on = panel(settingsPage({ chainRuns: { enabled: true, pause: null } }), 'Encadeamento automático');
+		const on = panel(settingsPage({ chainRuns: { enabled: true, pause: null } }), 'Automatic run chaining');
 		expect(on).toContain('checked=""');
 
 		const checkbox = elementWith(settingsPage({ pending: true }), 'type="checkbox"');
@@ -1740,16 +1740,16 @@ describe('settings surface', () => {
 
 	test('the diagnostic schedule is bounded, off by default and closed by default', () => {
 		const html = settingsPage();
-		const schedule = panel(html, 'Agenda de diagnósticos');
+		const schedule = panel(html, 'Diagnostic schedule');
 
-		expect(panelIsOpen(html, 'Agenda de diagnósticos')).toBe(false);
-		expect(schedule).toContain('no máximo um diagnóstico vencido');
+		expect(panelIsOpen(html, 'Diagnostic schedule')).toBe(false);
+		expect(schedule).toContain('at most one overdue diagnostic');
 		expect(schedule).toContain('name="diagnostic-schedule-enabled"');
 		expect(schedule).not.toContain('checked=""');
-		expect(schedule).toContain('<option value="weekly" selected="">Semanal</option>');
-		expect(schedule).toContain('Períodos perdidos não geram catch-up.');
+		expect(schedule).toContain('<option value="weekly" selected="">Weekly</option>');
+		expect(schedule).toContain('Missed periods do not create catch-up runs.');
 		expect(schedule).not.toMatch(/cron/i);
-		expect(buttonIsEnabled(schedule, 'Salvar agenda')).toBe(true);
+		expect(buttonIsEnabled(schedule, 'Save schedule')).toBe(true);
 	});
 
 	test('the diagnostic schedule shows its due state and holds every control during a command', () => {
@@ -1762,15 +1762,15 @@ describe('settings surface', () => {
 			nextRunAt: '2026-08-20T12:00:00.000Z',
 			overdue: true,
 		};
-		const due = panel(settingsPage({ diagnostics }), 'Agenda de diagnósticos');
+		const due = panel(settingsPage({ diagnostics }), 'Diagnostic schedule');
 		expect(due).toContain('checked=""');
-		expect(due).toContain('<option value="daily" selected="">Diária</option>');
-		expect(due).toContain('vencida');
+		expect(due).toContain('<option value="daily" selected="">Daily</option>');
+		expect(due).toContain('overdue');
 
-		const held = panel(settingsPage({ diagnostics, pending: true }), 'Agenda de diagnósticos');
+		const held = panel(settingsPage({ diagnostics, pending: true }), 'Diagnostic schedule');
 		expect(elementWith(held, 'name="diagnostic-schedule-enabled"')).toContain('disabled=""');
 		expect(elementWith(held, 'name="diagnostic-schedule-cadence"')).toContain('disabled=""');
-		expect(buttonIsEnabled(held, 'Salvar agenda')).toBe(false);
+		expect(buttonIsEnabled(held, 'Save schedule')).toBe(false);
 	});
 
 	// GSHIP-650: a stopped queue asks for attention in the shell header now,
@@ -1779,9 +1779,9 @@ describe('settings surface', () => {
 		const pause = { reason: 'no-admissible-issue' as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
 		const chainRuns = panel(
 			settingsPage({ chainRuns: { enabled: false, pause } }),
-			'Encadeamento automático',
+			'Automatic run chaining',
 		);
-		expect(chainRuns).not.toContain('Fila parada');
+		expect(chainRuns).not.toContain('Queue stopped');
 	});
 });
 
@@ -1809,7 +1809,7 @@ describe('operator shell', () => {
 			const main = tags.filter((tag) => tag.startsWith('<main'));
 
 			expect(skip).toBe(tags.find((tag) => tag.startsWith('<a')));
-			expect(html).toContain('>Pular para o conteúdo</a>');
+			expect(html).toContain('>Skip to content</a>');
 			expect(main).toHaveLength(1);
 			expect(main[0]).toContain('id="main-content"');
 			expect(main[0]).toContain('tabindex="-1"');
@@ -1827,8 +1827,8 @@ describe('operator shell', () => {
 	});
 
 	test('the shell reports one human state and the version it is serving', () => {
-		expect(shellHeader(home())).toContain('Ocioso');
-		expect(shellHeader(runsPage({ runs: [runIn('working')] }))).toContain('Trabalhando');
+		expect(shellHeader(home())).toContain('Idle');
+		expect(shellHeader(runsPage({ runs: [runIn('working')] }))).toContain('Working');
 		// No version reported: the header shows the title alone.
 		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);
 		expect(home({ version: '0.292.0' })).toContain('>v0.292.0<');
@@ -1844,14 +1844,14 @@ describe('operator shell', () => {
 		expect(title).toContain('aria-label="Gateship"');
 		// The badge moved off the title's row, so its longest label is never
 		// squeezed for space.
-		expect(html).toContain('>Precisa de você<');
+		expect(html).toContain('>Needs you<');
 		expect(html).toContain('>v0.292.0<');
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {
 		const html = runsPage({ runs: [runIn('failed')] });
 
-		expect(shellHeader(html)).toContain('Precisa de você');
+		expect(shellHeader(html)).toContain('Needs you');
 		expect(shellHeader(html)).not.toContain('failed');
 		expect(html).toContain('>failed<');
 	});
@@ -1860,19 +1860,19 @@ describe('operator shell', () => {
 		const staleService = {
 			bootSha: '1'.repeat(40),
 			currentSha: '2'.repeat(40),
-			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+			detail: 'Restart the service para aplicar o que entrou depois do boot.',
 		};
 
 		// The ordinary case says nothing at all, on any surface.
 		for (const route of SURFACE_PATHS) {
-			expect(shellHeader(renderAt(route))).not.toContain('Reinicie o serviço');
+			expect(shellHeader(renderAt(route))).not.toContain('Restart the service');
 		}
 		// While it lasts it is on every surface, with both shas, and it stays:
 		// there is no button to acknowledge it away.
 		for (const route of SURFACE_PATHS) {
 			const header = shellHeader(renderAt(route, { staleService }));
 
-			expect(header).toContain('Reinicie o serviço');
+			expect(header).toContain('Restart the service');
 			expect(header).toContain(staleService.detail);
 			expect(header).toContain(staleService.bootSha);
 			expect(header).toContain(staleService.currentSha);
@@ -1884,17 +1884,17 @@ describe('operator shell', () => {
 		const staleService = {
 			bootSha: '1'.repeat(40),
 			currentSha: '2'.repeat(40),
-			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+			detail: 'Restart the service para aplicar o que entrou depois do boot.',
 		};
 		const html = runsPage({ runs: [runIn('ready-to-ship')], staleService });
 
-		expect(shellHeader(html)).toContain('Reinicie o serviço');
+		expect(shellHeader(html)).toContain('Restart the service');
 		// The human state is the run's own, and every command it admits is offered.
-		expect(shellHeader(html)).toContain('Precisa de você');
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
+		expect(shellHeader(html)).toContain('Needs you');
+		expect(buttonIsEnabled(html, 'Ship')).toBe(true);
 		expect(buttonIsEnabled(
 			workPage({ staleService, selectedIssueId: 'CAM-900' }),
-			'Iniciar run',
+			'Start run',
 		)).toBe(true);
 	});
 
@@ -1903,14 +1903,14 @@ describe('operator shell', () => {
 
 		// The ordinary case says nothing at all, on any surface.
 		for (const route of SURFACE_PATHS) {
-			expect(shellHeader(renderAt(route))).not.toContain('Identidade de git ausente');
+			expect(shellHeader(renderAt(route))).not.toContain('Missing Git identity');
 		}
 		// While it lasts it is on every surface, with the detail, and it stays:
 		// there is no button to acknowledge it away.
 		for (const route of SURFACE_PATHS) {
 			const header = shellHeader(renderAt(route, { gitIdentity }));
 
-			expect(header).toContain('Identidade de git ausente');
+			expect(header).toContain('Missing Git identity');
 			expect(header).toContain(gitIdentity.detail);
 			expect(hasButton(header, 'Dispensar')).toBe(false);
 		}
@@ -1920,17 +1920,17 @@ describe('operator shell', () => {
 		const gitIdentity = { detail: 'no git author identity is configured' };
 		const html = runsPage({ runs: [runIn('ready-to-ship')], gitIdentity });
 
-		expect(shellHeader(html)).toContain('Identidade de git ausente');
+		expect(shellHeader(html)).toContain('Missing Git identity');
 		// The human state is the run's own, and every command it admits is offered.
-		expect(shellHeader(html)).toContain('Precisa de você');
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
+		expect(shellHeader(html)).toContain('Needs you');
+		expect(buttonIsEnabled(html, 'Ship')).toBe(true);
 	});
 
 	test('a preserved workspace asks for the operator whatever the run is doing', () => {
 		expect(shellHeader(runsPage({ runs: [runIn('done')], workspaceNotices: NOTICES })))
-			.toContain('Precisa de você');
+			.toContain('Needs you');
 		expect(shellHeader(runsPage({ runs: [runIn('working')], workspaceNotices: NOTICES })))
-			.toContain('Precisa de você');
+			.toContain('Needs you');
 	});
 
 	// GSHIP-650: a stopped chain queue asks for the operator too, wherever they
@@ -1945,14 +1945,14 @@ describe('operator shell', () => {
 		};
 		for (const route of SURFACE_PATHS) {
 			const header = shellHeader(renderAt(route, { chainRuns: { enabled: true, pause } }));
-			expect(header).toContain('Precisa de você');
-			expect(header).toContain('Fila parada');
+			expect(header).toContain('Needs you');
+			expect(header).toContain('Queue stopped');
 			expect(header).toContain('GSHIP-647');
 			expect(header).toContain('Corrigir a divergência de evidência');
-			expect(header).toContain('a run anterior não terminou em done.');
+			expect(header).toContain('the previous run did not finish in done.');
 		}
 		// The ordinary case says nothing at all.
-		expect(shellHeader(home())).not.toContain('Fila parada');
+		expect(shellHeader(home())).not.toContain('Queue stopped');
 	});
 
 	// A pause the read could not resolve a run for still asks for attention,
@@ -1961,16 +1961,16 @@ describe('operator shell', () => {
 	// escalates.
 	test('a stopped chain queue with no resolvable issue is still reported by its reason alone', () => {
 		const labels: Record<Exclude<ChainPauseReason, 'chain-disabled'>, string> = {
-			'previous-run-not-done': 'a run anterior não terminou em done.',
-			'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
-			'run-active': 'uma run ainda está ativa.',
-			'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+			'previous-run-not-done': 'the previous run did not finish in done.',
+			'no-admissible-issue': 'there are no admissible issues in the backlog right now.',
+			'run-active': 'a run is still active.',
+			'chain-start-failed': 'the attempt to start the next run failed.',
 		};
 		for (const [reason, label] of Object.entries(labels)) {
 			const pause = { reason: reason as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
 			const header = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
-			expect(header).toContain('Precisa de você');
-			expect(header).toContain(`Fila parada`);
+			expect(header).toContain('Needs you');
+			expect(header).toContain(`Queue stopped`);
 			expect(header).toContain(label);
 			expect(header).not.toContain('GSHIP');
 		}
@@ -1978,16 +1978,16 @@ describe('operator shell', () => {
 
 	// GSHIP-650 review: chaining is off by default (GSHIP-638), so
 	// chain-disabled is every default install's steady state, not a stopped
-	// queue -- escalating it would read "Precisa de você" with a warning
+	// queue -- escalating it would read "Needs you" with a warning
 	// callout forever, on every surface, for an install that never turned
 	// chaining on.
 	test('the switch simply being off never escalates the header or shows the callout', () => {
 		const pause: ChainPauseView = { reason: 'chain-disabled', createdAt: '2026-08-18T00:00:00.000Z' };
 		const header = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
 
-		expect(header).toContain('Ocioso');
-		expect(header).not.toContain('Precisa de você');
-		expect(header).not.toContain('Fila parada');
+		expect(header).toContain('Idle');
+		expect(header).not.toContain('Needs you');
+		expect(header).not.toContain('Queue stopped');
 	});
 
 	// GSHIP-650 review: setChainRuns writes the setting alone and emits no
@@ -2004,13 +2004,13 @@ describe('operator shell', () => {
 		};
 
 		const on = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
-		expect(on).toContain('Precisa de você');
-		expect(on).toContain('Fila parada');
+		expect(on).toContain('Needs you');
+		expect(on).toContain('Queue stopped');
 
 		const off = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
-		expect(off).toContain('Ocioso');
-		expect(off).not.toContain('Precisa de você');
-		expect(off).not.toContain('Fila parada');
+		expect(off).toContain('Idle');
+		expect(off).not.toContain('Needs you');
+		expect(off).not.toContain('Queue stopped');
 		expect(off).not.toContain('GSHIP-9');
 	});
 });
@@ -2056,7 +2056,7 @@ describe('conversation transcript', () => {
 			staleService: {
 				bootSha: HASH,
 				currentSha: `b${HASH.slice(1)}`,
-				detail: `Reinicie o serviço: origin/main saiu de ${HASH}.`,
+				detail: `Restart the service: origin/main saiu de ${HASH}.`,
 			},
 			status: `Falha ao ler /api/runs/run-${HASH}`,
 		});
@@ -2088,13 +2088,13 @@ describe('conversation transcript', () => {
 
 		for (const html of [empty, loaded]) {
 			const region = elementWith(html, 'role="log"');
-			expect(region).toContain('aria-label="Transcrição da conversa"');
+			expect(region).toContain('aria-label="Conversation transcript"');
 			expect(region).toContain('tabindex="0"');
 			expect(region).toContain('overflow-y-auto');
 			expect(html.split('role="log"')).toHaveLength(2);
 		}
 		// The empty state is inside the region, so the region never moves.
-		expect(empty.indexOf('role="log"')).toBeLessThan(empty.indexOf('Descreva o objetivo'));
+		expect(empty.indexOf('role="log"')).toBeLessThan(empty.indexOf('Describe the goal'));
 		expect(loaded.indexOf('role="log"')).toBeLessThan(loaded.indexOf('Pronto.'));
 	});
 
@@ -2155,29 +2155,29 @@ describe('screen derivations', () => {
 		];
 		const busy: RunState[] = ['queued', 'working', 'verify', 'review', 'shipping'];
 
-		for (const state of needsYou) expect(attentionOf(runIn(state), false)).toBe('Precisa de você');
-		for (const state of busy) expect(attentionOf(runIn(state), false)).toBe('Trabalhando');
-		expect(attentionOf(runIn('done'), false)).toBe('Ocioso');
-		expect(attentionOf(runIn('cancelled'), false)).toBe('Ocioso');
-		expect(attentionOf(null, false)).toBe('Ocioso');
+		for (const state of needsYou) expect(attentionOf(runIn(state), false)).toBe('Needs you');
+		for (const state of busy) expect(attentionOf(runIn(state), false)).toBe('Working');
+		expect(attentionOf(runIn('done'), false)).toBe('Idle');
+		expect(attentionOf(runIn('cancelled'), false)).toBe('Idle');
+		expect(attentionOf(null, false)).toBe('Idle');
 	});
 
 	test('a preserved workspace decides before the run state does', () => {
-		expect(attentionOf(runIn('done'), NOTICES)).toBe('Precisa de você');
-		expect(attentionOf(runIn('working'), NOTICES)).toBe('Precisa de você');
-		expect(attentionOf(null, NOTICES)).toBe('Precisa de você');
-		expect(attentionOf(runIn('done'), [])).toBe('Ocioso');
-		expect(attentionOf(runIn('working'), true)).toBe('Precisa de você');
+		expect(attentionOf(runIn('done'), NOTICES)).toBe('Needs you');
+		expect(attentionOf(runIn('working'), NOTICES)).toBe('Needs you');
+		expect(attentionOf(null, NOTICES)).toBe('Needs you');
+		expect(attentionOf(runIn('done'), [])).toBe('Idle');
+		expect(attentionOf(runIn('working'), true)).toBe('Needs you');
 	});
 
 	// GSHIP-650: a stopped chain queue decides before the run state does, the
 	// same way a preserved workspace already does -- otherwise a queue paused
 	// after a `done` run reads as idle, hiding exactly the state it named.
 	test('a stopped chain queue decides before the run state does', () => {
-		expect(attentionOf(runIn('done'), false, true)).toBe('Precisa de você');
-		expect(attentionOf(runIn('cancelled'), false, true)).toBe('Precisa de você');
-		expect(attentionOf(runIn('done'), false, false)).toBe('Ocioso');
-		expect(attentionOf(runIn('done'), false)).toBe('Ocioso');
+		expect(attentionOf(runIn('done'), false, true)).toBe('Needs you');
+		expect(attentionOf(runIn('cancelled'), false, true)).toBe('Needs you');
+		expect(attentionOf(runIn('done'), false, false)).toBe('Idle');
+		expect(attentionOf(runIn('done'), false)).toBe('Idle');
 	});
 
 	test('an interrupted run is resumable and a terminal one is not', () => {
@@ -2273,7 +2273,7 @@ describe('same-origin transport', () => {
 			expect(await fetchOperatorProfile()).toEqual(EMPTY_OPERATOR_PROFILE);
 		});
 		await withRecordedFetch({ ok: true, profile }, 200, async (calls) => {
-			expect(await saveOperatorProfile(profile)).toBe('Perfil do operador atualizado.');
+			expect(await saveOperatorProfile(profile)).toBe('Operator profile updated.');
 			expect(calls).toEqual([{
 				url: OPERATOR_PROFILE_PATH,
 				method: 'PUT',
@@ -2302,7 +2302,7 @@ describe('same-origin transport', () => {
 				state: 'needs-attention',
 				name: '',
 				reason: 'not-repository',
-				detail: 'O serviço não informou um estado de projeto válido.',
+				detail: 'The service did not report a valid project state.',
 			});
 		});
 	});
@@ -2324,7 +2324,7 @@ describe('same-origin transport', () => {
 			expect(await fetchProposals()).toEqual([]);
 		});
 		await withRecordedFetch({ ok: true, proposal: { id: 'run-1-proposal-1' } }, 200, async (calls) => {
-			expect(await dismissProposal('run-1-proposal-1')).toBe('Proposta descartada.');
+			expect(await dismissProposal('run-1-proposal-1')).toBe('Proposal dismissed.');
 			expect(calls).toEqual([{
 				url: '/api/proposals/run-1-proposal-1/dismiss',
 				method: 'POST',
@@ -2376,16 +2376,16 @@ describe('same-origin transport', () => {
 
 	test('a refused decision surfaces the server message instead of a generic failure', async () => {
 		await withRecordedFetch(
-			{ ok: false, code: 'proposal-not-pending', message: 'Proposta run-1-proposal-1 já está promoted.' },
+			{ ok: false, code: 'proposal-not-pending', message: 'Proposal run-1-proposal-1 is already promoted.' },
 			409,
 			async () => {
 				expect(await dismissProposal('run-1-proposal-1'))
-					.toBe('Proposta run-1-proposal-1 já está promoted.');
+					.toBe('Proposal run-1-proposal-1 is already promoted.');
 				await expect(promoteProposal('run-1-proposal-1', {
 					title: 'Título',
 					scope: 'Escopo.',
 					verificationCommand: 'bun test',
-				})).rejects.toThrow('Proposta run-1-proposal-1 já está promoted.');
+				})).rejects.toThrow('Proposal run-1-proposal-1 is already promoted.');
 			},
 		);
 	});
@@ -2420,7 +2420,7 @@ describe('same-origin transport', () => {
 		});
 		// The write carries the brief alone, on the same route, as a PUT.
 		await withRecordedFetch({ ok: true, brief }, 200, async (calls) => {
-			expect(await saveBrief(brief)).toBe('Project brief atualizado.');
+			expect(await saveBrief(brief)).toBe('Project brief updated.');
 			expect(calls).toEqual([{
 				url: BRIEF_PATH,
 				method: 'PUT',
@@ -2451,7 +2451,7 @@ describe('same-origin transport', () => {
 		});
 
 		await withRecordedFetch({ ok: true, settings: {} }, 200, async (calls) => {
-			expect(await saveModelSettings(settings)).toBe('Modelos por papel atualizados.');
+			expect(await saveModelSettings(settings)).toBe('Models by role updated.');
 			expect(calls).toEqual([{
 				url: MODEL_SETTINGS_PATH,
 				method: 'PUT',
@@ -2462,13 +2462,13 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({
 			ok: false,
 			code: 'invalid-request',
-			message: 'Modelo de claude/executor não pode conter espaço em branco.',
+			message: 'claude/executor model cannot contain whitespace.',
 		}, 400, async () => {
 			expect(await saveModelSettings(settings))
-				.toBe('Modelo de claude/executor não pode conter espaço em branco.');
+				.toBe('claude/executor model cannot contain whitespace.');
 		});
 		await withRecordedFetch({}, 500, async () => {
-			await expect(fetchModelSettings()).rejects.toThrow('Modelos respondeu 500');
+			await expect(fetchModelSettings()).rejects.toThrow('Models responded with 500');
 		});
 	});
 
@@ -2497,7 +2497,7 @@ describe('same-origin transport', () => {
 			settings: {},
 			probes: { claude: { executor: { outcome: 'accepted' } } },
 		}, 200, async () => {
-			expect(await saveModelSettings(EMPTY_MODEL_SETTINGS)).toBe('Modelos por papel atualizados.');
+			expect(await saveModelSettings(EMPTY_MODEL_SETTINGS)).toBe('Models by role updated.');
 		});
 	});
 
@@ -2522,7 +2522,7 @@ describe('same-origin transport', () => {
 		});
 
 		await withRecordedFetch({ ok: true, enabled: true, pause: null }, 200, async (calls) => {
-			expect(await saveChainRuns(true)).toBe('Encadeamento automático ativado.');
+			expect(await saveChainRuns(true)).toBe('Automatic run chaining enabled.');
 			expect(calls).toEqual([{
 				url: CHAIN_RUNS_PATH,
 				method: 'PUT',
@@ -2530,14 +2530,14 @@ describe('same-origin transport', () => {
 			}]);
 		});
 		await withRecordedFetch({ ok: true, enabled: false, pause: null }, 200, async () => {
-			expect(await saveChainRuns(false)).toBe('Encadeamento automático desativado.');
+			expect(await saveChainRuns(false)).toBe('Automatic run chaining disabled.');
 		});
 		await withRecordedFetch({
 			ok: false,
 			code: 'invalid-request',
-			message: '"enabled" deve ser um booleano.',
+			message: '"enabled" must be a boolean.',
 		}, 400, async () => {
-			expect(await saveChainRuns(true)).toBe('"enabled" deve ser um booleano.');
+			expect(await saveChainRuns(true)).toBe('"enabled" must be a boolean.');
 		});
 	});
 
@@ -2545,13 +2545,13 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({
 			ok: false,
 			code: 'invalid-request',
-			message: 'Objetivo aceita no máximo 2000 caracteres.',
+			message: 'Objective accepts at most 2000 characters.',
 		}, 400, async () => {
 			expect(await saveBrief({ ...EMPTY_BRIEF, objective: 'o'.repeat(2001) }))
-				.toBe('Objetivo aceita no máximo 2000 caracteres.');
+				.toBe('Objective accepts at most 2000 characters.');
 		});
 		await withRecordedFetch({}, 500, async () => {
-			await expect(fetchBrief()).rejects.toThrow('Brief respondeu 500');
+			await expect(fetchBrief()).rejects.toThrow('Brief responded with 500');
 		});
 	});
 
@@ -2568,7 +2568,7 @@ describe('same-origin transport', () => {
 			expect(calls).toEqual([{ url: CHAT_PATH, method: 'GET', body: null }]);
 		});
 		await withRecordedFetch({ ok: true, messages }, 200, async (calls) => {
-			expect(await sendChat('Continue.')).toBe('Resposta do orquestrador recebida.');
+			expect(await sendChat('Continue.')).toBe('Orchestrator response received.');
 			expect(calls).toEqual([{
 				url: CHAT_PATH,
 				method: 'POST',
@@ -2630,14 +2630,14 @@ describe('same-origin transport', () => {
 			},
 		);
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await approveIssue('CAM-42')).toBe('Run atualizada.');
+			expect(await approveIssue('CAM-42')).toBe('Run updated.');
 			expect(calls).toEqual([{ url: '/api/issues/CAM-42/approve', method: 'POST', body: null }]);
 		});
 	});
 
 	test('abandoning an issue uses the same trusted origin route with its justification', async () => {
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await abandonIssue('CAM-42', 'Não faz mais sentido.')).toBe('Run atualizada.');
+			expect(await abandonIssue('CAM-42', 'Não faz mais sentido.')).toBe('Run updated.');
 			expect(calls).toEqual([{
 				url: '/api/issues/CAM-42/abandon',
 				method: 'POST',
@@ -2685,7 +2685,7 @@ describe('same-origin transport', () => {
 			}]);
 		});
 		await withRecordedFetch({ ok: true, selected: 'codex' }, 200, async (calls) => {
-			expect(await selectProvider('codex')).toBe('Run atualizada.');
+			expect(await selectProvider('codex')).toBe('Run updated.');
 			expect(calls).toEqual([{
 				url: `${PROVIDERS_PATH}/codex/select`,
 				method: 'POST',
@@ -2700,12 +2700,12 @@ describe('same-origin transport', () => {
 	// even if a future server bug tried to include one.
 	test('reads notification channel status and fires a real test on its own routes', async () => {
 		await withRecordedFetch(
-			{ channels: { ntfy: { configured: true }, resend: { configured: false, missing: ['chave de API'] } } },
+			{ channels: { ntfy: { configured: true }, resend: { configured: false, missing: ['API key'] } } },
 			200,
 			async (calls) => {
 				expect(await fetchNotificationChannels()).toEqual({
 					ntfy: { configured: true, missing: [] },
-					resend: { configured: false, missing: ['chave de API'] },
+					resend: { configured: false, missing: ['API key'] },
 				});
 				expect(calls).toEqual([{ url: NOTIFICATIONS_PATH, method: 'GET', body: null }]);
 			},
@@ -2731,11 +2731,11 @@ describe('same-origin transport', () => {
 			},
 		);
 		await withRecordedFetch(
-			{ ok: false, code: 'not-configured', message: 'Canal ntfy não está configurado.' },
+			{ ok: false, code: 'not-configured', message: 'Channel ntfy is not configured.' },
 			409,
 			async () => {
 				expect(await sendNotificationTest('ntfy'))
-					.toBe('Canal ntfy não está configurado.');
+					.toBe('Channel ntfy is not configured.');
 			},
 		);
 		await withRecordedFetch(
@@ -2755,7 +2755,7 @@ describe('same-origin transport', () => {
 
 	test('start posts the issue id to the runs route', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
-			expect(await startRun('CAM-900')).toBe('Run atualizada.');
+			expect(await startRun('CAM-900')).toBe('Run updated.');
 		});
 
 		expect(calls).toEqual([
@@ -2844,7 +2844,7 @@ describe('same-origin transport', () => {
 		const staleService = {
 			bootSha: '1'.repeat(40),
 			currentSha: '2'.repeat(40),
-			detail: 'Reinicie o serviço para aplicar o que entrou depois do boot.',
+			detail: 'Restart the service para aplicar o que entrou depois do boot.',
 		};
 		await withRecordedFetch({ staleService }, 200, async (calls) => {
 			expect((await fetchBacklog()).staleService).toEqual(staleService);
@@ -2882,7 +2882,7 @@ describe('same-origin transport', () => {
 			expect(calls).toEqual([{ url: DIAGNOSTICS_PATH, method: 'GET', body: null }]);
 		});
 		await withRecordedFetch({ ok: true }, 202, async (calls) => {
-			expect(await startDiagnostic('react')).toContain('checkout isolado');
+			expect(await startDiagnostic('react')).toContain('isolated checkout');
 			expect(calls).toEqual([{
 				url: DIAGNOSTICS_PATH,
 				method: 'POST',
@@ -2890,11 +2890,11 @@ describe('same-origin transport', () => {
 			}]);
 		});
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await cancelDiagnostic('scan / 1')).toBe('Diagnóstico cancelado.');
+			expect(await cancelDiagnostic('scan / 1')).toBe('Diagnostic cancelled.');
 			expect(calls[0]?.url).toBe(`${DIAGNOSTICS_PATH}/scan%20%2F%201/cancel`);
 		});
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await dismissDiagnosticFinding('finding / 1')).toContain('descartado');
+			expect(await dismissDiagnosticFinding('finding / 1')).toContain('dismissed');
 			expect(calls[0]?.url).toBe(`${DIAGNOSTIC_FINDINGS_PATH}/finding%20%2F%201/dismiss`);
 		});
 		const issueDraft = {
@@ -2911,7 +2911,7 @@ describe('same-origin transport', () => {
 			}]);
 		});
 		await withRecordedFetch({ ok: true, outcome: 'started' }, 200, async (calls) => {
-			expect(await saveDiagnosticSchedule(true, 'daily')).toContain('vencido iniciado');
+			expect(await saveDiagnosticSchedule(true, 'daily')).toContain('overdue diagnostic started');
 			expect(calls).toEqual([{
 				url: DIAGNOSTIC_SCHEDULE_PATH,
 				method: 'PUT',
@@ -2925,8 +2925,8 @@ describe('same-origin transport', () => {
 
 	test('a failed read is reported as a transport error, not as empty data', async () => {
 		await withRecordedFetch({}, 500, async () => {
-			await expect(fetchRuns()).rejects.toThrow('Runs respondeu 500');
-			await expect(fetchBacklog()).rejects.toThrow('Snapshot respondeu 500');
+			await expect(fetchRuns()).rejects.toThrow('Runs responded with 500');
+			await expect(fetchBacklog()).rejects.toThrow('Snapshot responded with 500');
 		});
 	});
 });

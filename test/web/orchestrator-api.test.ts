@@ -216,7 +216,7 @@ describe('orchestrator web API', () => {
 
 			const payload = await posted.json() as { turn: OrchestratorTurnResult };
 			expect(payload.turn.commandResult?.text).toBe(
-				'CAM-77 criada no backlog e run run-fixture-1 iniciada.',
+				'CAM-77 created in the backlog and run run-fixture-1 started.',
 			);
 		} finally {
 			await handle.stop();
@@ -337,8 +337,8 @@ describe('orchestrator web API', () => {
 			const text = payload.turn.commandResult?.text ?? '';
 			expect(text).toContain('CAM-78');
 			expect(text).toContain('run run-9 is still working');
-			expect(text).toContain('start_run com CAM-78');
-			expect(text).not.toContain('Comando recusado');
+			expect(text).toContain('start_run with CAM-78');
+			expect(text).not.toContain('Command rejected');
 		} finally {
 			await handle.stop();
 			await runtime.stop();
@@ -378,7 +378,7 @@ describe('orchestrator web API', () => {
 			expect(abandoned).toEqual([{ id: 'CAM-9', input: command }]);
 
 			const payload = await posted.json() as { turn: OrchestratorTurnResult };
-			expect(payload.turn.commandResult?.text).toBe('CAM-9 abandonada no backlog.');
+			expect(payload.turn.commandResult?.text).toBe('CAM-9 abandoned in the backlog.');
 		} finally {
 			await handle.stop();
 			await runtime.stop();

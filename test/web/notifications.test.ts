@@ -29,20 +29,20 @@ describe('run notifications', () => {
 	test('alerts on operator decisions, retryable ship failures, failures and completion', () => {
 		expect(notificationForRunEvent(event('waiting-user', 'run.waiting-user', {
 			summary: 'Escolha o seam.',
-		}))).toMatchObject({ title: 'Gateship precisa de você', body: 'Escolha o seam.' });
+		}))).toMatchObject({ title: 'Gateship needs you', body: 'Escolha o seam.' });
 		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting', {
 			message: 'Claude usage limit reached.',
 		}))).toMatchObject({
-			title: 'Provider temporariamente indisponível',
+			title: 'Provider temporarily unavailable',
 			body: 'Claude usage limit reached.',
 		});
 		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed', {
 			error: 'checks red',
-		}))).toMatchObject({ title: 'Ship precisa de nova tentativa', body: 'checks red' });
+		}))).toMatchObject({ title: 'Shipping needs another attempt', body: 'checks red' });
 		expect(notificationForRunEvent(event('failed', 'run.verification-failed')))
-			.toMatchObject({ title: 'Run falhou' });
+			.toMatchObject({ title: 'Run failed' });
 		expect(notificationForRunEvent(event('done', 'run.shipped')))
-			.toMatchObject({ title: 'Run concluído' });
+			.toMatchObject({ title: 'Run completed' });
 	});
 
 	test('does not alert on ordinary progress, automatic ready state, or operator cancellation', () => {
@@ -64,7 +64,7 @@ describe('run notifications', () => {
 	test('a preserved workspace alerts even though the run state does not change', () => {
 		expect(CLEANUP_WARNING.fromState).toBe(CLEANUP_WARNING.toState);
 		expect(notificationForRunEvent(CLEANUP_WARNING)).toMatchObject({
-			title: 'Workspace preservado',
+			title: 'Workspace preserved',
 			body: 'workspace ficou sujo',
 			url: '/runs',
 		});

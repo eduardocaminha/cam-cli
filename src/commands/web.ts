@@ -181,24 +181,24 @@ export interface ProjectBriefAccess {
 
 function briefList(value: unknown, label: string): string[] {
 	if (!Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', `${label} deve ser uma lista de textos.`, 400);
+		throw new IssueIntakeError('invalid-request', `${label} must be a list of strings.`, 400);
 	}
 	if (value.length > PROJECT_BRIEF_LIMITS.listItems) {
 		throw new IssueIntakeError(
 			'invalid-request',
-			`${label} aceita no máximo ${PROJECT_BRIEF_LIMITS.listItems} itens.`,
+			`${label} accepts at most ${PROJECT_BRIEF_LIMITS.listItems} items.`,
 			400,
 		);
 	}
 	const items: string[] = [];
 	for (const item of value) {
 		if (typeof item !== 'string') {
-			throw new IssueIntakeError('invalid-request', `${label} deve ser uma lista de textos.`, 400);
+			throw new IssueIntakeError('invalid-request', `${label} must be a list of strings.`, 400);
 		}
 		if (item.length > PROJECT_BRIEF_LIMITS.itemLength) {
 			throw new IssueIntakeError(
 				'invalid-request',
-				`Cada item de ${label} aceita no máximo ${PROJECT_BRIEF_LIMITS.itemLength} caracteres.`,
+				`Each ${label} item accepts at most ${PROJECT_BRIEF_LIMITS.itemLength} characters.`,
 				400,
 			);
 		}
@@ -215,31 +215,31 @@ function briefList(value: unknown, label: string): string[] {
  */
 export function parseProjectBriefInput(value: unknown): ProjectBrief {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+		throw new IssueIntakeError('invalid-request', 'A JSON object is required.', 400);
 	}
 	const input = value as Record<string, unknown>;
 	const objective = input['objective'];
 	if (typeof objective !== 'string') {
-		throw new IssueIntakeError('invalid-request', 'Objetivo deve ser um texto.', 400);
+		throw new IssueIntakeError('invalid-request', 'Objective must be a string.', 400);
 	}
 	if (objective.length > PROJECT_BRIEF_LIMITS.objective) {
 		throw new IssueIntakeError(
 			'invalid-request',
-			`Objetivo aceita no máximo ${PROJECT_BRIEF_LIMITS.objective} caracteres.`,
+			`Objective accepts at most ${PROJECT_BRIEF_LIMITS.objective} characters.`,
 			400,
 		);
 	}
 	return {
 		objective: objective.trim(),
-		decisions: briefList(input['decisions'], 'Decisões'),
-		constraints: briefList(input['constraints'], 'Restrições'),
-		openItems: briefList(input['openItems'], 'Itens em aberto'),
+		decisions: briefList(input['decisions'], 'Decisions'),
+		constraints: briefList(input['constraints'], 'Constraints'),
+		openItems: briefList(input['openItems'], 'Open items'),
 	};
 }
 
 export function parseOperatorProfileInput(value: unknown): OperatorProfile {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+		throw new IssueIntakeError('invalid-request', 'A JSON object is required.', 400);
 	}
 	const input = value as Record<string, unknown>;
 	const name = input['name'];
@@ -250,7 +250,7 @@ export function parseOperatorProfileInput(value: unknown): OperatorProfile {
 	if (name.length > OPERATOR_PROFILE_LIMITS.name || /[\u0000-\u001f\u007f]/.test(name)) {
 		throw new IssueIntakeError(
 			'invalid-request',
-			`Nome aceita até ${OPERATOR_PROFILE_LIMITS.name} caracteres em uma linha.`,
+			`Name accepts up to ${OPERATOR_PROFILE_LIMITS.name} characters on one line.`,
 			400,
 		);
 	}
@@ -258,7 +258,7 @@ export function parseOperatorProfileInput(value: unknown): OperatorProfile {
 	if (timezone === null) {
 		throw new IssueIntakeError(
 			'invalid-request',
-			'Timezone deve ser um identificador IANA válido, como America/Sao_Paulo.',
+			'Timezone must be a valid IANA identifier, such as America/Sao_Paulo.',
 			400,
 		);
 	}
@@ -267,7 +267,7 @@ export function parseOperatorProfileInput(value: unknown): OperatorProfile {
 
 function jsonObjectInput(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new IssueIntakeError('invalid-request', `${label} deve ser um objeto JSON.`, 400);
+		throw new IssueIntakeError('invalid-request', `${label} must be a JSON object.`, 400);
 	}
 	return value as Record<string, unknown>;
 }
@@ -281,14 +281,14 @@ function jsonObjectInput(value: unknown, label: string): Record<string, unknown>
 function parseModelToken(value: unknown, label: string): string | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value !== 'string') {
-		throw new IssueIntakeError('invalid-request', `${label} deve ser um texto.`, 400);
+		throw new IssueIntakeError('invalid-request', `${label} must be a string.`, 400);
 	}
 	const trimmed = value.trim();
 	if (trimmed.length === 0) return undefined;
 	if (/\s/.test(trimmed)) {
 		throw new IssueIntakeError(
 			'invalid-request',
-			`${label} não pode conter espaço em branco.`,
+			`${label} cannot contain whitespace.`,
 			400,
 		);
 	}
@@ -299,11 +299,11 @@ function parseModelSlot(value: unknown, label: string): { model?: string; effort
 	const slot = jsonObjectInput(value, label);
 	for (const field of Object.keys(slot)) {
 		if (field !== 'model' && field !== 'effort') {
-			throw new IssueIntakeError('invalid-request', `${label} tem campo desconhecido: ${field}.`, 400);
+			throw new IssueIntakeError('invalid-request', `${label} has an unknown field: ${field}.`, 400);
 		}
 	}
-	const model = parseModelToken(slot['model'], `Modelo de ${label}`);
-	const effort = parseModelToken(slot['effort'], `Effort de ${label}`);
+	const model = parseModelToken(slot['model'], `${label} model`);
+	const effort = parseModelToken(slot['effort'], `${label} effort`);
 	return {
 		...(model === undefined ? {} : { model }),
 		...(effort === undefined ? {} : { effort }),
@@ -315,15 +315,15 @@ function parseModelSlot(value: unknown, label: string): { model?: string; effort
  * is refused instead of dropped, so a typo never reads back as "not configured".
  */
 export function parseModelSettingsInput(value: unknown): ModelSettings {
-	const input = jsonObjectInput(value, 'A configuração de modelos');
+	const input = jsonObjectInput(value, 'Model configuration');
 	const settings = emptyModelSettings();
 	for (const [provider, roles] of Object.entries(input)) {
 		if (!isModelProvider(provider)) {
-			throw new IssueIntakeError('invalid-request', `Provider desconhecido: ${provider}.`, 400);
+			throw new IssueIntakeError('invalid-request', `Unknown provider: ${provider}.`, 400);
 		}
-		for (const [role, slot] of Object.entries(jsonObjectInput(roles, `O provider ${provider}`))) {
+		for (const [role, slot] of Object.entries(jsonObjectInput(roles, `Provider ${provider}`))) {
 			if (!isModelRole(role)) {
-				throw new IssueIntakeError('invalid-request', `Papel desconhecido: ${role}.`, 400);
+				throw new IssueIntakeError('invalid-request', `Unknown role: ${role}.`, 400);
 			}
 			settings[provider][role] = parseModelSlot(slot, `${provider}/${role}`);
 		}
@@ -393,7 +393,7 @@ async function writeModelSettings(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -424,7 +424,7 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -433,7 +433,7 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 		: undefined;
 	if (typeof enabled !== 'boolean') {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: '"enabled" deve ser um booleano.' },
+			{ ok: false, code: 'invalid-request', message: '"enabled" must be a boolean.' },
 			{ status: 400 },
 		);
 	}
@@ -462,12 +462,12 @@ const NOTIFICATION_CHANNEL_TESTS: Readonly<Record<string, NotificationChannelTes
 	ntfy: {
 		send: (cwd) => sendNtfyTestNotification({ cwd }),
 		label: 'ntfy',
-		sentMessage: 'Mensagem de teste entregue ao ntfy.',
+		sentMessage: 'Test message delivered to ntfy.',
 	},
 	resend: {
 		send: (cwd) => sendResendTestNotification({ cwd }),
 		label: 'Resend',
-		sentMessage: 'Mensagem de teste entregue por email.',
+		sentMessage: 'Test message delivered by email.',
 	},
 };
 
@@ -489,7 +489,7 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 		: undefined;
 	if (test === undefined) {
 		return Response.json(
-			{ ok: false, code: 'unknown-channel', message: `Canal "${channelId}" desconhecido.` },
+			{ ok: false, code: 'unknown-channel', message: `Unknown channel: "${channelId}".` },
 			{ status: 404 },
 		);
 	}
@@ -503,8 +503,8 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 				ok: false,
 				code: 'not-configured',
 				outcome: result.outcome,
-				message: `Canal ${test.label} não está configurado`
-					+ `${result.detail === undefined ? '' : ` (falta: ${result.detail})`}.`,
+				message: `Channel ${test.label} is not configured`
+					+ `${result.detail === undefined ? '' : ` (missing: ${result.detail})`}.`,
 			},
 			{ status: 409 },
 		);
@@ -514,7 +514,7 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 			ok: false,
 			code: 'delivery-failed',
 			outcome: result.outcome,
-			message: `${test.label} recusou o teste${result.detail === undefined ? '' : ` (${result.detail})`}.`,
+			message: `${test.label} rejected the test${result.detail === undefined ? '' : ` (${result.detail})`}.`,
 		},
 		{ status: 502 },
 	);
@@ -530,7 +530,7 @@ async function writeProjectBrief(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -553,7 +553,7 @@ async function writeOperatorProfile(request: Request, runtime: RunRuntime): Prom
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -579,7 +579,7 @@ async function createIssueFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -677,7 +677,7 @@ async function converse(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Uma mensagem JSON é obrigatória.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON message is required.' },
 			{ status: 400 },
 		);
 	}
@@ -686,7 +686,7 @@ async function converse(
 		: undefined;
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Uma mensagem não vazia é obrigatória.' },
+			{ ok: false, code: 'invalid-request', message: 'A non-empty message is required.' },
 			{ status: 400 },
 		);
 	}
@@ -735,8 +735,8 @@ function assertIssueFileIsFree(runtime: RunRuntime, issueId: string): void {
 	if (active === null) return;
 	throw new IssueIntakeError(
 		'issue-run-active',
-		`${issueId} está sendo executada pela run ${active.id} (${active.state});`
-		+ ' o arquivo da issue pertence a ela até a run terminar.',
+		`${issueId} is being executed by run ${active.id} (${active.state});`
+		+ ' the issue file belongs to it until the run ends.',
 		409,
 	);
 }
@@ -753,7 +753,7 @@ async function specifyIssueFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -805,7 +805,7 @@ async function abandonIssueFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -846,20 +846,20 @@ async function startDiagnosticFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
 	if (body === null || typeof body !== 'object' || Array.isArray(body)) {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
 	const analyzer = (body as Record<string, unknown>)['analyzer'];
 	if (typeof analyzer !== 'string' || analyzer.trim().length === 0) {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Analyzer é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'Analyzer is required.' },
 			{ status: 400 },
 		);
 	}
@@ -881,7 +881,7 @@ async function writeDiagnosticSchedule(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -947,7 +947,7 @@ async function promoteDiagnosticFindingFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -957,14 +957,14 @@ async function promoteDiagnosticFindingFromOperator(
 		if (finding === null) {
 			throw new DiagnosticTransitionError(
 				'diagnostic-finding-not-found',
-				`Achado diagnóstico ${findingId} não existe.`,
+				`Diagnostic finding ${findingId} does not exist.`,
 				404,
 			);
 		}
 		if (finding.status !== 'pending') {
 			throw new DiagnosticTransitionError(
 				'diagnostic-finding-not-pending',
-				`Achado diagnóstico ${findingId} já está ${finding.status}.`,
+				`Diagnostic finding ${findingId} is already ${finding.status}.`,
 				409,
 			);
 		}
@@ -1021,7 +1021,7 @@ async function promoteProposalFromOperator(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
 			{ status: 400 },
 		);
 	}
@@ -1031,14 +1031,14 @@ async function promoteProposalFromOperator(
 		if (proposal === null) {
 			throw new ProposalTransitionError(
 				'proposal-not-found',
-				`Proposta ${proposalId} não existe.`,
+				`Proposal ${proposalId} does not exist.`,
 				404,
 			);
 		}
 		if (proposal.status !== 'pending') {
 			throw new ProposalTransitionError(
 				'proposal-not-pending',
-				`Proposta ${proposalId} já está ${proposal.status}.`,
+				`Proposal ${proposalId} is already ${proposal.status}.`,
 				409,
 			);
 		}
@@ -1190,7 +1190,7 @@ async function readOptionalOperatorGuidance(
 		body = await request.json();
 	} catch {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'A resposta deve ser um objeto JSON.' },
+			{ ok: false, code: 'invalid-request', message: 'The response must be a JSON object.' },
 			{ status: 400 },
 		);
 	}
@@ -1199,7 +1199,7 @@ async function readOptionalOperatorGuidance(
 		: undefined;
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'Uma resposta não vazia é obrigatória.' },
+			{ ok: false, code: 'invalid-request', message: 'A non-empty response is required.' },
 			{ status: 400 },
 		);
 	}
@@ -1531,9 +1531,9 @@ function staleServiceNotice(cwd: string, bootSha: string | null): StaleServiceNo
 	return {
 		bootSha,
 		currentSha,
-		detail: `O serviço está rodando o código de ${RUNTIME_SOURCE_REF} no boot (${bootSha}),`
-			+ ` e ${RUNTIME_SOURCE_REF} já está em ${currentSha}.`
-			+ ' Reinicie o serviço para aplicar o que entrou depois do boot.',
+		detail: `The service booted from ${RUNTIME_SOURCE_REF} code at ${bootSha},`
+			+ ` and ${RUNTIME_SOURCE_REF} is now at ${currentSha}.`
+			+ ' Restart the service to apply changes that landed after boot.',
 	};
 }
 
@@ -1604,10 +1604,10 @@ async function executeOrchestratorCommand(
 ): Promise<string> {
 	switch (command.type) {
 		case 'none':
-			return 'Nenhum comando solicitado.';
+			return 'No command requested.';
 		case 'create_issue': {
 			const issue = issueIntake(command);
-			return `${issue.id} criada no backlog.`;
+			return `${issue.id} created in the backlog.`;
 		}
 		case 'create_and_start_issue': {
 			const issue = issueIntake(command, { approve: true });
@@ -1615,11 +1615,11 @@ async function executeOrchestratorCommand(
 			// created id instead of escaping as a generic refusal.
 			try {
 				const run = runtime.startRun(issue.id);
-				return `${issue.id} criada no backlog e run ${run.id} iniciada.`;
+				return `${issue.id} created in the backlog and run ${run.id} started.`;
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				return `${issue.id} criada no backlog, mas a run não iniciou: ${reason}.`
-					+ ` Use start_run com ${issue.id} quando quiser iniciá-la.`;
+				return `${issue.id} was created in the backlog, but the run did not start: ${reason}.`
+					+ ` Use start_run with ${issue.id} when you want to start it.`;
 			}
 		}
 		// The three typed commands that rewrite an existing issue file ask the same
@@ -1628,21 +1628,21 @@ async function executeOrchestratorCommand(
 		case 'specify_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueSpecifier(command.issueId, command);
-			return `${issue.id} especificada no backlog.`;
+			return `${issue.id} specified in the backlog.`;
 		}
 		case 'approve_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueApprover(command.issueId);
-			return `${issue.id} aprovada no backlog.`;
+			return `${issue.id} approved in the backlog.`;
 		}
 		case 'abandon_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
 			const issue = issueAbandoner(command.issueId, command);
-			return `${issue.id} abandonada no backlog.`;
+			return `${issue.id} abandoned in the backlog.`;
 		}
 		case 'start_run': {
 			const run = runtime.startRun(command.issueId);
-			return `Run ${run.id} iniciada para ${run.issueId}.`;
+			return `Run ${run.id} started for ${run.issueId}.`;
 		}
 		case 'resume_run': {
 			const run = runtime.resumeRun(command.runId, command.guidance);
@@ -1651,15 +1651,15 @@ async function executeOrchestratorCommand(
 		case 'cancel_run': {
 			const run = await runtime.cancelRun(command.runId);
 			if (run === null) throw new Error(`run not found: ${command.runId}`);
-			return `Run ${run.id} está ${run.state}.`;
+			return `Run ${run.id} is ${run.state}.`;
 		}
 		case 'abandon_run': {
 			const run = runtime.abandonRun(command.runId);
-			return `Run ${run.id} abandonada sem retomar o provider.`;
+			return `Run ${run.id} abandoned without resuming the provider.`;
 		}
 		case 'ship_run': {
 			const run = runtime.shipRun(command.runId);
-			return `Ship da run ${run.id} iniciado.`;
+			return `Shipping started for run ${run.id}.`;
 		}
 	}
 }

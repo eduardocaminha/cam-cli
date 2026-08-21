@@ -88,11 +88,15 @@ export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
 
 const MAIN_CONTENT_ID = 'main-content';
 
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+	return `${count} ${count === 1 ? singular : plural}`;
+}
+
 const SURFACES: readonly { path: OperatorRoute; label: string }[] = [
-	{ path: '/', label: 'Conversa' },
+	{ path: '/', label: 'Conversation' },
 	{ path: '/runs', label: 'Runs' },
-	{ path: '/work', label: 'Trabalho' },
-	{ path: '/settings', label: 'Ajustes' },
+	{ path: '/work', label: 'Work' },
+	{ path: '/settings', label: 'Settings' },
 ];
 
 /**
@@ -214,7 +218,7 @@ function eventDetail(event: RunEventView): string | null {
 	if (typeof text === 'string' && text.trim().length > 0) details.push(text);
 	const tools = event.payload['tools'];
 	if (Array.isArray(tools) && tools.every((tool) => typeof tool === 'string')) {
-		details.push(`Ferramentas: ${tools.join(', ')}`);
+		details.push(`Tools: ${tools.join(', ')}`);
 	}
 	for (const key of ['findings', 'error']) {
 		const value = event.payload[key];
@@ -245,7 +249,7 @@ function isOperational(event: RunEventView): boolean {
  * as the expected cost an equivalent API call would have billed -- never as
  * an amount charged (GSHIP-623).
  */
-const COST_FORMAT = new Intl.NumberFormat('pt-BR', {
+const COST_FORMAT = new Intl.NumberFormat('en-US', {
 	style: 'currency',
 	currency: 'USD',
 	minimumFractionDigits: 2,
@@ -258,7 +262,7 @@ function formatCostUsd(value: number): string {
 
 const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], string> = {
 	executor: 'Executor',
-	reviewer: 'Revisor',
+	reviewer: 'Reviewer',
 };
 
 /**
@@ -268,9 +272,9 @@ const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], stri
  * history could not tell apart (GSHIP-659). Never a fabricated attribution.
  */
 function formatRoundOrigins(origins: RunView['roundOrigins']): string {
-	const parts = [`${origins.executor} do executor`, `${origins.decision} de decisão do operador`];
-	if (origins.indeterminate > 0) parts.push(`${origins.indeterminate} indeterminado(s)`);
-	return `Rounds de correção: ${parts.join(', ')}`;
+	const parts = [`${origins.executor} from the executor`, `${origins.decision} from operator decisions`];
+	if (origins.indeterminate > 0) parts.push(`${origins.indeterminate} indeterminate`);
+	return `Correction rounds: ${parts.join(', ')}`;
 }
 
 /** No correction round yet: nothing to report, not a fabricated zero line. */
@@ -281,10 +285,10 @@ function hasNoRounds(origins: RunView['roundOrigins']): boolean {
 /** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
 function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string | null {
 	const parts: string[] = [];
-	if (entry.inputTokens !== undefined) parts.push(`${entry.inputTokens} entrada`);
-	if (entry.outputTokens !== undefined) parts.push(`${entry.outputTokens} saída`);
-	if (entry.cacheReadInputTokens !== undefined) parts.push(`${entry.cacheReadInputTokens} cache lida`);
-	if (entry.cacheCreationInputTokens !== undefined) parts.push(`${entry.cacheCreationInputTokens} cache criada`);
+	if (entry.inputTokens !== undefined) parts.push(`${entry.inputTokens} input`);
+	if (entry.outputTokens !== undefined) parts.push(`${entry.outputTokens} output`);
+	if (entry.cacheReadInputTokens !== undefined) parts.push(`${entry.cacheReadInputTokens} cache read`);
+	if (entry.cacheCreationInputTokens !== undefined) parts.push(`${entry.cacheCreationInputTokens} cache created`);
 	return parts.length === 0 ? null : parts.join(' · ');
 }
 
@@ -364,8 +368,8 @@ function ContextPanel({
 				<CardTitle>{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
 				<CardAction aria-hidden="true">
-					<span className="text-muted-foreground text-xs group-open:hidden">abrir</span>
-					<span className="hidden text-muted-foreground text-xs group-open:inline">fechar</span>
+					<span className="text-muted-foreground text-xs group-open:hidden">open</span>
+					<span className="hidden text-muted-foreground text-xs group-open:inline">close</span>
 				</CardAction>
 			</CardSummary>
 			<CardPanel>{children}</CardPanel>
@@ -383,9 +387,9 @@ function RunActivity({
 		.slice(-30);
 	return (
 		<ContextPanel
-			description={`${visible.length} evento(s) recente(s) deste run.`}
+			description={`${countLabel(visible.length, 'recent event')} from this run.`}
 			open
-			title="Atividade"
+			title="Activity"
 		>
 			<ol className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto">
 				{visible.map((event) => {
@@ -413,20 +417,20 @@ function RunActivity({
 
 function RunProgress({ run }: { run: RunView }): React.ReactElement {
 	return (
-		<Progress label={`Fase ${phaseOf(run.state)}`} value={Math.round(progressOf(run.state) * 100)} />
+		<Progress label={`Phase ${phaseOf(run.state)}`} value={Math.round(progressOf(run.state) * 100)} />
 	);
 }
 
 const PROVIDER_WAIT_LABELS: Readonly<Record<RunProviderWaitView['kind'], string>> = {
-	'auth-required': 'Autenticação necessária',
-	'usage-limit': 'Limite da assinatura atingido',
-	'rate-limited': 'Chamadas temporariamente limitadas',
-	overloaded: 'Provider temporariamente sobrecarregado',
-	'model-refused': 'Modelo ou effort recusado',
-	'transport-unavailable': 'Provider sem conexão',
-	'protocol-invalid': 'Resposta inválida do provider',
-	cancelled: 'Chamada cancelada',
-	unknown: 'Provider indisponível',
+	'auth-required': 'Authentication required',
+	'usage-limit': 'Subscription usage limit reached',
+	'rate-limited': 'Calls temporarily rate-limited',
+	overloaded: 'Provider temporarily overloaded',
+	'model-refused': 'Model or effort rejected',
+	'transport-unavailable': 'Provider connection unavailable',
+	'protocol-invalid': 'Invalid provider response',
+	cancelled: 'Call cancelled',
+	unknown: 'Provider unavailable',
 };
 
 function ProviderWaitCallout({ wait }: { wait: RunProviderWaitView | null }): React.ReactElement | null {
@@ -434,20 +438,20 @@ function ProviderWaitCallout({ wait }: { wait: RunProviderWaitView | null }): Re
 	const retryDate = wait.retryAt === undefined ? null : new Date(wait.retryAt);
 	const retryText = retryDate === null || Number.isNaN(retryDate.getTime())
 		? wait.retryAt
-		: retryDate.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+		: retryDate.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
 	return (
 		<section
-			aria-label="Provider em espera"
+			aria-label="Provider on hold"
 			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
 		>
 			<span className="font-medium text-sm">
-				{wait.provider === 'claude' ? 'Claude Code' : 'Codex'} em espera
+				{wait.provider === 'claude' ? 'Claude Code' : 'Codex'} on hold
 			</span>
 			<p className="text-sm">{PROVIDER_WAIT_LABELS[wait.kind]}.</p>
 			<p className="break-words text-xs">{wait.message}</p>
 			{retryText === undefined ? null : (
 				<p className="text-xs">
-					Tente novamente após{' '}
+					Try again after{' '}
 					<time dateTime={wait.retryAt}>{retryText}</time>.
 				</p>
 			)}
@@ -478,15 +482,15 @@ function RunCommands({
 		// forwarded: `onResume` takes an optional string, and a SyntheticEvent in
 		// its place would be posted as the operator's message and refused as 400.
 		{
-			label: 'Retomar',
+			label: 'Resume',
 			shown: actions.resume && run?.state !== 'waiting-user',
 			onClick: () => onResume(),
 		},
 		// The other way out of an interrupted run: end it here, without reopening
 		// the provider session, so the next issue is no longer blocked by it.
-		{ label: 'Abandonar', shown: actions.abandon, onClick: onAbandon },
-		{ label: 'Cancelar', shown: actions.cancel, onClick: onCancel },
-		{ label: 'Shipar', shown: actions.ship, onClick: onShip },
+		{ label: 'Abandon', shown: actions.abandon, onClick: onAbandon },
+		{ label: 'Cancel', shown: actions.cancel, onClick: onCancel },
+		{ label: 'Ship', shown: actions.ship, onClick: onShip },
 	].filter((command) => command.shown);
 	if (offered.length === 0) return null;
 	return (
@@ -529,7 +533,7 @@ function RunCard({
 			<CardHeader>
 				<CardTitle>{title}</CardTitle>
 				<CardDescription className="break-all">
-					{run === null ? 'Nenhum run registrado ainda.' : run.issueId}
+					{run === null ? 'No runs recorded yet.' : run.issueId}
 				</CardDescription>
 				{run === null ? null : <Badge variant={toneOf(run.state)}>{run.state}</Badge>}
 			</CardHeader>
@@ -539,7 +543,7 @@ function RunCard({
 					{run === null ? null : <ProviderWaitCallout wait={run.providerWait} />}
 					{run === null || run.cost.totalCostUsd === null ? null : (
 						<p className="text-muted-foreground text-sm">
-							Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+							Expected cost: {formatCostUsd(run.cost.totalCostUsd)}
 						</p>
 					)}
 					{run === null || hasNoRounds(run.roundOrigins) ? null : (
@@ -569,8 +573,8 @@ function RunReport({ run }: { run: RunView }): React.ReactElement | null {
 	if (run.summary === null && run.error === null) return null;
 	return (
 		<ContextPanel
-			description="Relato completo do runtime e o identificador técnico do run."
-			title="Resumo e diagnóstico"
+			description="The complete runtime report and the run's technical identifier."
+			title="Summary and diagnostics"
 		>
 			<div className="flex flex-col gap-3">
 				{run.error === null ? null : (
@@ -610,8 +614,8 @@ function RunCostPanel({ run }: { run: RunView }): React.ReactElement | null {
 	}
 	return (
 		<ContextPanel
-			description="Custo esperado equivalente ao uso via API, por papel e por modelo. Nunca é o valor cobrado da assinatura."
-			title="Custo por papel e modelo"
+			description="Expected API-equivalent usage cost by role and model. Never the amount charged to the subscription."
+			title="Cost by role and model"
 		>
 			<ul className="flex flex-col gap-4">
 				{roles.map((role) => {
@@ -653,7 +657,7 @@ const PREVIOUS_RUNS_SHOWN = 4;
  * selection and no command here, only what an operator returning to the screen
  * needs to know about what already ran. Each row carries its own expected cost
  * (GSHIP-639) so Sonnet and another choice can be compared without opening
- * either run -- labeled the same "custo esperado" as every other cost figure
+ * either run -- labeled the same "expected cost" as every other cost figure
  * on this screen, never the amount actually billed, and omitted entirely
  * rather than shown as zero when its run never reported one.
  */
@@ -662,8 +666,8 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 	if (previous.length === 0) return null;
 	return (
 		<ContextPanel
-			description={`${previous.length} run(s) antes do último, do mais recente ao mais antigo.`}
-			title="Runs anteriores"
+			description={`${countLabel(previous.length, 'run')} before the latest, newest first.`}
+			title="Previous runs"
 		>
 			<ul className="flex flex-col gap-2">
 				{previous.map((run) => (
@@ -672,7 +676,7 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
 						{run.cost.totalCostUsd === null ? null : (
 							<span className="shrink-0 text-muted-foreground">
-								Custo esperado: {formatCostUsd(run.cost.totalCostUsd)}
+								Expected cost: {formatCostUsd(run.cost.totalCostUsd)}
 							</span>
 						)}
 						<time className="shrink-0 text-muted-foreground">
@@ -698,35 +702,35 @@ function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEle
 		+ insights.corrections.indeterminate;
 	return (
 		<ContextPanel
-			description={`Janela local dos ${insights.runCount} runs mais recentes, sem score composto.`}
-			title="Sinais do workflow"
+			description={`Local window of the latest ${countLabel(insights.runCount, 'run')}, without a composite score.`}
+			title="Workflow signals"
 		>
 			<dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">
-				<dt className="text-muted-foreground">Resultados</dt>
+				<dt className="text-muted-foreground">Outcomes</dt>
 				<dd>
-					{insights.outcomes.done} concluído(s) · {insights.outcomes.failed} falho(s) ·{' '}
-					{insights.outcomes.cancelled} cancelado(s)
-					{insights.outcomes.active === 0 ? null : ` · ${insights.outcomes.active} ativo(s)`}
+					{insights.outcomes.done} completed · {insights.outcomes.failed} failed ·{' '}
+					{insights.outcomes.cancelled} cancelled
+					{insights.outcomes.active === 0 ? null : ` · ${insights.outcomes.active} active`}
 				</dd>
-				<dt className="text-muted-foreground">Correções</dt>
+				<dt className="text-muted-foreground">Corrections</dt>
 				<dd>
-					{correctionRounds} rodada(s) em {insights.corrections.runCount} run(s):{' '}
-					{insights.corrections.executor} automáticas, {insights.corrections.decision} após
-					 decisão humana
+					{countLabel(correctionRounds, 'round')} across {countLabel(insights.corrections.runCount, 'run')}:{' '}
+					{insights.corrections.executor} automatic, {insights.corrections.decision} after
+					 human decisions
 					{insights.corrections.indeterminate === 0
 						? null
-						: `, ${insights.corrections.indeterminate} sem origem determinável`}
+						: `, ${insights.corrections.indeterminate} with indeterminate origin`}
 				</dd>
-				<dt className="text-muted-foreground">Custo conhecido</dt>
+				<dt className="text-muted-foreground">Known cost</dt>
 				<dd>
 					{insights.cost.totalCostUsd === null
-						? 'Nenhum provider reportou custo nesta janela.'
-						: `${formatCostUsd(insights.cost.totalCostUsd)} em ${insights.cost.reportedRunCount} de ${insights.runCount} runs.`}
+						? 'No provider reported cost in this window.'
+						: `${formatCostUsd(insights.cost.totalCostUsd)} across ${insights.cost.reportedRunCount} of ${countLabel(insights.runCount, 'run')}.`}
 				</dd>
 			</dl>
 			{insights.cost.totalCostUsd === null ? null : (
 				<p className="text-muted-foreground text-xs">
-					Custo esperado equivale ao uso reportado pela API; não é cobrança da assinatura.
+					Expected cost is API-equivalent reported usage, not a subscription charge.
 				</p>
 			)}
 		</ContextPanel>
@@ -734,9 +738,9 @@ function WorkflowInsightsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEle
 }
 
 function formatWallTime(milliseconds: number | null): string {
-	if (milliseconds === null) return 'não registrada';
+	if (milliseconds === null) return 'not recorded';
 	const minutes = Math.round(milliseconds / 60_000);
-	if (minutes < 1) return 'menos de 1 min';
+	if (minutes < 1) return 'less than 1 min';
 	if (minutes < 60) return `${minutes} min`;
 	const hours = minutes / 60;
 	return `${hours < 10 ? hours.toFixed(1) : Math.round(hours)} h`;
@@ -744,7 +748,7 @@ function formatWallTime(milliseconds: number | null): string {
 
 function configurationLabel(configuration: WorkflowCohort['configurations'][number]): string {
 	const roles = configuration.roles.map(({ role, models, efforts }) => {
-		const model = models.length === 0 ? 'modelo não registrado' : models.join(' + ');
+		const model = models.length === 0 ? 'model not recorded' : models.join(' + ');
 		const effort = efforts.length === 0 ? '' : ` (${efforts.join(' + ')})`;
 		return `${COST_ROLE_LABEL[role]}: ${model}${effort}`;
 	});
@@ -762,37 +766,38 @@ function WorkflowCohortCard({ cohort, label }: { cohort: WorkflowCohort; label: 
 				<code className="break-all text-muted-foreground text-xs">{cohort.revision}</code>
 			</div>
 			<dl className="grid gap-2 text-sm sm:grid-cols-[9rem_1fr]">
-				<dt className="text-muted-foreground">Amostra terminal</dt>
+				<dt className="text-muted-foreground">Terminal sample</dt>
 				<dd>
-					{cohort.terminalRunCount} run(s)
-					{cohort.incompleteRunCount === 0 ? null : ` · ${cohort.incompleteRunCount} ainda incompleta(s)`}
+					{countLabel(cohort.terminalRunCount, 'run')}
+					{cohort.incompleteRunCount === 0 ? null : ` · ${cohort.incompleteRunCount} still incomplete`}
 				</dd>
-				<dt className="text-muted-foreground">Resultados</dt>
+				<dt className="text-muted-foreground">Outcomes</dt>
 				<dd>
-					{cohort.outcomes.shipped} entregues · {cohort.outcomes.failed} falhas ·{' '}
-					{cohort.outcomes.cancelled} canceladas
+					{cohort.outcomes.shipped} shipped · {cohort.outcomes.failed} failed ·{' '}
+					{cohort.outcomes.cancelled} cancelled
 				</dd>
-				<dt className="text-muted-foreground">Atenção humana</dt>
+				<dt className="text-muted-foreground">Human attention</dt>
 				<dd>
-					{cohort.attention.requests} pedido(s) em {cohort.attention.runCount} run(s) ·{' '}
-					{cohort.attention.interventions} resposta(s)
+					{countLabel(cohort.attention.requests, 'request')} across{' '}
+					{countLabel(cohort.attention.runCount, 'run')} ·{' '}
+					{countLabel(cohort.attention.interventions, 'response')}
 				</dd>
-				<dt className="text-muted-foreground">Correções</dt>
-				<dd>{correctionCount} rodada(s) em {cohort.corrections.runCount} run(s)</dd>
-				<dt className="text-muted-foreground">Holds do provider</dt>
-				<dd>{cohort.providerHolds.count} em {cohort.providerHolds.runCount} run(s)</dd>
-				<dt className="text-muted-foreground">Tempo mediano</dt>
-				<dd>{formatWallTime(cohort.medianWallTimeMs)} de criação ao estado terminal</dd>
-				<dt className="text-muted-foreground">Custo conhecido</dt>
+				<dt className="text-muted-foreground">Corrections</dt>
+				<dd>{countLabel(correctionCount, 'round')} across {countLabel(cohort.corrections.runCount, 'run')}</dd>
+				<dt className="text-muted-foreground">Provider holds</dt>
+				<dd>{cohort.providerHolds.count} across {countLabel(cohort.providerHolds.runCount, 'run')}</dd>
+				<dt className="text-muted-foreground">Median time</dt>
+				<dd>{formatWallTime(cohort.medianWallTimeMs)} from creation to terminal state</dd>
+				<dt className="text-muted-foreground">Known cost</dt>
 				<dd>
 					{cohort.cost.totalCostUsd === null
-						? 'nenhum custo reportado'
-						: `${formatCostUsd(cohort.cost.totalCostUsd)} em ${cohort.cost.reportedRunCount} run(s)`}
+						? 'no reported cost'
+						: `${formatCostUsd(cohort.cost.totalCostUsd)} across ${countLabel(cohort.cost.reportedRunCount, 'run')}`}
 				</dd>
 			</dl>
 			<div className="mt-3 flex flex-col gap-1 text-muted-foreground text-xs">
 				{cohort.configurations.length === 0 ? (
-					<span>Provider/model/effort ainda não observados em run terminal.</span>
+					<span>Provider/model/effort not yet observed in a terminal run.</span>
 				) : cohort.configurations.map((configuration) => (
 					<span key={configurationLabel(configuration)}>
 						{configuration.runCount}× {configurationLabel(configuration)}
@@ -809,12 +814,12 @@ function WorkflowBenchmarkPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEl
 	const cohorts = summarizeWorkflowCohorts(runs).slice(0, 2);
 	return (
 		<ContextPanel
-			description="Reprocessa a janela durável de até 50 runs e compara revisões sem chamar outro agente."
-			title="Benchmarks replayable"
+			description="Replays the durable window of up to 50 runs and compares revisions without calling another agent."
+			title="Replayable benchmarks"
 		>
 			{cohorts.length === 0 ? (
 				<p className="text-muted-foreground text-sm">
-					As runs existentes são anteriores ao registro de revisão. A próxima run inicia a primeira coorte.
+					Existing runs predate revision tracking. The next run starts the first cohort.
 				</p>
 			) : (
 				<div className="grid gap-3 xl:grid-cols-2">
@@ -822,19 +827,19 @@ function WorkflowBenchmarkPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEl
 						<WorkflowCohortCard
 							cohort={cohort}
 							key={cohort.revision}
-							label={index === 0 ? 'Coorte mais recente' : 'Baseline anterior'}
+							label={index === 0 ? 'Latest cohort' : 'Previous baseline'}
 						/>
 					))}
 				</div>
 			)}
 			{cohorts.length === 1 ? (
 				<p className="mt-3 text-muted-foreground text-xs">
-					A comparação começa quando outra revisão acumular uma run terminal.
+					Comparison begins when another revision accumulates a terminal run.
 				</p>
 			) : null}
 			<p className="mt-3 text-muted-foreground text-xs">
-				Comparação observacional: escopo, provider, modelo e effort também podem mudar os resultados.
-				 Não existe score composto nem aprovação automática.
+				Observational comparison: scope, provider, model and effort may also change outcomes.
+				 There is no composite score or automatic approval.
 			</p>
 		</ContextPanel>
 	);
@@ -846,9 +851,9 @@ function WorkspaceNoticesPanel({
 	if (workspaceNotices.length === 0) return null;
 	return (
 		<ContextPanel
-			description={`${workspaceNotices.length} recurso(s) local(is) precisam de inspeção.`}
+			description={`${countLabel(workspaceNotices.length, 'local resource')} ${workspaceNotices.length === 1 ? 'needs' : 'need'} inspection.`}
 			open
-			title="Workspaces preservados"
+			title="Preserved workspaces"
 		>
 			<ul className="flex flex-col gap-3">
 				{workspaceNotices.map((notice) => (
@@ -880,13 +885,13 @@ function providerDescription(provider: ProviderStatusView): string {
 	if (provider.availability !== undefined) {
 		const reason = PROVIDER_WAIT_LABELS[provider.availability.kind];
 		return provider.subscription
-			? `Assinatura conectada, mas indisponível agora: ${reason}.`
-			: `Indisponível agora: ${reason}.`;
+			? `Subscription connected, but currently unavailable: ${reason}.`
+			: `Currently unavailable: ${reason}.`;
 	}
 	if (provider.subscription) {
-		return `Assinatura conectada${provider.plan === undefined ? '' : ` · ${provider.plan}`}`;
+		return `Subscription connected${provider.plan === undefined ? '' : ` · ${provider.plan}`}`;
 	}
-	return provider.installed ? 'Instalado, sem assinatura conectada' : 'Cliente não encontrado';
+	return provider.installed ? 'Installed, without a connected subscription' : 'Client not found';
 }
 
 function ProviderRow({
@@ -901,12 +906,12 @@ function ProviderRow({
 			<div className="min-w-0">
 				<p className="flex flex-wrap items-center gap-2 font-medium">
 					{provider.label}
-					{provider.id === selectedProvider ? <Badge variant="secondary">em uso</Badge> : null}
+					{provider.id === selectedProvider ? <Badge variant="secondary">in use</Badge> : null}
 				</p>
 				<p className="break-words text-muted-foreground">{providerDescription(provider)}</p>
 			</div>
 			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
-				<ActionButton enabled={!pending} label="Conectar ChatGPT" onClick={onConnectCodex} />
+				<ActionButton enabled={!pending} label="Connect ChatGPT" onClick={onConnectCodex} />
 			) : null}
 			{provider.id === 'claude' && !provider.subscription && provider.installed ? (
 				<code className="break-all text-muted-foreground">claude auth login</code>
@@ -914,7 +919,7 @@ function ProviderRow({
 			{provider.subscription && provider.id !== selectedProvider ? (
 				<ActionButton
 					enabled={!pending}
-					label={`Usar ${provider.label}`}
+					label={`Use ${provider.label}`}
 					onClick={() => onSelectProvider(provider.id)}
 				/>
 			) : null}
@@ -925,9 +930,9 @@ function ProviderRow({
 function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Gateship usa a assinatura dos clientes instalados e nunca recebe tokens."
+			description="Gateship uses subscriptions from installed clients and never receives tokens."
 			open
-			title="Agentes locais"
+			title="Local agents"
 		>
 			<ul className="flex flex-col gap-3">
 				{props.providers.map((provider) => (
@@ -951,9 +956,9 @@ const MODEL_PROVIDER_LABELS: Readonly<Record<ProviderStatusView['id'], string>> 
 };
 
 const MODEL_ROLE_LABELS: Readonly<Record<ModelRoleName, string>> = {
-	orchestrator: 'Orquestrador',
+	orchestrator: 'Orchestrator',
 	executor: 'Executor',
-	reviewer: 'Revisor',
+	reviewer: 'Reviewer',
 };
 
 /**
@@ -996,13 +1001,13 @@ function ModelSlotFields({
 				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
 				htmlFor={`${providerId}-${role}-model`}
 			>
-				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — modelo</span>
+				<span className="font-medium">{MODEL_ROLE_LABELS[role]} — model</span>
 				<input
 					className={cn(FIELD_CLASS, 'font-mono')}
 					defaultValue={slot.model}
 					id={`${providerId}-${role}-model`}
 					name={`${providerId}-${role}-model`}
-					placeholder="padrão do CLI"
+					placeholder="CLI default"
 				/>
 			</label>
 			<label
@@ -1015,7 +1020,7 @@ function ModelSlotFields({
 					defaultValue={slot.effort}
 					id={`${providerId}-${role}-effort`}
 					name={`${providerId}-${role}-effort`}
-					placeholder="padrão do CLI"
+					placeholder="CLI default"
 				/>
 			</label>
 		</div>
@@ -1037,7 +1042,7 @@ function ModelProviderFields({
 				rel="noreferrer noopener"
 				target="_blank"
 			>
-				Modelos de {MODEL_PROVIDER_LABELS[providerId]} na documentação oficial
+				{MODEL_PROVIDER_LABELS[providerId]} models in the official documentation
 			</a>
 			{MODEL_ROLE_NAMES.map((role) => (
 				<ModelSlotFields
@@ -1064,12 +1069,12 @@ function ModelSettingsPanel({
 	return (
 		<ContextPanel
 			description={
-				'Vale para o próximo agente iniciado, sem reiniciar o serviço. ' +
-				'Vazio mantém o padrão do CLI. O campo é livre: um valor inválido é recusado ' +
-				'pelo próprio CLI, com o erro dele, e não pelo Gateship.'
+				'Applies to the next agent started, without restarting the service. ' +
+				'An empty field keeps the CLI default. The field is free text: the CLI itself ' +
+				'rejects an invalid value with its own error, not Gateship.'
 			}
 			open
-			title="Modelo e effort por papel"
+			title="Model and effort by role"
 		>
 			<form
 				className="flex flex-col gap-6"
@@ -1089,7 +1094,7 @@ function ModelSettingsPanel({
 					/>
 				))}
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Salvar modelos
+					Save models
 				</button>
 			</form>
 		</ContextPanel>
@@ -1111,9 +1116,9 @@ function ChainRunsPanel({
 }: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'>): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Ao terminar uma run em done, inicia sozinho a próxima issue já aprovada, na ordem do id."
+			description="When a run finishes in done, starts the next approved issue automatically in ID order."
 			open
-			title="Encadeamento automático"
+			title="Automatic run chaining"
 		>
 			<label className="flex items-center gap-2 text-sm">
 				<input
@@ -1123,7 +1128,7 @@ function ChainRunsPanel({
 						onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
 					type="checkbox"
 				/>
-				<span className="font-medium">Encadear runs aprovadas automaticamente</span>
+				<span className="font-medium">Chain approved runs automatically</span>
 			</label>
 		</ContextPanel>
 	);
@@ -1140,8 +1145,8 @@ function DiagnosticSchedulePanel({
 	const { schedule } = diagnostics;
 	return (
 		<ContextPanel
-			description="Executa no máximo um diagnóstico vencido e somente quando este projeto estiver ocioso."
-			title="Agenda de diagnósticos"
+			description="Runs at most one overdue diagnostic, and only while this project is idle."
+			title="Diagnostic schedule"
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1164,10 +1169,10 @@ function DiagnosticSchedulePanel({
 						name="diagnostic-schedule-enabled"
 						type="checkbox"
 					/>
-					<span className="font-medium">Executar diagnósticos periodicamente</span>
+					<span className="font-medium">Run diagnostics periodically</span>
 				</label>
 				<label className="flex max-w-sm flex-col gap-1 text-sm" htmlFor="diagnostic-schedule-cadence">
-					<span className="font-medium">Cadência</span>
+					<span className="font-medium">Cadence</span>
 					<select
 						className={FIELD_CLASS}
 						defaultValue={schedule.cadence}
@@ -1175,27 +1180,27 @@ function DiagnosticSchedulePanel({
 						id="diagnostic-schedule-cadence"
 						name="diagnostic-schedule-cadence"
 					>
-						<option value="daily">Diária</option>
-						<option value="weekly">Semanal</option>
+						<option value="daily">Daily</option>
+						<option value="weekly">Weekly</option>
 					</select>
 				</label>
 				<div className="flex flex-wrap items-center gap-2 text-sm">
 					<Badge variant="outline">{schedule.analyzer}</Badge>
 					{!schedule.enabled ? (
-						<span className="text-muted-foreground">Desativada.</span>
+						<span className="text-muted-foreground">Disabled.</span>
 					) : schedule.overdue ? (
-						<Badge variant="warning">vencida</Badge>
+						<Badge variant="warning">overdue</Badge>
 					) : (
 						<span className="text-muted-foreground">
-							Próxima execução: {schedule.nextRunAt ?? 'a calcular'}
+							Next run: {schedule.nextRunAt ?? 'calculating'}
 						</span>
 					)}
 				</div>
 				<p className="text-muted-foreground text-xs">
-					Um scan manual também reinicia a janela. Períodos perdidos não geram catch-up.
+					A manual scan also resets the window. Missed periods do not create catch-up runs.
 				</p>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Salvar agenda
+					Save schedule
 				</button>
 			</form>
 		</ContextPanel>
@@ -1214,10 +1219,10 @@ const NOTIFICATION_CHANNEL_LABELS: Readonly<Record<NotificationChannelId, string
  * Resend's pages are linked, not just the key page.
  */
 const NOTIFICATION_CHANNEL_DOCS: Readonly<Record<NotificationChannelId, ReadonlyArray<{ label: string; href: string }>>> = {
-	ntfy: [{ label: 'Documentação do ntfy', href: 'https://docs.ntfy.sh/publish/' }],
+	ntfy: [{ label: 'ntfy documentation', href: 'https://docs.ntfy.sh/publish/' }],
 	resend: [
-		{ label: 'Chaves de API do Resend', href: 'https://resend.com/api-keys' },
-		{ label: 'Verificação de domínio no Resend', href: 'https://resend.com/domains' },
+		{ label: 'Resend API keys', href: 'https://resend.com/api-keys' },
+		{ label: 'Resend domain verification', href: 'https://resend.com/domains' },
 	],
 };
 
@@ -1226,19 +1231,19 @@ function NotificationChannelInstructions({ channelId }: { channelId: Notificatio
 	if (channelId === 'resend') {
 		return (
 			<>
-				Grave a chave de API em <code className="break-all">.gship/resend-api-key</code>, na raiz do
-				projeto, com permissão 600, ou defina <code className="break-all">GATESHIP_RESEND_API_KEY</code>{' '}
-				-- que tem precedência sobre o arquivo. Defina também{' '}
-				<code className="break-all">GATESHIP_RESEND_FROM</code> (remetente em domínio verificado) e{' '}
-				<code className="break-all">GATESHIP_RESEND_TO</code> (destinatário).{' '}
+				Save the API key in <code className="break-all">.gship/resend-api-key</code> at the project root
+				 with mode 600, or set <code className="break-all">GATESHIP_RESEND_API_KEY</code>, which takes
+				 precedence over the file. Also set <code className="break-all">GATESHIP_RESEND_FROM</code>{' '}
+				(sender at a verified domain) and <code className="break-all">GATESHIP_RESEND_TO</code>{' '}
+				(recipient).{' '}
 			</>
 		);
 	}
 	return (
 		<>
-			Grave a URL do tópico em <code className="break-all">.gship/ntfy-url</code>, na raiz do projeto, com
-			permissão 600, ou defina a variável de ambiente <code className="break-all">GATESHIP_NTFY_URL</code>{' '}
-			-- que tem precedência sobre o arquivo.{' '}
+			Save the topic URL in <code className="break-all">.gship/ntfy-url</code> at the project root with
+			 mode 600, or set <code className="break-all">GATESHIP_NTFY_URL</code>, which takes precedence over
+			 the file.{' '}
 		</>
 	);
 }
@@ -1266,12 +1271,12 @@ function NotificationChannelRow({
 		<div className="flex flex-col gap-2">
 			<div className="flex items-center justify-between gap-3">
 				<p className="text-sm">
-					{label}: {channel.configured ? 'configurado' : 'não configurado'}
-					{!channel.configured && channel.missing.length > 0 ? ` (falta: ${channel.missing.join(', ')})` : null}
+					{label}: {channel.configured ? 'configured' : 'not configured'}
+					{!channel.configured && channel.missing.length > 0 ? ` (missing: ${channel.missing.join(', ')})` : null}
 				</p>
 				<ActionButton
 					enabled={channel.configured && !pending}
-					label="Enviar teste"
+					label="Send test"
 					onClick={() => onSendNotificationTest(channelId)}
 				/>
 			</div>
@@ -1304,25 +1309,25 @@ function NotificationsPanel({
 	const unavailable = notificationPermission === 'unsupported';
 	const denied = notificationPermission === 'denied';
 	const actionLabel = active
-		? 'Notificações ativas'
+		? 'Notifications active'
 		: denied
-			? 'Notificações bloqueadas'
+			? 'Notifications blocked'
 			: unavailable
-				? 'Notificações indisponíveis'
-				: 'Ativar notificações';
+				? 'Notifications unavailable'
+				: 'Enable notifications';
 	return (
 		<ContextPanel
-			description="O navegador avisa quando um run precisa de você ou termina; o canal remoto avisa mesmo com a aba fechada."
+			description="The browser alerts you when a run needs you or finishes; remote channels alert you even when the tab is closed."
 			open
-			title="Notificações locais"
+			title="Notifications"
 		>
 			<div className="flex flex-col gap-4">
 				<div className="flex items-center justify-between gap-3">
 					<p className="text-muted-foreground text-sm">
-						{active ? 'Ativas neste navegador.' : null}
-						{denied ? 'Bloqueadas nas permissões deste navegador.' : null}
-						{unavailable ? 'Indisponíveis neste navegador.' : null}
-						{notificationPermission === 'default' ? 'Permissão ainda não solicitada.' : null}
+						{active ? 'Active in this browser.' : null}
+						{denied ? 'Blocked in this browser\'s permissions.' : null}
+						{unavailable ? 'Unavailable in this browser.' : null}
+						{notificationPermission === 'default' ? 'Permission not requested yet.' : null}
 					</p>
 					<ActionButton
 						enabled={notificationPermission === 'default'}
@@ -1356,7 +1361,7 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
 	return (
 		<section
-			aria-label="Transcrição da conversa"
+			aria-label="Conversation transcript"
 			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
 			onScroll={liveEdge.onScroll}
 			ref={liveEdge.ref}
@@ -1365,7 +1370,7 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 		>
 			{chatMessages.length === 0 ? (
 				<p className="flex min-h-24 items-center justify-center text-center text-muted-foreground text-sm">
-					Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.
+					Describe the goal, ask for an investigation or give a command in natural language.
 				</p>
 			) : (
 				<ol className="flex flex-col gap-3">
@@ -1378,7 +1383,7 @@ function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactE
 							key={message.seq}
 						>
 							<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
-								<span>{message.role === 'operator' ? 'você' : message.role}</span>
+								<span>{message.role === 'operator' ? 'you' : message.role}</span>
 								<span className="shrink-0">{message.providerId}</span>
 							</div>
 							<p className="whitespace-pre-wrap break-words">{message.text}</p>
@@ -1403,9 +1408,8 @@ function ChatCostSummary({ chatMessages }: Pick<AppProps, 'chatMessages'>): Reac
 	if (aggregate.totalCostUsd === null) return null;
 	return (
 		<p className="text-muted-foreground text-sm">
-			Custo esperado acumulado de {aggregate.turnCount} turno(s) do orquestrador:{' '}
-			{formatCostUsd(aggregate.totalCostUsd)}. Equivalente ao uso via API, nunca o valor cobrado da
-			assinatura.
+			Expected cumulative cost for {countLabel(aggregate.turnCount, 'orchestrator turn')}:{' '}
+			{formatCostUsd(aggregate.totalCostUsd)}. API-equivalent usage, never the subscription charge.
 		</p>
 	);
 }
@@ -1423,7 +1427,7 @@ function OperatorAnswer({
 	if (run === null || run.state !== 'waiting-user') return null;
 	return (
 		<section className="flex flex-col gap-2 rounded-md border border-warning/32 bg-warning/8 p-3">
-			<p className="font-medium text-sm">O run está esperando sua decisão.</p>
+			<p className="font-medium text-sm">The run is waiting for your decision.</p>
 			{run.summary === null ? null : (
 				<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
 					{run.summary}
@@ -1438,19 +1442,19 @@ function OperatorAnswer({
 				}}
 			>
 				<label className="font-medium text-sm" htmlFor="operator-guidance">
-					Sua resposta
+					Your response
 				</label>
 				<textarea
 					className={FIELD_CLASS}
 					disabled={pending}
 					id="operator-guidance"
 					name="operatorGuidance"
-					placeholder="Decisão ou orientação para o agente"
+					placeholder="Decision or guidance for the agent"
 					required
 					rows={3}
 				/>
 				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-					Responder e retomar
+					Respond and resume
 				</button>
 			</form>
 		</section>
@@ -1490,9 +1494,9 @@ function ConversationColumn({
 		>
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
-					<CardTitle>Conversa com o orquestrador</CardTitle>
+					<CardTitle>Conversation with the orchestrator</CardTitle>
 					<CardDescription>
-						Ele pode investigar o projeto; ações passam pelo runtime determinístico.
+						It can investigate the project; actions go through the deterministic runtime.
 					</CardDescription>
 				</CardHeader>
 				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
@@ -1513,18 +1517,18 @@ function ConversationColumn({
 						}}
 					>
 						<label className="sr-only" htmlFor="orchestrator-message">
-							Mensagem para o orquestrador
+							Message for the orchestrator
 						</label>
 						<input
 							className={cn(FIELD_CLASS, 'min-w-0')}
 							disabled={pending}
 							id="orchestrator-message"
 							name="message"
-							placeholder="O que você quer fazer agora?"
+							placeholder="What do you want to do now?"
 							required
 						/>
 						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-							Enviar
+							Send
 						</button>
 					</form>
 				</CardPanel>
@@ -1544,9 +1548,9 @@ function BacklogPanel({
 }): React.ReactElement {
 	return (
 		<ContextPanel
-			description={`${backlog.length} issue(s) admissível(is) agora.`}
+			description={`${countLabel(backlog.length, 'admissible issue')} right now.`}
 			open
-			title="Backlog plannable"
+			title="Executable backlog"
 		>
 			<div className="flex flex-col gap-3">
 				<ul className="flex flex-col gap-1">
@@ -1568,7 +1572,7 @@ function BacklogPanel({
 						</li>
 					))}
 				</ul>
-				<ActionButton enabled={canStart} label="Iniciar run" onClick={onStart} />
+				<ActionButton enabled={canStart} label="Start run" onClick={onStart} />
 			</div>
 		</ContextPanel>
 	);
@@ -1580,8 +1584,8 @@ function IssueIntakePanel({
 }: Pick<AppProps, 'pending' | 'onCreateIssue'>): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Vai direto ao backlog executável; o comando será o gate determinístico."
-			title="Nova tarefa"
+			description="Goes directly to the executable backlog; the command is the deterministic gate."
+			title="New issue"
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1596,15 +1600,15 @@ function IssueIntakePanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-title">
-					<span className="font-medium">Título</span>
+					<span className="font-medium">Title</span>
 					<input className={FIELD_CLASS} id="issue-title" name="title" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-scope">
-					<span className="font-medium">Escopo e resultado esperado</span>
+					<span className="font-medium">Scope and expected outcome</span>
 					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="issue-scope" name="scope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-command">
-					<span className="font-medium">Comando de verificação</span>
+					<span className="font-medium">Verification command</span>
 					<input
 						className={cn(FIELD_CLASS, 'font-mono')}
 						id="issue-command"
@@ -1614,7 +1618,7 @@ function IssueIntakePanel({
 					/>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Criar tarefa
+					Create issue
 				</button>
 			</form>
 		</ContextPanel>
@@ -1629,8 +1633,8 @@ function IssueSpecifyPanel({
 	if (ideas.length === 0) return null;
 	return (
 		<ContextPanel
-			description="Promove a ideia com o mesmo contrato direto, sem planner intermediário."
-			title="Especificar ideia existente"
+			description="Promotes the idea with the same direct contract, without an intermediate planner."
+			title="Specify existing idea"
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -1644,7 +1648,7 @@ function IssueSpecifyPanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-id">
-					<span className="font-medium">Ideia</span>
+					<span className="font-medium">Idea</span>
 					<select className={FIELD_CLASS} id="idea-id" name="ideaId" required>
 						{ideas.map((idea) => (
 							<option key={idea.id} value={idea.id}>{idea.id} — {idea.title}</option>
@@ -1652,11 +1656,11 @@ function IssueSpecifyPanel({
 					</select>
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-scope">
-					<span className="font-medium">Escopo e resultado esperado</span>
+					<span className="font-medium">Scope and expected outcome</span>
 					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="idea-scope" name="ideaScope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-command">
-					<span className="font-medium">Comando de verificação</span>
+					<span className="font-medium">Verification command</span>
 					<input
 						className={cn(FIELD_CLASS, 'font-mono')}
 						id="idea-command"
@@ -1666,7 +1670,7 @@ function IssueSpecifyPanel({
 					/>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Especificar ideia
+					Specify idea
 				</button>
 			</form>
 		</ContextPanel>
@@ -1681,9 +1685,9 @@ const BRIEF_LISTS: readonly {
 	name: 'decisions' | 'constraints' | 'openItems';
 	label: string;
 }[] = [
-	{ name: 'decisions', label: 'Decisões' },
-	{ name: 'constraints', label: 'Restrições' },
-	{ name: 'openItems', label: 'Itens em aberto' },
+	{ name: 'decisions', label: 'Decisions' },
+	{ name: 'constraints', label: 'Constraints' },
+	{ name: 'openItems', label: 'Open items' },
 ];
 
 /** One item per line; blank lines are what an operator leaves while typing. */
@@ -1706,7 +1710,7 @@ function ProjectBriefPanel({
 }: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'>): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Contexto humano autoritativo, mantido por você. O orquestrador lê e nunca escreve."
+			description="Authoritative human context, maintained by you. The orchestrator reads it and never writes it."
 			open
 			title="Project brief"
 		>
@@ -1727,7 +1731,7 @@ function ProjectBriefPanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
-					<span className="font-medium">Objetivo</span>
+					<span className="font-medium">Objective</span>
 					<textarea
 						className={cn(FIELD_CLASS, 'min-h-16')}
 						defaultValue={brief.objective}
@@ -1747,12 +1751,12 @@ function ProjectBriefPanel({
 							defaultValue={brief[field.name].join('\n')}
 							id={`brief-${field.name}`}
 							name={field.name}
-							placeholder="Um item por linha"
+							placeholder="One item per line"
 						/>
 					</label>
 				))}
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Salvar brief
+					Save brief
 				</button>
 			</form>
 		</ContextPanel>
@@ -1768,28 +1772,28 @@ function ProjectBriefPanel({
 function HandoffPanel({ handoff }: Pick<AppProps, 'handoff'>): React.ReactElement {
 	return (
 		<ContextPanel
-			description="Estado de sessão observado e gerado pelo orquestrador. Pode estar desatualizado; o brief acima prevalece."
-			title="Handoff automático"
+			description="Session state observed and generated by the orchestrator. It may be stale; the brief above prevails."
+			title="Automatic handoff"
 		>
 			<div className="flex flex-col gap-3">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">somente leitura</Badge>
+					<Badge variant="outline">read-only</Badge>
 					<span className="text-muted-foreground text-sm">
-						Reescrito a cada turno do orquestrador.
+						Rewritten after each orchestrator turn.
 					</span>
 				</div>
 				<Separator />
 				<div className="flex flex-col gap-1 text-sm">
-					<span className="font-medium">Objetivo</span>
+					<span className="font-medium">Objective</span>
 					<p className="whitespace-pre-wrap break-words text-muted-foreground">
-						{handoff.objective === '' ? 'Nada registrado ainda.' : handoff.objective}
+						{handoff.objective === '' ? 'Nothing recorded yet.' : handoff.objective}
 					</p>
 				</div>
 				{BRIEF_LISTS.map((field) => (
 					<div className="flex flex-col gap-1 text-sm" key={field.name}>
 						<span className="font-medium">{field.label}</span>
 						{handoff[field.name].length === 0 ? (
-							<p className="text-muted-foreground">Nada registrado ainda.</p>
+							<p className="text-muted-foreground">Nothing recorded yet.</p>
 						) : (
 							<ul className="flex flex-col gap-1">
 								{handoff[field.name].map((item) => (
@@ -1818,10 +1822,10 @@ function StaleServiceCallout({
 	if (staleService === null) return null;
 	return (
 		<section
-			aria-label="Serviço desatualizado"
+			aria-label="Outdated service"
 			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
 		>
-			<span className="font-medium text-sm">Reinicie o serviço</span>
+			<span className="font-medium text-sm">Restart the service</span>
 			<p className="break-words text-xs">{staleService.detail}</p>
 			<code className="break-all text-xs">boot {staleService.bootSha}</code>
 			<code className="break-all text-xs">origin/main {staleService.currentSha}</code>
@@ -1845,10 +1849,10 @@ function GitIdentityCallout({
 	if (gitIdentity === null) return null;
 	return (
 		<section
-			aria-label="Identidade de git ausente"
+			aria-label="Missing Git identity"
 			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
 		>
-			<span className="font-medium text-sm">Identidade de git ausente</span>
+			<span className="font-medium text-sm">Missing Git identity</span>
 			<p className="break-words text-xs">{gitIdentity.detail}</p>
 		</section>
 	);
@@ -1856,11 +1860,11 @@ function GitIdentityCallout({
 
 /** One line per reason the queue is not advancing on its own (GSHIP-638). */
 const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
-	'chain-disabled': 'o interruptor está desligado.',
-	'previous-run-not-done': 'a run anterior não terminou em done.',
-	'no-admissible-issue': 'nenhuma issue admissível no backlog agora.',
-	'run-active': 'uma run ainda está ativa.',
-	'chain-start-failed': 'a tentativa de iniciar a próxima run falhou.',
+	'chain-disabled': 'the switch is off.',
+	'previous-run-not-done': 'the previous run did not finish in done.',
+	'no-admissible-issue': 'there are no admissible issues in the backlog right now.',
+	'run-active': 'a run is still active.',
+	'chain-start-failed': 'the attempt to start the next run failed.',
 };
 
 /**
@@ -1868,7 +1872,7 @@ const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
  * the setting alone and emits no event (GSHIP-638), so a pause recorded
  * before the operator turned the switch off -- `no-admissible-issue`,
  * `previous-run-not-done`, any reason -- would otherwise survive the turn-off
- * and keep reading "Precisa de você" with a warning callout on every surface,
+ * and keep reading "Needs you" with a warning callout on every surface,
  * with nothing to clear it until some future run reaches a terminal state and
  * records a fresh `chain-disabled` pause, which may never happen (GSHIP-650
  * review). `chain-disabled` itself never escalates either, on or off: chaining
@@ -1898,10 +1902,10 @@ function ChainPauseCallout({
 		: `${pause.issue.id}: ${pause.issue.title} — ${CHAIN_PAUSE_LABELS[pause.reason]}`;
 	return (
 		<section
-			aria-label="Fila de encadeamento parada"
+			aria-label="Stopped run queue"
 			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
 		>
-			<span className="font-medium text-sm">Fila parada</span>
+			<span className="font-medium text-sm">Queue stopped</span>
 			<p className="break-words text-xs">{named}</p>
 		</section>
 	);
@@ -1944,7 +1948,7 @@ function ShellSidebar({
 			<StaleServiceCallout staleService={staleService} />
 			<GitIdentityCallout gitIdentity={gitIdentity} />
 			<Separator />
-			<nav aria-label="Superfícies do operador">
+			<nav aria-label="Operator surfaces">
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
 					{SURFACES.map((surface) => (
 						<li key={surface.path}>
@@ -2001,13 +2005,13 @@ function HomeSurface(props: AppProps): React.ReactElement {
 				status={props.status}
 			/>
 			<aside
-				aria-label="Inspetor da execução"
+				aria-label="Run inspector"
 				className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
 			>
 				<RunCard
 					footer={
 						<a className={TEXT_LINK_CLASS} href="/runs">
-							Ver detalhes da execução
+							View run details
 						</a>
 					}
 					onAbandon={props.onAbandon}
@@ -2016,7 +2020,7 @@ function HomeSurface(props: AppProps): React.ReactElement {
 					onShip={props.onShip}
 					pending={props.pending}
 					run={run}
-					title="Execução atual"
+					title="Current run"
 				/>
 			</aside>
 		</div>
@@ -2026,7 +2030,7 @@ function HomeSurface(props: AppProps): React.ReactElement {
 function RunsSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	return (
-		<SurfaceColumn label="Execuções" status={props.status}>
+		<SurfaceColumn label="Runs" status={props.status}>
 			<RunCard
 				onAbandon={props.onAbandon}
 				onCancel={props.onCancel}
@@ -2034,7 +2038,7 @@ function RunsSurface(props: AppProps): React.ReactElement {
 				onShip={props.onShip}
 				pending={props.pending}
 				run={run}
-				title="Último run"
+				title="Latest run"
 			/>
 			{run === null ? null : <RunReport run={run} />}
 			{run === null ? null : <RunCostPanel run={run} />}
@@ -2090,16 +2094,16 @@ function IssueReviewForm({
 		>
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[draft.state]}</Badge></div>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
-				<span className="font-medium">Escopo e resultado esperado</span>
+				<span className="font-medium">Scope and expected outcome</span>
 				<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
 			</label>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
-				<span className="font-medium">Comando de verificação</span>
+				<span className="font-medium">Verification command</span>
 				<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
 			</label>
 			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
 				<div className="flex flex-col gap-2 text-sm">
-					<span className="font-medium">Evidência checada no workspace da run</span>
+					<span className="font-medium">Evidence checked in the run workspace</span>
 					<ul className="flex flex-col gap-2">
 						{draft.evidence.map((item, index) => (
 							<li className="flex flex-col gap-1" key={index}>
@@ -2110,24 +2114,24 @@ function IssueReviewForm({
 					</ul>
 				</div>
 			)}
-			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Salvar revisão</button>
+			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Save revision</button>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
-				<span>Confirmo o scope e o verificationCommand persistidos.</span>
+				<span>I confirm the persisted scope and verificationCommand.</span>
 			</label>
 			<button
 				className={PRIMARY_BUTTON_CLASS}
 				disabled={pending || dirty || !confirmed}
 				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
 				type="button"
-			>Aprovar</button>
+			>Approve</button>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="abandon-reason">
-				<span className="font-medium">Motivo do abandono</span>
+				<span className="font-medium">Reason for abandonment</span>
 				<textarea className={cn(FIELD_CLASS, 'min-h-20')} id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
 			</label>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
-				<span>Confirmo o abandono de {draft.id} com esse motivo.</span>
+				<span>I confirm abandoning {draft.id} for this reason.</span>
 			</label>
 			<button
 				className={BUTTON_CLASS}
@@ -2137,7 +2141,7 @@ function IssueReviewForm({
 					onAbandonIssue(draft.id, abandonReason.trim());
 				}}
 				type="button"
-			>Abandonar</button>
+			>Abandon</button>
 		</form>
 	);
 }
@@ -2162,8 +2166,8 @@ function IssueReviewPanel({
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Revisar e aprovar</CardTitle>
-				<CardDescription>{drafts.length} issue(s) open + specified.</CardDescription>
+				<CardTitle>Review and approve</CardTitle>
+				<CardDescription>{countLabel(drafts.length, 'open and specified issue')}.</CardDescription>
 				<CardAction><Badge variant="secondary">{drafts.length}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
@@ -2176,7 +2180,7 @@ function IssueReviewPanel({
 							setSelectedId((event.currentTarget as unknown as { value: string }).value || null)}
 						value={selectedId ?? ''}
 					>
-						<option value="">Selecione um draft</option>
+						<option value="">Select a draft</option>
 						{drafts.map((draft) => (
 							<option key={draft.id} value={draft.id}>{draft.id} — {draft.title}</option>
 						))}
@@ -2184,8 +2188,8 @@ function IssueReviewPanel({
 				</label>
 				{selected === null || !ownedByRun ? null : (
 					<p className="text-muted-foreground text-sm">
-						{selected.id} está sendo executada por uma run. O arquivo da issue pertence a ela
-						até a run terminar, então revisar, aprovar e abandonar só voltam depois disso.
+						{selected.id} is being executed by a run. The issue file belongs to it until the
+						 run ends, so review, approval and abandonment return only after that.
 					</p>
 				)}
 				{selected === null || ownedByRun ? null : (
@@ -2209,10 +2213,10 @@ function diagnosticFindingLocation(finding: DiagnosticFindingView): string {
 }
 
 function diagnosticStatusLabel(status: DiagnosticFindingView['status']): string {
-	if (status === 'promoted') return 'Promovido';
-	if (status === 'dismissed') return 'Descartado';
-	if (status === 'cleared') return 'Não reapareceu';
-	return 'Pendente';
+	if (status === 'promoted') return 'Promoted';
+	if (status === 'dismissed') return 'Dismissed';
+	if (status === 'cleared') return 'Did not recur';
+	return 'Pending';
 }
 
 function diagnosticSeverityVariant(severity: DiagnosticFindingView['severity']): BadgeVariant {
@@ -2239,7 +2243,7 @@ function DiagnosticScanSummary({
 			<div className="flex flex-wrap items-center gap-2">
 				<Badge variant={diagnosticScanVariant(scan.state)}>{scan.state}</Badge>
 				{scan.sourceSha === null ? null : <code className="text-xs">{scan.sourceSha.slice(0, 12)}</code>}
-				{scan.state === 'completed' && !scan.coverageComplete ? <Badge variant="warning">parcial</Badge> : null}
+				{scan.state === 'completed' && !scan.coverageComplete ? <Badge variant="warning">partial</Badge> : null}
 			</div>
 			{scan.error === null ? null : <p className="text-destructive-foreground">{scan.error}</p>}
 		</div>
@@ -2271,7 +2275,7 @@ function DiagnosticFindingCard({
 					<span>tool {finding.toolVersion}</span>
 					<code>{finding.sourceSha.slice(0, 12)}</code>
 				</div>
-				<ActionButton enabled={!pending} label="Descartar" onClick={() => onDismiss(finding.id)} />
+				<ActionButton enabled={!pending} label="Dismiss" onClick={() => onDismiss(finding.id)} />
 				<form
 					className="flex flex-col gap-3"
 					onSubmit={(event) => {
@@ -2285,18 +2289,18 @@ function DiagnosticFindingCard({
 					}}
 				>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Título</span>
-						<input className={FIELD_CLASS} defaultValue={`${finding.rule} em ${finding.file}`.slice(0, 120)} name="diagnosticTitle" required />
+						<span className="font-medium">Title</span>
+						<input className={FIELD_CLASS} defaultValue={`${finding.rule} in ${finding.file}`.slice(0, 120)} name="diagnosticTitle" required />
 					</label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Escopo e resultado esperado</span>
+						<span className="font-medium">Scope and expected outcome</span>
 						<textarea className={cn(FIELD_CLASS, 'min-h-24')} name="diagnosticScope" required />
 					</label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">Comando de verificação</span>
+						<span className="font-medium">Verification command</span>
 						<input className={cn(FIELD_CLASS, 'font-mono')} name="diagnosticVerificationCommand" placeholder="bun test" required />
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending} type="submit">Promover</button>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">Promote</button>
 				</form>
 			</div>
 		</details>
@@ -2315,7 +2319,7 @@ function PendingDiagnosticFindings({
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	if (findings.length === 0) {
-		return <p className="text-muted-foreground text-sm">Nenhum achado pendente.</p>;
+		return <p className="text-muted-foreground text-sm">No pending findings.</p>;
 	}
 	return (
 		<ul className="flex flex-col gap-3">
@@ -2337,7 +2341,7 @@ function ResolvedDiagnosticFindings({
 }): React.ReactElement {
 	return (
 		<details className="text-sm">
-			<summary className="cursor-pointer text-muted-foreground">Resolvidos ({findings.length})</summary>
+			<summary className="cursor-pointer text-muted-foreground">Resolved ({findings.length})</summary>
 			<ul className="mt-3 flex flex-col gap-2">
 				{findings.map((finding) => (
 					<li className="flex flex-wrap items-center gap-2" key={finding.id}>
@@ -2348,7 +2352,7 @@ function ResolvedDiagnosticFindings({
 					</li>
 				))}
 			</ul>
-			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">+{omittedCount} não exibido(s).</p> : null}
+			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">+{omittedCount} not shown.</p> : null}
 		</details>
 	);
 }
@@ -2359,22 +2363,22 @@ function DiagnosticOutcomeSummary({
 	if (stats.total === 0) {
 		return (
 			<p className="text-muted-foreground text-sm">
-				Ainda não há histórico suficiente para medir a utilidade deste analyzer.
+				There is not enough history yet to measure this analyzer's usefulness.
 			</p>
 		);
 	}
 	return (
 		<div className="flex flex-col gap-1 text-sm">
 			<p>
-				Histórico local: {stats.promoted} promovido(s), {stats.dismissed} descartado(s),{' '}
-				{stats.cleared} que não reapareceram e {stats.pending} pendente(s).
+				Local history: {stats.promoted} promoted, {stats.dismissed} dismissed,{' '}
+				{stats.cleared} that did not recur and {stats.pending} pending.
 			</p>
 			{stats.recurring === 0 ? null : (
-				<p className="text-muted-foreground">{stats.recurring} achado(s) reapareceram em outro scan.</p>
+				<p className="text-muted-foreground">{countLabel(stats.recurring, 'finding')} recurred in another scan.</p>
 			)}
 			<p className="text-muted-foreground text-xs">
-				Descartar não significa falso positivo; isso só poderá ser medido quando o operador
-				classificar explicitamente o motivo.
+				Dismissal does not mean false positive; that can only be measured when the operator
+				explicitly classifies the reason.
 			</p>
 		</div>
 	);
@@ -2408,15 +2412,15 @@ function DiagnosticsPanel({
 			<CardSummary>
 				<CardTitle>Gateship Diagnostics</CardTitle>
 				<CardDescription>
-					{active ? 'Analisando um checkout isolado…' : `${diagnostics.findings.length} achado(s) pendente(s).`}
+					{active ? 'Analyzing an isolated checkout…' : `${countLabel(diagnostics.findings.length, 'pending finding')}.`}
 				</CardDescription>
-				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? 'rodando' : diagnostics.findings.length}</Badge></CardAction>
+				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? 'running' : diagnostics.findings.length}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				<div className="flex flex-col gap-2 text-sm">
 					<p className="text-muted-foreground">
-						Consultivo: nunca corrige, aprova ou bloqueia ship. A primeira execução baixa o
-						analyzer pinado apenas no estado local do Gateship.
+						Advisory: never fixes, approves or blocks shipping. The first run downloads the
+						pinned analyzer only into Gateship's local state.
 					</p>
 					{analyzer === undefined ? null : (
 						<div className="flex flex-wrap items-center gap-2">
@@ -2431,14 +2435,14 @@ function DiagnosticsPanel({
 					{!active && analyzer !== undefined ? (
 						<ActionButton
 							enabled={!pending}
-							label="Executar agora"
+							label="Run now"
 							onClick={() => onStartDiagnostic(analyzer.id)}
 						/>
 					) : null}
 					{active && scan !== null ? (
 						<ActionButton
 							enabled={!pending}
-							label="Cancelar diagnóstico"
+							label="Cancel diagnostic"
 							onClick={() => onCancelDiagnostic(scan.id)}
 						/>
 					) : null}
@@ -2482,14 +2486,14 @@ function ProposalsPanel({
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Propostas derivadas</CardTitle>
-				<CardDescription>{proposals.length} proposta(s) pendente(s).</CardDescription>
+				<CardTitle>Derived proposals</CardTitle>
+				<CardDescription>{countLabel(proposals.length, 'pending proposal')}.</CardDescription>
 				<CardAction><Badge variant="secondary">{proposals.length}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				{proposals.length === 0 ? (
 					<p className="text-muted-foreground text-sm">
-						Nenhuma proposta pendente. Um run registra aqui o que encontrou fora do escopo.
+						No pending proposals. A run records out-of-scope discoveries here.
 					</p>
 				) : (
 					<ul className="flex flex-col gap-6">
@@ -2507,7 +2511,7 @@ function ProposalsPanel({
 								</div>
 								<ActionButton
 									enabled={!pending}
-									label="Descartar"
+									label="Dismiss"
 									onClick={() => onDismissProposal(proposal.id)}
 								/>
 								<form
@@ -2526,7 +2530,7 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-title-${proposal.id}`}
 									>
-										<span className="font-medium">Título</span>
+										<span className="font-medium">Title</span>
 										<input
 											className={FIELD_CLASS}
 											defaultValue={proposal.title}
@@ -2539,7 +2543,7 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-scope-${proposal.id}`}
 									>
-										<span className="font-medium">Escopo e resultado esperado</span>
+										<span className="font-medium">Scope and expected outcome</span>
 										<textarea
 											className={cn(FIELD_CLASS, 'min-h-24')}
 											id={`proposal-scope-${proposal.id}`}
@@ -2551,7 +2555,7 @@ function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-command-${proposal.id}`}
 									>
-										<span className="font-medium">Comando de verificação</span>
+										<span className="font-medium">Verification command</span>
 										<input
 											className={cn(FIELD_CLASS, 'font-mono')}
 											id={`proposal-command-${proposal.id}`}
@@ -2561,7 +2565,7 @@ function ProposalsPanel({
 										/>
 									</label>
 									<button className={BUTTON_CLASS} disabled={pending} type="submit">
-										Promover
+										Promote
 									</button>
 								</form>
 							</li>
@@ -2587,21 +2591,21 @@ function ResolvedProposalsPanel({
 	return (
 		<CardDisclosure className="group">
 			<CardSummary>
-				<CardTitle>Propostas resolvidas</CardTitle>
-				<CardDescription>{resolvedProposals.length} proposta(s) resolvida(s).</CardDescription>
+				<CardTitle>Resolved proposals</CardTitle>
+				<CardDescription>{countLabel(resolvedProposals.length, 'resolved proposal')}.</CardDescription>
 				<CardAction><Badge variant="secondary">{resolvedProposals.length}</Badge></CardAction>
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">somente leitura</Badge>
+					<Badge variant="outline">read-only</Badge>
 					<span className="text-muted-foreground text-sm">
-						Descarte e promoção não podem ser desfeitos aqui.
+						Dismissal and promotion cannot be undone here.
 					</span>
 				</div>
 				<Separator />
 				{resolvedProposals.length === 0 ? (
 					<p className="text-muted-foreground text-sm">
-						Nenhuma proposta resolvida ainda.
+						No resolved proposals yet.
 					</p>
 				) : (
 					<ul className="flex flex-col gap-4">
@@ -2610,9 +2614,9 @@ function ResolvedProposalsPanel({
 								<div className="flex flex-wrap items-center gap-2">
 									<span className="break-words font-medium">{proposal.title}</span>
 									{proposal.status === 'promoted' ? (
-										<Badge variant="success">Promovida</Badge>
+										<Badge variant="success">Promoted</Badge>
 									) : (
-										<Badge variant="secondary">Descartada</Badge>
+										<Badge variant="secondary">Dismissed</Badge>
 									)}
 								</div>
 								<p className="whitespace-pre-wrap break-words text-muted-foreground">
@@ -2623,7 +2627,7 @@ function ResolvedProposalsPanel({
 									<code className="break-all text-xs">{proposal.sourceRunId}</code>
 									{proposal.status === 'promoted' && proposal.promotedIssueId !== null ? (
 										<span className="break-words">
-											virou <Badge variant="info">{proposal.promotedIssueId}</Badge>
+											became <Badge variant="info">{proposal.promotedIssueId}</Badge>
 										</span>
 									) : null}
 								</div>
@@ -2633,7 +2637,7 @@ function ResolvedProposalsPanel({
 				)}
 				{resolvedProposalsOmittedCount > 0 ? (
 					<p className="text-muted-foreground text-sm">
-						+{resolvedProposalsOmittedCount} proposta(s) resolvida(s) não exibida(s).
+						+{countLabel(resolvedProposalsOmittedCount, 'resolved proposal')} not shown.
 					</p>
 				) : null}
 			</CardPanel>
@@ -2644,7 +2648,7 @@ function ResolvedProposalsPanel({
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	return (
-		<SurfaceColumn label="Trabalho" status={props.status}>
+		<SurfaceColumn label="Work" status={props.status}>
 			<BacklogPanel
 				backlog={props.backlog}
 				canStart={actions.start && !props.pending}
@@ -2685,22 +2689,22 @@ function ProjectPanel({ project }: Pick<AppProps, 'project'>): React.ReactElemen
 	const ready = project.state === 'ready';
 	return (
 		<ContextPanel
-			description="O processo opera um projeto local por vez; este vínculo é derivado do Git e não é uma configuração oculta."
+			description="The process operates one local project at a time; this binding is derived from Git, not hidden configuration."
 			open
-			title="Projeto"
+			title="Project"
 		>
 			<div className="flex flex-col gap-3 text-sm">
 				<div className="flex flex-wrap items-center gap-2">
 					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'secondary' : 'warning'}>
-						{ready ? 'pronto' : project.state === 'checking' ? 'verificando' : 'atenção'}
+						{ready ? 'ready' : project.state === 'checking' ? 'checking' : 'attention'}
 					</Badge>
-					<span className="font-medium">{project.name === '' ? 'Projeto local' : project.name}</span>
+					<span className="font-medium">{project.name === '' ? 'Local project' : project.name}</span>
 				</div>
 				{ready ? (
 					<dl className="grid gap-2 sm:grid-cols-[8rem_1fr]">
-						<dt className="text-muted-foreground">Repositório</dt>
+						<dt className="text-muted-foreground">Repository</dt>
 						<dd><code className="break-all">{project.repository}</code></dd>
-						<dt className="text-muted-foreground">Fonte dos runs</dt>
+						<dt className="text-muted-foreground">Run source</dt>
 						<dd><code className="break-all">{project.sourceRef}</code></dd>
 					</dl>
 				) : (
@@ -2723,9 +2727,9 @@ function OperatorProfilePanel({
 	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
 	return (
 		<ContextPanel
-			description="Identidade humana e timezone usados como contexto não autoritativo na conversa."
+			description="Human identity and timezone used as non-authoritative conversation context."
 			open
-			title="Operador"
+			title="Operator"
 		>
 			<form
 				className="flex flex-col gap-4"
@@ -2740,13 +2744,13 @@ function OperatorProfilePanel({
 				}}
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
-					<span className="font-medium">Nome</span>
+					<span className="font-medium">Name</span>
 					<input
 						className={FIELD_CLASS}
 						defaultValue={operatorProfile.name}
 						id="operator-name"
 						name="operator-name"
-						placeholder="Como o orquestrador deve chamar você"
+						placeholder="What the orchestrator should call you"
 					/>
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
@@ -2759,11 +2763,11 @@ function OperatorProfilePanel({
 						placeholder="America/Sao_Paulo"
 					/>
 					<span className="text-muted-foreground text-xs">
-						Identificador IANA. A sugestão do navegador só é salva quando você confirma.
+						IANA identifier. The browser suggestion is saved only when you confirm.
 					</span>
 				</label>
 				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					Salvar perfil
+					Save profile
 				</button>
 			</form>
 		</ContextPanel>
@@ -2774,7 +2778,7 @@ const PROJECT_RECOVERY_COMMAND: Readonly<Record<
 	Exclude<ProjectStatusView, { state: 'ready' | 'empty' | 'checking' }>['reason'],
 	string
 >> = {
-	'not-repository': 'cd /caminho/do/projeto && gship',
+	'not-repository': 'cd /path/to/project && gship',
 	'origin-missing': 'git remote add origin git@github.com:OWNER/REPO.git && git fetch origin main',
 	'github-origin-required': 'git remote set-url origin git@github.com:OWNER/REPO.git',
 	'origin-main-missing': 'git fetch origin main',
@@ -2798,12 +2802,12 @@ function OnboardingSurface({
 	status,
 }: Pick<AppProps, 'project' | 'status'>): React.ReactElement {
 	return (
-		<SurfaceColumn label="Preparar projeto" status={status}>
+		<SurfaceColumn label="Set up project" status={status}>
 			<Card>
 				<CardHeader>
-					<CardTitle>Conecte um projeto GitHub</CardTitle>
+					<CardTitle>Connect a GitHub project</CardTitle>
 					<CardDescription>
-						Gateship executa dentro de um clone local e usa origin/main como fonte determinística.
+						Gateship runs inside a local clone and uses origin/main as its deterministic source.
 					</CardDescription>
 				</CardHeader>
 				<CardPanel className="flex flex-col gap-5">
@@ -2814,17 +2818,17 @@ function OnboardingSurface({
 						<>
 							<p className="text-muted-foreground text-sm">{project.detail}</p>
 							<section className="flex flex-col gap-2">
-								<h3 className="font-medium text-sm">Projeto existente</h3>
+								<h3 className="font-medium text-sm">Existing project</h3>
 								<p className="text-muted-foreground text-sm">
-									Encerre este processo e inicie o Gateship dentro do clone.
+									Stop this process and start Gateship inside the clone.
 								</p>
-								<CommandLine>cd /caminho/do/projeto && gship</CommandLine>
+								<CommandLine>cd /path/to/project && gship</CommandLine>
 							</section>
 							<Separator />
 							<section className="flex flex-col gap-2">
-								<h3 className="font-medium text-sm">Projeto novo</h3>
+								<h3 className="font-medium text-sm">New project</h3>
 								<p className="text-muted-foreground text-sm">
-									Crie o repositório com uma branch main, entre no clone e inicie o Gateship.
+									Create the repository with a main branch, enter the clone and start Gateship.
 								</p>
 								<CommandLine>gh repo create OWNER/REPO --private --add-readme --clone</CommandLine>
 								<CommandLine>cd REPO && gship</CommandLine>
@@ -2834,17 +2838,17 @@ function OnboardingSurface({
 					{project.state === 'needs-attention' ? (
 						<>
 							<div className="flex flex-col gap-2">
-								<Badge variant="warning">configuração incompleta</Badge>
+								<Badge variant="warning">incomplete configuration</Badge>
 								<p className="text-sm">{project.detail}</p>
 							</div>
 							<CommandLine>{PROJECT_RECOVERY_COMMAND[project.reason]}</CommandLine>
 							<p className="text-muted-foreground text-sm">
-								Depois da correção, reinicie o Gateship. Em container, atualize GATESHIP_PROJECT_DIR e recrie o serviço.
+								After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.
 							</p>
 						</>
 					) : null}
 					<p className="text-muted-foreground text-sm">
-						Ajustes de agentes e assinaturas continuam disponíveis em <a className={TEXT_LINK_CLASS} href="/settings">Ajustes</a>.
+						Agent and subscription settings remain available under <a className={TEXT_LINK_CLASS} href="/settings">Settings</a>.
 					</p>
 				</CardPanel>
 			</Card>
@@ -2854,7 +2858,7 @@ function OnboardingSurface({
 
 function SettingsSurface(props: AppProps): React.ReactElement {
 	return (
-		<SurfaceColumn label="Ajustes" status={props.status}>
+		<SurfaceColumn label="Settings" status={props.status}>
 			<ProjectPanel project={props.project} />
 			<OperatorProfilePanel
 				onSaveOperatorProfile={props.onSaveOperatorProfile}
@@ -2912,7 +2916,7 @@ export function App(props: AppProps): React.ReactElement {
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}
 			>
-				Pular para o conteúdo
+				Skip to content
 			</a>
 			<ShellSidebar
 				chainRuns={props.chainRuns}

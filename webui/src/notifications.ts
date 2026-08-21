@@ -53,8 +53,8 @@ export function notificationForRunEvent(event: RunEventView): RunNotification | 
 	// tag keeps it beside the outcome notification instead of replacing it.
 	if (event.kind === 'workspace.cleanup-warning') {
 		return {
-			title: 'Workspace preservado',
-			body: payloadText(event, 'detail') ?? 'Um workspace local ficou para inspeção.',
+			title: 'Workspace preserved',
+			body: payloadText(event, 'detail') ?? 'A local workspace was preserved for inspection.',
 			tag: `gateship-workspace-${event.runId}`,
 			url: '/runs',
 		};
@@ -63,48 +63,48 @@ export function notificationForRunEvent(event: RunEventView): RunNotification | 
 
 	if (event.toState === 'waiting-user') {
 		return {
-			title: 'Gateship precisa de você',
-			body: payloadText(event, 'summary') ?? 'O run aguarda uma decisão do operador.',
+			title: 'Gateship needs you',
+			body: payloadText(event, 'summary') ?? 'The run is waiting for an operator decision.',
 			tag,
 			url: '/',
 		};
 	}
 	if (event.toState === 'waiting-provider') {
 		return {
-			title: 'Provider temporariamente indisponível',
-			body: payloadText(event, 'message') ?? 'O run foi preservado e pode ser retomado depois.',
+			title: 'Provider temporarily unavailable',
+			body: payloadText(event, 'message') ?? 'The run was preserved and can be resumed later.',
 			tag,
 			url: '/runs',
 		};
 	}
 	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {
 		return {
-			title: 'Ship precisa de nova tentativa',
-			body: payloadText(event, 'error') ?? 'O código continua preservado e pronto para retry.',
+			title: 'Shipping needs another attempt',
+			body: payloadText(event, 'error') ?? 'The code remains preserved and ready to retry.',
 			tag,
 			url: '/runs',
 		};
 	}
 	if (event.toState === 'interrupted' && event.kind !== 'run.cancelled') {
 		return {
-			title: 'Run interrompido',
-			body: 'O run pode ser retomado pela interface.',
+			title: 'Run interrupted',
+			body: 'The run can be resumed from Gateship.',
 			tag,
 			url: '/runs',
 		};
 	}
 	if (event.toState === 'failed') {
 		return {
-			title: 'Run falhou',
-			body: payloadText(event, 'error') ?? 'Abra o Gateship para ver o erro.',
+			title: 'Run failed',
+			body: payloadText(event, 'error') ?? 'Open Gateship to inspect the error.',
 			tag,
 			url: '/runs',
 		};
 	}
 	if (event.toState === 'done') {
 		return {
-			title: 'Run concluído',
-			body: 'A mudança foi mergeada com sucesso.',
+			title: 'Run completed',
+			body: 'The change was merged successfully.',
 			tag,
 			url: '/runs',
 		};

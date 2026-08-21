@@ -427,7 +427,7 @@ interface BriefPayload extends CommandPayload {
 }
 
 async function readJson<T>(response: Response, what: string): Promise<T> {
-	if (!response.ok) throw new Error(`${what} respondeu ${response.status}`);
+	if (!response.ok) throw new Error(`${what} responded with ${response.status}`);
 	return (await response.json()) as T;
 }
 
@@ -472,7 +472,7 @@ function projectRecord(record: Record<string, unknown> | undefined): ProjectStat
 	const name = typeof record?.['name'] === 'string' ? record['name'] : '';
 	const detail = typeof record?.['detail'] === 'string'
 		? record['detail']
-		: 'O serviço não informou um estado de projeto válido.';
+		: 'The service did not report a valid project state.';
 	if (record?.['state'] === 'ready') {
 		const repository = record['repository'];
 		const remoteUrl = record['remoteUrl'];
@@ -495,7 +495,7 @@ function projectRecord(record: Record<string, unknown> | undefined): ProjectStat
 }
 
 export async function fetchProjectStatus(): Promise<ProjectStatusView> {
-	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Projeto');
+	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Project');
 	return projectRecord(payload.project);
 }
 
@@ -509,7 +509,7 @@ function operatorProfileRecord(record: Partial<OperatorProfileView> | undefined)
 export async function fetchOperatorProfile(): Promise<OperatorProfileView> {
 	const payload = await readJson<OperatorProfilePayload>(
 		await fetch(OPERATOR_PROFILE_PATH),
-		'Perfil do operador',
+		'Operator profile',
 	);
 	return operatorProfileRecord(payload.profile);
 }
@@ -522,13 +522,13 @@ export async function saveOperatorProfile(profile: OperatorProfileView): Promise
 	});
 	const payload = (await response.json()) as OperatorProfilePayload;
 	if (!response.ok) {
-		throw new Error(payload.message ?? `Perfil recusado (${response.status}).`);
+		throw new Error(payload.message ?? `Profile rejected (${response.status}).`);
 	}
-	return 'Perfil do operador atualizado.';
+	return 'Operator profile updated.';
 }
 
 export async function fetchDiagnostics(): Promise<DiagnosticsView> {
-	const payload = await readJson<DiagnosticsPayload>(await fetch(DIAGNOSTICS_PATH), 'Diagnósticos');
+	const payload = await readJson<DiagnosticsPayload>(await fetch(DIAGNOSTICS_PATH), 'Diagnostics');
 	return {
 		analyzers: payload.analyzers ?? [],
 		scan: payload.scan ?? null,
@@ -558,13 +558,13 @@ export async function saveDiagnosticSchedule(
 		body: JSON.stringify({ enabled, cadence }),
 	});
 	const payload = (await response.json()) as DiagnosticsPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Agenda recusada (${response.status}).`);
-	if (!enabled) return 'Agenda de diagnósticos desativada.';
-	if (payload.outcome === 'started') return 'Agenda salva; diagnóstico vencido iniciado.';
+	if (!response.ok) throw new Error(payload.message ?? `Schedule rejected (${response.status}).`);
+	if (!enabled) return 'Diagnostic schedule disabled.';
+	if (payload.outcome === 'started') return 'Schedule saved; overdue diagnostic started.';
 	if (payload.outcome === 'project-busy') {
-		return 'Agenda salva; o diagnóstico rodará quando o projeto estiver ocioso.';
+		return 'Schedule saved; the diagnostic will run when the project is idle.';
 	}
-	return 'Agenda de diagnósticos salva.';
+	return 'Diagnostic schedule saved.';
 }
 
 export async function startDiagnostic(analyzer: string): Promise<string> {
@@ -574,8 +574,8 @@ export async function startDiagnostic(analyzer: string): Promise<string> {
 		body: JSON.stringify({ analyzer }),
 	});
 	const payload = (await response.json()) as DiagnosticsPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Diagnóstico recusado (${response.status}).`);
-	return 'Diagnóstico iniciado em um checkout isolado.';
+	if (!response.ok) throw new Error(payload.message ?? `Diagnostic rejected (${response.status}).`);
+	return 'Diagnostic started in an isolated checkout.';
 }
 
 export async function cancelDiagnostic(scanId: string): Promise<string> {
@@ -583,8 +583,8 @@ export async function cancelDiagnostic(scanId: string): Promise<string> {
 		method: 'POST',
 	});
 	const payload = (await response.json()) as DiagnosticsPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Cancelamento recusado (${response.status}).`);
-	return 'Diagnóstico cancelado.';
+	if (!response.ok) throw new Error(payload.message ?? `Cancellation rejected (${response.status}).`);
+	return 'Diagnostic cancelled.';
 }
 
 export async function dismissDiagnosticFinding(id: string): Promise<string> {
@@ -593,8 +593,8 @@ export async function dismissDiagnosticFinding(id: string): Promise<string> {
 		{ method: 'POST' },
 	);
 	const payload = (await response.json()) as CommandPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Descarte recusado (${response.status}).`);
-	return 'Achado diagnóstico descartado.';
+	if (!response.ok) throw new Error(payload.message ?? `Dismissal rejected (${response.status}).`);
+	return 'Diagnostic finding dismissed.';
 }
 
 export async function promoteDiagnosticFinding(
@@ -610,9 +610,9 @@ export async function promoteDiagnosticFinding(
 		},
 	);
 	const payload = (await response.json()) as CreateIssuePayload;
-	if (!response.ok) throw new Error(payload.message ?? `Promoção recusada (${response.status}).`);
+	if (!response.ok) throw new Error(payload.message ?? `Promotion rejected (${response.status}).`);
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
-		throw new Error('O servidor não devolveu a tarefa criada.');
+		throw new Error('The server did not return the created issue.');
 	}
 	return payload.issue;
 }
@@ -637,7 +637,7 @@ export async function fetchProviders(): Promise<ProvidersSnapshot> {
 }
 
 export async function fetchChat(): Promise<ChatMessageView[]> {
-	const payload = await readJson<ChatPayload>(await fetch(CHAT_PATH), 'Conversa');
+	const payload = await readJson<ChatPayload>(await fetch(CHAT_PATH), 'Conversation');
 	return payload.messages ?? [];
 }
 
@@ -648,8 +648,8 @@ export async function sendChat(message: string): Promise<string> {
 		body: JSON.stringify({ message }),
 	});
 	const payload = (await response.json()) as ChatPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Conversa recusada (${response.status}).`);
-	return 'Resposta do orquestrador recebida.';
+	if (!response.ok) throw new Error(payload.message ?? `Conversation rejected (${response.status}).`);
+	return 'Orchestrator response received.';
 }
 
 /** A record whose fields are all missing reads as the empty one, not as a hole. */
@@ -679,8 +679,8 @@ export async function saveBrief(brief: ProjectBriefView): Promise<string> {
 		body: JSON.stringify(brief),
 	});
 	const payload = (await response.json()) as BriefPayload;
-	if (response.ok) return 'Project brief atualizado.';
-	return payload.message ?? `Brief recusado (${response.status}).`;
+	if (response.ok) return 'Project brief updated.';
+	return payload.message ?? `Brief rejected (${response.status}).`;
 }
 
 interface ModelSettingsPayload extends CommandPayload {
@@ -716,7 +716,7 @@ function modelSettingsRecord(value: unknown): ModelSettingsView {
 export async function fetchModelSettings(): Promise<ModelSettingsView> {
 	const payload = await readJson<ModelSettingsPayload>(
 		await fetch(MODEL_SETTINGS_PATH),
-		'Modelos',
+		'Models',
 	);
 	return modelSettingsRecord(payload.settings);
 }
@@ -725,8 +725,8 @@ export async function fetchModelSettings(): Promise<ModelSettingsView> {
 function describeModelProbe(provider: string, role: string, value: unknown): string | undefined {
 	const probe = value !== null && typeof value === 'object' ? value as Record<string, unknown> : undefined;
 	const message = typeof probe?.['message'] === 'string' ? probe['message'] : '';
-	if (probe?.['outcome'] === 'refused') return `${provider}/${role}: recusado pelo CLI — ${message}`;
-	if (probe?.['outcome'] === 'inconclusive') return `${provider}/${role}: validação não concluída — ${message}`;
+	if (probe?.['outcome'] === 'refused') return `${provider}/${role}: rejected by the CLI — ${message}`;
+	if (probe?.['outcome'] === 'inconclusive') return `${provider}/${role}: validation inconclusive — ${message}`;
 	return undefined;
 }
 
@@ -762,9 +762,9 @@ export async function saveModelSettings(settings: ModelSettingsView): Promise<st
 		body: JSON.stringify(settings),
 	});
 	const payload = (await response.json()) as ModelSettingsPayload;
-	if (!response.ok) return payload.message ?? `Configuração recusada (${response.status}).`;
+	if (!response.ok) return payload.message ?? `Configuration rejected (${response.status}).`;
 	const notes = describeModelProbes(payload.probes);
-	return notes.length === 0 ? 'Modelos por papel atualizados.' : `Modelos por papel atualizados. ${notes}`;
+	return notes.length === 0 ? 'Models by role updated.' : `Models by role updated. ${notes}`;
 }
 
 /**
@@ -826,7 +826,7 @@ function chainPauseRecord(value: Partial<ChainPauseView> | null | undefined): Ch
 }
 
 export async function fetchChainRuns(): Promise<ChainRunsView> {
-	const payload = await readJson<ChainRunsPayload>(await fetch(CHAIN_RUNS_PATH), 'Encadeamento');
+	const payload = await readJson<ChainRunsPayload>(await fetch(CHAIN_RUNS_PATH), 'Run chaining');
 	return { enabled: payload.enabled === true, pause: chainPauseRecord(payload.pause) };
 }
 
@@ -837,8 +837,8 @@ export async function saveChainRuns(enabled: boolean): Promise<string> {
 		body: JSON.stringify({ enabled }),
 	});
 	const payload = (await response.json()) as ChainRunsPayload;
-	if (!response.ok) return payload.message ?? `Encadeamento recusado (${response.status}).`;
-	return enabled ? 'Encadeamento automático ativado.' : 'Encadeamento automático desativado.';
+	if (!response.ok) return payload.message ?? `Run chaining rejected (${response.status}).`;
+	return enabled ? 'Automatic run chaining enabled.' : 'Automatic run chaining disabled.';
 }
 
 /** ntfy and Resend (GSHIP-653), neither depending on the other for the panel to show it. */
@@ -870,7 +870,7 @@ interface NotificationChannelsPayload {
 export async function fetchNotificationChannels(): Promise<NotificationChannelsView> {
 	const payload = await readJson<NotificationChannelsPayload>(
 		await fetch(NOTIFICATIONS_PATH),
-		'Notificações',
+		'Notifications',
 	);
 	const channels = emptyNotificationChannels();
 	for (const id of NOTIFICATION_CHANNEL_IDS) {
@@ -891,15 +891,15 @@ interface NotificationTestPayload extends CommandPayload {
 export async function sendNotificationTest(channelId: NotificationChannelId): Promise<string> {
 	const response = await fetch(`${NOTIFICATIONS_PATH}/${channelId}/test`, { method: 'POST' });
 	const payload = (await response.json()) as NotificationTestPayload;
-	if (response.ok) return payload.message ?? 'Mensagem de teste entregue.';
-	return payload.message ?? `Teste recusado (${response.status}).`;
+	if (response.ok) return payload.message ?? 'Test message delivered.';
+	return payload.message ?? `Test rejected (${response.status}).`;
 }
 
 export async function startCodexLogin(): Promise<string> {
 	const response = await fetch(`${PROVIDERS_PATH}/codex/login`, { method: 'POST' });
 	const payload = (await response.json()) as CodexLoginPayload;
 	if (!response.ok || payload.login === undefined) {
-		throw new Error(payload.message ?? `Login recusado (${response.status}).`);
+		throw new Error(payload.message ?? `Login rejected (${response.status}).`);
 	}
 	return payload.login.authUrl;
 }
@@ -911,7 +911,7 @@ export function selectProvider(providerId: ProviderStatusView['id']): Promise<st
 export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {
 	const payload = await readJson<RunEventsPayload>(
 		await fetch(`${RUNS_PATH}/${runId}/events`),
-		'Atividade',
+		'Activity',
 	);
 	return payload.events;
 }
@@ -925,8 +925,8 @@ async function postCommand(path: string, body?: unknown): Promise<string> {
 			: { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
 	});
 	const payload = (await response.json()) as CommandPayload;
-	if (response.ok) return 'Run atualizada.';
-	return payload.message ?? `Comando recusado (${response.status}).`;
+	if (response.ok) return 'Run updated.';
+	return payload.message ?? `Command rejected (${response.status}).`;
 }
 
 export function startRun(issueId: string): Promise<string> {
@@ -941,10 +941,10 @@ export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIss
 	});
 	const payload = (await response.json()) as CreateIssuePayload;
 	if (!response.ok) {
-		throw new Error(payload.message ?? `Criação recusada (${response.status}).`);
+		throw new Error(payload.message ?? `Creation rejected (${response.status}).`);
 	}
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
-		throw new Error('O servidor não devolveu a tarefa criada.');
+		throw new Error('The server did not return the created issue.');
 	}
 	return payload.issue;
 }
@@ -957,17 +957,17 @@ export async function specifyIssue(id: string, input: OperatorSpecDraft): Promis
 	});
 	const payload = (await response.json()) as CreateIssuePayload;
 	if (!response.ok) {
-		throw new Error(payload.message ?? `Especificação recusada (${response.status}).`);
+		throw new Error(payload.message ?? `Specification rejected (${response.status}).`);
 	}
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
-		throw new Error('O servidor não devolveu a ideia especificada.');
+		throw new Error('The server did not return the specified idea.');
 	}
 	return payload.issue;
 }
 
 /** The inbox the server already filtered: only proposals still pending. */
 export async function fetchProposals(): Promise<ProposalView[]> {
-	const payload = await readJson<ProposalsPayload>(await fetch(PROPOSALS_PATH), 'Propostas');
+	const payload = await readJson<ProposalsPayload>(await fetch(PROPOSALS_PATH), 'Proposals');
 	return payload.proposals ?? [];
 }
 
@@ -978,7 +978,7 @@ export async function fetchProposals(): Promise<ProposalView[]> {
 export async function fetchResolvedProposals(): Promise<ResolvedProposalsSnapshot> {
 	const payload = await readJson<ResolvedProposalsPayload>(
 		await fetch(RESOLVED_PROPOSALS_PATH),
-		'Propostas resolvidas',
+		'Resolved proposals',
 	);
 	return { proposals: payload.proposals ?? [], omittedCount: payload.omittedCount ?? 0 };
 }
@@ -988,8 +988,8 @@ export async function dismissProposal(id: string): Promise<string> {
 		method: 'POST',
 	});
 	const payload = (await response.json()) as CommandPayload;
-	if (response.ok) return 'Proposta descartada.';
-	return payload.message ?? `Descarte recusado (${response.status}).`;
+	if (response.ok) return 'Proposal dismissed.';
+	return payload.message ?? `Dismissal rejected (${response.status}).`;
 }
 
 /**
@@ -1007,10 +1007,10 @@ export async function promoteProposal(
 	});
 	const payload = (await response.json()) as CreateIssuePayload;
 	if (!response.ok) {
-		throw new Error(payload.message ?? `Promoção recusada (${response.status}).`);
+		throw new Error(payload.message ?? `Promotion rejected (${response.status}).`);
 	}
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
-		throw new Error('O servidor não devolveu a tarefa criada.');
+		throw new Error('The server did not return the created issue.');
 	}
 	return payload.issue;
 }

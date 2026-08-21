@@ -416,7 +416,7 @@ describe('GET /api/snapshot service freshness', () => {
 			expect(notice).toEqual({
 				bootSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 			expect(notice['detail']).toContain(bootSha);
 			expect(notice['detail']).toContain(currentSha);
@@ -461,7 +461,7 @@ describe('GET /api/snapshot service freshness', () => {
 			expect(notice).toEqual({
 				bootSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 		});
 	});
@@ -478,7 +478,7 @@ describe('GET /api/snapshot service freshness', () => {
 			expect(notice).toEqual({
 				bootSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 		});
 	});
@@ -495,7 +495,7 @@ describe('GET /api/snapshot service freshness', () => {
 			expect(notice).toEqual({
 				bootSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 		});
 	});
@@ -539,7 +539,7 @@ describe('GET /api/snapshot service freshness -- compiled build sha (GSHIP-648)'
 			expect(notice).toEqual({
 				bootSha: buildSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 		}, buildSha);
 	});
@@ -558,7 +558,7 @@ describe('GET /api/snapshot service freshness -- compiled build sha (GSHIP-648)'
 			expect(notice).toEqual({
 				bootSha,
 				currentSha,
-				detail: expect.stringContaining('Reinicie o serviço'),
+				detail: expect.stringContaining('Restart the service'),
 			});
 		}, null);
 	});

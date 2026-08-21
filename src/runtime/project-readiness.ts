@@ -86,14 +86,14 @@ export function inspectProject(
 			return {
 				state: 'empty',
 				name: requestedName,
-				detail: 'Esta pasta ainda não contém um projeto Git.',
+				detail: 'This folder does not contain a Git project yet.',
 			};
 		}
 		return {
 			state: 'needs-attention',
 			name: requestedName,
 			reason: 'not-repository',
-			detail: 'A pasta atual contém arquivos, mas não pertence a um repositório Git.',
+			detail: 'The current folder contains files but is not part of a Git repository.',
 		};
 	}
 
@@ -105,7 +105,7 @@ export function inspectProject(
 			state: 'needs-attention',
 			name,
 			reason: 'origin-missing',
-			detail: 'O repositório não tem um remote chamado origin.',
+			detail: 'The repository does not have a remote named origin.',
 		};
 	}
 
@@ -116,7 +116,7 @@ export function inspectProject(
 			state: 'needs-attention',
 			name,
 			reason: 'github-origin-required',
-			detail: 'O remote origin precisa apontar para um repositório no GitHub.com.',
+			detail: 'The origin remote must point to a repository on GitHub.com.',
 		};
 	}
 
@@ -131,7 +131,7 @@ export function inspectProject(
 			state: 'needs-attention',
 			name,
 			reason: 'origin-main-missing',
-			detail: 'A referência local origin/main ainda não existe. Faça fetch ou publique a branch main.',
+			detail: 'The local origin/main reference does not exist yet. Fetch or publish the main branch.',
 		};
 	}
 

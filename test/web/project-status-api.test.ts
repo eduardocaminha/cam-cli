@@ -13,7 +13,7 @@ describe('GET /api/project', () => {
 			expect(await response.json()).toMatchObject({
 				project: {
 					state: 'empty',
-					detail: 'Esta pasta ainda não contém um projeto Git.',
+					detail: 'This folder does not contain a Git project yet.',
 				},
 			});
 		} finally {
