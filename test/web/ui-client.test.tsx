@@ -803,6 +803,130 @@ describe('runs surface', () => {
 		expect(shellHeader(home({ locale: 'pt-BR' }))).toContain('Ocioso');
 	});
 
+	test('an explicit pt-BR locale translates all operational run panels and preserves authored values', () => {
+		const activityAt = '2026-08-16T03:04:05.000Z';
+		const previousAt = '2026-08-15T18:30:00.000Z';
+		const formattedActivityAt = new Date(activityAt).toLocaleTimeString('pt-BR', {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hourCycle: 'h23',
+			timeZone: 'UTC',
+		});
+		const formattedPreviousAt = new Date(previousAt).toLocaleString('pt-BR', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			hourCycle: 'h23',
+			timeZone: 'UTC',
+		});
+		const formattedCost = new Intl.NumberFormat('pt-BR', {
+			style: 'currency',
+			currency: 'USD',
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 4,
+		}).format(0.1534);
+		const html = runsPage({
+			locale: 'pt-BR',
+			runs: [
+				runIn('working', {
+					id: 'run-current-authored',
+					issueId: 'GSHIP-AUTHORED-CURRENT',
+					cost: {
+						totalCostUsd: 0.2,
+						breakdown: [{
+							role: 'executor',
+							model: 'model/Authored-V1',
+							costUsd: 0.1534,
+							inputTokens: 1100,
+							outputTokens: 210,
+							cacheReadInputTokens: 320,
+							cacheCreationInputTokens: 45,
+						}, {
+							role: 'reviewer',
+							model: 'reviewer/Authored-V2',
+							costUsd: 0.0466,
+						}],
+						roles: [{ role: 'executor', effort: 'xhigh-authored', thinkingTokens: 35704 }],
+					},
+				}),
+				runIn('failed', {
+					id: 'run-previous-authored',
+					issueId: 'GSHIP-AUTHORED-PREVIOUS',
+					updatedAt: previousAt,
+					cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+				}),
+			],
+			events: [{
+				seq: 91,
+				runId: 'run-current-authored',
+				kind: 'provider.authored-kind',
+				fromState: 'working',
+				toState: 'working',
+				payload: {
+					text: 'Texto do operador permanece verbatim.',
+					tools: ['RawTool-A', 'RawTool-B'],
+					findings: 'finding authored exactly',
+					error: 'error authored exactly',
+				},
+				createdAt: activityAt,
+			}],
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: 'run-notice-authored',
+				workspacePath: '/raw/workspace/authored',
+				branch: 'raw/branch-not-shown',
+				detail: 'detail authored exactly',
+			}, {
+				kind: 'orphan',
+				runId: null,
+				workspacePath: null,
+				branch: 'raw/branch/authored',
+				detail: 'second detail authored exactly',
+			}],
+		});
+
+		const cost = panel(html, 'Custo por função e modelo');
+		expect(html).toContain('GSHIP-AUTHORED-CURRENT');
+		expect(cost).toContain('Custo esperado do uso equivalente à API');
+		expect(cost).toContain('Executor (esforço xhigh-authored) · 35704 de raciocínio');
+		expect(cost).toContain('Revisor');
+		expect(cost).toContain('1100 entrada · 210 saída · 320 cache lido · 45 cache criado tokens');
+		expect(cost).toContain('model/Authored-V1');
+		expect(cost).toContain('reviewer/Authored-V2');
+		expect(cost).toContain(formattedCost);
+
+		const activity = panel(html, 'Atividade');
+		expect(activity).toContain('1 evento recente desta execução.');
+		expect(activity).toContain('provider.authored-kind');
+		expect(activity).toContain('Texto do operador permanece verbatim.');
+		expect(activity).toContain('Ferramentas: RawTool-A, RawTool-B');
+		expect(activity).toContain('finding authored exactly');
+		expect(activity).toContain('error authored exactly');
+		expect(activity).toContain(formattedActivityAt);
+
+		const workspaces = panel(html, 'Workspaces preservados');
+		expect(workspaces).toContain('2 recursos locais precisam de inspeção.');
+		for (const raw of [
+			'dirty',
+			'run-notice-authored',
+			'/raw/workspace/authored',
+			'detail authored exactly',
+			'orphan',
+			'raw/branch/authored',
+			'second detail authored exactly',
+		]) expect(workspaces).toContain(raw);
+
+		const previous = panel(html, 'Execuções anteriores');
+		expect(previous).toContain('1 execução antes da mais recente, da mais nova para a mais antiga.');
+		expect(previous).toContain('GSHIP-AUTHORED-PREVIOUS');
+		expect(previous).toContain('>falhou<');
+		expect(previous).toContain(`Custo esperado: ${formattedCost}`);
+		expect(previous).toContain(formattedPreviousAt);
+	});
+
 	test('the full report and the run id are one disclosure, closed by default', () => {
 		const html = runsPage({ runs: [runIn('done', { summary: 'PR #123 mergeado.' })] });
 
@@ -1168,13 +1292,21 @@ describe('runs surface', () => {
 			],
 		});
 		const card = panel(html, 'Previous runs');
+		const firstTimestamp = new Date('2026-08-15T18:30:00.000Z').toLocaleString('en-US', {
+			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+			hourCycle: 'h23', timeZone: 'UTC',
+		});
+		const secondTimestamp = new Date('2026-08-14T09:05:00.000Z').toLocaleString('en-US', {
+			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+			hourCycle: 'h23', timeZone: 'UTC',
+		});
 
 		expect(panelIsOpen(html, 'Previous runs')).toBe(false);
 		expect(card).toContain('2 runs before the latest');
 		expect(card).toContain('CAM-802');
-		expect(card).toContain('2026-08-15 18:30');
+		expect(card).toContain(firstTimestamp);
 		expect(card).toContain('CAM-801');
-		expect(card).toContain('2026-08-14 09:05');
+		expect(card).toContain(secondTimestamp);
 		expect(card).toContain('failed');
 		// The run the card above commands is not repeated in the history.
 		expect(card).not.toContain('CAM-803');
@@ -2112,7 +2244,7 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('an explicit pt-BR locale translates the shell and shared inspector but not deeper route content', () => {
+	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
 		const html = runsPage({ locale: 'pt-BR' });
 		const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
 
@@ -2131,8 +2263,7 @@ describe('operator shell', () => {
 				roles: [],
 			},
 		})] });
-		// The cost breakdown is a deeper /runs panel and remains outside this slice.
-		expect(withDeepPanel).toContain('Cost by role and model');
+		expect(withDeepPanel).toContain('Custo por função e modelo');
 	});
 
 	test('keyboard navigation starts with one skip link targeting the route main', () => {

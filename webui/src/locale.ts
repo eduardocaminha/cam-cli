@@ -71,10 +71,44 @@ export interface RunInspectorCatalog {
 	attentionLabels: Readonly<Record<OperatorAttention, string>>;
 }
 
+export interface RunsOperationalCatalog {
+	cost: {
+		title: string;
+		description: string;
+		roleLabels: {
+			executor: string;
+			reviewer: string;
+		};
+		tokenLabels: {
+			input: string;
+			output: string;
+			cacheRead: string;
+			cacheCreated: string;
+		};
+		tokensSuffix: string;
+		effort: (value: string) => string;
+		thinking: (count: number) => string;
+	};
+	activity: {
+		title: string;
+		description: (count: number) => string;
+		toolsLabel: string;
+	};
+	workspaces: {
+		title: string;
+		description: (count: number) => string;
+	};
+	previousRuns: {
+		title: string;
+		description: (count: number) => string;
+	};
+}
+
 export interface LocaleCatalog {
 	shell: ShellCatalog;
 	conversation: ConversationCatalog;
 	runInspector: RunInspectorCatalog;
+	runsOperational: RunsOperationalCatalog;
 }
 
 export const LOCALE_CATALOG = {
@@ -181,6 +215,42 @@ export const LOCALE_CATALOG = {
 				Idle: 'Idle',
 			},
 		},
+		runsOperational: {
+			cost: {
+				title: 'Cost by role and model',
+				description:
+					'Expected API-equivalent usage cost by role and model. Never the amount charged to the subscription.',
+				roleLabels: {
+					executor: 'Executor',
+					reviewer: 'Reviewer',
+				},
+				tokenLabels: {
+					input: 'input',
+					output: 'output',
+					cacheRead: 'cache read',
+					cacheCreated: 'cache created',
+				},
+				tokensSuffix: 'tokens',
+				effort: (value) => ` (${value})`,
+				thinking: (count) => `${count} thinking`,
+			},
+			activity: {
+				title: 'Activity',
+				description: (count) =>
+					`${count} ${count === 1 ? 'recent event' : 'recent events'} from this run.`,
+				toolsLabel: 'Tools',
+			},
+			workspaces: {
+				title: 'Preserved workspaces',
+				description: (count) =>
+					`${count} ${count === 1 ? 'local resource needs' : 'local resources need'} inspection.`,
+			},
+			previousRuns: {
+				title: 'Previous runs',
+				description: (count) =>
+					`${count} ${count === 1 ? 'run' : 'runs'} before the latest, newest first.`,
+			},
+		},
 	},
 	'pt-BR': {
 		shell: {
@@ -283,6 +353,42 @@ export const LOCALE_CATALOG = {
 				'Needs you': 'Precisa de você',
 				Working: 'Trabalhando',
 				Idle: 'Ocioso',
+			},
+		},
+		runsOperational: {
+			cost: {
+				title: 'Custo por função e modelo',
+				description:
+					'Custo esperado do uso equivalente à API por função e modelo. Nunca o valor cobrado na assinatura.',
+				roleLabels: {
+					executor: 'Executor',
+					reviewer: 'Revisor',
+				},
+				tokenLabels: {
+					input: 'entrada',
+					output: 'saída',
+					cacheRead: 'cache lido',
+					cacheCreated: 'cache criado',
+				},
+				tokensSuffix: 'tokens',
+				effort: (value) => ` (esforço ${value})`,
+				thinking: (count) => `${count} de raciocínio`,
+			},
+			activity: {
+				title: 'Atividade',
+				description: (count) =>
+					`${count} ${count === 1 ? 'evento recente' : 'eventos recentes'} desta execução.`,
+				toolsLabel: 'Ferramentas',
+			},
+			workspaces: {
+				title: 'Workspaces preservados',
+				description: (count) =>
+					`${count} ${count === 1 ? 'recurso local precisa' : 'recursos locais precisam'} de inspeção.`,
+			},
+			previousRuns: {
+				title: 'Execuções anteriores',
+				description: (count) =>
+					`${count} ${count === 1 ? 'execução' : 'execuções'} antes da mais recente, da mais nova para a mais antiga.`,
 			},
 		},
 	},
