@@ -1,11 +1,8 @@
 # Gateship current checkpoint
 
 > Updated: 2026-08-21
-> Latest release evidence: `v0.312.0` points to commit `d473f21a`, the merged
-> GSHIP-683 change. Source metadata remains `0.0.0-dev` by design; release
-> builds receive their version and source revision at build time.
-> Active authorized slice: provider-neutral operator language contract on
-> `codex/operator-language-contract`.
+> Source metadata remains `0.0.0-dev` by design; release builds receive their
+> version and source revision at build time.
 
 ## Product objective
 
