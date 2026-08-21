@@ -24,7 +24,7 @@ export type RunState =
 	| 'cancelled';
 
 /** Mirrors RunCostRole in src/runtime/run-store.ts. */
-export type RunCostRole = 'executor' | 'reviewer';
+export type RunCostRole = 'executor' | 'reviewer' | 'orchestrator';
 
 /**
  * One (role, model) pair's reported cost and token counts, summed across every
@@ -77,6 +77,7 @@ export interface RunCostView {
 export interface RunRoundOriginsView {
 	executor: number;
 	decision: number;
+	orchestrator?: number;
 	indeterminate: number;
 }
 
@@ -141,6 +142,7 @@ export interface RunEvaluationView {
 	attentionRequests: number;
 	operatorInterventions: number;
 	providerHolds: number;
+	resolvedCycleQuestions?: number;
 	roles: Array<{
 		role: RunCostRole;
 		models: string[];
@@ -199,6 +201,7 @@ export interface WorkflowInsights {
 	corrections: RunRoundOriginsView & {
 		runCount: number;
 	};
+	cycleResponses: { count: number; runCount: number };
 	cost: RunCostAggregate & {
 		reportedRunCount: number;
 	};
@@ -209,9 +212,11 @@ export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
 	const corrections = {
 		executor: 0,
 		decision: 0,
+		orchestrator: 0,
 		indeterminate: 0,
 		runCount: 0,
 	};
+	const cycleResponses = { count: 0, runCount: 0 };
 	for (const run of runs) {
 		if (run.state === 'done') outcomes.done += 1;
 		else if (run.state === 'failed') outcomes.failed += 1;
@@ -220,17 +225,23 @@ export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
 
 		const rounds = run.roundOrigins.executor
 			+ run.roundOrigins.decision
+			+ (run.roundOrigins.orchestrator ?? 0)
 			+ run.roundOrigins.indeterminate;
 		if (rounds > 0) corrections.runCount += 1;
 		corrections.executor += run.roundOrigins.executor;
 		corrections.decision += run.roundOrigins.decision;
+		corrections.orchestrator += run.roundOrigins.orchestrator ?? 0;
 		corrections.indeterminate += run.roundOrigins.indeterminate;
+		const responseCount = run.evaluation?.resolvedCycleQuestions ?? 0;
+		cycleResponses.count += responseCount;
+		if (responseCount > 0) cycleResponses.runCount += 1;
 	}
 	const cost = aggregateRunCosts(runs);
 	return {
 		runCount: runs.length,
 		outcomes,
 		corrections,
+		cycleResponses,
 		cost: {
 			...cost,
 			reportedRunCount: runs.filter((run) => run.cost.totalCostUsd !== null).length,
@@ -252,6 +263,7 @@ export interface WorkflowCohort {
 	incompleteRunCount: number;
 	outcomes: { shipped: number; failed: number; cancelled: number };
 	attention: { requests: number; interventions: number; runCount: number };
+	cycleResponses: { count: number; runCount: number };
 	providerHolds: { count: number; runCount: number };
 	corrections: RunRoundOriginsView & { runCount: number };
 	medianWallTimeMs: number | null;
@@ -295,12 +307,13 @@ function configurationsOf(runs: readonly RecordedRun[]): WorkflowConfiguration[]
 
 function observationsOf(runs: readonly RecordedRun[]): Pick<
 	WorkflowCohort,
-	'outcomes' | 'attention' | 'providerHolds' | 'corrections'
+	'outcomes' | 'attention' | 'cycleResponses' | 'providerHolds' | 'corrections'
 > {
 	const outcomes = { shipped: 0, failed: 0, cancelled: 0 };
 	const attention = { requests: 0, interventions: 0, runCount: 0 };
+	const cycleResponses = { count: 0, runCount: 0 };
 	const providerHolds = { count: 0, runCount: 0 };
-	const corrections = { executor: 0, decision: 0, indeterminate: 0, runCount: 0 };
+	const corrections = { executor: 0, decision: 0, orchestrator: 0, indeterminate: 0, runCount: 0 };
 	for (const run of runs) {
 		const { evaluation } = run;
 		if (evaluation.outcome === 'incomplete') continue;
@@ -308,17 +321,21 @@ function observationsOf(runs: readonly RecordedRun[]): Pick<
 		attention.requests += evaluation.attentionRequests;
 		attention.interventions += evaluation.operatorInterventions;
 		if (evaluation.attentionRequests > 0) attention.runCount += 1;
+		cycleResponses.count += evaluation.resolvedCycleQuestions ?? 0;
+		if ((evaluation.resolvedCycleQuestions ?? 0) > 0) cycleResponses.runCount += 1;
 		providerHolds.count += evaluation.providerHolds;
 		if (evaluation.providerHolds > 0) providerHolds.runCount += 1;
 		const correctionCount = run.roundOrigins.executor
 			+ run.roundOrigins.decision
+			+ (run.roundOrigins.orchestrator ?? 0)
 			+ run.roundOrigins.indeterminate;
 		if (correctionCount > 0) corrections.runCount += 1;
 		corrections.executor += run.roundOrigins.executor;
 		corrections.decision += run.roundOrigins.decision;
+		corrections.orchestrator += run.roundOrigins.orchestrator ?? 0;
 		corrections.indeterminate += run.roundOrigins.indeterminate;
 	}
-	return { outcomes, attention, providerHolds, corrections };
+	return { outcomes, attention, cycleResponses, providerHolds, corrections };
 }
 
 function summarizeCohort(revision: string, tracked: readonly RecordedRun[]): WorkflowCohort {

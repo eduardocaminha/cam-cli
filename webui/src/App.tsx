@@ -305,7 +305,7 @@ function formatRunTimestamp(value: string, locale: Locale): string {
 
 /** No correction round yet: nothing to report, not a fabricated zero line. */
 function hasNoRounds(origins: RunView['roundOrigins']): boolean {
-	return origins.executor + origins.decision + origins.indeterminate === 0;
+	return origins.executor + origins.decision + (origins.orchestrator ?? 0) + origins.indeterminate === 0;
 }
 
 /** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
@@ -439,7 +439,8 @@ function RunActivity({
 					return (
 						<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
 							<div className="flex items-baseline justify-between gap-3">
-								<code className="min-w-0 break-all">{event.kind}</code>
+							<code className="min-w-0 break-all">{event.kind}</code>
+							{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
 								<time className="shrink-0 text-muted-foreground">
 									{formatEventTime(event.createdAt, locale)}
 								</time>
@@ -608,6 +609,7 @@ function RunCard({
 							{catalog.correctionRounds(
 								run.roundOrigins.executor,
 								run.roundOrigins.decision,
+								run.roundOrigins.orchestrator ?? 0,
 								run.roundOrigins.indeterminate,
 							)}
 						</p>
@@ -786,6 +788,7 @@ function WorkflowInsightsPanel({
 	const insights = summarizeWorkflow(runs);
 	const correctionRounds = insights.corrections.executor
 		+ insights.corrections.decision
+		+ (insights.corrections.orchestrator ?? 0)
 		+ insights.corrections.indeterminate;
 	return (
 		<ContextPanel
@@ -806,7 +809,13 @@ function WorkflowInsightsPanel({
 					insights.corrections.runCount,
 					insights.corrections.executor,
 					insights.corrections.decision,
+					insights.corrections.orchestrator ?? 0,
 					insights.corrections.indeterminate,
+				)}</dd>
+				<dt className="text-muted-foreground">{catalog.signals.cycleResponsesLabel}</dt>
+				<dd>{catalog.signals.cycleResponses(
+					insights.cycleResponses.count,
+					insights.cycleResponses.runCount,
 				)}</dd>
 				<dt className="text-muted-foreground">{catalog.signals.knownCostLabel}</dt>
 				<dd>
@@ -868,6 +877,7 @@ function WorkflowCohortCard({
 	const card = catalog.benchmarks.card;
 	const correctionCount = cohort.corrections.executor
 		+ cohort.corrections.decision
+		+ (cohort.corrections.orchestrator ?? 0)
 		+ cohort.corrections.indeterminate;
 	return (
 		<section className="rounded-lg border p-4">
@@ -890,6 +900,8 @@ function WorkflowCohortCard({
 					cohort.attention.runCount,
 					cohort.attention.interventions,
 				)}</dd>
+				<dt className="text-muted-foreground">{card.cycleResponsesLabel}</dt>
+				<dd>{card.cycleResponses(cohort.cycleResponses.count, cohort.cycleResponses.runCount)}</dd>
 				<dt className="text-muted-foreground">{card.correctionsLabel}</dt>
 				<dd>{card.corrections(correctionCount, cohort.corrections.runCount)}</dd>
 				<dt className="text-muted-foreground">{card.providerHoldsLabel}</dt>

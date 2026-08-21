@@ -57,6 +57,7 @@ describe('replayable run evaluation', () => {
 			attentionRequests: 1,
 			operatorInterventions: 2,
 			providerHolds: 1,
+			resolvedCycleQuestions: 0,
 			roles: [
 				{ role: 'executor', models: ['opus', 'sonnet'], efforts: ['high', 'xhigh'] },
 				{ role: 'reviewer', models: ['opus'], efforts: ['medium'] },

@@ -12,10 +12,16 @@ import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
 import { ProviderCallError, type AgentProviderId } from '../runtime/agent-session.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
+import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
-import { CodexAgentSession, CodexCliExecutor, probeCodexModel } from '../runtime/codex-cli-executor.ts';
+import {
+	CodexAgentSession,
+	CodexCliExecutor,
+	CodexReviewSession,
+	probeCodexModel,
+} from '../runtime/codex-cli-executor.ts';
 import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
 import {
 	ConversationalOrchestrator,
@@ -1650,6 +1656,10 @@ export function createDefaultRunRuntimeOptions(
 		reviewer: new AgentReviewerRouter({
 			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer') }),
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
+		}),
+		cycleQuestionResolver: new AgentCycleQuestionResolver({
+			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator') }),
+			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),
 		shipper: new GithubShipper({ ensureIdentity }),
 		preflight: createGitRuntimePreflight(cwd),

@@ -70,6 +70,7 @@ export function canTransition(fromState: RunState, toState: RunState): boolean {
 export function nextFixRounds(
 	current: RunStateSnapshot,
 	nextState: RunState,
+	kind?: string,
 ): number {
 	if (!canTransition(current.state, nextState)) {
 		throw new Error(`invalid run transition: ${current.state} -> ${nextState}`);
@@ -77,8 +78,11 @@ export function nextFixRounds(
 	if (current.state !== 'review' || nextState !== 'working') {
 		return current.fixRounds;
 	}
-	if (current.fixRounds >= 1) {
+	if (current.fixRounds >= 1 && kind !== 'run.cycle-response') {
 		throw new Error('automatic review fixes are limited to one round');
+	}
+	if (current.fixRounds >= 3) {
+		throw new Error('review fixes are limited to three rounds');
 	}
 	return current.fixRounds + 1;
 }

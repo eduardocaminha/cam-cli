@@ -150,6 +150,7 @@ function evaluation(
 		attentionRequests: 0,
 		operatorInterventions: 0,
 		providerHolds: 0,
+		resolvedCycleQuestions: 0,
 		roles: [],
 		...overrides,
 	};
@@ -1071,7 +1072,8 @@ describe('runs surface', () => {
 			runIn('done', {
 				id: 'run-3',
 				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
-				roundOrigins: { executor: 1, decision: 0, indeterminate: 0 },
+				roundOrigins: { executor: 1, decision: 0, orchestrator: 1, indeterminate: 0 },
+				evaluation: evaluation('revision-current', 'shipped', { resolvedCycleQuestions: 1 }),
 			}),
 			runIn('failed', {
 				id: 'run-2',
@@ -1092,7 +1094,9 @@ describe('runs surface', () => {
 		const summary = panel(runsPage({ runs }), 'Workflow signals');
 		expect(summary).toContain('Local window of the latest 3 runs');
 		expect(summary).toContain('1 completed');
-		expect(summary).toContain('3 rounds across 2 runs');
+		expect(summary).toContain('4 rounds across 2 runs');
+		expect(summary).toContain('1 orchestrator-resolved');
+		expect(summary).toContain('1 response across 1 run');
 		expect(summary).toContain('2 after human decisions');
 		expect(summary).toContain('$');
 		expect(summary).not.toContain('Score');
@@ -1116,10 +1120,11 @@ describe('runs surface', () => {
 				id: 'run-b2',
 				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
 				roundOrigins: { executor: 1, decision: 0, indeterminate: 0 },
-				evaluation: evaluation('revision-b', 'shipped', {
+					evaluation: evaluation('revision-b', 'shipped', {
 					wallTimeMs: 12 * 60_000,
 					attentionRequests: 1,
 					operatorInterventions: 1,
+					resolvedCycleQuestions: 2,
 					roles: currentRoles,
 				}),
 			}),
@@ -1155,6 +1160,7 @@ describe('runs surface', () => {
 			terminalRunCount: 2,
 			outcomes: { shipped: 1, failed: 1, cancelled: 0 },
 			attention: { requests: 3, interventions: 2, runCount: 2 },
+			cycleResponses: { count: 2, runCount: 1 },
 			providerHolds: { count: 1, runCount: 1 },
 			corrections: { executor: 1, decision: 1, indeterminate: 0, runCount: 2 },
 			medianWallTimeMs: 15 * 60_000,
@@ -1169,6 +1175,7 @@ describe('runs surface', () => {
 		expect(benchmark).toContain('revision-b');
 		expect(benchmark).toContain('revision-a');
 		expect(benchmark).toContain('3 requests across 2 runs');
+		expect(benchmark).toContain('2 responses across 1 run');
 		expect(benchmark).toContain('claude-sonnet-5 (xhigh)');
 		expect(benchmark).toContain('There is no composite score');
 
@@ -1264,6 +1271,35 @@ describe('runs surface', () => {
 		expect(html).toContain('Vou ajustar o parser.');
 		expect(html).toContain('Tools: Read, Edit');
 		expect(html).toContain('03:04:05');
+	});
+
+	test('cycle responses keep authored guidance and carry localized orchestrator labels', () => {
+		const event: AppProps['events'][number] = {
+			seq: 1,
+			runId: 'run-1',
+			kind: 'run.cycle-response',
+			fromState: 'review',
+			toState: 'review',
+			payload: {
+				questionId: 'question-1',
+				outcome: 'continue',
+				guidance: 'Keep Authored_GUIDANCE verbatim.',
+				provider: 'claude',
+				model: 'raw-model-v9',
+				effort: 'xhigh',
+			},
+			createdAt: '2026-08-16T03:04:05.000Z',
+		};
+		const english = runsPage({ runs: [runIn('review')], events: [event] });
+		const portuguese = runsPage({ locale: 'pt-BR', runs: [runIn('review')], events: [event] });
+
+		expect(english).toContain('Orchestrator answer to the review cycle');
+		expect(portuguese).toContain('Resposta do orquestrador ao ciclo de revisão');
+		for (const html of [english, portuguese]) {
+			expect(html).toContain('Keep Authored_GUIDANCE verbatim.');
+			expect(html).toContain('raw-model-v9');
+			expect(html).toContain('xhigh');
+		}
 	});
 
 	test('provider noise never pushes a cycle event out of the activity window', () => {

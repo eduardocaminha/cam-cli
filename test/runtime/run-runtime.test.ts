@@ -3,7 +3,8 @@ import { join } from 'node:path';
 
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-import { ProviderCallError } from '../../src/runtime/agent-session.ts';
+import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
+import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
@@ -1248,7 +1249,7 @@ describe('releasing a failed run workspace', () => {
 		const run = runtime.startRun('CAM-71');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
-		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, decision: 0, indeterminate: 0 });
+		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, decision: 0, orchestrator: 0, indeterminate: 0 });
 		await runtime.stop();
 		runtime.close();
 	});
@@ -1451,7 +1452,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(1, 'run.created', null),
 			roundEvent(2, 'run.started', 'queued'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a round with no guidance -- born of a review or full-verify fix request -- counts as executor', () => {
@@ -1461,7 +1462,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(3, 'run.review-fix-requested', 'review'),
 			roundEvent(4, 'run.full-verify-fix-requested', 'full-verify'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, decision: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, decision: 0, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a round that starts right after operator guidance counts as decision', () => {
@@ -1472,7 +1473,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(4, 'run.operator-guidance', 'waiting-user'),
 			roundEvent(5, 'run.started', 'waiting-user'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 1, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a resume with no guidance before it -- e.g. recovering an interrupted run -- is reported indeterminate, never attributed by guess', () => {
@@ -1482,7 +1483,264 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(3, 'run.cancelled', 'working'),
 			roundEvent(4, 'run.started', 'interrupted'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, indeterminate: 1 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, orchestrator: 0, indeterminate: 1 });
+	});
+});
+
+const CYCLE_AUDIT_USAGE = { model: 'configured-model', effort: 'high' } as const;
+
+describe('orchestrator cycle questions (GSHIP-675)', () => {
+	test('the production adapter always returns auditable model and effort values', async () => {
+		let access: string | undefined;
+		let resume: boolean | undefined;
+		const session = {
+			provider: 'claude' as const,
+			run: async (input: AgentSessionInput) => {
+				access = input.access;
+				resume = input.resume;
+				return {
+					summary: 'continue',
+					structuredOutput: { outcome: 'continue', guidance: 'Keep the bounded implementation.', reason: null },
+				};
+			},
+		};
+		const resolver = new AgentCycleQuestionResolver({ claude: session, codex: { ...session, provider: 'codex' } });
+		const result = await resolver.resolve({
+			runId: 'run-adapter', issueId: 'GSHIP-675', workspace: '/project',
+			finding: 'finding', priorResponses: [], providerId: 'claude',
+			signal: new AbortController().signal, emit: () => {},
+		});
+
+		expect({ access, resume }).toEqual({ access: 'read-only', resume: false });
+		expect(result.usage).toMatchObject({ model: 'provider-default', effort: 'provider-default' });
+	});
+
+	test('a no-change answer is linked, attributed and followed by fresh verification and review', async () => {
+		const store = new RunStore(':memory:');
+		let executions = 0;
+		let verifications = 0;
+		let reviews = 0;
+		const ids = ['run-cycle', 'question-1'];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => ids.shift() ?? 'unexpected-id',
+			newSessionId: () => 'session-cycle',
+			executor: { execute: async ({ reviewFeedback }) => {
+				executions += 1;
+				if (executions === 3) expect(reviewFeedback).toContain('No change: the cited path is generated.');
+				return { outcome: 'completed', summary: 'ready' };
+			} },
+			verifier: { verify: async () => {
+				verifications += 1;
+				return { ok: true };
+			} },
+			reviewer: { review: async () => {
+				reviews += 1;
+				return reviews < 3 ? { verdict: 'findings', detail: 'generated file mismatch' } : { verdict: 'clean' };
+			} },
+			cycleQuestionResolver: { resolve: async (input) => {
+				expect(input).toMatchObject({ runId: 'run-cycle', issueId: 'GSHIP-675', providerId: 'claude' });
+				return {
+					outcome: 'continue',
+					guidance: 'No change: the cited path is generated.',
+					usage: { model: 'opus', effort: 'high', totalCostUsd: 0.04, inputTokens: 10, outputTokens: 4 },
+				};
+			} },
+		});
+
+		const run = runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ executions, verifications, reviews }).toEqual({ executions: 3, verifications: 3, reviews: 3 });
+		const events = runtime.listRunDecisionEvents(run.id);
+		const question = events.find((event) => event.kind === 'run.cycle-question');
+		const response = events.find((event) => event.kind === 'run.cycle-response');
+		expect(question?.payload['questionId']).toBe('question-1');
+		expect(response?.payload).toMatchObject({
+			questionId: 'question-1', responder: 'orchestrator', source: 'internal', outcome: 'continue',
+			guidance: 'No change: the cited path is generated.', provider: 'claude', model: 'opus', effort: 'high',
+		});
+		expect(response).toMatchObject({ fromState: 'review', toState: 'working' });
+		expect(runtime.getRunCost(run.id)).toMatchObject({ totalCostUsd: 0.04 });
+		expect(runtime.getRunRoundOrigins(run.id).orchestrator).toBe(1);
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 0, operatorInterventions: 0, resolvedCycleQuestions: 1,
+		});
+	});
+
+	test('an explicit semantic ambiguity reaches waiting-user with its linked public reason', async () => {
+		let reviews = 0;
+		const ids = ['run-ambiguity', 'question-ambiguity'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => (++reviews < 3
+				? { verdict: 'findings', detail: 'product meaning is unresolved' }
+				: { verdict: 'clean' }) },
+			cycleQuestionResolver: { resolve: async () => ({
+				outcome: 'operator', reason: 'Choose whether archived runs remain visible.',
+				usage: CYCLE_AUDIT_USAGE,
+			}) },
+		});
+		const run = runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(runtime.getRun(run.id)?.summary).toBe('Choose whether archived runs remain visible.');
+		expect(runtime.listRunDecisionEvents(run.id).findLast((event) => event.kind === 'run.cycle-response')?.payload)
+			.toMatchObject({
+				questionId: 'question-ambiguity', outcome: 'operator',
+				model: 'configured-model', effort: 'high',
+			});
+		expect(runtime.listRunDecisionEvents(run.id).findLast((event) => event.kind === 'run.cycle-response'))
+			.toMatchObject({ fromState: 'review', toState: 'waiting-user' });
+	});
+
+	test('provider retry reuses one unanswered durable question and records one linked response', async () => {
+		let reviews = 0;
+		let resolutions = 0;
+		const ids = ['run-retry-question', 'question-retry'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => {
+				reviews += 1;
+				return reviews < 3 ? { verdict: 'findings', detail: 'retry this finding' } : { verdict: 'clean' };
+			} },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				if (resolutions === 1) {
+					throw new ProviderCallError('claude', 'usage-limit', 'Subscription window exhausted.');
+				}
+				return { outcome: 'continue', guidance: 'Apply the bounded correction.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		const run = runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'review', kind: 'usage-limit' });
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.cycle-question')).toHaveLength(1);
+		expect(events.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+		expect(reviews).toBe(3);
+		expect(resolutions).toBe(2);
+	});
+
+	test('restart replays durable continue guidance before another review or response', async () => {
+		const dbPath = join(createTestTmpdir('gship-cycle-restart-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.createRun({
+			id: 'run-cycle-restart', issueId: 'GSHIP-675', sessionId: 'session-restart',
+			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+		});
+		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
+			store.transition({
+				runId: 'run-cycle-restart', toState, kind,
+				createdAt: '2026-08-21T12:00:01.000Z',
+				...(payload === undefined ? {} : { payload }),
+			});
+		transition('working', 'run.started');
+		transition('verify', 'run.work-completed');
+		transition('review', 'run.review-started');
+		transition('working', 'run.review-fix-requested');
+		transition('verify', 'run.work-completed');
+		transition('review', 'run.review-started');
+		store.appendEvent({
+			runId: 'run-cycle-restart', kind: 'run.cycle-question',
+			createdAt: '2026-08-21T12:00:02.000Z',
+			payload: { questionId: 'question-restart', finding: 'durable finding' },
+		});
+		transition('working', 'run.cycle-response', {
+			questionId: 'question-restart', responder: 'orchestrator', source: 'internal',
+			outcome: 'continue', guidance: 'durable guidance', findings: 'durable finding',
+			provider: 'claude', model: 'opus', effort: 'high', latencyMs: 5,
+		});
+		store.close();
+
+		let reviewFeedback: string | undefined;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath),
+			executor: { execute: async (input) => {
+				reviewFeedback = input.reviewFeedback;
+				return { outcome: 'completed', summary: 'recovered' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => {
+				reviews += 1;
+				return { verdict: 'clean' };
+			} },
+			cycleQuestionResolver: { resolve: async () => ({
+				outcome: 'continue', guidance: 'must not be called', usage: CYCLE_AUDIT_USAGE,
+			}) },
+		});
+		expect(runtime.getRun('run-cycle-restart')?.state).toBe('interrupted');
+		runtime.resumeRun('run-cycle-restart', 'Proceed with the already resolved correction.');
+		await waitFor(() => runtime.getRun('run-cycle-restart')?.state === 'ready-to-ship');
+		expect(reviewFeedback).toContain('durable finding');
+		expect(reviewFeedback).toContain('durable guidance');
+		expect(reviews).toBe(1);
+		expect(runtime.listRunDecisionEvents('run-cycle-restart')
+			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+		expect(runtime.getRunRoundOrigins('run-cycle-restart')).toEqual({
+			executor: 1,
+			orchestrator: 1,
+			decision: 0,
+			indeterminate: 0,
+		});
+	});
+
+	test('two durable continue responses exhaust the budget and an invalid resolver fails safe', async () => {
+		let reviews = 0;
+		let resolutions = 0;
+		const ids = ['run-ceiling', 'question-1', 'question-2'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'unexpected',
+			newSessionId: () => 'session',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => {
+				reviews += 1;
+				return { verdict: 'findings', detail: `finding ${reviews}` };
+			} },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				return { outcome: 'continue', guidance: `bounded fix ${resolutions}`, usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		const run = runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(resolutions).toBe(2);
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) =>
+			event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue')).toHaveLength(2);
+
+		let invalidReviews = 0;
+		const invalidIds = ['run-invalid', 'question-invalid'];
+		const invalid = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => invalidIds.shift() ?? 'id',
+			newSessionId: () => 'session',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => (++invalidReviews < 3
+				? { verdict: 'findings', detail: 'finding' }
+				: { verdict: 'clean' }) },
+			cycleQuestionResolver: { resolve: async () => ({
+				outcome: 'continue', guidance: '   ', usage: CYCLE_AUDIT_USAGE,
+			}) },
+		});
+		const invalidRun = invalid.startRun('GSHIP-675');
+		await waitFor(() => invalid.getRun(invalidRun.id)?.state === 'waiting-user');
+		expect(invalid.listRunDecisionEvents(invalidRun.id)
+			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(0);
+		expect(invalid.listRunDecisionEvents(invalidRun.id).findLast((event) =>
+			event.kind === 'run.cycle-response-invalid')?.payload).toMatchObject({
+			questionId: 'question-invalid',
+			reason: 'Cycle question resolver returned an invalid response.',
+		});
+		expect(invalid.getRunEvaluation(invalidRun.id)).toMatchObject({ resolvedCycleQuestions: 0 });
 	});
 });
 
