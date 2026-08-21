@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-21T17:42:46.410Z",
-  "updatedAt": "2026-08-21T18:03:20.390Z",
+  "updatedAt": "2026-08-21T18:18:26.712Z",
   "description": "When a valid operator-owned project brief is persisted, durably replace the generated automatic orchestrator handoff with the empty four-field record in the same RunStore transaction. This makes the operator brief immediately supersede session-derived context instead of leaving two conflicting memories. A subsequent successfully parsed orchestrator turn may populate the handoff again through the existing path. Preserve the orchestrator transcript, provider session ids, project brief normalization, typed command authority, and the existing GET /api/brief response shape; after the brief write, that GET returns the saved brief beside an empty handoff until a later orchestrator turn. An invalid or refused brief write must change neither record. Add focused store and HTTP regression coverage and adjust directly affected documentation. Do not add a table, endpoint, timestamp/freshness heuristic, model call, gate, or lifecycle behavior.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun run check:all"
     ]
+  },
+  "approval": {
+    "fingerprint": "4e537cca0cf6d9d30cc65f3bedad15e8c63e976d43cf35809a1a8f7e2a35214b",
+    "approvedAt": "2026-08-21T18:18:26.712Z"
   }
 }
