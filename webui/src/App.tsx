@@ -70,6 +70,7 @@ import {
 	LOCALE_CATALOG,
 	type Locale,
 	type RunInspectorCatalog,
+	type RunsOperationalCatalog,
 	type ShellCatalog,
 } from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
@@ -227,13 +228,13 @@ function fieldReader(form: EventTarget): (name: string) => string {
 	};
 }
 
-function eventDetail(event: RunEventView): string | null {
+function eventDetail(event: RunEventView, toolsLabel = 'Tools'): string | null {
 	const details: string[] = [];
 	const text = event.payload['text'];
 	if (typeof text === 'string' && text.trim().length > 0) details.push(text);
 	const tools = event.payload['tools'];
 	if (Array.isArray(tools) && tools.every((tool) => typeof tool === 'string')) {
-		details.push(`Tools: ${tools.join(', ')}`);
+		details.push(`${toolsLabel}: ${tools.join(', ')}`);
 	}
 	for (const key of ['findings', 'error']) {
 		const value = event.payload[key];
@@ -273,10 +274,39 @@ function formatCostUsd(value: number, locale: Locale = DEFAULT_LOCALE): string {
 	}).format(value);
 }
 
-const COST_ROLE_LABEL: Record<RunView['cost']['breakdown'][number]['role'], string> = {
+// Workflow benchmark localization remains outside this slice.
+const WORKFLOW_COST_ROLE_LABEL: Record<RunCostRole, string> = {
 	executor: 'Executor',
 	reviewer: 'Reviewer',
 };
+
+function formatEventTime(value: string, locale: Locale): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime())
+		? value
+		: date.toLocaleTimeString(locale, {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hourCycle: 'h23',
+			timeZone: 'UTC',
+		});
+}
+
+function formatRunTimestamp(value: string, locale: Locale): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime())
+		? value
+		: date.toLocaleString(locale, {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			hourCycle: 'h23',
+			timeZone: 'UTC',
+		});
+}
 
 /** No correction round yet: nothing to report, not a fabricated zero line. */
 function hasNoRounds(origins: RunView['roundOrigins']): boolean {
@@ -284,12 +314,19 @@ function hasNoRounds(origins: RunView['roundOrigins']): boolean {
 }
 
 /** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
-function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string | null {
+function formatTokenCounts(
+	entry: RunView['cost']['breakdown'][number],
+	catalog: RunsOperationalCatalog['cost'],
+): string | null {
 	const parts: string[] = [];
-	if (entry.inputTokens !== undefined) parts.push(`${entry.inputTokens} input`);
-	if (entry.outputTokens !== undefined) parts.push(`${entry.outputTokens} output`);
-	if (entry.cacheReadInputTokens !== undefined) parts.push(`${entry.cacheReadInputTokens} cache read`);
-	if (entry.cacheCreationInputTokens !== undefined) parts.push(`${entry.cacheCreationInputTokens} cache created`);
+	if (entry.inputTokens !== undefined) parts.push(`${entry.inputTokens} ${catalog.tokenLabels.input}`);
+	if (entry.outputTokens !== undefined) parts.push(`${entry.outputTokens} ${catalog.tokenLabels.output}`);
+	if (entry.cacheReadInputTokens !== undefined) {
+		parts.push(`${entry.cacheReadInputTokens} ${catalog.tokenLabels.cacheRead}`);
+	}
+	if (entry.cacheCreationInputTokens !== undefined) {
+		parts.push(`${entry.cacheCreationInputTokens} ${catalog.tokenLabels.cacheCreated}`);
+	}
 	return parts.length === 0 ? null : parts.join(' · ');
 }
 
@@ -300,10 +337,14 @@ function formatTokenCounts(entry: RunView['cost']['breakdown'][number]): string 
  * reported them, and the whole role label falls back to its bare name when
  * neither did.
  */
-function formatRoleUsage(role: RunCostRole, usage: RunCostRoleUsage | undefined): string {
-	const label = COST_ROLE_LABEL[role];
-	const suffix = usage?.effort === undefined ? '' : ` (${usage.effort})`;
-	const thinking = usage?.thinkingTokens === undefined ? '' : ` · ${usage.thinkingTokens} thinking`;
+function formatRoleUsage(
+	role: RunCostRole,
+	usage: RunCostRoleUsage | undefined,
+	catalog: RunsOperationalCatalog['cost'],
+): string {
+	const label = catalog.roleLabels[role];
+	const suffix = usage?.effort === undefined ? '' : catalog.effort(usage.effort);
+	const thinking = usage?.thinkingTokens === undefined ? '' : ` · ${catalog.thinking(usage.thinkingTokens)}`;
 	return `${label}${suffix}${thinking}`;
 }
 
@@ -379,28 +420,33 @@ function ContextPanel({
 }
 
 function RunActivity({
+	catalog,
+	locale,
 	run,
 	events,
-}: Pick<AppProps, 'events'> & { run: RunView | null }): React.ReactElement | null {
+}: Pick<AppProps, 'events' | 'locale'> & {
+	catalog: RunsOperationalCatalog;
+	run: RunView | null;
+}): React.ReactElement | null {
 	if (run === null) return null;
 	const visible = events
 		.filter((event) => event.runId === run.id && isOperational(event))
 		.slice(-30);
 	return (
 		<ContextPanel
-			description={`${countLabel(visible.length, 'recent event')} from this run.`}
+			description={catalog.activity.description(visible.length)}
 			open
-			title="Activity"
+			title={catalog.activity.title}
 		>
 			<ol className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto">
 				{visible.map((event) => {
-					const detail = eventDetail(event);
+					const detail = eventDetail(event, catalog.activity.toolsLabel);
 					return (
 						<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
 							<div className="flex items-baseline justify-between gap-3">
 								<code className="min-w-0 break-all">{event.kind}</code>
 								<time className="shrink-0 text-muted-foreground">
-									{event.createdAt.slice(11, 19)}
+									{formatEventTime(event.createdAt, locale)}
 								</time>
 							</div>
 							{detail === null ? null : (
@@ -632,7 +678,14 @@ function RunReport({
  * model in it (GSHIP-628), so they sit on the role heading above its model
  * rows instead of on a model row itself.
  */
-function RunCostPanel({ run }: { run: RunView }): React.ReactElement | null {
+function RunCostPanel({
+	catalog,
+	locale,
+	run,
+}: Pick<AppProps, 'locale'> & {
+	catalog: RunsOperationalCatalog;
+	run: RunView;
+}): React.ReactElement | null {
 	if (run.cost.breakdown.length === 0) return null;
 	const roles: RunCostRole[] = [];
 	for (const entry of run.cost.breakdown) {
@@ -640,29 +693,31 @@ function RunCostPanel({ run }: { run: RunView }): React.ReactElement | null {
 	}
 	return (
 		<ContextPanel
-			description="Expected API-equivalent usage cost by role and model. Never the amount charged to the subscription."
-			title="Cost by role and model"
+			description={catalog.cost.description}
+			title={catalog.cost.title}
 		>
 			<ul className="flex flex-col gap-4">
 				{roles.map((role) => {
 					const usage = run.cost.roles.find((entry) => entry.role === role);
 					return (
 						<li className="flex flex-col gap-2" key={role}>
-							<p className="text-sm font-medium">{formatRoleUsage(role, usage)}</p>
+							<p className="text-sm font-medium">{formatRoleUsage(role, usage, catalog.cost)}</p>
 							<ul className="flex flex-col gap-3 pl-3">
 								{run.cost.breakdown.filter((entry) => entry.role === role).map((entry) => {
-									const tokens = formatTokenCounts(entry);
+									const tokens = formatTokenCounts(entry, catalog.cost);
 									return (
 										<li className="flex flex-col gap-1 text-sm" key={`${entry.role}-${entry.model}`}>
-											<div className="flex items-baseline justify-between gap-3">
-												<span className="min-w-0 break-all">{entry.model}</span>
-												<span className="shrink-0 text-muted-foreground">
-													{formatCostUsd(entry.costUsd)}
-												</span>
-											</div>
-											{tokens === null ? null : (
-												<span className="text-muted-foreground text-xs">{tokens} tokens</span>
-											)}
+										<div className="flex items-baseline justify-between gap-3">
+											<span className="min-w-0 break-all">{entry.model}</span>
+											<span className="shrink-0 text-muted-foreground">
+												{formatCostUsd(entry.costUsd, locale)}
+											</span>
+										</div>
+										{tokens === null ? null : (
+											<span className="text-muted-foreground text-xs">
+												{tokens} {catalog.cost.tokensSuffix}
+											</span>
+										)}
 										</li>
 									);
 								})}
@@ -687,26 +742,33 @@ const PREVIOUS_RUNS_SHOWN = 4;
  * on this screen, never the amount actually billed, and omitted entirely
  * rather than shown as zero when its run never reported one.
  */
-function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+function PreviousRunsPanel({
+	catalog,
+	locale,
+	runs,
+}: Pick<AppProps, 'locale' | 'runs'> & {
+	catalog: RunsOperationalCatalog;
+}): React.ReactElement | null {
 	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
 	if (previous.length === 0) return null;
+	const runInspector = LOCALE_CATALOG[locale].runInspector;
 	return (
 		<ContextPanel
-			description={`${countLabel(previous.length, 'run')} before the latest, newest first.`}
-			title="Previous runs"
+			description={catalog.previousRuns.description(previous.length)}
+			title={catalog.previousRuns.title}
 		>
 			<ul className="flex flex-col gap-2">
 				{previous.map((run) => (
 					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
 						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
-						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
+						<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
 						{run.cost.totalCostUsd === null ? null : (
 							<span className="shrink-0 text-muted-foreground">
-								Expected cost: {formatCostUsd(run.cost.totalCostUsd)}
+								{runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
 							</span>
 						)}
 						<time className="shrink-0 text-muted-foreground">
-							{run.updatedAt.slice(0, 16).replace('T', ' ')}
+							{formatRunTimestamp(run.updatedAt, locale)}
 						</time>
 					</li>
 				))}
@@ -776,7 +838,7 @@ function configurationLabel(configuration: WorkflowCohort['configurations'][numb
 	const roles = configuration.roles.map(({ role, models, efforts }) => {
 		const model = models.length === 0 ? 'model not recorded' : models.join(' + ');
 		const effort = efforts.length === 0 ? '' : ` (${efforts.join(' + ')})`;
-		return `${COST_ROLE_LABEL[role]}: ${model}${effort}`;
+		return `${WORKFLOW_COST_ROLE_LABEL[role]}: ${model}${effort}`;
 	});
 	return [configuration.provider, ...roles].join(' · ');
 }
@@ -872,14 +934,17 @@ function WorkflowBenchmarkPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactEl
 }
 
 function WorkspaceNoticesPanel({
+	catalog,
 	workspaceNotices,
-}: Pick<AppProps, 'workspaceNotices'>): React.ReactElement | null {
+}: Pick<AppProps, 'workspaceNotices'> & {
+	catalog: RunsOperationalCatalog;
+}): React.ReactElement | null {
 	if (workspaceNotices.length === 0) return null;
 	return (
 		<ContextPanel
-			description={`${countLabel(workspaceNotices.length, 'local resource')} ${workspaceNotices.length === 1 ? 'needs' : 'need'} inspection.`}
+			description={catalog.workspaces.description(workspaceNotices.length)}
 			open
-			title="Preserved workspaces"
+			title={catalog.workspaces.title}
 		>
 			<ul className="flex flex-col gap-3">
 				{workspaceNotices.map((notice) => (
@@ -2226,9 +2291,10 @@ function HomeSurface(props: AppProps): React.ReactElement {
 
 function RunsSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
-	const catalog = LOCALE_CATALOG[props.locale].runInspector;
+	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const catalog = localeCatalog.runInspector;
 	return (
-		<SurfaceColumn label="Runs" status={props.status}>
+		<SurfaceColumn label={localeCatalog.shell.routeLabels.runs} status={props.status}>
 			<RunCard
 				catalog={catalog}
 				locale={props.locale}
@@ -2241,12 +2307,26 @@ function RunsSurface(props: AppProps): React.ReactElement {
 				title={catalog.latestRunTitle}
 			/>
 			{run === null ? null : <RunReport catalog={catalog} run={run} />}
-			{run === null ? null : <RunCostPanel run={run} />}
+			{run === null ? null : (
+				<RunCostPanel catalog={localeCatalog.runsOperational} locale={props.locale} run={run} />
+			)}
 			<WorkflowInsightsPanel runs={props.runs} />
 			<WorkflowBenchmarkPanel runs={props.runs} />
-			<RunActivity events={props.events} run={run} />
-			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
-			<PreviousRunsPanel runs={props.runs} />
+			<RunActivity
+				catalog={localeCatalog.runsOperational}
+				events={props.events}
+				locale={props.locale}
+				run={run}
+			/>
+			<WorkspaceNoticesPanel
+				catalog={localeCatalog.runsOperational}
+				workspaceNotices={props.workspaceNotices}
+			/>
+			<PreviousRunsPanel
+				catalog={localeCatalog.runsOperational}
+				locale={props.locale}
+				runs={props.runs}
+			/>
 		</SurfaceColumn>
 	);
 }
