@@ -497,6 +497,7 @@ function PullRequestDelivery({
 			<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
 				{catalog.pullRequestLabel(delivery.prNumber)}
 			</a>
+			{run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
 			<Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>
 			{delivery.failedChecks.map((check) => check.url === undefined ? (
 				<span className="text-destructive-foreground text-xs" key={check.name}>{check.name}</span>
@@ -824,6 +825,7 @@ function PreviousRunRow({
 					{runInspector.pullRequestLabel(delivery.prNumber)}
 				</a>
 			)}
+			{delivery !== null && run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
 			<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
 			{delivery === null ? null : (
 				<Badge variant={ciBadgeVariant(delivery.ciStatus)}>
@@ -2306,13 +2308,13 @@ function GitIdentityCallout({
 const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
 	'chain-disabled': 'the switch is off.',
 	'previous-run-not-done': 'the previous run did not finish in done.',
-	'no-admissible-issue': 'there are no admissible issues in the backlog right now.',
+	'no-admissible-issue': 'there is no eligible work left in the backlog.',
 	'run-active': 'a run is still active.',
 	'chain-start-failed': 'the attempt to start the next run failed.',
 };
 
 /**
- * A stopped queue only exists while the switch is on. `setChainRuns` writes
+ * A visible queue outcome only exists while the switch is on. `setChainRuns` writes
  * the setting alone and emits no event (GSHIP-638), so a pause recorded
  * before the operator turned the switch off -- `no-admissible-issue`,
  * `previous-run-not-done`, any reason -- would otherwise survive the turn-off
@@ -2323,33 +2325,36 @@ const CHAIN_PAUSE_LABELS: Readonly<Record<ChainPauseReason, string>> = {
  * is off by default (GSHIP-638), so it is the steady state of a default
  * install, not a stopped queue.
  */
-function stoppedQueuePause(chainRuns: ChainRunsView): ChainRunsView['pause'] {
+function visibleQueuePause(chainRuns: ChainRunsView): ChainRunsView['pause'] {
 	if (!chainRuns.enabled) return null;
 	const { pause } = chainRuns;
 	return pause === null || pause.reason === 'chain-disabled' ? null : pause;
 }
 
 /**
- * The stopped queue, named where the operator already looks for what needs
- * them (GSHIP-650) -- not a secondary line inside the chaining switch's own
+ * The queue outcome, named where the operator already looks for run status --
+ * not a secondary line inside the chaining switch's own
  * settings panel, next to the toggle that turned it on. A pause whose read
  * could not resolve the issue that stopped it is still shown by its reason
  * alone: never a fabricated link. `pause` is already filtered to reasons that
- * represent an actually stopped queue -- see `stoppedQueuePause`.
+ * represent a visible outcome -- see `visibleQueuePause`.
  */
 function ChainPauseCallout({
 	pause,
 }: { pause: ChainRunsView['pause'] }): React.ReactElement | null {
 	if (pause === null) return null;
+	const complete = pause.reason === 'no-admissible-issue';
 	const named = pause.issue === undefined
 		? CHAIN_PAUSE_LABELS[pause.reason]
 		: `${pause.issue.id}: ${pause.issue.title} — ${CHAIN_PAUSE_LABELS[pause.reason]}`;
 	return (
 		<section
-			aria-label="Stopped run queue"
-			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+			aria-label={complete ? 'Completed run queue' : 'Stopped run queue'}
+			className={complete
+				? 'flex flex-col gap-1 rounded-md bg-success/8 p-3 text-success-foreground dark:bg-success/16'
+				: 'flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16'}
 		>
-			<span className="font-medium text-sm">Queue stopped</span>
+			<span className="font-medium text-sm">{complete ? 'Queue complete' : 'Queue stopped'}</span>
 			<p className="break-words text-xs">{named}</p>
 		</section>
 	);
@@ -2382,8 +2387,9 @@ function ShellSidebar({
 	// card. A stopped chain queue (GSHIP-650) answers it too, the same way a
 	// preserved workspace already does -- but only while the switch is on and
 	// something else stopped it, never for the switch simply being off.
-	const stoppedQueue = stoppedQueuePause(chainRuns);
-	const attention = attentionOf(run, workspaceNotices, stoppedQueue !== null);
+	const queuePause = visibleQueuePause(chainRuns);
+	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
+	const attention = attentionOf(run, workspaceNotices, stoppedQueue);
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const humanVersion = humanVersionOf(version);
 	return (
@@ -2401,7 +2407,7 @@ function ShellSidebar({
 					{runInspectorCatalog.attentionLabels[attention]}
 				</Badge>
 			</div>
-			<ChainPauseCallout pause={stoppedQueue} />
+			<ChainPauseCallout pause={queuePause} />
 			<StaleServiceCallout staleService={staleService} />
 			<GitIdentityCallout gitIdentity={gitIdentity} />
 			<Separator />

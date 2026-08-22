@@ -832,7 +832,23 @@ describe('runs surface', () => {
 			expect(html).toContain('CI failed');
 			expect(html).toContain('href="https://github.com/gateship-dev/gateship/actions/runs/685"');
 			expect(html).toContain('verify');
+			expect(html).not.toContain('>Merged<');
 		}
+	});
+
+	test('a confirmed pull request is marked merged only for a done run, in detail and history', () => {
+		const pullRequest: NonNullable<RunView['pullRequest']> = {
+			prNumber: 692,
+			url: 'https://github.com/gateship-dev/gateship/pull/692',
+			ciStatus: 'passed',
+			failedChecks: [],
+		};
+		const current = runIn('done', { pullRequest });
+		const previous = runIn('done', { id: 'run-previous', issueId: 'CAM-899', pullRequest });
+
+		expect(runsPage({ runs: [current] })).toContain('>Merged<');
+		expect(runsPage({ runs: [current, previous] }).match(/>Merged</g)).toHaveLength(2);
+		expect(runsPage({ runs: [runIn('shipping', { pullRequest })] })).not.toContain('>Merged<');
 	});
 
 	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
@@ -2941,12 +2957,11 @@ describe('operator shell', () => {
 
 	// A pause the read could not resolve a run for still asks for attention,
 	// but by its reason alone -- never a fabricated issue name. Excludes
-	// chain-disabled: that reason is covered separately below, since it never
-	// escalates.
+	// chain-disabled and an exhausted queue are covered separately below, since
+	// neither escalates.
 	test('a stopped chain queue with no resolvable issue is still reported by its reason alone', () => {
-		const labels: Record<Exclude<ChainPauseReason, 'chain-disabled'>, string> = {
+		const labels: Record<Exclude<ChainPauseReason, 'chain-disabled' | 'no-admissible-issue'>, string> = {
 			'previous-run-not-done': 'the previous run did not finish in done.',
-			'no-admissible-issue': 'there are no admissible issues in the backlog right now.',
 			'run-active': 'a run is still active.',
 			'chain-start-failed': 'the attempt to start the next run failed.',
 		};
@@ -2958,6 +2973,23 @@ describe('operator shell', () => {
 			expect(header).toContain(label);
 			expect(header).not.toContain('GSHIP');
 		}
+	});
+
+	test('an exhausted enabled queue reports completion without asking for attention', () => {
+		const pause: ChainPauseView = {
+			reason: 'no-admissible-issue',
+			createdAt: '2026-08-18T00:00:00.000Z',
+		};
+		const header = shellHeader(home({
+			chainRuns: { enabled: true, pause },
+			runs: [runIn('done')],
+		}));
+
+		expect(header).toContain('Idle');
+		expect(header).toContain('Queue complete');
+		expect(header).toContain('there is no eligible work left in the backlog.');
+		expect(header).not.toContain('Needs you');
+		expect(header).not.toContain('Queue stopped');
 	});
 
 	// GSHIP-650 review: chaining is off by default (GSHIP-638), so
@@ -2988,8 +3020,8 @@ describe('operator shell', () => {
 		};
 
 		const on = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
-		expect(on).toContain('Needs you');
-		expect(on).toContain('Queue stopped');
+		expect(on).toContain('Idle');
+		expect(on).toContain('Queue complete');
 
 		const off = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
 		expect(off).toContain('Idle');

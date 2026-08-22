@@ -64,7 +64,7 @@ function chainPaused(payload: Record<string, unknown>): RunEvent {
 }
 
 describe('remoteNotificationForRunEvent', () => {
-	test('alerts on each transition that needs the operator', () => {
+	test('reports each transition or queue outcome selected for remote notification', () => {
 		expect(remoteNotificationForRunEvent(
 			event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }),
 		)).toEqual({ title: 'Gateship needs you', body: 'Escolha o seam.' });
@@ -95,7 +95,10 @@ describe('remoteNotificationForRunEvent', () => {
 
 		expect(remoteNotificationForRunEvent(
 			chainPaused({ reason: 'no-admissible-issue', issueId: 'GSHIP-9' }),
-		)).toEqual({ title: 'Queue stopped', body: 'The run queue stopped at GSHIP-9.' });
+		)).toEqual({
+			title: 'Queue complete',
+			body: 'The run queue is complete. No eligible work remains.',
+		});
 	});
 
 	test('does not alert on progress, a clean finish, an operator cancellation, or a disabled chain', () => {
