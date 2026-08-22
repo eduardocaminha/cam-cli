@@ -6,9 +6,18 @@ id, working directory, cancellation signal, access role, prompt, and optional
 output schema. It returns public prose plus optional structured output.
 
 The built-in adapters invoke the operator's signed-in Claude Code or Codex CLI.
-Authentication stays outside Gateship: the service may report whether a
-subscription is connected and initiate the Codex client's managed browser
+Authentication stays outside Gateship for Codex: the service may report
+whether a subscription is connected and initiate the client's managed browser
 login, but it never reads or stores a token.
+
+Claude is the one deliberate exception (GSHIP-704). Ajustes > Providers can
+connect a dedicated Claude subscription token, generated with
+`claude setup-token` and isolated from Claude Desktop's or the terminal's own
+OAuth/Keychain login. See
+[Credentials and notifications](credentials-and-notifications.md#dedicated-claude-credential)
+for storage, precedence and rotation. External login (`claude auth login`)
+remains an explicit, clearly marked advanced fallback when no dedicated
+credential is configured.
 
 ## Optional local agents
 

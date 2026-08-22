@@ -47,6 +47,7 @@ function fixture(options: {
 	acquireAdmission?: () => (() => void) | null;
 	stateDir?: string;
 	serverArgs?: string[];
+	handoffEnv?: Record<string, string | undefined>;
 } = {}) {
 	const cwd = createTestTmpdir('gship-self-update-');
 	const bin = join(cwd, 'bin');
@@ -69,6 +70,7 @@ function fixture(options: {
 	};
 	const store = new RunStore(':memory:');
 	const plans: string[] = [];
+	const spawnedHelperEnvs: Array<Record<string, string | undefined>> = [];
 	const runtime = new SelfUpdateRuntime({
 		store,
 		databasePath: join(cwd, 'runtime.sqlite'),
@@ -85,11 +87,12 @@ function fixture(options: {
 		releaseClient: client,
 		installation: { kind: 'native', executable: publicPaths[1]!, directory: bin, publicPaths },
 		probeVersion: options.probeVersion ?? (() => 'gateship 2.0.0'),
-		spawnHelper: (_executable, plan) => { plans.push(plan); },
+		spawnHelper: (_executable, plan, handoffEnv) => { plans.push(plan); spawnedHelperEnvs.push(handoffEnv); },
 		serverArgs: options.serverArgs ?? ['--port', '7777'],
+		handoffEnv: options.handoffEnv,
 	});
 	if (options.enabled) runtime.setEnabled(true);
-	return { runtime, store, downloads, plans };
+	return { runtime, store, downloads, plans, spawnedHelperEnvs };
 }
 
 describe('native self update policy', () => {
@@ -256,6 +259,27 @@ describe('native self update policy', () => {
 		expect(runtime.snapshot().applying).toBe(true);
 	});
 
+	// GSHIP-704: a dedicated Claude credential provisioned at boot must survive
+	// the handoff to a native update -- forwarded to the helper explicitly,
+	// never written into the handoff plan file this test also inspects.
+	test('forwards a boot-captured credential snapshot to the spawned helper, never into the handoff plan', async () => {
+		const { runtime, plans, spawnedHelperEnvs } = fixture({
+			enabled: true,
+			handoffEnv: { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-handoff' },
+		});
+		await runtime.checkIfDue();
+		expect(spawnedHelperEnvs).toEqual([{ CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-handoff' }]);
+		const written = JSON.parse(await Bun.file(plans[0]!).text()) as Record<string, unknown>;
+		expect(JSON.stringify(written)).not.toContain('sk-ant-oat01-handoff');
+		expect(written).not.toHaveProperty('handoffEnv');
+	});
+
+	test('forwards an empty snapshot when no dedicated credential was ever provisioned', async () => {
+		const { runtime, spawnedHelperEnvs } = fixture({ enabled: true });
+		await runtime.checkIfDue();
+		expect(spawnedHelperEnvs).toEqual([{}]);
+	});
+
 	test('writes handoff state only beneath an explicit project state directory', async () => {
 		const stateDir = createTestTmpdir('gship-self-update-state-');
 		const { runtime, plans } = fixture({ enabled: true, stateDir });
@@ -338,12 +362,12 @@ function plan(): HandoffPlan {
 function handoffFixture(probes: boolean[]): {
 	deps: HandoffDependencies;
 	swaps: string[];
-	starts: Array<{ executable: string; args: string[]; cwd: string }>;
+	starts: Array<{ executable: string; args: string[]; cwd: string; env: Record<string, string | undefined> }>;
 	stops: number[];
 	results: string[];
 } {
 	const swaps: string[] = [];
-	const starts: Array<{ executable: string; args: string[]; cwd: string }> = [];
+	const starts: Array<{ executable: string; args: string[]; cwd: string; env: Record<string, string | undefined> }> = [];
 	const stops: number[] = [];
 	const results: string[] = [];
 	return {
@@ -354,9 +378,9 @@ function handoffFixture(probes: boolean[]): {
 		deps: {
 			waitForExit: async () => true,
 			swap: (from, to) => { swaps.push(`${from}->${to}`); },
-			start: (executable, args, cwd) => {
+			start: (executable, args, cwd, env) => {
 				const pid = starts.length + 1;
-				starts.push({ executable, args, cwd });
+				starts.push({ executable, args, cwd, env });
 				return { pid, stop: () => stops.push(pid), unref: () => {} };
 			},
 			probe: async () => probes.shift() ?? false,
@@ -377,7 +401,40 @@ describe('transient update handoff', () => {
 			executable: '/bin/gship',
 			args: ['__self-update-serve', '/state/project', '--port', '7777'],
 			cwd: '/project',
+			env: {},
 		}]);
+	});
+
+	// GSHIP-704: the helper -> successor server leg of the handoff. The
+	// helper (this function, as the CLI's own `__self-update-handoff` runs
+	// it) received `handoffEnv` from its own boot environment, never from the
+	// plan; it must transmit that same snapshot, unmodified, to the successor
+	// server it starts, so the successor's own boot can capture and clear it
+	// exactly the way the very first server process already does.
+	test('transmits the handoff credential snapshot to the successor server it starts', async () => {
+		const fixture = handoffFixture([true]);
+		const handoffEnv = { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-successor' };
+		const result = await executeSelfUpdateHandoff(plan(), fixture.deps, handoffEnv);
+		expect(result.status).toBe('success');
+		expect(fixture.starts).toEqual([{
+			executable: '/bin/gship',
+			args: ['__self-update-serve', '/state/project', '--port', '7777'],
+			cwd: '/project',
+			env: { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-successor' },
+		}]);
+		// Never in the disk-persisted handoff plan itself.
+		expect(JSON.stringify(plan())).not.toContain('sk-ant-oat01-successor');
+	});
+
+	test('also transmits the handoff credential snapshot to a restored previous binary on rollback', async () => {
+		const fixture = handoffFixture([false, true]);
+		const handoffEnv = { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-rollback' };
+		const result = await executeSelfUpdateHandoff(plan(), fixture.deps, handoffEnv);
+		expect(result.status).toBe('rollback');
+		expect(fixture.starts.map((start) => start.env)).toEqual([
+			{ CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-rollback' },
+			{ CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-rollback' },
+		]);
 	});
 
 	test('derives candidate state from the database path for a legacy plan', async () => {

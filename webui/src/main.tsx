@@ -19,8 +19,10 @@ import {
 	type ChatMessageView,
 	cancelDiagnostic,
 	commandRun,
+	connectClaudeCredential,
 	createIssue,
 	type DiagnosticsView,
+	disconnectClaudeCredential,
 	dismissDiagnosticFinding,
 	dismissProposal,
 	EVENTS_PATH,
@@ -452,6 +454,15 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 					return 'Codex login opened in the browser.';
 				}));
 			}}
+			onConnectClaudeCredential={(token) => send(() => connectClaudeCredential(token).then((confirmation) => {
+				const subject = [confirmation.account, confirmation.organization, confirmation.plan]
+					.filter((value): value is string => value !== undefined && value.length > 0)
+					.join(' · ');
+				return subject.length === 0
+					? 'Dedicated Claude subscription connected.'
+					: `Dedicated Claude subscription connected: ${subject}.`;
+			}))}
+			onDisconnectClaudeCredential={() => send(disconnectClaudeCredential)}
 			onEnableNotifications={enableNotifications}
 			onRemoveResendCredential={() => send(removeResendCredential)}
 			onSaveResendSettings={(input) => send(() => saveResendSettings(input))}

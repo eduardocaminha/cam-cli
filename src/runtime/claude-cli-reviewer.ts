@@ -76,6 +76,8 @@ export interface ClaudeCliReviewerOptions {
 	/** Asked at every review, so the operator's choice needs no restart. */
 	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
+	/** The dedicated Claude subscription token (GSHIP-704); see `ClaudeCliExecutorOptions` for the precedence and per-spawn resolution this mirrors. */
+	resolveClaudeCredential?: () => string | undefined;
 	terminationGraceMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	runGit?: GitCommandRunner;
@@ -273,7 +275,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 		const result = await runClaudeCli({
 			argv,
 			cwd: input.cwd,
-			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
+			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env, this.#options.resolveClaudeCredential?.()),
 			prompt: buildReviewPrompt(input.issueId, issue, change, input.operatorDecisions ?? []),
 			signal: input.signal,
 			emit: input.emit,

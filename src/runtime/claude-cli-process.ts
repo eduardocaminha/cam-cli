@@ -17,7 +17,7 @@ import {
 	classifyHeadlessStreamLine,
 } from './claude-stream.ts';
 import { runAgentProcess } from './agent-process.ts';
-import { buildAllowlistedEnv } from './child-env.ts';
+import { buildClaudeAuthEnv } from './provider-env.ts';
 import type { ModelSlot } from './model-settings.ts';
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
@@ -51,11 +51,19 @@ export interface ClaudeCliResult {
 	structuredOutput?: unknown;
 }
 
+/**
+ * `token`, when present, is the dedicated subscription credential GSHIP-704
+ * resolved for this spawn -- never read from `source` here, so a value that
+ * only happens to sit in the service's own environment cannot leak in
+ * through this function's normal allowlist path. See `buildClaudeAuthEnv`
+ * for the precedence this boundary enforces against `CLAUDE_CONFIG_DIR`.
+ */
 export function buildClaudeEnv(
 	source: Record<string, string | undefined>,
+	token?: string,
 ): Record<string, string | undefined> {
 	return {
-		...buildAllowlistedEnv(source, ['CLAUDE_CONFIG_DIR']),
+		...buildClaudeAuthEnv(source, token),
 		// Gateship owns the provider process identity for the whole run. A child
 		// may not replace the CLI behind the recorded workflow revision.
 		DISABLE_UPDATES: '1',

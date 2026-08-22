@@ -20,6 +20,13 @@ import { createTestTmpdir, reapOwnDirectories } from './test-tmpdir';
 // No test server may register fixture projects in the developer's real home.
 process.env.GATESHIP_HOME ??= createTestTmpdir('gship-test-home-');
 
+// GSHIP-704: the dedicated Claude credential's own boot-time environment
+// variable. An operator using the supported boot-time provisioning path may
+// well have this set in the shell that runs `bun test`; without this guard
+// every test asserting a credential-blind or file-only outcome would depend
+// on that shell's own state instead of on this suite's own fixtures.
+delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
 afterAll(() => {
 	reapOwnDirectories();
 });

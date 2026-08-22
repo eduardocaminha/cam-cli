@@ -8,6 +8,7 @@ import { runAgent } from './src/commands/agent.ts';
 import { printError, printFatalHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { GSHIP_VERSION } from './src/version.ts';
+import { captureBootClaudeToken } from './src/runtime/claude-credential.ts';
 import { executeSelfUpdateHandoff, type HandoffPlan } from './src/runtime/self-update.ts';
 
 const HELP = renderHelp({
@@ -94,9 +95,17 @@ export async function main(argv: string[]): Promise<number> {
 	if (command === '__self-update-handoff') {
 		const planPath = argv[3];
 		if (planPath === undefined) return 1;
+		// GSHIP-704: the old server process, if a dedicated Claude credential
+		// was ever provisioned at boot, spawned this helper with the token set
+		// explicitly in its own environment -- never in the handoff plan file.
+		// Captured and removed from this process's own `process.env` the same
+		// way the normal server boot already does, so the helper (which never
+		// runs a project command) does not keep carrying it either; the
+		// snapshot alone is what reaches the successor server this starts.
+		const handoffEnv = captureBootClaudeToken();
 		try {
 			const plan = JSON.parse(readFileSync(planPath, 'utf8')) as HandoffPlan;
-			const result = await executeSelfUpdateHandoff(plan);
+			const result = await executeSelfUpdateHandoff(plan, undefined, handoffEnv);
 			return result.status === 'success' || result.status === 'rollback' ? 0 : 1;
 		} finally {
 			rmSync(planPath, { force: true });

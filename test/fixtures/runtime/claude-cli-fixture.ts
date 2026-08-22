@@ -52,13 +52,20 @@ if (mode === 'wait') {
 			result: 'Looked at the diff. Example payload: {"verdict":"CLEAN","findings":[]}\nStill drafting the verdict.',
 		})}\n`);
 	} else {
+		// GSHIP-704: same two-key env echo the non-review branch below carries,
+		// so a reviewer-side test can confirm the dedicated credential boundary
+		// the same way the executor-side one already does.
+		const reviewEnv = {
+			CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+			CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+		};
 		const output = {
 			verdict,
 			findings: verdict === 'CLEAN'
 				? []
 				: [{
 					file: 'src/reviewed.ts',
-					summary: JSON.stringify({ argv: process.argv.slice(2), prompt: input }),
+					summary: JSON.stringify({ argv: process.argv.slice(2), prompt: input, env: reviewEnv }),
 				}],
 		};
 		process.stdout.write(`${JSON.stringify({
@@ -69,7 +76,15 @@ if (mode === 'wait') {
 		})}\n`);
 	}
 } else {
-	const summary = JSON.stringify({ argv: process.argv.slice(2), input });
+	// GSHIP-704: echoes exactly the two keys the dedicated-credential boundary
+	// cares about, so a test can confirm what the real child actually received
+	// without dumping (and potentially matching against) the rest of this
+	// process's own environment.
+	const env = {
+		CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+		CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+	};
+	const summary = JSON.stringify({ argv: process.argv.slice(2), input, env });
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
 	// GSHIP-664: --fixture-usage=<0-1 fraction|"malformed"> emits a non-rejecting
 	// rate_limit_event carrying `utilization`, so a test can observe the derived

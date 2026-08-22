@@ -332,6 +332,25 @@ export interface SettingsCatalog {
 		none: string;
 		spendLimit: (used: string, limit: string, remainingPercent: string) => string;
 		resetCredits: (count: number, formatted: string) => string;
+		/** Ajustes > Providers universal onboarding for a dedicated Claude subscription (GSHIP-704), isolated from Claude Desktop's or the terminal's own OAuth/Keychain login. */
+		claudeCredential: {
+			explanation: string;
+			cliMissing: string;
+			setupCommandLabel: string;
+			copyCommand: string;
+			tokenLabel: string;
+			tokenPlaceholder: string;
+			confirm: string;
+			connect: string;
+			rotate: string;
+			cancel: string;
+			disconnect: string;
+			connected: string;
+			needsReconnect: string;
+			envManaged: string;
+			advancedTitle: string;
+			originLabels: Readonly<Record<'external' | 'web' | 'dedicated', string>>;
+		};
 	};
 	models: {
 		title: string;
@@ -747,12 +766,30 @@ export const LOCALE_CATALOG = {
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
 			providers: {
-				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients and never receives tokens.', inUse: 'in use',
+				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients. Claude can optionally use a dedicated credential of its own, isolated from Claude Desktop or the terminal; Codex and the external Claude login never leave the client that owns them.', inUse: 'in use',
 				connectedUnavailable: (reason) => `Subscription connected, but currently unavailable: ${reason}.`, unavailable: (reason) => `Currently unavailable: ${reason}.`, connected: (plan) => `Subscription connected${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Installed, without a connected subscription', clientMissing: 'Client not found', connectChatGpt: 'Connect ChatGPT', useProvider: (label) => `Use ${label}`,
 				waitReasons: { 'auth-required': 'Authentication required', 'usage-limit': 'Subscription usage limit reached', 'rate-limited': 'Calls temporarily rate-limited', overloaded: 'Provider temporarily overloaded', 'model-refused': 'Model or effort rejected', 'transport-unavailable': 'Provider connection unavailable', 'protocol-invalid': 'Invalid provider response', cancelled: 'Call cancelled', unknown: 'Provider unavailable' },
 				usageWindowLabels: { five_hour: '5 hour', seven_day: '7 day', seven_day_opus: '7 day (Opus)', seven_day_sonnet: '7 day (Sonnet)', seven_day_overage_included: '7 day (overage)', overage: 'Overage' },
 				duration: { days: (_count, formatted) => `${formatted} day`, hours: (_count, formatted) => `${formatted} hour`, minutes: (formatted) => `${formatted} min` },
 				usedPercent: (formatted) => `${formatted} used`, resets: 'resets', asOf: 'as of', credits: 'Credits', unlimited: 'unlimited', available: 'available', none: 'none', spendLimit: (used, limit, remainingPercent) => `Spend limit: ${used} of ${limit} (${remainingPercent} remaining)`, resetCredits: (_count, formatted) => `${formatted} reset credit(s) available`,
+				claudeCredential: {
+					explanation: 'A dedicated subscription token keeps Gateship\'s own Claude access separate from Claude Desktop\'s or the terminal\'s login. Generate one on this host and paste it once below; it is never shown again.',
+					cliMissing: 'Claude CLI not found. Install it before connecting a dedicated subscription.',
+					setupCommandLabel: 'Run this command, then paste the printed token below:',
+					copyCommand: 'Copy command',
+					tokenLabel: 'Setup token',
+					tokenPlaceholder: 'Paste the token from claude setup-token',
+					confirm: 'I confirm this is the subscription I want Gateship to use.',
+					connect: 'Connect',
+					rotate: 'Rotate',
+					cancel: 'Cancel',
+					disconnect: 'Disconnect',
+					connected: 'Dedicated subscription connected.',
+					needsReconnect: 'Dedicated credential needs reconnecting.',
+					envManaged: 'Managed by CLAUDE_CODE_OAUTH_TOKEN in the service environment. Connecting, rotating and disconnecting are unavailable here: change or remove that variable in the service configuration and restart Gateship.',
+					advancedTitle: 'Advanced: sign in locally instead',
+					originLabels: { external: 'external login', web: 'managed login', dedicated: 'dedicated credential' },
+				},
 			},
 			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Orchestrator', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
 			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
@@ -1100,12 +1137,30 @@ export const LOCALE_CATALOG = {
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
 			providers: {
-				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados e nunca recebe tokens.', inUse: 'em uso',
+				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados. O Claude pode opcionalmente usar uma credencial dedicada própria, isolada do Claude Desktop ou do terminal; o Codex e o login externo do Claude nunca saem do cliente que os possui.', inUse: 'em uso',
 				connectedUnavailable: (reason) => `Assinatura conectada, mas indisponível no momento: ${reason}.`, unavailable: (reason) => `Indisponível no momento: ${reason}.`, connected: (plan) => `Assinatura conectada${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Instalado, sem uma assinatura conectada', clientMissing: 'Cliente não encontrado', connectChatGpt: 'Conectar ChatGPT', useProvider: (label) => `Usar ${label}`,
 				waitReasons: { 'auth-required': 'Autenticação necessária', 'usage-limit': 'Limite de uso da assinatura atingido', 'rate-limited': 'Chamadas temporariamente limitadas', overloaded: 'Provedor temporariamente sobrecarregado', 'model-refused': 'Modelo ou esforço rejeitado', 'transport-unavailable': 'Conexão com o provedor indisponível', 'protocol-invalid': 'Resposta inválida do provedor', cancelled: 'Chamada cancelada', unknown: 'Provedor indisponível' },
 				usageWindowLabels: { five_hour: '5 horas', seven_day: '7 dias', seven_day_opus: '7 dias (Opus)', seven_day_sonnet: '7 dias (Sonnet)', seven_day_overage_included: '7 dias (excedente)', overage: 'Excedente' },
 				duration: { days: (count, formatted) => `${formatted} ${count === 1 ? 'dia' : 'dias'}`, hours: (count, formatted) => `${formatted} ${count === 1 ? 'hora' : 'horas'}`, minutes: (formatted) => `${formatted} min` },
 				usedPercent: (formatted) => `${formatted} usados`, resets: 'reinicia', asOf: 'observado em', credits: 'Créditos', unlimited: 'ilimitados', available: 'disponíveis', none: 'nenhum', spendLimit: (used, limit, remainingPercent) => `Limite de gastos: ${used} de ${limit} (${remainingPercent} restantes)`, resetCredits: (count, formatted) => `${formatted} ${count === 1 ? 'crédito de reinício disponível' : 'créditos de reinício disponíveis'}`,
+				claudeCredential: {
+					explanation: 'Um token de assinatura dedicado mantém o acesso do Gateship ao Claude separado do login do Claude Desktop ou do terminal. Gere um neste host e cole-o uma única vez abaixo; ele não é mostrado novamente.',
+					cliMissing: 'Claude CLI não encontrado. Instale-o antes de conectar uma assinatura dedicada.',
+					setupCommandLabel: 'Execute este comando e cole o token impresso abaixo:',
+					copyCommand: 'Copiar comando',
+					tokenLabel: 'Token de configuração',
+					tokenPlaceholder: 'Cole o token de claude setup-token',
+					confirm: 'Confirmo que esta é a assinatura que quero que o Gateship use.',
+					connect: 'Conectar',
+					rotate: 'Rotacionar',
+					cancel: 'Cancelar',
+					disconnect: 'Desconectar',
+					connected: 'Assinatura dedicada conectada.',
+					needsReconnect: 'A credencial dedicada precisa ser reconectada.',
+					envManaged: 'Gerenciado por CLAUDE_CODE_OAUTH_TOKEN no ambiente do serviço. Conectar, rotacionar e desconectar não estão disponíveis aqui: altere ou remova essa variável na configuração do serviço e reinicie o Gateship.',
+					advancedTitle: 'Avançado: entrar localmente em vez disso',
+					originLabels: { external: 'login externo', web: 'login gerenciado', dedicated: 'credencial dedicada' },
+				},
 			},
 			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Orquestrador', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
 			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-704",
   "title": "Isolar autenticação Claude do login local",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T19:38:10.487Z",
-  "updatedAt": "2026-08-22T19:49:57.883Z",
+  "updatedAt": "2026-08-22T21:38:06.732Z",
   "description": "Fazer o provider Claude do Gateship usar uma credencial OAuth de assinatura dedicada, independente do OAuth global e do Keychain usados pelo Claude Desktop ou pelo terminal. Aceitar CLAUDE_CODE_OAUTH_TOKEN somente na fronteira do provider Claude, dar a ele precedência sobre CLAUDE_CONFIG_DIR, usá-lo tanto no status de autenticação quanto em orquestrador, executor e reviewer, e nunca propagá-lo a comandos do projeto, eventos, logs, respostas HTTP ou outros providers. Expor apenas origem da autenticação, conta ativa e plano para confirmação do operador. Documentar a geração com `claude setup-token`, armazenamento fora do repositório e rotação/revogação. Manter o fluxo atual por login externo como fallback explícito quando não houver credencial dedicada. Não criar broker, daemon ou banco de segredos nesta entrega; o gerenciamento criptografado pela UI permanece uma evolução separada.",
   "specSource": "operator",
   "spec": {
