@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+	AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES,
 	AGENT_MAX_OUTPUT_BYTES,
 	executeAgent,
 	parseAgentArgs,
 } from '../../src/commands/agent.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { startWebServer } from '../../src/commands/web.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { type ProjectBrief, RunStore } from '../../src/runtime/run-store.ts';
@@ -49,12 +51,204 @@ describe('canonical agent CLI', () => {
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
 			'project.inspect', 'status.get', 'backlog.list', 'issues.list', 'issues.get',
-			'runs.list', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
+			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
 			'runs.cancel', 'runs.abandon', 'runs.ship',
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
+	});
+
+	test('keeps default discovery pages compact and reserves detail for get operations', async () => {
+		const detail = 'd'.repeat(5_000);
+		// A NUL costs six bytes once JSON-escaped. Saturating every retained string
+		// proves the page budget itself instead of relying on the large fields that
+		// list projection removes altogether.
+		const retained = '\0'.repeat(5_000);
+		const blockers = Array.from({ length: 20 }, (_, index) => `GSHIP-BLOCKER-${index}`);
+		const spec = { scope: detail, verify: [detail], evidence: [{ command: 'inspect', output: detail }] };
+		const issues = Array.from({ length: 20 }, (_, index) => ({
+			id: `${index}${retained}`,
+			title: retained,
+			stage: retained,
+			status: retained,
+			blockedBy: index === 0 ? blockers : [],
+			updatedAt: retained,
+			description: detail,
+			spec,
+			approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-22T10:00:00.000Z' },
+		}));
+		const runs = Array.from({ length: 20 }, (_, index) => ({
+			id: `${index}${retained}`,
+			issueId: retained,
+			state: retained,
+			providerId: retained,
+			fixRounds: index,
+			updatedAt: retained,
+			summary: retained,
+			workspacePath: detail,
+			sessionId: detail,
+			cost: { breakdown: [{ model: detail }], roles: { executor: detail } },
+			roundOrigins: { rounds: [detail] },
+			pullRequest: { url: retained, ciStatus: retained, prNumber: index },
+		}));
+
+		const listedIssues = await executeAgent(['call', 'issues.list'], async () => jsonResponse({ issues }));
+		const listedRuns = await executeAgent(['call', 'runs.list'], async () => jsonResponse({ runs }));
+		for (const result of [listedIssues, listedRuns]) {
+			expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThan(AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES);
+		}
+		const issueItem = ((listedIssues.output['result'] as { issues: Record<string, unknown>[] }).issues[0])!;
+		expect(Object.keys(issueItem)).toEqual([
+			'id', 'title', 'stage', 'status', 'blockedBy', 'updatedAt', 'approved',
+		]);
+		expect(issueItem).not.toHaveProperty('description');
+		expect(issueItem).not.toHaveProperty('spec');
+		expect(issueItem).not.toHaveProperty('approval');
+		expect(issueItem['blockedBy']).toEqual(blockers);
+		const runItem = ((listedRuns.output['result'] as { runs: Record<string, unknown>[] }).runs[0])!;
+		expect(Object.keys(runItem)).toEqual([
+			'id', 'issueId', 'state', 'providerId', 'fixRounds', 'updatedAt', 'summary', 'pullRequest',
+		]);
+		expect(runItem).not.toHaveProperty('workspacePath');
+		expect(runItem).not.toHaveProperty('sessionId');
+		expect(runItem).not.toHaveProperty('cost');
+
+		const detailedIssue = {
+			...issues[1],
+			id: 'GSHIP-1',
+			title: 'Issue detail',
+			stage: 'specified',
+			status: 'open',
+			blockedBy: [],
+			updatedAt: '2026-08-22T10:00:00.000Z',
+		};
+		const detailedRun = {
+			...runs[1],
+			id: 'run-1',
+			issueId: 'GSHIP-1',
+			state: 'done',
+			providerId: 'codex',
+			updatedAt: '2026-08-22T10:00:00.000Z',
+			summary: detail,
+			pullRequest: { url: 'https://example.com/1', ciStatus: 'success' },
+		};
+		const issueDetail = await executeAgent(
+			['call', 'issues.get', '--input', '{"issueId":"GSHIP-1"}'],
+			async () => jsonResponse({ issue: detailedIssue, fingerprint: fingerprintSpec(spec) }),
+		);
+		const runDetail = await executeAgent(
+			['call', 'runs.get', '--input', '{"runId":"run-1"}'],
+			async () => jsonResponse({ run: detailedRun }),
+		);
+		expect(issueDetail.output['result']).toHaveProperty('issue.spec');
+		expect(issueDetail.output['result']).toHaveProperty('issue.spec.evidence');
+		expect(issueDetail.output['result']).toHaveProperty('fingerprint');
+		expect(runDetail.output['result']).toHaveProperty('run.workspacePath');
+		expect(Buffer.byteLength(JSON.stringify(runDetail.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
+	});
+
+	test('preserves more than one hundred blockers instead of silently clamping them', async () => {
+		const blockers = Array.from({ length: 125 }, (_, index) => `GSHIP-${1_000 + index}`);
+		const result = await executeAgent(['call', 'issues.list'], async () => jsonResponse({
+			issues: [{
+				id: 'GSHIP-691',
+				title: 'Compact agent output',
+				stage: 'specified',
+				status: 'open',
+				blockedBy: blockers,
+				updatedAt: '2026-08-22T10:00:00.000Z',
+			}],
+		}));
+		const issue = ((result.output['result'] as { issues: Array<{ blockedBy: string[] }> }).issues[0])!;
+		expect(issue.blockedBy).toEqual(blockers);
+	});
+
+	test('refuses oversized issue pages without returning partial blockers', async () => {
+		const issueWith = (blockedBy: string[]) => ({
+			issues: [{
+				id: 'GSHIP-691',
+				title: 'Compact agent output',
+				stage: 'specified',
+				status: 'open',
+				blockedBy,
+				updatedAt: '2026-08-22T10:00:00.000Z',
+			}],
+		});
+		const overDefaultBudget = Array.from(
+			{ length: 40 },
+			(_, index) => `GSHIP-${index}-${'b'.repeat(400)}`,
+		);
+		const defaultPage = await executeAgent(
+			['call', 'issues.list'],
+			async () => jsonResponse(issueWith(overDefaultBudget)),
+		);
+		expect(defaultPage).toMatchObject({
+			exitCode: 1,
+			output: { ok: false, code: 'output-too-large', message: expect.stringContaining('smaller explicit "limit"') },
+		});
+		expect(defaultPage.output).not.toHaveProperty('result');
+		expect(Buffer.byteLength(JSON.stringify(defaultPage.output))).toBeLessThan(AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES);
+
+		const explicitPage = await executeAgent(
+			['call', 'issues.list', '--input', '{"limit":1}'],
+			async () => jsonResponse(issueWith(overDefaultBudget)),
+		);
+		expect(explicitPage.exitCode).toBe(0);
+		const complete = ((explicitPage.output['result'] as { issues: Array<{ blockedBy: string[] }> }).issues[0])!;
+		expect(complete.blockedBy).toEqual(overDefaultBudget);
+
+		const overGlobalBudget = Array.from(
+			{ length: 100 },
+			(_, index) => `GSHIP-${index}-${'b'.repeat(1_000)}`,
+		);
+		const globalLimit = await executeAgent(
+			['call', 'issues.list', '--input', '{"limit":1}'],
+			async () => jsonResponse(issueWith(overGlobalBudget)),
+		);
+		expect(globalLimit).toMatchObject({ exitCode: 1, output: { ok: false, code: 'output-too-large' } });
+		expect(globalLimit.output).not.toHaveProperty('result');
+		expect(Buffer.byteLength(JSON.stringify(globalLimit.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
+	});
+
+	test('projects status to backlog counts, discovery rows, active run and attention only', async () => {
+		const detail = 's'.repeat(5_000);
+		const calls: string[] = [];
+		const result = await executeAgent(['call', 'status.get'], async (url) => {
+			calls.push(String(url));
+			if (String(url).endsWith('/api/runs')) {
+				return jsonResponse({ runs: [{
+					id: 'run-active', issueId: 'GSHIP-691', state: 'waiting-user', providerId: 'codex',
+					fixRounds: 0, updatedAt: '2026-08-22T10:00:00.000Z', summary: detail,
+					workspacePath: detail, sessionId: detail,
+				}] });
+			}
+			return jsonResponse({
+				version: '0.321.0',
+				idleState: { backlog: {
+					counts: { idea: 1, specified: 2, planned: 3 },
+					plannable: [{ id: 'GSHIP-691', title: 'Compact output', scope: detail, evidence: detail }],
+					drafts: [{ id: 'GSHIP-691', scope: detail, evidence: detail, spec: detail }],
+				} },
+				workspaceNotices: [{ kind: 'dirty', runId: 'run-old', detail, workspacePath: detail }],
+			});
+		});
+		expect(calls).toEqual([
+			'http://127.0.0.1:7777/api/snapshot',
+			'http://127.0.0.1:7777/api/runs',
+		]);
+		expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThan(12 * 1024);
+		const status = result.output['result'] as Record<string, unknown>;
+		expect(status).toMatchObject({
+			version: '0.321.0',
+			backlog: { counts: { idea: 1, specified: 2, planned: 3 }, plannable: [{ id: 'GSHIP-691', title: 'Compact output' }] },
+			activeRun: { id: 'run-active', issueId: 'GSHIP-691', state: 'waiting-user' },
+			attentionRequests: [{ kind: 'run', runId: 'run-active' }, { kind: 'dirty', runId: 'run-old' }],
+		});
+		expect(JSON.stringify(status)).not.toContain('workspacePath');
+		expect(JSON.stringify(status)).not.toContain('drafts');
+		expect(JSON.stringify(status)).not.toContain('evidence');
+		expect(JSON.stringify(status)).not.toContain('scope');
 	});
 
 	test('calls read-only operations and pages list results', async () => {
@@ -164,7 +358,7 @@ describe('canonical agent CLI', () => {
 	});
 
 	test('always limits the single JSON output object', async () => {
-		const result = await executeAgent(['call', 'status.get'],
+		const result = await executeAgent(['call', 'issues.get', '--input', '{"issueId":"GSHIP-1"}'],
 			async () => jsonResponse({ detail: 'x'.repeat(AGENT_MAX_OUTPUT_BYTES * 2) }));
 		expect(result.output).not.toBeArray();
 		expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
