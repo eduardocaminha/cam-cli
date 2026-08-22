@@ -1,6 +1,7 @@
-import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { constants, Database } from 'bun:sqlite';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
 import {
@@ -72,20 +73,32 @@ interface PersistedRunStatusRow {
 	updated_at: string;
 }
 
+function openReadOnlyDatabase(path: string): Database {
+	if (existsSync(`${path}-wal`)) {
+		return new Database(path, { readonly: true, strict: true });
+	}
+	const uri = pathToFileURL(path);
+	uri.searchParams.set('immutable', '1');
+	return new Database(
+		uri.href,
+		constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+	);
+}
+
 /**
  * Opens an existing runtime database strictly read-only and returns only the
  * bounded operational run projection. This deliberately bypasses RunStore's
  * schema creation, migrations and recovery-capable runtime composition.
  */
 export function readPersistedRunStatuses(path: string, limit = 20): PersistedRunStatus[] {
-	const db = new Database(path, { readonly: true, strict: true });
+	const db = openReadOnlyDatabase(path);
 	try {
 		const rows = db.query(`
 			SELECT id, issue_id, state, created_at, updated_at
 			FROM runs
 			ORDER BY created_at DESC, id DESC
-			LIMIT $limit
-		`).all({ limit }) as PersistedRunStatusRow[];
+			LIMIT ?
+		`).all(limit) as PersistedRunStatusRow[];
 		return rows.map((row) => ({
 			id: row.id,
 			issueId: row.issue_id,
