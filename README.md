@@ -12,10 +12,13 @@ sit on the execution path.
 
 ## Requirements
 
-- Claude Code and/or Codex CLI installed with a subscription login
-- [GitHub CLI](https://cli.github.com/) installed and authenticated with
-  `gh auth login --web` and `gh auth setup-git`
-- Bun 1.2.3 or newer when running from source
+- Docker Desktop on Windows and macOS, or Docker Engine with the Compose
+  plugin on Linux, is the recommended installation when host portability is
+  required. The image includes the provider and GitHub CLIs.
+- Native macOS and Linux installs require Claude Code and/or Codex CLI with a
+  subscription login and [GitHub CLI](https://cli.github.com/) authenticated
+  with `gh auth login --web` and `gh auth setup-git`.
+- Bun 1.2.3 or newer is required only when running from source.
 - Git with permission to create branches and worktrees in the target repository
 
 Gateship executes the operator's signed-in `claude` or `codex` binary. It
@@ -25,7 +28,11 @@ credential store owned by `gh`, never an ambient PAT.
 
 ## Install
 
-Install the latest packaged binary:
+For a portable installation across Windows, macOS and Linux, use the
+[container image](#container). Native binaries are a convenience for macOS and
+Linux; Gateship does not ship a native Windows binary.
+
+Install the latest native macOS or Linux binary:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | bash
@@ -170,9 +177,12 @@ There is no evaluator model, synthetic score or automatic approval.
 
 ## Container
 
-Gateship also ships as one container image: the compiled binary, git, the
-GitHub CLI, the Claude Code CLI and the Codex CLI, with the port it already
-uses answering the same UI.
+The Linux container is Gateship's canonical portable distribution. Its
+multi-architecture image runs through Docker Desktop on Windows and macOS and
+Docker Engine on Linux, with `linux/amd64` and `linux/arm64` variants under the
+same release tag. It contains the compiled binary, git, the GitHub CLI, the
+Claude Code CLI and the Codex CLI, with the port it already uses answering the
+same UI. Native macOS and Linux binaries remain a convenience.
 
 The image pins both provider CLI releases. Gateship also disables Claude Code
 self-updates in child sessions, so a run cannot silently replace the executable
@@ -185,35 +195,37 @@ not attempt to recreate its own container; selecting a new image remains a
 host-side operation. Source checkouts likewise report why native apply is
 unavailable instead of rewriting development files.
 
+Every release publishes one multi-architecture manifest to the GitHub
+Container Registry. Both the version tag and commit tag resolve to that
+manifest, whose images carry the same baked-in `GSHIP_BUILD_SHA`, release
+version and build provenance as the native release artifacts. Run these
+commands from a Gateship checkout containing `compose.yaml`, replacing the
+example release and project path.
+
+### POSIX shells
+
 ```bash
-GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+export GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3
+export GATESHIP_PROJECT_DIR=/path/to/project
+docker compose up -d
 # http://127.0.0.1:7777, published to loopback only
 ```
 
-`GSHIP_BUILD_SHA` bakes the commit the image was built from into the binary
-the same way `scripts/build-release.sh` does for the native release binaries.
-It is optional -- CI passes it (`.github/workflows/ci.yml` builds with
-`--build-arg GSHIP_BUILD_SHA="${{ github.sha }}"`), but a bare `docker build
-.` still produces a working image without it, exactly as a first manual
-build or `docker compose up` without the variable would. It just cannot say
-what commit it came from, so the service stays silent about it rather than
-compare against a ref read that would belong to whatever project the
-container is managing, not to Gateship's own source.
+### PowerShell
 
-Every version tag push builds and publishes that same image, so installing a
-new version no longer requires a local build. `.github/workflows/release.yml`
-pushes it to the GitHub Container Registry tagged with both the version and
-the commit, each carrying its own baked-in `GSHIP_BUILD_SHA` and the same
-build provenance attestation the release binaries get:
-
-```bash
-GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3 GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+```powershell
+$env:GATESHIP_IMAGE = "ghcr.io/gateship-dev/gateship:v1.2.3"
+$env:GATESHIP_PROJECT_DIR = "C:\path\to\project"
+docker compose up -d
+# http://127.0.0.1:7777, published to loopback only
 ```
 
-Leaving `GATESHIP_IMAGE` unset keeps `docker compose up` building from the
-Dockerfile instead, exactly as before -- the local-build path stays available
-for development and is what the container image's own verification build
-uses.
+Compose uses long bind-mount syntax so an absolute Windows drive-letter path
+is accepted without a Windows-specific compatibility layer. Leaving
+`GATESHIP_IMAGE` unset keeps the local source-build path available for
+development. For that path, `GSHIP_BUILD_SHA` optionally bakes the current
+Gateship commit into the image just as `scripts/build-release.sh` does for
+native binaries; release images always receive it from the release workflow.
 
 Provider and GitHub authentication happen inside the container, on first boot,
 and persist on the named volume `compose.yaml` mounts over that project's
@@ -222,19 +234,20 @@ its credential in the Keychain and there is no host credential file to mount:
 
 ```bash
 docker compose exec gateship claude auth login
+docker compose exec gateship codex login --device-auth
 docker compose exec gateship gh auth login --web
 docker compose exec gateship gh auth setup-git
 ```
 
-The Codex CLI is in the image too, and its `CODEX_HOME` persists on the same
-volume, but its ChatGPT sign-in does not work from inside this container yet:
-it redirects the browser to a fixed loopback callback (`localhost:1455`) that
-Docker's default bridge networking cannot reach from the host, so the web
-interface's own Codex login button cannot complete there today.
+The Codex command is its supported headless subscription flow: follow the URL
+and enter the displayed device code. `CODEX_HOME` persists that login on the
+same volume as Gateship state. Claude and GitHub CLI keep their own stores on
+that volume under the same credential-blind boundary; Gateship never reads or
+copies their credentials and no API key is required.
 
 Recreating the container from the same image and the same volume returns the
 operator to the same place: the same SQLite state, the same managed
-worktrees, and the same two logins.
+worktrees, and the same provider and GitHub CLI logins.
 
 Compose keeps the image filesystem read-only, provides only an ephemeral
 `/tmp`, prevents privilege escalation and drops every Linux capability except

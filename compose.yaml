@@ -54,7 +54,11 @@ services:
     ports:
       - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"
     volumes:
-      - ${GATESHIP_PROJECT_DIR:-.}:/workspace
+      # Long syntax keeps Windows drive letters from being interpreted as a
+      # short-syntax field separator by Docker Compose.
+      - type: bind
+        source: ${GATESHIP_PROJECT_DIR:-.}
+        target: /workspace
       - gateship-state:/workspace/.gship
     stdin_open: true
     tty: true
