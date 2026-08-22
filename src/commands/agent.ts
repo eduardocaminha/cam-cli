@@ -1,9 +1,12 @@
 import process from 'node:process';
 
+import { fingerprintSpec, type Spec } from '../issues/spec.ts';
+
 export const AGENT_API_VERSION = 'v1';
 export const DEFAULT_AGENT_URL = 'http://127.0.0.1:7777';
 export const AGENT_MAX_LIST_LIMIT = 100;
 export const AGENT_DEFAULT_LIST_LIMIT = 20;
+export const AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES = 12 * 1024;
 export const AGENT_MAX_OUTPUT_BYTES = 64 * 1024;
 
 interface AgentOperation {
@@ -33,6 +36,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'issues.list': { method: 'GET', path: () => '/api/issues', input: '{limit?, offset?}', listField: 'issues' },
 	'issues.get': { method: 'GET', path: issuePath(), input: '{issueId}' },
 	'runs.list': { method: 'GET', path: () => '/api/runs', input: '{limit?, offset?}', listField: 'runs' },
+	'runs.get': { method: 'GET', path: runPath(''), input: '{runId}' },
 	'runs.events': { method: 'GET', path: runPath('/events'), input: '{runId, limit?, offset?}', listField: 'events' },
 	'issues.create': { method: 'POST', path: () => '/api/issues', input: '{title, scope, verificationCommand, evidence?}' },
 	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{issueId, scope, verificationCommand, evidence?}' },
@@ -49,7 +53,8 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 
 const GUIDE = [
 	'Use gship agent as the source of truth for Gateship state and actions.',
-	'Before acting, call status.get and read the relevant issue or run.',
+	'Use issues.list and runs.list for discovery, then issues.get or runs.get for detail.',
+	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
 	'Never invent operator approval or authorization; pass only explicit operator text.',
 	'Use `gship agent operations` for operation names and input formats.',
@@ -149,23 +154,189 @@ function page(value: unknown, input: Record<string, unknown>): { items: unknown[
 	};
 }
 
+function record(value: unknown): Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value)
+		? value as Record<string, unknown> : {};
+}
+
+function shortString(value: unknown, limit: number): string | null {
+	if (typeof value !== 'string') return null;
+	const encodedBytes = (candidate: string) => Buffer.byteLength(JSON.stringify(candidate)) - 2;
+	if (encodedBytes(value) <= limit) return value;
+	let shortened = '';
+	for (const character of value) {
+		if (encodedBytes(`${shortened}${character}…`) > limit) break;
+		shortened += character;
+	}
+	return `${shortened}…`;
+}
+
+function issueListItem(value: unknown): Record<string, unknown> {
+	const issue = record(value);
+	const spec = record(issue['spec']);
+	const approval = record(issue['approval']);
+	const approved = typeof approval['fingerprint'] === 'string'
+		&& typeof spec['scope'] === 'string'
+		&& approval['fingerprint'] === fingerprintSpec(spec as unknown as Spec);
+	return {
+		id: shortString(issue['id'], 48),
+		title: shortString(issue['title'], 96),
+		stage: shortString(issue['stage'], 16),
+		status: shortString(issue['status'], 16),
+		blockedBy: Array.isArray(issue['blockedBy'])
+			? issue['blockedBy'].filter((id): id is string => typeof id === 'string')
+			: [],
+		updatedAt: shortString(issue['updatedAt'], 48),
+		approved,
+	};
+}
+
+function runListItem(value: unknown): Record<string, unknown> {
+	const run = record(value);
+	const pullRequest = record(run['pullRequest']);
+	return {
+		id: shortString(run['id'], 40),
+		issueId: shortString(run['issueId'], 40),
+		state: shortString(run['state'], 24),
+		providerId: shortString(run['providerId'], 24),
+		fixRounds: typeof run['fixRounds'] === 'number' ? run['fixRounds'] : 0,
+		updatedAt: shortString(run['updatedAt'], 40),
+		summary: shortString(run['summary'], 64),
+		pullRequest: {
+			url: shortString(pullRequest['url'], 80),
+			ciStatus: shortString(pullRequest['ciStatus'], 24),
+		},
+	};
+}
+
+const ACTIVE_RUN_STATES = new Set([
+	'queued', 'working', 'verify', 'review', 'full-verify', 'ready-to-ship', 'shipping',
+	'waiting-user', 'waiting-provider', 'interrupted',
+]);
+const RUN_ATTENTION_STATES = new Set([
+	'ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted',
+]);
+
+function attentionRequests(snapshot: Record<string, unknown>, latestRun: Record<string, unknown> | null): unknown[] {
+	const requests: unknown[] = [];
+	if (latestRun !== null && RUN_ATTENTION_STATES.has(String(latestRun['state']))) {
+		requests.push({
+			kind: 'run',
+			runId: latestRun['id'],
+			state: latestRun['state'],
+			summary: latestRun['summary'],
+		});
+	}
+	for (const value of Array.isArray(snapshot['workspaceNotices']) ? snapshot['workspaceNotices'].slice(0, 10) : []) {
+		const notice = record(value);
+		requests.push({
+			kind: shortString(notice['kind'], 32),
+			runId: shortString(notice['runId'], 64),
+			detail: shortString(notice['detail'], 240),
+		});
+	}
+	for (const key of ['staleService', 'gitIdentity'] as const) {
+		if (snapshot[key] === undefined) continue;
+		requests.push({ kind: key, detail: shortString(record(snapshot[key])['detail'], 240) });
+	}
+	return requests;
+}
+
+function statusResult(snapshotValue: unknown, runsValue: unknown): Record<string, unknown> {
+	const snapshot = record(snapshotValue);
+	const backlog = record(record(snapshot['idleState'])['backlog']);
+	const sourceCounts = record(backlog['counts']);
+	const runs = Array.isArray(record(runsValue)['runs']) ? record(runsValue)['runs'] as unknown[] : [];
+	const projectedRuns = runs.map(runListItem);
+	const latest = projectedRuns[0] ?? null;
+	const active = projectedRuns.find((run) => ACTIVE_RUN_STATES.has(String(run['state']))) ?? null;
+	return {
+		version: shortString(snapshot['version'], 120),
+		backlog: {
+			counts: Object.fromEntries(['idea', 'specified', 'planned', 'shipped']
+				.filter((stage) => typeof sourceCounts[stage] === 'number')
+				.map((stage) => [stage, sourceCounts[stage]])),
+			plannable: (Array.isArray(backlog['plannable']) ? backlog['plannable'] : []).slice(0, AGENT_DEFAULT_LIST_LIMIT)
+				.map((value) => {
+					const issue = record(value);
+					return { id: shortString(issue['id'], 64), title: shortString(issue['title'], 160) };
+				}),
+		},
+		activeRun: active,
+		attentionRequests: attentionRequests(snapshot, latest),
+	};
+}
+
+function projectResult(operation: string, value: unknown): Record<string, unknown> {
+	const result = record(value);
+	if (operation === 'issues.list') {
+		return {
+			issues: (Array.isArray(result['issues']) ? result['issues'] : []).map(issueListItem),
+			page: result['page'],
+		};
+	}
+	if (operation === 'runs.list') {
+		return {
+			runs: (Array.isArray(result['runs']) ? result['runs'] : []).map(runListItem),
+			page: result['page'],
+		};
+	}
+	return result;
+}
+
+function pageOperationResult(
+	operation: AgentOperation,
+	result: Record<string, unknown>,
+	input: Record<string, unknown>,
+): Record<string, unknown> {
+	if (operation.listField === undefined) return result;
+	const paged = page(result[operation.listField], input);
+	return { ...result, [operation.listField]: paged.items, page: paged.page };
+}
+
 function clamp(value: unknown, depth = 0): unknown {
 	if (typeof value === 'string') return value.length <= 2_000 ? value : `${value.slice(0, 2_000)}…`;
 	if (value === null || typeof value !== 'object') return value;
 	if (depth >= 8) return '[truncated]';
-	if (Array.isArray(value)) return value.slice(0, AGENT_MAX_LIST_LIMIT).map((item) => clamp(item, depth + 1));
+	if (Array.isArray(value)) return value.map((item) => clamp(item, depth + 1));
 	return Object.fromEntries(Object.entries(value as Record<string, unknown>)
 		.slice(0, 100)
 		.map(([key, item]) => [key, clamp(item, depth + 1)]));
 }
 
-function outputObject(value: unknown): Record<string, unknown> {
-	const object = value !== null && typeof value === 'object' && !Array.isArray(value)
-		? clamp(value) as Record<string, unknown>
-		: { ok: true, result: clamp(value) };
+function outputObject(
+	value: unknown,
+	maxBytes = AGENT_MAX_OUTPUT_BYTES,
+	shouldClamp = true,
+): Record<string, unknown> {
+	const limited = shouldClamp ? clamp(value) : value;
+	const object = limited !== null && typeof limited === 'object' && !Array.isArray(limited)
+		? limited as Record<string, unknown>
+		: { ok: true, result: limited };
 	const encoded = JSON.stringify(object);
-	if (Buffer.byteLength(encoded) <= AGENT_MAX_OUTPUT_BYTES) return object;
-	return { ok: false, code: 'output-too-large', message: `Response exceeds ${AGENT_MAX_OUTPUT_BYTES} bytes; request a smaller page.` };
+	if (Buffer.byteLength(encoded) <= maxBytes) return object;
+	return {
+		ok: false,
+		code: 'output-too-large',
+		message: maxBytes === AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES
+			? `Response exceeds ${maxBytes} bytes; retry issues.list with a smaller explicit "limit".`
+			: `Response exceeds ${maxBytes} bytes; request a smaller page.`,
+	};
+}
+
+function hasExplicitListLimit(input: Record<string, unknown>): boolean {
+	return Number.isSafeInteger(input['limit']) && Number(input['limit']) > 0;
+}
+
+function operationOutput(
+	operation: string,
+	input: Record<string, unknown>,
+	value: Record<string, unknown>,
+): Record<string, unknown> {
+	if (operation !== 'issues.list') return outputObject(value);
+	const maxBytes = hasExplicitListLimit(input)
+		? AGENT_MAX_OUTPUT_BYTES : AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES;
+	return outputObject(value, maxBytes, false);
 }
 
 function httpError(payload: unknown, status: number): Record<string, unknown> {
@@ -197,6 +368,27 @@ export type AgentFetch = (input: string | URL | Request, init?: RequestInit) => 
 
 function completedOutput(output: Record<string, unknown>): AgentExecutionResult {
 	return { exitCode: output['ok'] === false ? 1 : 0, output };
+}
+
+async function readJsonResponse(
+	url: string,
+	init: RequestInit,
+	serviceUrl: string,
+	fetchFn: AgentFetch,
+): Promise<{ response: Response; payload: unknown }> {
+	let response: Response;
+	try {
+		response = await fetchFn(url, init);
+	} catch {
+		throw new AgentCliError('service-unavailable', `Gateship is unavailable at ${serviceUrl}.`);
+	}
+	let payload: unknown;
+	try {
+		payload = await response.json();
+	} catch {
+		throw new AgentCliError('invalid-response', `Gateship returned a non-JSON response (HTTP ${response.status}).`);
+	}
+	return { response, payload };
 }
 
 export async function executeAgent(
@@ -232,27 +424,32 @@ export async function executeAgent(
 		}
 		const body = operation.method === 'GET' ? undefined : JSON.stringify(requestBody(operationName, parsed.input));
 		if (body !== undefined) headers['content-type'] = 'application/json';
-		let response: Response;
-		try {
-			response = await fetchFn(`${parsed.url}${operation.path(parsed.input)}`, { method: operation.method, headers, body });
-		} catch {
-			throw new AgentCliError('service-unavailable', `Gateship is unavailable at ${parsed.url}.`);
-		}
-		let payload: unknown;
-		try {
-			payload = await response.json();
-		} catch {
-			throw new AgentCliError('invalid-response', `Gateship returned a non-JSON response (HTTP ${response.status}).`);
-		}
+		const { response, payload } = await readJsonResponse(
+			`${parsed.url}${operation.path(parsed.input)}`,
+			{ method: operation.method, headers, body },
+			parsed.url,
+			fetchFn,
+		);
 		if (!response.ok) {
 			return { exitCode: 1, output: httpError(payload, response.status) };
 		}
-		let result = payload as Record<string, unknown>;
-		if (operation.listField !== undefined) {
-			const paged = page(result[operation.listField], parsed.input);
-			result = { ...result, [operation.listField]: paged.items, page: paged.page };
+		let result = pageOperationResult(operation, payload as Record<string, unknown>, parsed.input);
+		result = projectResult(operationName, result);
+		if (operationName === 'status.get') {
+			const { response: runsResponse, payload: runsPayload } = await readJsonResponse(
+				`${parsed.url}/api/runs`,
+				{ method: 'GET', headers },
+				parsed.url,
+				fetchFn,
+			);
+			if (!runsResponse.ok) return { exitCode: 1, output: httpError(runsPayload, runsResponse.status) };
+			result = statusResult(result, runsPayload);
 		}
-		const output = outputObject({ ok: true, version: AGENT_API_VERSION, operation: operationName, result });
+		const output = operationOutput(
+			operationName,
+			parsed.input,
+			{ ok: true, version: AGENT_API_VERSION, operation: operationName, result },
+		);
 		return completedOutput(output);
 	} catch (error) {
 		const code = error instanceof AgentCliError ? error.code : 'agent-cli-failed';

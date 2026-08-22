@@ -105,6 +105,7 @@ import {
 	PROJECT_BRIEF_LIMITS,
 	type ProjectBrief,
 	type RunEvent,
+	type RunRecord,
 	RunStore,
 } from '../runtime/run-store.ts';
 import { isTerminalRunState } from '../runtime/run-state.ts';
@@ -1487,15 +1488,30 @@ function abandonDurableRun(
  * attached. All three derive from the complete event log rather than a
  * display-bounded read, and ride on the same route the screen already owns.
  */
-function listRunsWithInsights(runtime: RunRuntime): unknown[] {
-	return runtime.listRuns().map((run) => ({
+function runWithInsights(runtime: RunRuntime, run: RunRecord): unknown {
+	return {
 		...run,
 		cost: runtime.getRunCost(run.id),
 		roundOrigins: runtime.getRunRoundOrigins(run.id),
 		evaluation: runtime.getRunEvaluation(run.id),
 		providerWait: runtime.getRunProviderWait(run.id),
 		pullRequest: runtime.getPullRequestDelivery(run.id),
-	}));
+	};
+}
+
+function listRunsWithInsights(runtime: RunRuntime): unknown[] {
+	return runtime.listRuns().map((run) => runWithInsights(runtime, run));
+}
+
+function readRun(runtime: RunRuntime, runId: string): Response {
+	const run = runtime.getRun(runId);
+	if (run === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	return Response.json({ run: runWithInsights(runtime, run) });
 }
 
 function readRunEvents(runtime: RunRuntime, runId: string): Response {
@@ -2387,6 +2403,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/runs/:runId/cancel': {
 				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/runs/:runId': {
+				GET: (request) => readRun(runRuntime, request.params.runId),
 			},
 			'/api/runs/:runId/abandon': {
 				POST: (request) => abandonDurableRun(request, runRuntime, request.params.runId),

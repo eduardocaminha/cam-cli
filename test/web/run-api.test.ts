@@ -134,6 +134,47 @@ describe('durable web run API', () => {
 		}
 	});
 
+	test('returns one complete run and a structured error when it is missing', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-detail',
+			issueId: 'GSHIP-691',
+			sessionId: 'session-detail',
+			workspacePath: '/workspaces/run-detail',
+			createdAt: '2026-08-22T10:00:00.000Z',
+		});
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-run-detail-'),
+			runRuntime: runtime,
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const found = await fetch(`${origin}/api/runs/run-detail`);
+			expect(found.status).toBe(200);
+			expect(await found.json()).toMatchObject({
+				run: {
+					id: 'run-detail',
+					sessionId: 'session-detail',
+					workspacePath: '/workspaces/run-detail',
+					cost: { breakdown: [], roles: {} },
+					roundOrigins: expect.any(Object),
+				},
+			});
+			const missing = await fetch(`${origin}/api/runs/missing`);
+			expect(missing.status).toBe(404);
+			expect(await missing.json()).toEqual({
+				ok: false,
+				code: 'run-not-found',
+				message: 'Run not found.',
+			});
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('exposes the durable pull request delivery projection on the existing run response', async () => {
 		const store = new RunStore(':memory:');
 		store.createRun({
