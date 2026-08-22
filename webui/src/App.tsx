@@ -238,8 +238,19 @@ export interface AppProps {
 	onCancel: () => void;
 	onShip: () => void;
 	onConnectCodex: () => void;
-	/** Connect, reconnect and rotate the dedicated Claude credential (GSHIP-704) all share this one call. */
-	onConnectClaudeCredential: (token: string) => void;
+	/**
+	 * Connect, reconnect and rotate the dedicated Claude credential
+	 * (GSHIP-704) all share this one call. It resolves `true` only once the
+	 * service validated and persisted the token; on `false` the typed token
+	 * and its confirmation stay exactly where the operator left them
+	 * (GSHIP-705), so a refused paste can be corrected in place instead of
+	 * being retyped from a token the CLI printed once.
+	 */
+	onConnectClaudeCredential: (token: string) => Promise<boolean>;
+	/** The last refusal from that call, rendered beside the field it belongs to. `null` while nothing was refused. */
+	claudeCredentialError: string | null;
+	/** Abandons a refused attempt: the operator gave up on this token, so the refusal stops holding the form open. */
+	onDismissClaudeCredentialError: () => void;
 	onDisconnectClaudeCredential: () => void;
 	onEnableNotifications: () => void;
 	onSendNotificationTest: (channelId: NotificationChannelId) => void;
@@ -1139,7 +1150,8 @@ function WorkspaceNoticesPanel({
 type ProviderPanelProps = Pick<
 	AppProps,
 	| 'providers' | 'selectedProvider' | 'pending' | 'onConnectCodex' | 'onSelectProvider'
-	| 'onConnectClaudeCredential' | 'onDisconnectClaudeCredential'
+	| 'onConnectClaudeCredential' | 'claudeCredentialError' | 'onDismissClaudeCredentialError'
+	| 'onDisconnectClaudeCredential'
 >;
 
 function providerDescription(provider: ProviderStatusView, catalog: SettingsCatalog): string {
@@ -1264,6 +1276,62 @@ function ClaudeCredentialEnvManagedNotice({
 }
 
 /**
+ * The connected card: what a dedicated credential offers once it is in
+ * place. Rotating opens the same token form Connect uses, which is itself
+ * only offered while `provider.installed`. Gating Rotate the same way means
+ * the form the operator is sent to is always actually reachable, so
+ * Disconnect -- the one escape from a connected card -- is never left
+ * unrenderable with the Claude CLI absent (installed:false plus
+ * login:'dedicated' is a real status `claudeStatus` reports on an ENOENT
+ * read).
+ *
+ * That absent-CLI case is also the one where this card, not the form, has to
+ * carry a refusal: a single missing `claude` binary both fails the validation
+ * closed and makes the very next status read report `installed: false`, and
+ * the form -- alert span included -- is gated on `installed`. Showing the
+ * service's own words here, beside a Disconnect that stays enabled, is what
+ * keeps that combination from stranding the operator with a silent card.
+ */
+function ClaudeCredentialConnectedCard({
+	provider,
+	pending,
+	onRotate,
+	error,
+	onDismissError,
+	onDisconnectClaudeCredential,
+	text,
+}: {
+	provider: ProviderStatusView;
+	pending: boolean;
+	onRotate: () => void;
+	error: AppProps['claudeCredentialError'];
+	onDismissError: AppProps['onDismissClaudeCredentialError'];
+	onDisconnectClaudeCredential: AppProps['onDisconnectClaudeCredential'];
+	text: SettingsCatalog['providers']['claudeCredential'];
+}): React.ReactElement {
+	return (
+		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+			<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
+			{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
+			<div className="flex flex-wrap gap-2">
+				{provider.installed ? (
+					<button className={BUTTON_CLASS} onClick={onRotate} type="button">{text.rotate}</button>
+				) : null}
+				{error === null ? null : (
+					<button className={BUTTON_CLASS} onClick={onDismissError} type="button">{text.cancel}</button>
+				)}
+				<button
+					className={BUTTON_CLASS}
+					disabled={pending}
+					onClick={onDisconnectClaudeCredential}
+					type="button"
+				>{text.disconnect}</button>
+			</div>
+		</div>
+	);
+}
+
+/**
  * Ajustes > Providers universal onboarding for a dedicated Claude
  * subscription (GSHIP-704). `rotating` is local, ephemeral UI state -- never
  * lifted to `AppProps` -- the same "reveal a form behind a button" pattern
@@ -1271,17 +1339,35 @@ function ClaudeCredentialEnvManagedNotice({
  * rotate all submit through the one `onConnectClaudeCredential` call; the
  * server validates the candidate token before persisting it and never
  * returns it, so this form is write-only exactly like the Resend key field.
+ *
+ * A refusal (GSHIP-705) keeps the form open with the typed token and its
+ * confirmation untouched, and shows the service's own words beside the
+ * field: the token was printed once by `claude setup-token`, so clearing it
+ * on failure would cost the operator the credential itself. That is why
+ * `error` forces the form open even from the connected card -- a rotation
+ * that was refused must not collapse back to "connected" with the refusal
+ * hidden.
+ *
+ * `provider.installed` outranks both, because the form is gated on it: with
+ * the Claude CLI absent, neither a refusal nor a `rotating` flag set while it
+ * was still installed may route a connected operator to a branch that renders
+ * no form, no Cancel and no Disconnect. The connected card carries the
+ * refusal in that case instead.
  */
 function ClaudeCredentialSection({
 	provider,
 	pending,
 	onConnectClaudeCredential,
+	error,
+	onDismissError,
 	onDisconnectClaudeCredential,
 	catalog,
 }: {
 	provider: ProviderStatusView;
 	pending: boolean;
 	onConnectClaudeCredential: AppProps['onConnectClaudeCredential'];
+	error: AppProps['claudeCredentialError'];
+	onDismissError: AppProps['onDismissClaudeCredentialError'];
 	onDisconnectClaudeCredential: AppProps['onDisconnectClaudeCredential'];
 	catalog: SettingsCatalog;
 }): React.ReactElement {
@@ -1295,37 +1381,24 @@ function ClaudeCredentialSection({
 		return <ClaudeCredentialEnvManagedNotice provider={provider} text={text} />;
 	}
 
-	if (connected && !rotating) {
+	if (connected && (!provider.installed || (!rotating && error === null))) {
 		return (
-			<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
-				<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
-				<div className="flex flex-wrap gap-2">
-					{/*
-					 * Rotating opens the same token form Connect uses, which is itself
-					 * only offered while `provider.installed` (below). Gating Rotate
-					 * the same way means `rotating` can only ever become true when
-					 * that form is actually reachable, so Disconnect -- the one
-					 * escape from a connected card -- is never left unrenderable with
-					 * the Claude CLI absent (installed:false + login:'dedicated' is a
-					 * real status claudeStatus reports on an ENOENT read).
-					 */}
-					{provider.installed ? (
-						<button className={BUTTON_CLASS} onClick={() => setRotating(true)} type="button">{text.rotate}</button>
-					) : null}
-					<button
-						className={BUTTON_CLASS}
-						disabled={pending}
-						onClick={onDisconnectClaudeCredential}
-						type="button"
-					>{text.disconnect}</button>
-				</div>
-			</div>
+			<ClaudeCredentialConnectedCard
+				error={error}
+				onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+				onDismissError={onDismissError}
+				onRotate={() => setRotating(true)}
+				pending={pending}
+				provider={provider}
+				text={text}
+			/>
 		);
 	}
 
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-border p-3 text-sm">
 			<p className="text-muted-foreground">{text.explanation}</p>
+			<p className="text-muted-foreground text-xs">{text.inferenceOnly}</p>
 			{provider.installed ? (
 				<div className="flex flex-col gap-1">
 					<span className="text-muted-foreground text-xs">{text.setupCommandLabel}</span>
@@ -1351,10 +1424,15 @@ function ClaudeCredentialSection({
 					className="flex flex-col gap-2"
 					onSubmit={(event) => {
 						event.preventDefault();
-						onConnectClaudeCredential(token);
-						setToken('');
-						setConfirmed(false);
-						setRotating(false);
+						// Only a persisted credential clears the field: a refused token is
+						// still the one the operator must correct, and the CLI will not
+						// print it a second time.
+						void onConnectClaudeCredential(token).then((connectedNow) => {
+							if (!connectedNow) return;
+							setToken('');
+							setConfirmed(false);
+							setRotating(false);
+						});
 					}}
 				>
 					<label className="flex flex-col gap-1" htmlFor="claude-credential-token">
@@ -1370,6 +1448,7 @@ function ClaudeCredentialSection({
 							type="password"
 							value={token}
 						/>
+						{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
 					</label>
 					<label className="flex items-start gap-2">
 						<input
@@ -1387,7 +1466,18 @@ function ClaudeCredentialSection({
 							type="submit"
 						>{connected ? text.rotate : text.connect}</button>
 						{connected ? (
-							<button className={BUTTON_CLASS} onClick={() => setRotating(false)} type="button">{text.cancel}</button>
+							<button
+								className={BUTTON_CLASS}
+								onClick={() => {
+									// Giving up on this attempt: the refusal that forced the form
+									// open goes with it, or Cancel would leave the form open.
+									onDismissError();
+									setToken('');
+									setConfirmed(false);
+									setRotating(false);
+								}}
+								type="button"
+							>{text.cancel}</button>
 						) : null}
 					</div>
 				</form>
@@ -1404,6 +1494,8 @@ function ProviderRow({
 	pending,
 	onConnectCodex,
 	onConnectClaudeCredential,
+	claudeCredentialError,
+	onDismissClaudeCredentialError,
 	onDisconnectClaudeCredential,
 	onSelectProvider,
 }: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView; catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
@@ -1433,8 +1525,10 @@ function ProviderRow({
 			{provider.id === 'claude' ? (
 				<ClaudeCredentialSection
 					catalog={catalog}
+					error={claudeCredentialError}
 					onConnectClaudeCredential={onConnectClaudeCredential}
 					onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+					onDismissError={onDismissClaudeCredentialError}
 					pending={pending}
 					provider={provider}
 				/>
@@ -1460,11 +1554,13 @@ function ProvidersPanel(props: ProviderPanelProps & { catalog: SettingsCatalog; 
 				{props.providers.map((provider) => (
 					<ProviderRow
 						catalog={props.catalog}
+						claudeCredentialError={props.claudeCredentialError}
 						key={provider.id}
 						locale={props.locale}
 						onConnectClaudeCredential={props.onConnectClaudeCredential}
 						onConnectCodex={props.onConnectCodex}
 						onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
+						onDismissClaudeCredentialError={props.onDismissClaudeCredentialError}
 						onSelectProvider={props.onSelectProvider}
 						pending={props.pending}
 						provider={provider}
@@ -3703,10 +3799,12 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 			/>
 			<ProvidersPanel
 				catalog={catalog}
+				claudeCredentialError={props.claudeCredentialError}
 				locale={props.locale}
 				onConnectClaudeCredential={props.onConnectClaudeCredential}
 				onConnectCodex={props.onConnectCodex}
 				onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
+				onDismissClaudeCredentialError={props.onDismissClaudeCredentialError}
 				onSelectProvider={props.onSelectProvider}
 				pending={props.pending}
 				providers={props.providers}

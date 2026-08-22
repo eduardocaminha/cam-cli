@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CodexAppServer } from '../../src/runtime/codex-app-server.ts';
-import { NativeProviderAuth } from '../../src/runtime/provider-auth.ts';
+import { CLAUDE_VALIDATION_COMMAND, NativeProviderAuth } from '../../src/runtime/provider-auth.ts';
 import { buildClaudeAuthEnv, buildProviderAuthEnv, ensureCodexHome } from '../../src/runtime/provider-env.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -164,52 +164,191 @@ describe('Claude dedicated credential boundary (GSHIP-704)', () => {
 		await auth.close();
 	});
 
-	test('validates a candidate token in isolation and reports account, organization and plan for confirmation', async () => {
-		const seen: string[][] = [];
+	// GSHIP-705: a token from `claude setup-token` authenticates as
+	// `oauth_token`, never `claude.ai`. Requiring `claude.ai` reported every
+	// dedicated credential as disconnected the moment it was connected.
+	test('recognizes a dedicated setup-token login as a connected subscription', async () => {
 		const auth = new NativeProviderAuth({
 			codex: fixtureServer(),
-			runClaudeToken: (token) => {
-				seen.push([token]);
-				return {
-					exitCode: 0,
-					stdout: JSON.stringify({
-						loggedIn: true,
-						authMethod: 'claude.ai',
-						email: 'alice@example.com',
-						organizationName: 'Acme',
-						subscriptionType: 'max',
-					}),
-					stderr: '',
-				};
-			},
+			resolveClaudeCredential: () => 'sk-ant-oat01-secret',
+			run: () => ({
+				exitCode: 0,
+				stdout: JSON.stringify({ loggedIn: true, authMethod: 'oauth_token' }),
+				stderr: '',
+			}),
 		});
-		const result = await auth.validateClaudeCredential('sk-ant-oat01-candidate');
-		expect(result).toEqual({ ok: true, account: 'alice@example.com', organization: 'Acme', plan: 'max' });
-		expect(seen).toEqual([['sk-ant-oat01-candidate']]);
+		expect((await auth.list())[0]).toMatchObject({ login: 'dedicated', subscription: true });
 		await auth.close();
 	});
 
-	test('reports the CLI\'s own refusal for a rejected token, never a fabricated success', async () => {
+	test('still refuses an API key: that is pay-per-token access, not the subscription this status claims', async () => {
 		const auth = new NativeProviderAuth({
 			codex: fixtureServer(),
-			runClaudeToken: () => ({ exitCode: 1, stdout: '', stderr: 'Invalid API key provided.' }),
-		});
-		const result = await auth.validateClaudeCredential('sk-ant-oat01-bad');
-		expect(result).toEqual({ ok: false, message: 'Invalid API key provided.' });
-		await auth.close();
-	});
-
-	test('rejects a token that resolves without an active claude.ai subscription', async () => {
-		const auth = new NativeProviderAuth({
-			codex: fixtureServer(),
-			runClaudeToken: () => ({
+			run: () => ({
 				exitCode: 0,
 				stdout: JSON.stringify({ loggedIn: true, authMethod: 'apiKey' }),
 				stderr: '',
 			}),
 		});
-		const result = await auth.validateClaudeCredential('sk-ant-oat01-apikey');
+		expect((await auth.list())[0]).toMatchObject({ login: 'external', subscription: false });
+		await auth.close();
+	});
+
+	// GSHIP-705: every test below injects its own runner, so this is the one
+	// place the argv the service actually spawns is pinned. Its flags were
+	// measured against the installed CLI (see CLAUDE_VALIDATION_COMMAND); what
+	// this guards is that a later edit cannot quietly re-open a surface or
+	// move the positional prompt behind a variadic flag, either of which turns
+	// a valid token into a refusal.
+	test('the spawned validation argv asks for one tool-free, unpersisted turn', () => {
+		const argv = CLAUDE_VALIDATION_COMMAND;
+		expect(argv[0]).toBe('claude');
+		expect(argv).toContain('--print');
+		expect(argv[argv.indexOf('--output-format') + 1]).toBe('json');
+		// No built-in tool, no inherited MCP server, no skill, no customization.
+		expect(argv[argv.indexOf('--tools') + 1]).toBe('');
+		expect(argv[argv.indexOf('--mcp-config') + 1]).toBe('{"mcpServers":{}}');
+		expect(argv).toContain('--strict-mcp-config');
+		expect(argv).toContain('--disable-slash-commands');
+		expect(argv).toContain('--safe-mode');
+		expect(argv).toContain('--no-session-persistence');
+		// The prompt is positional and last, and the argument before it is a
+		// boolean flag: `--tools` and `--mcp-config` are variadic and would
+		// otherwise swallow it as one more of their values.
+		const prompt = argv[argv.length - 1] ?? '';
+		expect(prompt.startsWith('--')).toBe(false);
+		expect(argv[argv.length - 2]).toBe('--no-session-persistence');
+	});
+
+	// GSHIP-705: `claude auth status` reports a login for a token the API then
+	// refuses, so the decision rests on one real, tool-free inference call
+	// carrying exactly the candidate token.
+	test('decides a candidate token on an isolated, tool-free inference call', async () => {
+		const seen: Array<{ token: string; command: string[] }> = [];
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async (token, command) => {
+				seen.push({ token, command });
+				return command.includes('--print')
+					? { exitCode: 0, stdout: JSON.stringify({ type: 'result', is_error: false, result: 'ok' }), stderr: '' }
+					: {
+						exitCode: 0,
+						stdout: JSON.stringify({
+							loggedIn: true,
+							authMethod: 'oauth_token',
+							email: 'alice@example.com',
+							orgName: 'Acme',
+							subscriptionType: 'max',
+						}),
+						stderr: '',
+					};
+			},
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-candidate');
+		expect(result).toEqual({
+			ok: true,
+			identity: { account: 'alice@example.com', organization: 'Acme', plan: 'max' },
+		});
+		expect(seen.map((call) => call.token)).toEqual([
+			'sk-ant-oat01-candidate',
+			'sk-ant-oat01-candidate',
+		]);
+		const inference = seen[0]?.command ?? [];
+		expect(inference).toContain('--print');
+		// No tools, no MCP server, no slash command, no inherited customization.
+		expect(inference[inference.indexOf('--tools') + 1]).toBe('');
+		expect(inference).toContain('--strict-mcp-config');
+		expect(inference).toContain('--disable-slash-commands');
+		expect(inference).toContain('--safe-mode');
+		await auth.close();
+	});
+
+	// GSHIP-705: an inference-limited token exposes no identity at all. That is
+	// a validated credential with nothing to show, never a failed connection.
+	test('validates a token that exposes no identity, without inventing one', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async (_token, command) => command.includes('--print')
+				? { exitCode: 0, stdout: JSON.stringify({ type: 'result', is_error: false, result: 'ok' }), stderr: '' }
+				: { exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: 'oauth_token' }), stderr: '' },
+		});
+		expect(await auth.validateClaudeCredential('sk-ant-oat01-anonymous')).toEqual({ ok: true });
+		await auth.close();
+	});
+
+	// GSHIP-705: the whole reason the status read cannot be the gate.
+	test('refuses a token the status read accepts but inference rejects', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async (_token, command) => command.includes('--print')
+				? { exitCode: 1, stdout: '', stderr: 'OAuth token revoked.' }
+				: {
+					exitCode: 0,
+					stdout: JSON.stringify({ loggedIn: true, authMethod: 'oauth_token', email: 'alice@example.com' }),
+					stderr: '',
+				},
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-revoked');
+		expect(result).toEqual({ ok: false, message: 'OAuth token revoked.' });
+		await auth.close();
+	});
+
+	test('reports the CLI\'s own refusal from its result envelope when nothing reached stderr', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async () => ({
+				exitCode: 1,
+				stdout: JSON.stringify({ type: 'result', is_error: true, result: 'Invalid API key provided.' }),
+				stderr: '',
+			}),
+		});
+		expect(await auth.validateClaudeCredential('sk-ant-oat01-bad')).toEqual({
+			ok: false,
+			message: 'Invalid API key provided.',
+		});
+		await auth.close();
+	});
+
+	// Fail-closed: output that is not the envelope `--output-format json`
+	// promises never demonstrated that this token reached the API.
+	test('refuses a clean exit whose output does not parse as a completed call', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async () => ({ exitCode: 0, stdout: 'not json', stderr: '' }),
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-strange');
 		expect(result.ok).toBe(false);
+		expect(result.message).toBe('Claude refused this token for inference.');
+		await auth.close();
+	});
+
+	test('never reports identity when the inference call itself was refused', async () => {
+		let statusReads = 0;
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async (_token, command) => {
+				if (!command.includes('--print')) statusReads += 1;
+				return { exitCode: 1, stdout: '', stderr: 'Credit balance is too low.' };
+			},
+		});
+		expect(await auth.validateClaudeCredential('sk-ant-oat01-broke')).toEqual({
+			ok: false,
+			message: 'Credit balance is too low.',
+		});
+		expect(statusReads).toBe(0);
+		await auth.close();
+	});
+
+	// A failed identity read is not a failed credential: inference already
+	// answered the only question that decides this.
+	test('keeps a validated credential when the identity read itself fails', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: async (_token, command) => command.includes('--print')
+				? { exitCode: 0, stdout: JSON.stringify({ type: 'result', is_error: false, result: 'ok' }), stderr: '' }
+				: { exitCode: 1, stdout: '', stderr: 'status unavailable' },
+		});
+		expect(await auth.validateClaudeCredential('sk-ant-oat01-candidate')).toEqual({ ok: true });
 		await auth.close();
 	});
 
@@ -217,7 +356,7 @@ describe('Claude dedicated credential boundary (GSHIP-704)', () => {
 		let calls = 0;
 		const auth = new NativeProviderAuth({
 			codex: fixtureServer(),
-			runClaudeToken: () => {
+			runClaudeToken: async () => {
 				calls += 1;
 				return { exitCode: 0, stdout: '{}', stderr: '' };
 			},

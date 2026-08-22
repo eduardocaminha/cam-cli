@@ -21,6 +21,7 @@ import {
 	commandRun,
 	connectClaudeCredential,
 	createIssue,
+	describeClaudeCredentialConfirmation,
 	type DiagnosticsView,
 	disconnectClaudeCredential,
 	dismissDiagnosticFinding,
@@ -155,6 +156,9 @@ function useOperationalRun(): {
 	version: string;
 	status: string | null;
 	pending: boolean;
+	claudeCredentialError: string | null;
+	connectClaude: (token: string) => Promise<boolean>;
+	clearClaudeCredentialError: () => void;
 	enableNotifications: () => void;
 	send: (command: () => Promise<string>) => void;
 } {
@@ -191,6 +195,10 @@ function useOperationalRun(): {
 	const [selfUpdate, setSelfUpdate] = useState<SelfUpdateView>(emptySelfUpdate);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	// GSHIP-705: a refused dedicated credential belongs beside the field the
+	// operator must correct, not only in the shared status line, and the typed
+	// token must survive it -- `claude setup-token` prints the token once.
+	const [claudeCredentialError, setClaudeCredentialError] = useState<string | null>(null);
 	const [version, setVersion] = useState('');
 
 	const refresh = useCallback(() => {
@@ -269,6 +277,32 @@ function useOperationalRun(): {
 				refresh();
 			});
 	}, [refresh]);
+
+	/**
+	 * Connect, reconnect and rotate, resolved rather than fired and forgotten
+	 * (GSHIP-705): the form keeps the typed token when the service refuses it,
+	 * so it has to learn which outcome happened, and the refusal itself goes
+	 * beside the field instead of only into the shared status line.
+	 */
+	const connectClaude = useCallback((token: string) => {
+		setClaudeCredentialError(null);
+		setPending(true);
+		return connectClaudeCredential(token)
+			.then((confirmation) => {
+				setStatus(describeClaudeCredentialConfirmation(confirmation));
+				return true;
+			})
+			.catch((error: unknown) => {
+				setClaudeCredentialError(error instanceof Error ? error.message : String(error));
+				return false;
+			})
+			.finally(() => {
+				setPending(false);
+				refresh();
+			});
+	}, [refresh]);
+
+	const clearClaudeCredentialError = useCallback(() => setClaudeCredentialError(null), []);
 
 	const enableNotifications = useCallback(() => {
 		void requestBrowserNotificationPermission()
@@ -354,6 +388,9 @@ function useOperationalRun(): {
 		version,
 		status,
 		pending,
+		claudeCredentialError,
+		connectClaude,
+		clearClaudeCredentialError,
 		enableNotifications,
 		send,
 	};
@@ -389,6 +426,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		version,
 		status,
 		pending,
+		claudeCredentialError,
+		connectClaude,
+		clearClaudeCredentialError,
 		enableNotifications,
 		send,
 	} = useOperationalRun();
@@ -454,15 +494,13 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 					return 'Codex login opened in the browser.';
 				}));
 			}}
-			onConnectClaudeCredential={(token) => send(() => connectClaudeCredential(token).then((confirmation) => {
-				const subject = [confirmation.account, confirmation.organization, confirmation.plan]
-					.filter((value): value is string => value !== undefined && value.length > 0)
-					.join(' · ');
-				return subject.length === 0
-					? 'Dedicated Claude subscription connected.'
-					: `Dedicated Claude subscription connected: ${subject}.`;
-			}))}
-			onDisconnectClaudeCredential={() => send(disconnectClaudeCredential)}
+			claudeCredentialError={claudeCredentialError}
+			onConnectClaudeCredential={connectClaude}
+			onDismissClaudeCredentialError={clearClaudeCredentialError}
+			onDisconnectClaudeCredential={() => {
+				clearClaudeCredentialError();
+				send(disconnectClaudeCredential);
+			}}
 			onEnableNotifications={enableNotifications}
 			onRemoveResendCredential={() => send(removeResendCredential)}
 			onSaveResendSettings={(input) => send(() => saveResendSettings(input))}

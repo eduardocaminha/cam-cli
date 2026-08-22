@@ -470,9 +470,7 @@ interface CodexLoginPayload extends CommandPayload {
 }
 
 interface ClaudeCredentialPayload extends CommandPayload {
-	account?: string;
-	organization?: string;
-	plan?: string;
+	identity?: ClaudeCredentialIdentity;
 	removed?: boolean;
 }
 
@@ -1087,19 +1085,30 @@ export function selectProvider(providerId: ProviderStatusView['id']): Promise<st
 	return postCommand(`${PROVIDERS_PATH}/${providerId}/select`);
 }
 
-/** What Ajustes shows the operator to confirm before trusting the newly connected credential (GSHIP-704), never the token itself. */
-export interface ClaudeCredentialConfirmation {
+/**
+ * Whatever identity the connected credential happened to expose (GSHIP-705),
+ * never the proof that it works and never the token. Absent fields are
+ * absent, not empty strings: a `claude setup-token` credential is limited to
+ * inference and commonly reports no identity at all.
+ */
+export interface ClaudeCredentialIdentity {
 	account?: string;
 	organization?: string;
 	plan?: string;
 }
 
+/** What Ajustes tells the operator after a dedicated credential was accepted (GSHIP-704), never the token itself. */
+export interface ClaudeCredentialConfirmation {
+	identity?: ClaudeCredentialIdentity;
+}
+
 /**
  * Connect, reconnect and rotate the dedicated Claude credential all share
- * this one call: the service validates the candidate token against Claude's
- * own service before persisting it, and this resolves to exactly what the
- * operator should see to confirm it is the right account -- never the token,
- * which the service never returns on any outcome.
+ * this one call: the service validates the candidate token with one real,
+ * isolated inference call before persisting it, and this resolves only once
+ * that succeeded -- never with the token, which the service never returns on
+ * any outcome. A rejection throws with the service's own refusal, so the
+ * caller can show it beside the field the operator must correct.
  */
 export async function connectClaudeCredential(token: string): Promise<ClaudeCredentialConfirmation> {
 	const response = await fetch(`${PROVIDERS_PATH}/claude/credential`, {
@@ -1111,7 +1120,27 @@ export async function connectClaudeCredential(token: string): Promise<ClaudeCred
 	if (!response.ok || payload.ok !== true) {
 		throw new Error(payload.message ?? `Connection rejected (${response.status}).`);
 	}
-	return { account: payload.account, organization: payload.organization, plan: payload.plan };
+	return payload.identity === undefined ? {} : { identity: payload.identity };
+}
+
+/**
+ * The one sentence Ajustes reports after a successful connection. It claims
+ * exactly what the service demonstrated -- the credential was accepted for
+ * inference -- and says so plainly when Claude reported no identity to go
+ * with it, rather than leaving the operator to read an empty confirmation as
+ * a missing account (GSHIP-705).
+ */
+export function describeClaudeCredentialConfirmation(
+	confirmation: ClaudeCredentialConfirmation,
+): string {
+	const identity = [
+		confirmation.identity?.account,
+		confirmation.identity?.organization,
+		confirmation.identity?.plan,
+	].filter((value): value is string => value !== undefined && value.trim().length > 0);
+	return identity.length === 0
+		? 'Dedicated Claude credential validated for inference. Claude reports no account, organization or plan for this token.'
+		: `Dedicated Claude credential validated for inference: ${identity.join(' · ')}.`;
 }
 
 export async function disconnectClaudeCredential(): Promise<string> {
