@@ -118,6 +118,7 @@ import {
 	type ProjectRegistry,
 	resolveGateshipHome,
 } from '../runtime/project-registry.ts';
+import { readProjectOperationalStatus } from '../runtime/project-status.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
 import { GSHIP_VERSION } from '../version.ts';
@@ -2289,6 +2290,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
 			'/api/projects': () => Response.json({ projects: projectRegistry.list(projectRoot) }),
+			'/api/projects/:projectId/status': (request) => {
+				const project = projectRegistry.get(request.params.projectId, projectRoot);
+				if (project === null) {
+					return Response.json(
+						{ ok: false, code: 'project-not-found', message: 'Project not found.' },
+						{ status: 404 },
+					);
+				}
+				return Response.json(readProjectOperationalStatus(project));
+			},
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),

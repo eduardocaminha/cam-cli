@@ -118,6 +118,25 @@ export class ProjectRegistry {
 		}));
 	}
 
+	get(projectId: string, currentRoot?: string): RegisteredProject | null {
+		const canonicalCurrent = currentRoot === undefined ? undefined : canonicalRoot(currentRoot);
+		const row = this.#db.query(`
+			SELECT id, name, root, state_dir, readiness, repository
+			FROM projects
+			WHERE id = $projectId
+		`).get({ projectId }) as ProjectRow | null;
+		if (row === null) return null;
+		return {
+			id: row.id,
+			name: row.name,
+			root: row.root,
+			stateDir: row.state_dir,
+			readiness: row.readiness,
+			...(row.repository === null ? {} : { repository: row.repository }),
+			current: row.root === canonicalCurrent,
+		};
+	}
+
 	close(): void {
 		this.#db.close();
 	}

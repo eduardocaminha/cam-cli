@@ -28,10 +28,13 @@ const issuePath = (suffix = '') => (input: Record<string, unknown>) =>
 	`/api/issues/${encodeURIComponent(requiredString(input, 'issueId'))}${suffix}`;
 const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 	`/api/runs/${encodeURIComponent(requiredString(input, 'runId'))}${suffix}`;
+const projectPath = (suffix: string) => (input: Record<string, unknown>) =>
+	`/api/projects/${encodeURIComponent(requiredString(input, 'projectId'))}${suffix}`;
 
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
+	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'status.get': { method: 'GET', path: () => '/api/snapshot', input: '{}' },
 	'backlog.list': { method: 'GET', path: () => '/api/backlog', input: '{limit?, offset?}' },
 	'issues.list': { method: 'GET', path: () => '/api/issues', input: '{limit?, offset?}', listField: 'issues' },

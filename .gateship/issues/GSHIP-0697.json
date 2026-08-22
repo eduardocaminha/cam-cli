@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-697",
   "title": "Expor estado operacional read-only por projectId",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T13:36:53.825Z",
-  "updatedAt": "2026-08-22T13:38:22.641Z",
+  "updatedAt": "2026-08-22T13:45:46.857Z",
   "description": "Adicionar um read model estritamente somente leitura para qualquer projeto registrado, como primeiro passo do escopo de runtime por projectId. O ProjectRegistry deve resolver um projeto por ID sem aceitar root ou stateDir fornecidos pela requisição. Expor GET /api/projects/:projectId/status e a operação compacta projects.status {projectId}. A resposta deve conter identidade/readiness do registro, disponibilidade do root e de <stateDir>/runtime.sqlite, backlog derivado de origin/main quando o root estiver acessível, e uma janela limitada das runs persistidas com seus estados e timestamps. A leitura de runtime.sqlite deve abrir o banco em modo read-only, não criar arquivo, schema ou WAL, não executar recovery, não reconciliar worktrees e sempre fechar o handle. Projeto desconhecido retorna 404; root ou banco ausente retorna um estado tipado unavailable sem remover o registro. Preservar as APIs atuais do projeto corrente. Não adicionar mutações por projectId, runtime switching, SSE multiprojeto, ações em projetos não correntes, agregação de custos/PR/CI, alterações na UI, cadastro/remoção, mudanças no container ou paralelismo.",
   "specSource": "operator",
   "spec": {
