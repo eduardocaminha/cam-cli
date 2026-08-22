@@ -296,11 +296,14 @@ export interface ProviderStatusView {
 	subscription: boolean;
 	label: string;
 	plan?: string;
-	login: 'external' | 'web';
+	/** `'dedicated'` is Claude-only (GSHIP-704): a subscription token from `claude setup-token`, isolated from Desktop's/the terminal's own login. */
+	login: 'external' | 'web' | 'dedicated';
 	/** An observed active hold; absence does not claim remaining subscription quota. */
 	availability?: RunProviderWaitView;
 	/** Truthful subscription-usage telemetry (GSHIP-664); absent means unavailable, never a fabricated zero. */
 	usage?: ProviderUsageView;
+	/** Claude only (GSHIP-704): whether `CLAUDE_CODE_OAUTH_TOKEN` in the service environment would override a Settings file write regardless. Rotate/disconnect availability comes from `login === 'dedicated'`, not from this field. */
+	credential?: { envManaged: boolean };
 }
 
 /**
@@ -464,6 +467,13 @@ interface ProvidersPayload {
 
 interface CodexLoginPayload extends CommandPayload {
 	login?: { loginId: string; authUrl: string };
+}
+
+interface ClaudeCredentialPayload extends CommandPayload {
+	account?: string;
+	organization?: string;
+	plan?: string;
+	removed?: boolean;
 }
 
 interface ChatPayload extends CommandPayload {
@@ -1075,6 +1085,42 @@ export async function startCodexLogin(): Promise<string> {
 
 export function selectProvider(providerId: ProviderStatusView['id']): Promise<string> {
 	return postCommand(`${PROVIDERS_PATH}/${providerId}/select`);
+}
+
+/** What Ajustes shows the operator to confirm before trusting the newly connected credential (GSHIP-704), never the token itself. */
+export interface ClaudeCredentialConfirmation {
+	account?: string;
+	organization?: string;
+	plan?: string;
+}
+
+/**
+ * Connect, reconnect and rotate the dedicated Claude credential all share
+ * this one call: the service validates the candidate token against Claude's
+ * own service before persisting it, and this resolves to exactly what the
+ * operator should see to confirm it is the right account -- never the token,
+ * which the service never returns on any outcome.
+ */
+export async function connectClaudeCredential(token: string): Promise<ClaudeCredentialConfirmation> {
+	const response = await fetch(`${PROVIDERS_PATH}/claude/credential`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ token }),
+	});
+	const payload = (await response.json()) as ClaudeCredentialPayload;
+	if (!response.ok || payload.ok !== true) {
+		throw new Error(payload.message ?? `Connection rejected (${response.status}).`);
+	}
+	return { account: payload.account, organization: payload.organization, plan: payload.plan };
+}
+
+export async function disconnectClaudeCredential(): Promise<string> {
+	const response = await fetch(`${PROVIDERS_PATH}/claude/credential`, { method: 'DELETE' });
+	const payload = (await response.json()) as ClaudeCredentialPayload;
+	if (!response.ok) return payload.message ?? `Disconnection rejected (${response.status}).`;
+	return payload.removed
+		? 'Dedicated Claude credential removed.'
+		: 'No dedicated Claude credential was present.';
 }
 
 export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {

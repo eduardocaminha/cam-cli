@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
@@ -16,6 +18,7 @@ function fakeAuth(): ProviderAuth {
 	return {
 		list: async () => providers,
 		startCodexLogin: async () => ({ loginId: 'login-1', authUrl: 'https://chatgpt.com/auth' }),
+		validateClaudeCredential: async () => ({ ok: false, message: 'unused' }),
 		close: async () => {},
 	};
 }
@@ -44,7 +47,14 @@ describe('provider auth web API', () => {
 		try {
 			const status = await fetch(`${origin}/api/providers`);
 			expect(status.status).toBe(200);
-			expect(await status.json()).toEqual({ providers, selected: 'claude' });
+			expect(await status.json()).toEqual({
+				providers: providers.map((provider) => (
+					provider.id === 'claude'
+						? { ...provider, credential: { envManaged: false } }
+						: provider
+				)),
+				selected: 'claude',
+			});
 
 			const login = await fetch(`${origin}/api/providers/codex/login`, {
 				method: 'POST',
@@ -190,6 +200,7 @@ describe('provider auth web API', () => {
 				provider.id === 'codex' ? { ...provider, subscription: true } : provider
 			)),
 			startCodexLogin: async () => ({ loginId: 'unused', authUrl: 'https://chatgpt.com' }),
+			validateClaudeCredential: async () => ({ ok: false, message: 'unused' }),
 			close: async () => {},
 		};
 		const handle = startWebServer({
@@ -232,6 +243,257 @@ describe('provider auth web API', () => {
 		} finally {
 			await handle.stop();
 			runtime.close();
+		}
+	});
+});
+
+// GSHIP-704: connect, reconnect, rotate and disconnect the Claude provider's
+// own dedicated subscription credential, always without the secret coming
+// back through any response.
+describe('dedicated Claude credential web API', () => {
+	function fakeAuthValidating(outcome: {
+		ok: boolean;
+		account?: string;
+		organization?: string;
+		plan?: string;
+		message?: string;
+	}): ProviderAuth {
+		return {
+			...fakeAuth(),
+			validateClaudeCredential: async () => outcome,
+		};
+	}
+
+	async function serverWithHome(providerAuth: ProviderAuth) {
+		const gateshipHome = createTestTmpdir('gship-claude-credential-home-');
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-claude-credential-runtime-'),
+			store: new RunStore(':memory:'),
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-claude-credential-web-'),
+			gateshipHome,
+			runRuntime: runtime,
+			providerAuth,
+		});
+		return { handle, runtime, gateshipHome, origin: `http://${handle.hostname}:${handle.port}` };
+	}
+
+	test('validates before persisting, then reports account, organization and plan for confirmation -- never the token', async () => {
+		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({
+			ok: true,
+			account: 'alice@example.com',
+			organization: 'Acme',
+			plan: 'max',
+		}));
+		try {
+			const response = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-super-secret' }),
+			});
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body).toEqual({
+				ok: true,
+				account: 'alice@example.com',
+				organization: 'Acme',
+				plan: 'max',
+			});
+			expect(JSON.stringify(body)).not.toContain('sk-ant-oat01-super-secret');
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(true);
+
+			const status = await (await fetch(`${origin}/api/providers`)).json() as {
+				providers: Array<Record<string, unknown>>;
+			};
+			expect(status.providers[0]).toMatchObject({
+				id: 'claude',
+				credential: { envManaged: false },
+			});
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('rejects an invalid token without persisting it', async () => {
+		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({
+			ok: false,
+			message: 'Invalid API key.',
+		}));
+		try {
+			const response = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-wrong' }),
+			});
+			expect(response.status).toBe(422);
+			expect(await response.json()).toEqual({
+				ok: false,
+				code: 'invalid-token',
+				message: 'Invalid API key.',
+			});
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(false);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('disconnect removes the file-backed credential and reports whether one was present', async () => {
+		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({ ok: true, account: 'a@x.com' }));
+		try {
+			await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-rotate-me' }),
+			});
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(true);
+
+			const first = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(first.status).toBe(200);
+			expect(await first.json()).toEqual({ ok: true, removed: true });
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(false);
+
+			const second = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(await second.json()).toEqual({ ok: true, removed: false });
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('rejects cross-origin connect and disconnect requests', async () => {
+		const { handle, runtime, origin } = await serverWithHome(fakeAuthValidating({ ok: true }));
+		try {
+			const put = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin: 'https://attacker.example', 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-x' }),
+			});
+			expect(put.status).toBe(403);
+			const del = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'DELETE',
+				headers: { origin: 'https://attacker.example' },
+			});
+			expect(del.status).toBe(403);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('rejects an empty or missing token without calling the validator', async () => {
+		let calls = 0;
+		const providerAuth: ProviderAuth = {
+			...fakeAuth(),
+			validateClaudeCredential: async () => {
+				calls += 1;
+				return { ok: true };
+			},
+		};
+		const { handle, runtime, origin } = await serverWithHome(providerAuth);
+		try {
+			const response = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: '   ' }),
+			});
+			expect(response.status).toBe(400);
+			expect(calls).toBe(0);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	// GSHIP-704: a token provisioned through the service's own boot
+	// environment (the supported automated-install path) must be captured and
+	// removed from `process.env` at composition, not left ambient for
+	// `runOwnedCommand`'s own `env: input.env ?? process.env` default to hand
+	// to the project's verification command or to git.
+	test('captures a boot-provisioned token out of process.env instead of leaving it ambient', async () => {
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-boot-provisioned';
+		let handle: Awaited<ReturnType<typeof serverWithHome>>['handle'] | undefined;
+		let runtime: Awaited<ReturnType<typeof serverWithHome>>['runtime'] | undefined;
+		try {
+			const server = await serverWithHome(fakeAuthValidating({ ok: true }));
+			handle = server.handle;
+			runtime = server.runtime;
+			// The composition root already captured and deleted it by the time
+			// `startWebServer` returns -- a verification command or git spawned
+			// afterward, which falls back to `process.env` wholesale, cannot see it.
+			expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+			expect('CLAUDE_CODE_OAUTH_TOKEN' in process.env).toBe(false);
+
+			// The captured value still resolves for Claude's own children: status
+			// correctly reports the credential as environment-managed, from the
+			// snapshot alone, even though process.env no longer carries it.
+			const status = await (await fetch(`${server.origin}/api/providers`)).json() as {
+				providers: Array<Record<string, unknown>>;
+			};
+			expect(status.providers[0]).toMatchObject({
+				id: 'claude',
+				credential: { envManaged: true },
+			});
+		} finally {
+			delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+			if (handle !== undefined) await handle.stop();
+			runtime?.close();
+		}
+	});
+
+	// GSHIP-704: CLAUDE_CODE_OAUTH_TOKEN always wins over the file, so a write
+	// or a removal here would have no effect on what actually authenticates.
+	// PUT and DELETE both refuse explicitly rather than reporting a fabricated
+	// success, and never touch the file GATESHIP_HOME would otherwise own.
+	test('refuses to connect or disconnect while CLAUDE_CODE_OAUTH_TOKEN manages the credential', async () => {
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-env-managed';
+		let calls = 0;
+		const providerAuth: ProviderAuth = {
+			...fakeAuth(),
+			validateClaudeCredential: async () => {
+				calls += 1;
+				return { ok: true, account: 'unused@example.com' };
+			},
+		};
+		let handle: Awaited<ReturnType<typeof serverWithHome>>['handle'] | undefined;
+		let runtime: Awaited<ReturnType<typeof serverWithHome>>['runtime'] | undefined;
+		try {
+			const server = await serverWithHome(providerAuth);
+			handle = server.handle;
+			runtime = server.runtime;
+			const { gateshipHome, origin } = server;
+
+			const put = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-alternate-client' }),
+			});
+			expect(put.status).toBe(409);
+			expect(await put.json()).toMatchObject({ ok: false, code: 'env-managed' });
+			// The candidate token was never even validated: the request is refused
+			// before it could create a file with no effect.
+			expect(calls).toBe(0);
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(false);
+
+			const del = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(del.status).toBe(409);
+			expect(await del.json()).toMatchObject({ ok: false, code: 'env-managed' });
+		} finally {
+			delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+			if (handle !== undefined) await handle.stop();
+			runtime?.close();
 		}
 	});
 });

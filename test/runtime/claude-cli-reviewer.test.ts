@@ -223,6 +223,24 @@ describe('independent Claude CLI reviewer', () => {
 		expect(bare).not.toContain('--effort');
 	});
 
+	// GSHIP-704: the dedicated Claude subscription token reaches the real
+	// reviewer child too, riding alongside CLAUDE_CONFIG_DIR (which also
+	// carries session state, so it is never displaced) -- the third of the
+	// four surfaces this issue names (status, orchestrator, executor,
+	// reviewer), proven end to end through a real spawned process.
+	test('carries the dedicated credential to the real reviewer child, alongside CLAUDE_CONFIG_DIR', async () => {
+		const reviewer = fixtureReviewer('FINDINGS', {
+			sourceEnv: { ...process.env, CLAUDE_CONFIG_DIR: '/operator/claude' },
+			resolveClaudeCredential: () => 'sk-ant-oat01-reviewer-secret',
+		});
+		const result = await reviewer.review(reviewInput());
+		const detail = result.verdict === 'findings' ? result.detail : '';
+		const start = detail.indexOf('{');
+		const { env } = JSON.parse(detail.slice(start)) as { env: Record<string, string | null> };
+		expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-reviewer-secret');
+		expect(env.CLAUDE_CONFIG_DIR).toBe('/operator/claude');
+	});
+
 	test('reads a CLEAN verdict out of the child\'s structured output', async () => {
 		const result = await fixtureReviewer('CLEAN').review(reviewInput());
 		expect(result).toEqual({ verdict: 'clean' });

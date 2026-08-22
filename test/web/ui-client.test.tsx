@@ -256,6 +256,8 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onAbandon={() => {}}
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
+			onConnectClaudeCredential={() => {}}
+			onDisconnectClaudeCredential={() => {}}
 			onCreateIssue={() => {}}
 			onApproveIssue={() => {}}
 			onAbandonIssue={() => {}}
@@ -2212,6 +2214,152 @@ describe('settings surface', () => {
 		expect(providers).toContain('in use');
 		expect(buttonIsEnabled(providers, 'Connect ChatGPT')).toBe(true);
 		expect(providers).not.toMatch(/api key|oauth token/i);
+	});
+
+	// GSHIP-704: the universal onboarding for a dedicated Claude subscription,
+	// isolated from Claude Desktop's or the terminal's own OAuth/Keychain
+	// login, offered from Ajustes > Providers.
+	test('offers to connect a dedicated Claude credential when none is configured, with external login kept as an advanced fallback', () => {
+		const html = settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: false, label: 'Claude Code', login: 'external' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		});
+		const providers = panel(html, 'Local agents');
+
+		expect(providers).toContain('external login');
+		expect(providers).toContain('claude setup-token');
+		expect(providers).toContain('name="claude-credential-token"');
+		expect(providers).toContain('type="password"');
+		expect(providers).toContain('name="claude-credential-confirm"');
+		expect(providers).toContain('type="checkbox"');
+		// Write-only, exactly like the Resend key field: never a prefilled value.
+		expect(providers).toContain('value=""');
+		// Never persisted before the operator confirms, so the button starts disabled.
+		expect(buttonIsEnabled(providers, 'Connect')).toBe(false);
+		// The external login fallback stays available, clearly marked advanced.
+		expect(providers).toContain('Advanced: sign in locally instead');
+		expect(providers).toContain('claude auth login');
+	});
+
+	test('does not offer the setup-token command or field when the Claude CLI is not installed', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{ id: 'claude', installed: false, subscription: false, label: 'Claude Code', login: 'external' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('Claude CLI not found');
+		expect(providers).not.toContain('claude setup-token');
+		expect(providers).not.toContain('name="claude-credential-token"');
+		// Nothing installed to fall back to locally either.
+		expect(providers).not.toContain('claude auth login');
+	});
+
+	test('shows the dedicated credential as connected, offering rotate and disconnect instead of the bare form', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('dedicated credential');
+		expect(providers).toContain('Dedicated subscription connected.');
+		expect(buttonIsEnabled(providers, 'Rotate')).toBe(true);
+		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(true);
+		// Rotating is a click away; the token form is not open by default.
+		expect(providers).not.toContain('name="claude-credential-token"');
+		// A connected dedicated credential is not what the advanced fallback is for.
+		expect(providers).not.toContain('Advanced: sign in locally instead');
+	});
+
+	// GSHIP-704: `installed: false` with `login: 'dedicated'` is a real status
+	// (claudeStatus reports it on an ENOENT read while a credential is
+	// configured), and Rotate used to open a token form gated on
+	// `provider.installed`, stranding the operator with no form, no Cancel and
+	// no visible Disconnect until a page reload. Disconnect must always stay
+	// reachable from the connected card.
+	test('never strands a connected operator behind Rotate when the Claude CLI is absent', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{ id: 'claude', installed: false, subscription: false, label: 'Claude Code', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('Dedicated credential needs reconnecting.');
+		expect(hasButton(providers, 'Rotate')).toBe(false);
+		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(true);
+	});
+
+	test('fails closed: a dedicated credential that no longer authenticates asks to reconnect, never falling back to external login silently', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: false, label: 'Claude Code', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('Dedicated credential needs reconnecting.');
+		expect(providers).not.toContain('Dedicated subscription connected.');
+		expect(buttonIsEnabled(providers, 'Rotate')).toBe(true);
+	});
+
+	// GSHIP-704: CLAUDE_CODE_OAUTH_TOKEN always wins over the file, so a
+	// Settings write here would create or remove a file with no effect on
+	// what actually authenticates. Ajustes must treat this as read-only --
+	// no Connect, Rotate or Disconnect -- and explain that changing it
+	// requires editing the service's own configuration and restarting.
+	test('treats an environment-managed credential as read-only: no connect, rotate or disconnect', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{
+					id: 'claude', installed: true, subscription: true, label: 'Claude Code', login: 'dedicated',
+					credential: { envManaged: true },
+				},
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('Dedicated subscription connected.');
+		expect(providers).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+		expect(providers).toContain('restart Gateship');
+		expect(hasButton(providers, 'Connect')).toBe(false);
+		expect(hasButton(providers, 'Rotate')).toBe(false);
+		expect(hasButton(providers, 'Disconnect')).toBe(false);
+		expect(providers).not.toContain('name="claude-credential-token"');
+	});
+
+	test('an environment-managed credential that no longer authenticates still offers no action, only the guidance to restart', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{
+					id: 'claude', installed: true, subscription: false, label: 'Claude Code', login: 'dedicated',
+					credential: { envManaged: true },
+				},
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('Dedicated credential needs reconnecting.');
+		expect(providers).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+		expect(hasButton(providers, 'Rotate')).toBe(false);
+		expect(hasButton(providers, 'Disconnect')).toBe(false);
+	});
+
+	test('disables connect and disconnect while a command is in flight', () => {
+		const providers = panel(settingsPage({
+			pending: true,
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(false);
 	});
 
 	test('distinguishes a connected subscription from an observed provider hold', () => {

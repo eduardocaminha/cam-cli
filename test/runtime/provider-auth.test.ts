@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { CodexAppServer } from '../../src/runtime/codex-app-server.ts';
 import { NativeProviderAuth } from '../../src/runtime/provider-auth.ts';
-import { buildProviderAuthEnv, ensureCodexHome } from '../../src/runtime/provider-env.ts';
+import { buildClaudeAuthEnv, buildProviderAuthEnv, ensureCodexHome } from '../../src/runtime/provider-env.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const FIXTURE = join(import.meta.dir, '..', 'fixtures', 'runtime', 'codex-app-server-fixture.ts');
@@ -96,6 +96,137 @@ describe('credential-blind provider auth', () => {
 		});
 		const claude = (await auth.list())[0];
 		expect(claude?.subscription).toBe(false);
+		await auth.close();
+	});
+});
+
+// GSHIP-704: the Claude provider's own dedicated-credential boundary, kept
+// entirely separate from the shared, credential-blind env above -- Codex's
+// commands never see this token, and Claude's own commands only see it via
+// `buildClaudeAuthEnv`, never through the generic `buildProviderAuthEnv`.
+describe('Claude dedicated credential boundary (GSHIP-704)', () => {
+	// CLAUDE_CONFIG_DIR keeps flowing through even with a token present: it
+	// also carries session/`--resume` state, and in the container it already
+	// names a subpath of the persistent GATESHIP_HOME volume rather than
+	// Claude Desktop's own store, so there is nothing to isolate away from
+	// there. Auth precedence rests on the Claude CLI's own documented
+	// behavior for CLAUDE_CODE_OAUTH_TOKEN, not on deleting the config dir.
+	test('a dedicated token rides alongside CLAUDE_CONFIG_DIR, never CODEX_HOME', () => {
+		expect(buildClaudeAuthEnv({
+			PATH: '/usr/bin',
+			CLAUDE_CONFIG_DIR: '/operator/claude',
+			CODEX_HOME: '/operator/codex',
+		}, 'sk-ant-oat01-secret')).toEqual({
+			PATH: '/usr/bin',
+			CLAUDE_CONFIG_DIR: '/operator/claude',
+			CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-secret',
+		});
+	});
+
+	test('an absent or empty token leaves the existing external-login boundary untouched', () => {
+		const source = { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/operator/claude', CODEX_HOME: '/operator/codex' };
+		expect(buildClaudeAuthEnv(source)).toEqual({ PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/operator/claude' });
+		expect(buildClaudeAuthEnv(source, '')).toEqual({ PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/operator/claude' });
+	});
+
+	test('reports the dedicated origin only while a credential resolves, external otherwise', async () => {
+		let token: string | undefined;
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			resolveClaudeCredential: () => token,
+			run: () => ({
+				exitCode: 0,
+				stdout: JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' }),
+				stderr: '',
+			}),
+		});
+
+		const external = (await auth.list())[0];
+		expect(external).toMatchObject({ login: 'external', subscription: true });
+
+		token = 'sk-ant-oat01-secret';
+		const dedicated = (await auth.list())[0];
+		expect(dedicated).toMatchObject({ login: 'dedicated', subscription: true });
+		await auth.close();
+	});
+
+	test('reports a dedicated origin even while the credential fails to resolve a subscription', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			resolveClaudeCredential: () => 'sk-ant-oat01-revoked',
+			run: () => ({ exitCode: 1, stdout: '', stderr: 'Invalid API key.' }),
+		});
+		const claude = (await auth.list())[0];
+		// Fails closed (GSHIP-704): never falls back to reporting `external`,
+		// which would misdirect the operator toward `claude auth login` instead
+		// of toward reconnecting the dedicated credential that actually failed.
+		expect(claude).toMatchObject({ login: 'dedicated', subscription: false });
+		await auth.close();
+	});
+
+	test('validates a candidate token in isolation and reports account, organization and plan for confirmation', async () => {
+		const seen: string[][] = [];
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: (token) => {
+				seen.push([token]);
+				return {
+					exitCode: 0,
+					stdout: JSON.stringify({
+						loggedIn: true,
+						authMethod: 'claude.ai',
+						email: 'alice@example.com',
+						organizationName: 'Acme',
+						subscriptionType: 'max',
+					}),
+					stderr: '',
+				};
+			},
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-candidate');
+		expect(result).toEqual({ ok: true, account: 'alice@example.com', organization: 'Acme', plan: 'max' });
+		expect(seen).toEqual([['sk-ant-oat01-candidate']]);
+		await auth.close();
+	});
+
+	test('reports the CLI\'s own refusal for a rejected token, never a fabricated success', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: () => ({ exitCode: 1, stdout: '', stderr: 'Invalid API key provided.' }),
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-bad');
+		expect(result).toEqual({ ok: false, message: 'Invalid API key provided.' });
+		await auth.close();
+	});
+
+	test('rejects a token that resolves without an active claude.ai subscription', async () => {
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: () => ({
+				exitCode: 0,
+				stdout: JSON.stringify({ loggedIn: true, authMethod: 'apiKey' }),
+				stderr: '',
+			}),
+		});
+		const result = await auth.validateClaudeCredential('sk-ant-oat01-apikey');
+		expect(result.ok).toBe(false);
+		await auth.close();
+	});
+
+	test('refuses an empty token without spawning a validation process', async () => {
+		let calls = 0;
+		const auth = new NativeProviderAuth({
+			codex: fixtureServer(),
+			runClaudeToken: () => {
+				calls += 1;
+				return { exitCode: 0, stdout: '{}', stderr: '' };
+			},
+		});
+		expect(await auth.validateClaudeCredential('   ')).toEqual({
+			ok: false,
+			message: 'A non-empty token is required.',
+		});
+		expect(calls).toBe(0);
 		await auth.close();
 	});
 });

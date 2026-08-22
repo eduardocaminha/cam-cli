@@ -38,6 +38,15 @@ export interface ClaudeCliExecutorOptions {
 	resolveModel?: ModelSlotResolver;
 	permissionMode?: string;
 	sourceEnv?: Record<string, string | undefined>;
+	/**
+	 * The dedicated Claude subscription token (GSHIP-704), resolved fresh at
+	 * every spawn -- the same "consulted per spawn, never at construction"
+	 * rule `resolveModel` already follows, so connecting, rotating or
+	 * disconnecting the credential in Settings needs no service restart.
+	 * Absent means no dedicated credential is configured; the existing
+	 * external login fallback keeps deciding, exactly as before this issue.
+	 */
+	resolveClaudeCredential?: () => string | undefined;
 	terminationGraceMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	onSpawn?: (pid: number) => void;
@@ -255,7 +264,7 @@ export class ClaudeAgentSession implements AgentSession {
 		return runClaudeCli({
 			argv,
 			cwd: input.cwd,
-			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
+			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env, this.#options.resolveClaudeCredential?.()),
 			prompt: input.prompt,
 			signal: input.signal,
 			emit: input.emit,
@@ -273,6 +282,15 @@ export interface ClaudeModelProbeOptions {
 	command?: string[];
 	sourceEnv?: Record<string, string | undefined>;
 	timeoutMs?: number;
+	/**
+	 * The dedicated Claude subscription token (GSHIP-704): this probe is a
+	 * fifth Gateship-owned Claude spawn, alongside the status probe,
+	 * orchestrator, executor and reviewer, so a model/effort choice is
+	 * validated against the same identity a real run would actually use --
+	 * never silently falling back to ambient external login when only a
+	 * dedicated credential is configured.
+	 */
+	resolveClaudeCredential?: () => string | undefined;
 }
 
 /**
@@ -291,6 +309,7 @@ export async function probeClaudeModel(
 		model: slot.model,
 		effort: slot.effort,
 		sourceEnv: options.sourceEnv,
+		resolveClaudeCredential: options.resolveClaudeCredential,
 	});
 	const controller = new AbortController();
 	const timer = setTimeout(

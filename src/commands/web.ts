@@ -112,6 +112,13 @@ import {
 import { isTerminalRunState } from '../runtime/run-state.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { ensureCodexHome } from '../runtime/provider-env.ts';
+import {
+	captureBootClaudeToken,
+	removeClaudeCredential,
+	resolveClaudeCredential,
+	resolveClaudeCredentialStatus,
+	writeClaudeCredential,
+} from '../runtime/claude-credential.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
 	openProjectRegistry,
@@ -414,8 +421,18 @@ export interface ModelProber {
 
 /** Routes to the real read-only probe each provider adapter already owns. */
 export class NativeModelProber implements ModelProber {
+	readonly #resolveClaudeCredential: () => string | undefined;
+
+	constructor(resolveClaudeCredential: () => string | undefined = () => undefined) {
+		this.#resolveClaudeCredential = resolveClaudeCredential;
+	}
+
 	probe(providerId: AgentProviderId, _role: ModelRole, slot: ModelSlot, cwd: string): Promise<ModelProbeResult> {
-		return providerId === 'codex' ? probeCodexModel(slot, cwd) : probeClaudeModel(slot, cwd);
+		return providerId === 'codex'
+			? probeCodexModel(slot, cwd)
+			// GSHIP-704: this is a fifth Gateship-owned Claude spawn, validated
+			// against the same dedicated credential a real run would use.
+			: probeClaudeModel(slot, cwd, { resolveClaudeCredential: this.#resolveClaudeCredential });
 	}
 }
 
@@ -749,12 +766,21 @@ async function createIssueFromOperator(
 async function listProviders(
 	providerAuth: ProviderAuth,
 	runtime: RunRuntime,
+	/** The `captureBootClaudeToken` snapshot -- `process.env` no longer carries this value after boot. */
+	claudeEnv: Record<string, string | undefined>,
 ): Promise<Response> {
 	try {
 		// Claude's usage is derived from this process's own event log (GSHIP-664),
 		// never from a live provider call -- the opposite of Codex's `usage`,
 		// which the ProviderAuth implementation already attached per provider.
 		const claudeUsageWindows = runtime.getClaudeUsageWindows();
+		// Whether CLAUDE_CODE_OAUTH_TOKEN in the service environment would
+		// override a Settings file write regardless (GSHIP-704), so Ajustes does
+		// not offer a write that could not take effect. Rotate/disconnect
+		// availability itself comes from `login === 'dedicated'` above, not from
+		// this value: that already reflects whether a credential is configured,
+		// whether or not it currently resolves to a live subscription.
+		const claudeCredential = resolveClaudeCredentialStatus(claudeEnv);
 		const providers = (await providerAuth.list()).map((provider) => {
 			const availability = runtime.getProviderWait(provider.id);
 			const claudeUsage = provider.id === 'claude' && claudeUsageWindows.length > 0
@@ -764,6 +790,7 @@ async function listProviders(
 				...provider,
 				...(availability === null ? {} : { availability }),
 				...(claudeUsage === undefined ? {} : { usage: claudeUsage }),
+				...(provider.id === 'claude' ? { credential: claudeCredential } : {}),
 			};
 		});
 		return Response.json({
@@ -824,6 +851,105 @@ async function startCodexLogin(request: Request, providerAuth: ProviderAuth): Pr
 			{ status: 503 },
 		);
 	}
+}
+
+const CLAUDE_CREDENTIAL_ENV_MANAGED_MESSAGE =
+	'CLAUDE_CODE_OAUTH_TOKEN is set in the service environment and always wins over the file-backed credential. '
+	+ 'Change or remove it in the service configuration and restart Gateship to connect, rotate or disconnect from here.';
+
+/**
+ * The file-backed credential is read-only whenever `CLAUDE_CODE_OAUTH_TOKEN`
+ * is set in the service's own environment (GSHIP-704): that value always
+ * wins over the file, so writing or removing the file here would change
+ * nothing about what actually authenticates. A stable `env-managed` code and
+ * 409 -- a real conflict between the requested action and the boot-time
+ * configuration -- lets an alternative client detect this and stop, rather
+ * than believing it connected, rotated or disconnected a credential that in
+ * fact never moved.
+ */
+function claudeCredentialEnvManagedResponse(): Response {
+	return Response.json(
+		{ ok: false, code: 'env-managed', message: CLAUDE_CREDENTIAL_ENV_MANAGED_MESSAGE },
+		{ status: 409 },
+	);
+}
+
+/**
+ * Connect, reconnect and rotate all land on this one write-only route
+ * (GSHIP-704): the candidate token is validated against Claude's own service,
+ * in isolation from any ambient login, before anything is persisted, and the
+ * response never carries the token back -- only the account, organization
+ * and plan the operator is confirming, exactly like the write-only Resend
+ * key above.
+ */
+async function connectClaudeCredential(
+	request: Request,
+	providerAuth: ProviderAuth,
+	gateshipHome: string,
+	/** The `captureBootClaudeToken` snapshot -- `process.env` no longer carries this value after boot. */
+	claudeEnv: Record<string, string | undefined>,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (resolveClaudeCredentialStatus(claudeEnv).envManaged) return claudeCredentialEnvManagedResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A JSON token is required.' }, { status: 400 });
+	}
+	const token = body !== null && typeof body === 'object' ? (body as { token?: unknown }).token : undefined;
+	if (typeof token !== 'string' || token.trim().length === 0) {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A non-empty token is required.' }, { status: 400 });
+	}
+	const validation = await providerAuth.validateClaudeCredential(token);
+	if (!validation.ok) {
+		return Response.json(
+			{ ok: false, code: 'invalid-token', message: validation.message ?? 'Claude rejected this token.' },
+			{ status: 422 },
+		);
+	}
+	try {
+		writeClaudeCredential(gateshipHome, token);
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'write-failed',
+				message: error instanceof Error ? error.message : 'The dedicated Claude credential could not be saved.',
+			},
+			{ status: 500 },
+		);
+	}
+	return Response.json({
+		ok: true,
+		account: validation.account,
+		organization: validation.organization,
+		plan: validation.plan,
+	});
+}
+
+function disconnectClaudeCredential(
+	request: Request,
+	gateshipHome: string,
+	/** The `captureBootClaudeToken` snapshot -- `process.env` no longer carries this value after boot. */
+	claudeEnv: Record<string, string | undefined>,
+): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (resolveClaudeCredentialStatus(claudeEnv).envManaged) return claudeCredentialEnvManagedResponse();
+	let removed: boolean;
+	try {
+		removed = removeClaudeCredential(gateshipHome);
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'remove-failed',
+				message: error instanceof Error ? error.message : 'The dedicated Claude credential could not be removed.',
+			},
+			{ status: 500 },
+		);
+	}
+	return Response.json({ ok: true, removed });
 }
 
 async function converse(
@@ -1867,6 +1993,16 @@ export function createDefaultRunRuntimeOptions(
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 	workflowRevision?: string,
 	stateDir = resolve(cwd, '.gship'),
+	/**
+	 * The dedicated Claude subscription token (GSHIP-704), read fresh at every
+	 * spawn by the executor, reviewer and the read-only cycle-question
+	 * session -- the same three of the four surfaces this issue names that
+	 * live inside the durable run runtime; the fourth, the conversational
+	 * orchestrator, is wired the same way by `createDefaultOrchestrator`.
+	 * Defaults to "never configured", exactly this function's behavior before
+	 * this issue.
+	 */
+	resolveClaudeCredential: () => string | undefined = () => undefined,
 ): RunRuntimeOptions {
 	const store = new RunStore(join(stateDir, 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
@@ -1876,17 +2012,17 @@ export function createDefaultRunRuntimeOptions(
 		store,
 		workflowRevision,
 		executor: new AgentExecutorRouter({
-			claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor') }),
+			claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor'), resolveClaudeCredential }),
 			codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
 		}),
 		verifier: new GitIssueVerifier(),
 		fullVerifier: new GitFullVerifier(),
 		reviewer: new AgentReviewerRouter({
-			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer') }),
+			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer'), resolveClaudeCredential }),
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
 		}),
 		cycleQuestionResolver: new AgentCycleQuestionResolver({
-			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator') }),
+			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator'), resolveClaudeCredential }),
 			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),
 		shipper: new GithubShipper({ ensureIdentity }),
@@ -2046,6 +2182,8 @@ function createDefaultOrchestrator(
 	cwd: string,
 	runtime: RunRuntime,
 	execute: (command: OrchestratorCommand) => Promise<string>,
+	/** See `createDefaultRunRuntimeOptions`'s own parameter of the same name (GSHIP-704). */
+	resolveClaudeCredential: () => string | undefined = () => undefined,
 ): ConversationalOrchestrator {
 	const model = (providerId: AgentProviderId) =>
 		modelResolver(() => runtime.getModelSettings(), providerId, 'orchestrator');
@@ -2053,7 +2191,7 @@ function createDefaultOrchestrator(
 		cwd,
 		persistence: runtime,
 		sessions: {
-			claude: new ClaudeAgentSession({ resolveModel: model('claude') }),
+			claude: new ClaudeAgentSession({ resolveModel: model('claude'), resolveClaudeCredential }),
 			codex: new CodexAgentSession({ resolveModel: model('codex') }),
 		},
 		context: () => buildOrchestratorContext(cwd, runtime),
@@ -2134,6 +2272,15 @@ interface DefaultSelfUpdateInput {
 	port: number;
 	ownsRunRuntime: boolean;
 	stateDir: string;
+	/**
+	 * The `captureBootClaudeToken` snapshot (GSHIP-704), forwarded unmodified
+	 * as `SelfUpdateRuntime`'s own `handoffEnv`: a native update hands this
+	 * process off to a helper and then a successor server, neither of which
+	 * can read `process.env` (already cleared) or the handoff plan file
+	 * (never written here) for it. Empty when no dedicated credential was
+	 * ever provisioned at boot -- this stays a plain pass-through either way.
+	 */
+	bootClaudeEnv: Record<string, string | undefined>;
 }
 
 function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
@@ -2154,6 +2301,7 @@ function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
 		hostname: input.hostname,
 		isContainer: input.containerBuild,
 		isIdle,
+		handoffEnv: input.bootClaudeEnv,
 		acquireAdmission: () => {
 			const reason = 'Gateship is handing off a native update; new work is temporarily unavailable.';
 			input.runRuntime.setAdmissionBlocked(reason);
@@ -2183,16 +2331,25 @@ function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDi
 	return resolve(options.stateDir ?? join(options.cwd, '.gship'));
 }
 
+/**
+ * The one product-wide home this process resolves to, independent of
+ * whether a `projectRegistry` was injected: the dedicated Claude credential
+ * (GSHIP-704) lives here too, and a test that fakes the registry has no
+ * reason to also fake where that credential file would live.
+ */
+function resolveGateshipHomeOption(options: Pick<WebServerOptions, 'gateshipHome'>): string {
+	return options.gateshipHome === undefined
+		? resolveGateshipHome()
+		: resolveGateshipHome({ env: { GATESHIP_HOME: options.gateshipHome } });
+}
+
 function composeProjectRegistry(
 	options: Pick<WebServerOptions, 'gateshipHome' | 'projectRegistry'>,
 ): { registry: ProjectRegistry; close: () => void } {
 	if (options.projectRegistry !== undefined) {
 		return { registry: options.projectRegistry, close: () => undefined };
 	}
-	const home = options.gateshipHome === undefined
-		? resolveGateshipHome()
-		: resolveGateshipHome({ env: { GATESHIP_HOME: options.gateshipHome } });
-	const registry = openProjectRegistry(home);
+	const registry = openProjectRegistry(resolveGateshipHomeOption(options));
 	return { registry, close: () => registry.close() };
 }
 
@@ -2212,6 +2369,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const projectRoot = realpathSync(resolve(options.cwd));
 	const { registry: projectRegistry, close: closeProjectRegistry } =
 		composeProjectRegistry(options);
+	// Global, not project-scoped (GSHIP-704): the same dedicated Claude
+	// credential backs every registered project's own runtime below, resolved
+	// fresh on every spawn so connecting, rotating or disconnecting it in
+	// Settings needs no service restart.
+	const gateshipHome = resolveGateshipHomeOption(options);
+	// Captured once, here, before anything else reads `process.env`: a token
+	// provisioned through the service's own boot environment must not stay
+	// ambient for `runOwnedCommand`'s `env: input.env ?? process.env` default
+	// to hand to the project's verification command or to git. Every later
+	// read of this value -- credential resolution and the `envManaged` status
+	// Ajustes shows -- uses this snapshot, never `process.env` again.
+	const bootClaudeEnv = captureBootClaudeToken();
+	const resolveClaudeCredentialForSpawn = () => resolveClaudeCredential(gateshipHome, bootClaudeEnv);
 	const currentProject = projectRegistry.reconcile({
 		root: projectRoot,
 		stateDir,
@@ -2250,6 +2420,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			ensureGitIdentityOnce,
 			workflowRevision,
 			stateDir,
+			resolveClaudeCredentialForSpawn,
 		));
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
@@ -2269,8 +2440,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// in tests has no reason to touch the filesystem, and CODEX_HOME is unset
 	// outside the container image anyway.
 	if (ownsProviderAuth) ensureCodexHome(process.env);
-	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
-	const modelProber = options.modelProber ?? new NativeModelProber();
+	const providerAuth = options.providerAuth
+		?? new NativeProviderAuth({ resolveClaudeCredential: resolveClaudeCredentialForSpawn });
+	const modelProber = options.modelProber ?? new NativeModelProber(resolveClaudeCredentialForSpawn);
 	const projectBrief = options.projectBrief ?? {
 		get: () => runRuntime.getProjectBrief(),
 		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
@@ -2294,6 +2466,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			ensureIdentity,
 			workflowRevision,
 			project.stateDir,
+			resolveClaudeCredentialForSpawn,
 		));
 		const writers = defaultIssueWriters(project.root, ensureIdentity);
 		const unsubscribe = runtime.subscribe(createRemoteNotifier({
@@ -2332,7 +2505,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 		);
 	const orchestrator = options.orchestrator?.(execute)
-		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
+		?? createDefaultOrchestrator(options.cwd, runRuntime, execute, resolveClaudeCredentialForSpawn);
 	const assets = resolveWebAssets();
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
@@ -2582,7 +2755,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					() => { projectRuntimes.admitStart(currentProject.id); },
 				),
 			},
-			'/api/providers': () => listProviders(providerAuth, runRuntime),
+			'/api/providers': () => listProviders(providerAuth, runRuntime, bootClaudeEnv),
 			// The read stays unguarded like every other GET: a same-origin browser
 			// read sends no Origin header, and the bind address is the read
 			// boundary -- WEB_HOSTNAME (127.0.0.1) by default. GATESHIP_BIND_HOST
@@ -2655,6 +2828,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/providers/codex/login': {
 				POST: (request) => startCodexLogin(request, providerAuth),
+			},
+			// Connect, reconnect and rotate the dedicated Claude credential
+			// (GSHIP-704) all share this write-only PUT; DELETE is the explicit
+			// disconnect. Both are same-origin like every other mutating route.
+			'/api/providers/claude/credential': {
+				PUT: (request) => connectClaudeCredential(request, providerAuth, gateshipHome, bootClaudeEnv),
+				DELETE: (request) => disconnectClaudeCredential(request, gateshipHome, bootClaudeEnv),
 			},
 			'/api/issues': {
 				GET: () => listPublishedIssues(options.cwd),
@@ -2760,6 +2940,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		port,
 		ownsRunRuntime,
 		stateDir,
+		bootClaudeEnv,
 	});
 	diagnostics.startScheduler();
 	selfUpdate.startScheduler();

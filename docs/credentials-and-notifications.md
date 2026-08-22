@@ -7,7 +7,8 @@ credential broker or secret store.
 
 | Capability | Credential owner | Gateship receives |
 | --- | --- | --- |
-| Claude subscription | Claude Code | Installed/login status and public run output |
+| Claude subscription (default) | Claude Code | Installed/login status and public run output |
+| Claude subscription (dedicated, optional) | Gateship, file-backed | A subscription token, generated outside Gateship (see below) |
 | ChatGPT subscription | Codex app-server | Login URL, status and public run output |
 | GitHub shipping | GitHub CLI and Git credential helper | Command result only |
 | Local notifications | Browser permission | `default`, `granted` or `denied` |
@@ -20,10 +21,12 @@ gh auth setup-git
 gh auth status
 ```
 
-There is intentionally no PAT or OAuth-token field in the Gateship UI. GitHub
-CLI gives `GH_TOKEN` and `GITHUB_TOKEN` precedence over credentials stored by
-`gh`; Gateship removes that ambiguity by passing neither variable to any `gh`
-command. See the official [`gh` environment documentation](https://cli.github.com/manual/gh_help_environment)
+There is intentionally no PAT or OAuth-token field for GitHub in the Gateship
+UI -- unlike the dedicated Claude credential below, GitHub shipping has no
+equivalent. GitHub CLI gives `GH_TOKEN` and `GITHUB_TOKEN` precedence over
+credentials stored by `gh`; Gateship removes that ambiguity by passing neither
+variable to any `gh` command. See the official
+[`gh` environment documentation](https://cli.github.com/manual/gh_help_environment)
 and [`gh auth login`](https://cli.github.com/manual/gh_auth_login).
 
 Running the [container image](../README.md#container) does not change any of
@@ -42,10 +45,116 @@ docker compose exec gateship gh auth setup-git
 
 Codex device authentication is the supported headless subscription flow and
 persists in `CODEX_HOME`. The GitHub commands also persist the git credential
-helper in `GIT_CONFIG_GLOBAL`. The image carries no credential of its own, and
-the operator never copies a host credential file into it or supplies a provider
-API key. On macOS the Claude CLI keeps its host credential in the Keychain, so
-there is no portable host file to copy in the first place.
+helper in `GIT_CONFIG_GLOBAL`. Outside of the optional dedicated Claude
+credential below, the image carries no credential of its own, and the operator
+never copies a host credential file into it or supplies a provider API key. On
+macOS the Claude CLI keeps its host credential in the Keychain, so there is no
+portable host file to copy in the first place.
+
+## Dedicated Claude credential
+
+By default the Claude provider follows the same rule as everything else in
+this document: `claude auth login` on the host or inside the container is the
+credential owner, and Gateship only reports whether it is connected. Ajustes >
+Providers also offers a second, optional path (GSHIP-704): a subscription
+token dedicated to Gateship, isolated from the OAuth/Keychain login Claude
+Desktop or the terminal already use. This is the one place in Gateship that
+deliberately holds a provider credential, so the boundary below is narrower
+and more explicit than the credential-blind rule everywhere else.
+
+Generate the token with the Claude CLI, outside Gateship:
+
+```bash
+claude setup-token
+```
+
+Paste the printed token once into the masked field in Ajustes > Providers.
+Gateship validates it against Claude's own service in an isolated child
+process -- carrying that candidate token, never a Keychain credential --
+before persisting anything, and shows the resolved account, organization and
+plan for confirmation. Connecting requires an explicit checkbox confirmation,
+so a copy-pasted token cannot silently attach the wrong subscription. The
+token itself is never returned to the browser again, on any outcome: connect,
+reconnect, rotate and disconnect are all write-only.
+
+The token is stored in one file, `claude-credential`, directly under
+`GATESHIP_HOME` -- never inside a project's repository or `.gship` directory,
+and never in the runs database. Native installs default `GATESHIP_HOME` to
+`~/.gateship`; the container points it at the named volume the same way it
+already does for `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, so the credential
+survives a container recreate. The file is written mode `0600` via a
+prepare-then-atomic-rename, the same pattern the Resend API key below uses.
+This is host-filesystem permission protection, not encryption: there is no
+external root of trust here to back that claim, and a hostile process running
+as the same operating-system identity is not the boundary this defends
+against.
+
+`CLAUDE_CODE_OAUTH_TOKEN` in the Gateship service's own environment is also
+accepted, and always wins over the file -- the same precedence the Resend API
+key's own environment variable already follows -- so an automated or
+container install can provision the token at boot without ever touching
+Ajustes. Gateship reads it exactly once, at boot, and removes it from the
+service's own `process.env` immediately, before anything else runs: it is
+never left sitting in the ambient environment for the rest of the process's
+life, which is what keeps it out of the verification command's and git's own
+environment (see Environment boundary below).
+
+While this variable is set, Ajustes and the `/api/providers/claude/credential`
+route treat the credential as read-only: connect, rotate and disconnect are
+all unavailable, since a Settings write would only create or remove a file
+the environment variable would keep overriding regardless -- a write with no
+effect on what actually authenticates. Ajustes explains this and points at
+the fix; `PUT` and `DELETE` both answer `409` with a stable `env-managed`
+code for any other client. Changing which Claude subscription Gateship uses
+in this mode means changing or removing `CLAUDE_CODE_OAUTH_TOKEN` in the
+service's own configuration and restarting it -- the same operation that set
+it in the first place.
+
+The resolved value -- from that one boot read, or from the file, whichever
+wins -- reaches every Gateship-owned Claude CLI spawn, and nothing else: the
+provider auth-status probe, the orchestrator's, executor's and reviewer's own
+Claude CLI children, and the read-only probe Ajustes uses to validate a saved
+model/effort choice before persisting it. A distinct, narrower case is the
+one-time candidate-token validation spawn described above: it carries only
+the operator-supplied token being connected, in isolation, before that token
+has resolved into "the" dedicated credential at all. In every one of these
+cases the token takes precedence over `CLAUDE_CONFIG_DIR` for auth, but
+`CLAUDE_CONFIG_DIR` itself still reaches the child unchanged alongside it:
+that variable also carries session/`--resume` state, and in the canonical
+Docker path it already names a subpath of the persistent `GATESHIP_HOME`
+volume rather than Claude Desktop's own store, so there is nothing to isolate
+away from there and removing it would only break `--resume` across a
+container recreate. The precedence instead rests on the Claude CLI's own
+documented behavior for `CLAUDE_CODE_OAUTH_TOKEN`: once set, the CLI
+authenticates with it and does not fall back to a credential it might find via
+`CLAUDE_CONFIG_DIR`, so a revoked or expired token still fails closed rather
+than quietly reauthenticating another way. Gateship's own project commands,
+the verification command, durable events, logs, HTTP responses and every
+other provider (Codex included) never receive this token; it is threaded
+explicitly through the Claude-only code paths above, not left sitting in the
+service's ambient environment for an allowlist to filter.
+
+A dedicated credential that stops authenticating is reported the same way any
+other Claude authentication failure already is -- an `auth-required`
+availability hold naming reconnection, surfaced next to the provider in
+Ajustes -- rather than a silent fallback to `claude auth login`. Disconnecting
+removes the file; it does not touch `CLAUDE_CONFIG_DIR` or the Keychain, so
+the external login flow (kept as a clearly marked advanced option) keeps
+working exactly as it did before a dedicated credential was ever configured.
+
+A boot-provisioned token needs one explicit exception to "never left sitting
+in the service's ambient environment": Gateship's own native self-update
+replaces the running process, first with a short-lived helper and then with
+the successor server, and neither can read this process's own `process.env`
+(already cleared at boot) or the disk-persisted handoff plan (which never
+carries it). The captured snapshot is instead forwarded as an explicit,
+minimal addition to each spawn's own environment -- old server → helper,
+helper → successor (and, on a failed candidate, helper → the restored
+previous binary) -- never merged back into this process's own `process.env`,
+never written to the plan file, SQLite or a notification. The successor
+captures it again and clears it at its own boot, exactly like the very first
+server process did; the helper itself never runs a project command, so it
+never reaches `runOwnedCommand`'s environment either way.
 
 ## Environment boundary
 
@@ -55,12 +164,20 @@ Claude, Codex or GitHub configuration directory. An unrelated variable added
 to the Gateship process is excluded by default. This includes provider API
 keys, GitHub tokens and notification-service keys.
 
+`CLAUDE_CODE_OAUTH_TOKEN` is the one deliberate exception, and it is not part
+of this allowlist mechanism: the dedicated Claude credential above is threaded
+explicitly into the Claude-only call sites that need it (listed above), never
+read off the service's ambient environment by the shared allowlist builder
+every other child uses. Codex, GitHub CLI and Git never see it either way.
+
 Git and the task's explicit verification commands are different: they are
 trusted project operations and may need the host's SSH agent, credential helper
 or test configuration, so they run in the Gateship service environment. Do not
-start Gateship with secrets that those project commands do not need. Gateship
-does not automatically read `.env` files and does not persist environment
-values in SQLite.
+start Gateship with secrets that those project commands do not need -- this is
+exactly why the dedicated Claude token is captured out of `process.env` at
+boot and never simply left exported into that environment. Gateship does not
+automatically read `.env` files and does not
+persist environment values in SQLite.
 
 This boundary prevents accidental inheritance. It is not a sandbox against a
 malicious write-capable agent: the agent runs as the same operating-system user

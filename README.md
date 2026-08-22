@@ -252,7 +252,10 @@ The Codex command is its supported headless subscription flow: follow the URL
 and enter the displayed device code. `CODEX_HOME` persists that login on the
 same volume as Gateship state. Claude and GitHub CLI keep their own stores on
 that volume under the same credential-blind boundary; Gateship never reads or
-copies their credentials and no API key is required.
+copies their credentials and no API key is required. Ajustes > Providers also
+offers an optional dedicated Claude subscription token, isolated from this
+external login; see
+[Credentials and notifications](docs/credentials-and-notifications.md#dedicated-claude-credential).
 
 Recreating the container from the same image and the same volume returns the
 operator to the same place: the same SQLite state, the same managed

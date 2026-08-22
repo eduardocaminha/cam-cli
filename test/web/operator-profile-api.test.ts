@@ -18,6 +18,7 @@ function startHarness() {
 		providerAuth: {
 			list: async () => [],
 			startCodexLogin: async () => ({ loginId: 'unused', authUrl: 'https://unused.example' }),
+			validateClaudeCredential: async () => ({ ok: false, message: 'unused' }),
 			close: async () => {},
 		},
 	});

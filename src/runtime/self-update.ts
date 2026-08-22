@@ -118,9 +118,21 @@ export interface SelfUpdateRuntimeOptions {
 	releaseClient?: ReleaseClient;
 	installation?: InstallationAvailability;
 	probeVersion?: (path: string) => string;
-	spawnHelper?: (executable: string, planPath: string) => void;
+	spawnHelper?: (executable: string, planPath: string, handoffEnv: Record<string, string | undefined>) => void;
 	executable?: string;
 	serverArgs?: string[];
+	/**
+	 * Explicit, minimal extra environment merged into the spawned self-update
+	 * helper's own environment -- on top of this process's `process.env`, not
+	 * in place of it -- and never written into the handoff plan file, which is
+	 * disk-persisted JSON. This process's own `process.env` is never mutated
+	 * to carry it either; the merge happens only for this one child spawn.
+	 * Deliberately opaque to this module: the composition root decides what
+	 * belongs here (GSHIP-704 uses it for a boot-time Claude credential
+	 * snapshot already captured out of `process.env`), and `SelfUpdateRuntime`
+	 * never needs to know what any key means to do its own job.
+	 */
+	handoffEnv?: Record<string, string | undefined>;
 }
 
 function isAvailableRelease(value: unknown): value is AvailableRelease {
@@ -303,9 +315,16 @@ function defaultProbeVersion(path: string): string {
 	return (result.stdout ?? '').trim();
 }
 
-function defaultSpawnHelper(executable: string, planPath: string): void {
+function defaultSpawnHelper(
+	executable: string,
+	planPath: string,
+	handoffEnv: Record<string, string | undefined>,
+): void {
 	const child = Bun.spawn([executable, '__self-update-handoff', planPath], {
 		cwd: dirname(planPath),
+		// Merged onto this process's own environment for this one spawn only;
+		// `process.env` itself is never touched (GSHIP-704).
+		env: { ...process.env, ...handoffEnv },
 		stdin: 'ignore',
 		stdout: 'inherit',
 		stderr: 'inherit',
@@ -319,7 +338,7 @@ export class SelfUpdateRuntime {
 	readonly #installation: InstallationAvailability;
 	readonly #now: () => Date;
 	readonly #probeVersion: (path: string) => string;
-	readonly #spawnHelper: (executable: string, planPath: string) => void;
+	readonly #spawnHelper: (executable: string, planPath: string, handoffEnv: Record<string, string | undefined>) => void;
 	#timer: ReturnType<typeof setInterval> | null = null;
 	#checking: Promise<void> | null = null;
 	#applying = false;
@@ -445,7 +464,7 @@ export class SelfUpdateRuntime {
 			}
 			const plan = this.#preparePlan(candidateBytes, release);
 			this.#applying = true;
-			this.#spawnHelper(this.#installation.executable, plan.path);
+			this.#spawnHelper(this.#installation.executable, plan.path, this.#options.handoffEnv ?? {});
 			this.#options.requestShutdown?.();
 			// The fence intentionally stays closed until this process exits. The new
 			// process reconstructs ordinary admission from durable run state.
@@ -519,7 +538,17 @@ export class SelfUpdateRuntime {
 export interface HandoffDependencies {
 	waitForExit: (pid: number, timeoutMs: number) => Promise<boolean>;
 	swap: (from: string, to: string) => void;
-	start: (executable: string, args: string[], cwd: string) => { pid: number; stop: () => void; unref: () => void };
+	/**
+	 * `env` is the same explicit, minimal `handoffEnv` `executeSelfUpdateHandoff`
+	 * received (GSHIP-704): merged onto this (helper) process's own
+	 * environment for this one spawn, never written to the handoff plan.
+	 */
+	start: (
+		executable: string,
+		args: string[],
+		cwd: string,
+		env: Record<string, string | undefined>,
+	) => { pid: number; stop: () => void; unref: () => void };
 	probe: (url: string, version: string, commit: string | null, timeoutMs: number) => Promise<boolean>;
 	persist: (plan: HandoffPlan, result: SelfUpdateResult) => Promise<void>;
 	cleanup: (path: string) => void;
@@ -534,8 +563,22 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
 	return false;
 }
 
-function startServer(executable: string, args: string[], cwd: string) {
-	const child = Bun.spawn([executable, ...args], { cwd, stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+function startServer(
+	executable: string,
+	args: string[],
+	cwd: string,
+	env: Record<string, string | undefined>,
+) {
+	const child = Bun.spawn([executable, ...args], {
+		cwd,
+		// Merged onto this (helper) process's own environment for this one
+		// spawn only, so the successor server receives it at its own boot
+		// (GSHIP-704); this process's own `process.env` is never mutated.
+		env: { ...process.env, ...env },
+		stdin: 'ignore',
+		stdout: 'inherit',
+		stderr: 'inherit',
+	});
 	return {
 		pid: child.pid,
 		stop: () => { try { child.kill('SIGTERM'); } catch { /* already gone */ } },
@@ -643,12 +686,13 @@ async function restorePrevious(
 	plan: HandoffPlan,
 	dependencies: HandoffDependencies,
 	backedUp: number,
+	handoffEnv: Record<string, string | undefined>,
 ): Promise<void> {
 	for (let index = backedUp - 1; index >= 0; index -= 1) {
 		dependencies.cleanup(plan.publicPaths[index]!);
 		dependencies.swap(plan.backupPaths[index]!, plan.publicPaths[index]!);
 	}
-	const previous = dependencies.start(plan.currentExecutable, restoredServerArgs(plan), plan.cwd);
+	const previous = dependencies.start(plan.currentExecutable, restoredServerArgs(plan), plan.cwd, handoffEnv);
 	if (await dependencies.probe(plan.healthUrl, plan.previousVersion, plan.previousCommit, plan.timeoutMs)) {
 		previous.unref();
 		return;
@@ -660,8 +704,9 @@ async function restorePrevious(
 async function runInstalledCandidate(
 	plan: HandoffPlan,
 	dependencies: HandoffDependencies,
+	handoffEnv: Record<string, string | undefined>,
 ): Promise<SelfUpdateResult> {
-	const candidate = dependencies.start(plan.currentExecutable, candidateServerArgs(plan), plan.cwd);
+	const candidate = dependencies.start(plan.currentExecutable, candidateServerArgs(plan), plan.cwd, handoffEnv);
 	if (!await dependencies.probe(plan.healthUrl, plan.targetVersion, plan.targetCommit, plan.timeoutMs)) {
 		candidate.stop();
 		await dependencies.waitForExit(candidate.pid, plan.timeoutMs);
@@ -690,10 +735,11 @@ async function rollbackResult(
 	dependencies: HandoffDependencies,
 	backedUp: number,
 	cause: unknown,
+	handoffEnv: Record<string, string | undefined>,
 ): Promise<SelfUpdateResult> {
 	const causeText = cause instanceof Error ? cause.message : String(cause);
 	try {
-		await restorePrevious(plan, dependencies, backedUp);
+		await restorePrevious(plan, dependencies, backedUp, handoffEnv);
 		return await persistResult(
 			plan,
 			dependencies,
@@ -711,9 +757,17 @@ async function rollbackResult(
 	}
 }
 
+/**
+ * `handoffEnv` is the same explicit, minimal environment the spawning
+ * process gave this helper (GSHIP-704): forwarded, unmodified, to the
+ * successor server this handoff starts (and to the restored previous
+ * binary, on rollback) -- merged onto each spawn's own environment, never
+ * read back out of the handoff plan file, and never written into it.
+ */
 export async function executeSelfUpdateHandoff(
 	plan: HandoffPlan,
 	dependencies: HandoffDependencies = DEFAULT_HANDOFF_DEPENDENCIES,
+	handoffEnv: Record<string, string | undefined> = {},
 ): Promise<SelfUpdateResult> {
 	if (!await dependencies.waitForExit(plan.oldPid, plan.timeoutMs)) {
 		cleanupPreparedHandoff(plan, dependencies);
@@ -727,9 +781,9 @@ export async function executeSelfUpdateHandoff(
 	const progress = { backedUp: 0 };
 	try {
 		installCandidate(plan, dependencies, progress);
-		return await runInstalledCandidate(plan, dependencies);
+		return await runInstalledCandidate(plan, dependencies, handoffEnv);
 	} catch (error) {
-		return rollbackResult(plan, dependencies, progress.backedUp, error);
+		return rollbackResult(plan, dependencies, progress.backedUp, error, handoffEnv);
 	} finally {
 		for (const candidate of plan.candidatePaths) dependencies.cleanup(candidate);
 	}

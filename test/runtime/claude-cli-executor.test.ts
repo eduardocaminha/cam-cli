@@ -452,6 +452,52 @@ describe('Claude CLI runtime executor', () => {
 		expect(JSON.stringify(events)).not.toContain('/not-persisted');
 	});
 
+	// GSHIP-704: the dedicated Claude subscription token reaches the real
+	// executor child, riding alongside CLAUDE_CONFIG_DIR -- CLAUDE_CONFIG_DIR
+	// also carries session/`--resume` state, so it is never displaced; the
+	// same boundary `buildClaudeEnv` enforces, now proven end to end through a
+	// real spawned process instead of only through the pure env-builder.
+	test('carries the dedicated credential to the real executor child, alongside CLAUDE_CONFIG_DIR', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-704"}',
+			sourceEnv: { ...process.env, CLAUDE_CONFIG_DIR: '/operator/claude' },
+			resolveClaudeCredential: () => 'sk-ant-oat01-executor-secret',
+		});
+		const result = await executor.execute({
+			runId: 'run-704',
+			issueId: 'CAM-704',
+			sessionId: 'session-704',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-credential-executor-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { env } = JSON.parse(result.summary as string) as { env: Record<string, string | null> };
+		expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-executor-secret');
+		expect(env.CLAUDE_CONFIG_DIR).toBe('/operator/claude');
+	});
+
+	test('an unconfigured credential leaves CLAUDE_CONFIG_DIR reaching the child exactly as before this issue', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-705"}',
+			sourceEnv: { ...process.env, CLAUDE_CONFIG_DIR: '/operator/claude' },
+		});
+		const result = await executor.execute({
+			runId: 'run-705',
+			issueId: 'CAM-705',
+			sessionId: 'session-705',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-no-credential-executor-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { env } = JSON.parse(result.summary as string) as { env: Record<string, string | null> };
+		expect(env.CLAUDE_CONFIG_DIR).toBe('/operator/claude');
+		expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeFalsy();
+	});
+
 	// GSHIP-627: only the raw stream kinds declare activity; the turn's own
 	// bookkeeping kinds declare nothing and default to decision downstream.
 	test('declares activity only for the streamed system and assistant events', async () => {

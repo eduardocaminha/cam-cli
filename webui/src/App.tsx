@@ -238,6 +238,9 @@ export interface AppProps {
 	onCancel: () => void;
 	onShip: () => void;
 	onConnectCodex: () => void;
+	/** Connect, reconnect and rotate the dedicated Claude credential (GSHIP-704) all share this one call. */
+	onConnectClaudeCredential: (token: string) => void;
+	onDisconnectClaudeCredential: () => void;
 	onEnableNotifications: () => void;
 	onSendNotificationTest: (channelId: NotificationChannelId) => void;
 	onSaveResendSettings: (input: { from: string; to: string; apiKey: string }) => void;
@@ -1135,7 +1138,8 @@ function WorkspaceNoticesPanel({
 
 type ProviderPanelProps = Pick<
 	AppProps,
-	'providers' | 'selectedProvider' | 'pending' | 'onConnectCodex' | 'onSelectProvider'
+	| 'providers' | 'selectedProvider' | 'pending' | 'onConnectCodex' | 'onSelectProvider'
+	| 'onConnectClaudeCredential' | 'onDisconnectClaudeCredential'
 >;
 
 function providerDescription(provider: ProviderStatusView, catalog: SettingsCatalog): string {
@@ -1236,6 +1240,162 @@ function ProviderUsageDetail({ usage, locale, catalog }: { usage: ProviderUsageV
 	);
 }
 
+/**
+ * Read-only whenever `CLAUDE_CODE_OAUTH_TOKEN` is set in the service's own
+ * environment (GSHIP-704): it always wins over the file, so a Settings write
+ * here would create or remove a file with no effect on what actually
+ * authenticates. The service refuses the write server-side too (PUT/DELETE
+ * both answer 409 `env-managed`); this component keeps Ajustes from ever
+ * offering an action that route would reject.
+ */
+function ClaudeCredentialEnvManagedNotice({
+	provider,
+	text,
+}: {
+	provider: ProviderStatusView;
+	text: SettingsCatalog['providers']['claudeCredential'];
+}): React.ReactElement {
+	return (
+		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+			<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
+			<p className="text-muted-foreground text-xs">{text.envManaged}</p>
+		</div>
+	);
+}
+
+/**
+ * Ajustes > Providers universal onboarding for a dedicated Claude
+ * subscription (GSHIP-704). `rotating` is local, ephemeral UI state -- never
+ * lifted to `AppProps` -- the same "reveal a form behind a button" pattern
+ * `IssueReviewForm`'s own confirm gate already uses. Connect, reconnect and
+ * rotate all submit through the one `onConnectClaudeCredential` call; the
+ * server validates the candidate token before persisting it and never
+ * returns it, so this form is write-only exactly like the Resend key field.
+ */
+function ClaudeCredentialSection({
+	provider,
+	pending,
+	onConnectClaudeCredential,
+	onDisconnectClaudeCredential,
+	catalog,
+}: {
+	provider: ProviderStatusView;
+	pending: boolean;
+	onConnectClaudeCredential: AppProps['onConnectClaudeCredential'];
+	onDisconnectClaudeCredential: AppProps['onDisconnectClaudeCredential'];
+	catalog: SettingsCatalog;
+}): React.ReactElement {
+	const text = catalog.providers.claudeCredential;
+	const [rotating, setRotating] = useState(false);
+	const [token, setToken] = useState('');
+	const [confirmed, setConfirmed] = useState(false);
+	const connected = provider.login === 'dedicated';
+
+	if (provider.credential?.envManaged === true) {
+		return <ClaudeCredentialEnvManagedNotice provider={provider} text={text} />;
+	}
+
+	if (connected && !rotating) {
+		return (
+			<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+				<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
+				<div className="flex flex-wrap gap-2">
+					{/*
+					 * Rotating opens the same token form Connect uses, which is itself
+					 * only offered while `provider.installed` (below). Gating Rotate
+					 * the same way means `rotating` can only ever become true when
+					 * that form is actually reachable, so Disconnect -- the one
+					 * escape from a connected card -- is never left unrenderable with
+					 * the Claude CLI absent (installed:false + login:'dedicated' is a
+					 * real status claudeStatus reports on an ENOENT read).
+					 */}
+					{provider.installed ? (
+						<button className={BUTTON_CLASS} onClick={() => setRotating(true)} type="button">{text.rotate}</button>
+					) : null}
+					<button
+						className={BUTTON_CLASS}
+						disabled={pending}
+						onClick={onDisconnectClaudeCredential}
+						type="button"
+					>{text.disconnect}</button>
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex flex-col gap-3 rounded-md border border-border p-3 text-sm">
+			<p className="text-muted-foreground">{text.explanation}</p>
+			{provider.installed ? (
+				<div className="flex flex-col gap-1">
+					<span className="text-muted-foreground text-xs">{text.setupCommandLabel}</span>
+					<div className="flex flex-wrap items-center gap-2">
+						<code className="break-all">claude setup-token</code>
+						<button
+							className={BUTTON_CLASS}
+							onClick={() => {
+								const clipboard = (globalThis as unknown as {
+									navigator?: { clipboard?: { writeText?: (value: string) => Promise<void> } };
+								}).navigator?.clipboard;
+								void clipboard?.writeText?.('claude setup-token');
+							}}
+							type="button"
+						>{text.copyCommand}</button>
+					</div>
+				</div>
+			) : (
+				<p className="text-muted-foreground text-xs">{text.cliMissing}</p>
+			)}
+			{provider.installed ? (
+				<form
+					className="flex flex-col gap-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						onConnectClaudeCredential(token);
+						setToken('');
+						setConfirmed(false);
+						setRotating(false);
+					}}
+				>
+					<label className="flex flex-col gap-1" htmlFor="claude-credential-token">
+						<span className="font-medium">{text.tokenLabel}</span>
+						<input
+							autoComplete="off"
+							className={FIELD_CLASS}
+							disabled={pending}
+							id="claude-credential-token"
+							name="claude-credential-token"
+							onChange={(event) => setToken((event.currentTarget as unknown as { value: string }).value)}
+							placeholder={text.tokenPlaceholder}
+							type="password"
+							value={token}
+						/>
+					</label>
+					<label className="flex items-start gap-2">
+						<input
+							checked={confirmed}
+							name="claude-credential-confirm"
+							onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)}
+							type="checkbox"
+						/>
+						<span>{text.confirm}</span>
+					</label>
+					<div className="flex flex-wrap gap-2">
+						<button
+							className={PRIMARY_BUTTON_CLASS}
+							disabled={pending || token.trim().length === 0 || !confirmed}
+							type="submit"
+						>{connected ? text.rotate : text.connect}</button>
+						{connected ? (
+							<button className={BUTTON_CLASS} onClick={() => setRotating(false)} type="button">{text.cancel}</button>
+						) : null}
+					</div>
+				</form>
+			) : null}
+		</div>
+	);
+}
+
 function ProviderRow({
 	provider,
 	catalog,
@@ -1243,30 +1403,46 @@ function ProviderRow({
 	selectedProvider,
 	pending,
 	onConnectCodex,
+	onConnectClaudeCredential,
+	onDisconnectClaudeCredential,
 	onSelectProvider,
 }: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView; catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
-		<li className="flex items-center justify-between gap-3 text-sm">
-			<div className="min-w-0">
-				<p className="flex flex-wrap items-center gap-2 font-medium">
-					{provider.label}
-					{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
-				</p>
-				<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
-				<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
+		<li className="flex flex-col gap-3 text-sm">
+			<div className="flex items-center justify-between gap-3">
+				<div className="min-w-0">
+					<p className="flex flex-wrap items-center gap-2 font-medium">
+						{provider.label}
+						{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
+						{provider.id === 'claude' ? <Badge variant="outline">{catalog.providers.claudeCredential.originLabels[provider.login]}</Badge> : null}
+					</p>
+					<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
+					<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
+				</div>
+				{provider.id === 'codex' && !provider.subscription && provider.installed ? (
+					<ActionButton enabled={!pending} label={catalog.providers.connectChatGpt} onClick={onConnectCodex} />
+				) : null}
+				{provider.subscription && provider.id !== selectedProvider ? (
+					<ActionButton
+						enabled={!pending}
+						label={catalog.providers.useProvider(provider.label)}
+						onClick={() => onSelectProvider(provider.id)}
+					/>
+				) : null}
 			</div>
-			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
-				<ActionButton enabled={!pending} label={catalog.providers.connectChatGpt} onClick={onConnectCodex} />
-			) : null}
-			{provider.id === 'claude' && !provider.subscription && provider.installed ? (
-				<code className="break-all text-muted-foreground">claude auth login</code>
-			) : null}
-			{provider.subscription && provider.id !== selectedProvider ? (
-				<ActionButton
-					enabled={!pending}
-					label={catalog.providers.useProvider(provider.label)}
-					onClick={() => onSelectProvider(provider.id)}
+			{provider.id === 'claude' ? (
+				<ClaudeCredentialSection
+					catalog={catalog}
+					onConnectClaudeCredential={onConnectClaudeCredential}
+					onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+					pending={pending}
+					provider={provider}
 				/>
+			) : null}
+			{provider.id === 'claude' && provider.login !== 'dedicated' && provider.installed ? (
+				<p className="text-muted-foreground text-xs">
+					{catalog.providers.claudeCredential.advancedTitle}: <code className="break-all">claude auth login</code>
+				</p>
 			) : null}
 		</li>
 	);
@@ -1286,7 +1462,9 @@ function ProvidersPanel(props: ProviderPanelProps & { catalog: SettingsCatalog; 
 						catalog={props.catalog}
 						key={provider.id}
 						locale={props.locale}
+						onConnectClaudeCredential={props.onConnectClaudeCredential}
 						onConnectCodex={props.onConnectCodex}
+						onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
 						onSelectProvider={props.onSelectProvider}
 						pending={props.pending}
 						provider={provider}
@@ -3526,7 +3704,9 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 			<ProvidersPanel
 				catalog={catalog}
 				locale={props.locale}
+				onConnectClaudeCredential={props.onConnectClaudeCredential}
 				onConnectCodex={props.onConnectCodex}
+				onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
 				onSelectProvider={props.onSelectProvider}
 				pending={props.pending}
 				providers={props.providers}
