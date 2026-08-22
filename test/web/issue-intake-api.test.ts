@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { IssueIntakeError } from '../../src/runtime/issue-intake.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -424,6 +425,67 @@ describe('operator issue intake API', () => {
 			});
 			expect(response.status).toBe(200);
 			expect(received).toEqual(['CAM-42']);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('agent approval requires explicit authorization and the current fingerprint', async () => {
+		const received: string[] = [];
+		const spec = { scope: 'Implement the bounded change.', verify: ['bun test'] };
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-agent-approve-api-'),
+			runRuntime: runtime,
+			issueReader: (id) => ({
+				id,
+				title: 'Agent approval',
+				stage: 'specified',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-08-22T00:00:00.000Z',
+				updatedAt: '2026-08-22T00:00:00.000Z',
+				spec,
+			}),
+			issueApprover: (id) => {
+				received.push(id);
+				return { id, title: 'Agent approval', sha: 'approved-sha' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const headers = {
+			origin,
+			'content-type': 'application/json',
+			'x-gateship-command-source': 'agent-cli',
+		};
+		try {
+			const read = await fetch(`${origin}/api/issues/GSHIP-690`);
+			expect(read.status).toBe(200);
+			expect(await read.json()).toMatchObject({
+				issue: { id: 'GSHIP-690', spec },
+				fingerprint: fingerprintSpec(spec),
+			});
+
+			const missing = await fetch(`${origin}/api/issues/GSHIP-690/approve`, {
+				method: 'POST', headers, body: JSON.stringify({ fingerprint: fingerprintSpec(spec) }),
+			});
+			expect(missing.status).toBe(403);
+			expect(await missing.json()).toMatchObject({ code: 'authorization-required' });
+
+			const stale = await fetch(`${origin}/api/issues/GSHIP-690/approve`, {
+				method: 'POST', headers, body: JSON.stringify({ fingerprint: 'stale', authorization: 'I approve this issue.' }),
+			});
+			expect(stale.status).toBe(409);
+			expect(await stale.json()).toMatchObject({ code: 'fingerprint-mismatch' });
+
+			const approved = await fetch(`${origin}/api/issues/GSHIP-690/approve`, {
+				method: 'POST', headers,
+				body: JSON.stringify({ fingerprint: fingerprintSpec(spec), authorization: 'I approve this issue.' }),
+			});
+			expect(approved.status).toBe(200);
+			expect(received).toEqual(['GSHIP-690']);
 		} finally {
 			await handle.stop();
 			runtime.close();

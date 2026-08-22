@@ -190,6 +190,7 @@ export interface CreateRunInput {
 	sessionId: string;
 	providerId?: AgentProviderId;
 	workflowRevision?: string;
+	source?: string;
 	workspacePath: string;
 	createdAt: string;
 }
@@ -879,9 +880,12 @@ export class RunStore {
 
 	createRun(input: CreateRunInput): { run: RunRecord; event: RunEvent } {
 		const workflowRevision = input.workflowRevision?.trim();
-		const createdPayload = workflowRevision === undefined || workflowRevision.length === 0
-			? {}
-			: { workflowRevision: workflowRevision.slice(0, 200) };
+		const source = input.source?.trim();
+		const createdPayload = {
+			...(workflowRevision === undefined || workflowRevision.length === 0
+				? {} : { workflowRevision: workflowRevision.slice(0, 200) }),
+			...(source === undefined || source.length === 0 ? {} : { source: source.slice(0, 100) }),
+		};
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
 				INSERT INTO runs (

@@ -113,6 +113,26 @@ sign-in belong in the web interface rather than separate CLI subcommands.
 The operator name and IANA timezone are optional settings: the browser suggests
 its timezone, but Gateship stores it only after an explicit save.
 
+### Agent CLI
+
+Shell-capable agents can use the running service through the versioned,
+machine-readable interface without starting another runtime or reading
+`.gship` directly:
+
+```bash
+gship agent guide
+gship agent operations
+gship agent call status.get
+gship agent call issues.get --input '{"issueId":"GSHIP-690"}'
+```
+
+A minimal reusable instruction for Codex or Claude Code is: “Run
+`gship agent guide`, consult `status.get` before acting, use this CLI as the
+source of truth, never edit `.gship` directly, and never invent operator
+approval.” Every agent command emits one JSON object without ANSI or progress
+output. Use `--url http://127.0.0.1:PORT` when the existing local service uses
+a different port.
+
 From the browser you can:
 
 1. describe the work once, in conversation with a read-only orchestrator that
