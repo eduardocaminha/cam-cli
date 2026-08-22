@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-705",
+  "title": "Corrigir validação de token dedicado do Claude",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-22T21:57:40.417Z",
+  "updatedAt": "2026-08-22T21:57:40.417Z",
+  "description": "Corrigir a regressão da GSHIP-704 no onboarding da credencial dedicada. A validação deve reconhecer CLAUDE_CODE_OAUTH_TOKEN gerado por `claude setup-token` como `authMethod: oauth_token`, sem exigir `claude.ai`. Como o token é limitado a inferência e pode não expor email, organização ou plano, a UI e a API não devem prometer esses campos: devem confirmar apenas que a credencial dedicada foi validada para inferência e informar honestamente quando a identidade não estiver disponível. `claude auth status` não basta, pois pode reportar login para um token que falha na API; validar com uma chamada mínima real de inferência, isolada de credenciais ambientais e sem ferramentas, mantendo fail-closed. Se a validação falhar, não persistir nem apagar o token digitado, manter a confirmação e renderizar o erro junto ao campo. Em sucesso, persistir como já definido, nunca retornar ou registrar o token. Preservar isolamento entre Gateship, Claude Desktop e terminal, precedência da credencial dedicada, permissões 0600, suporte multi-OS e sanitização dos comandos de projeto. Fora de escopo: obter identidade por escopo adicional, armazenar refresh token, alterar limites de assinatura ou criar um segundo fluxo de autenticação.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir a regressão da GSHIP-704 no onboarding da credencial dedicada. A validação deve reconhecer CLAUDE_CODE_OAUTH_TOKEN gerado por `claude setup-token` como `authMethod: oauth_token`, sem exigir `claude.ai`. Como o token é limitado a inferência e pode não expor email, organização ou plano, a UI e a API não devem prometer esses campos: devem confirmar apenas que a credencial dedicada foi validada para inferência e informar honestamente quando a identidade não estiver disponível. `claude auth status` não basta, pois pode reportar login para um token que falha na API; validar com uma chamada mínima real de inferência, isolada de credenciais ambientais e sem ferramentas, mantendo fail-closed. Se a validação falhar, não persistir nem apagar o token digitado, manter a confirmação e renderizar o erro junto ao campo. Em sucesso, persistir como já definido, nunca retornar ou registrar o token. Preservar isolamento entre Gateship, Claude Desktop e terminal, precedência da credencial dedicada, permissões 0600, suporte multi-OS e sanitização dos comandos de projeto. Fora de escopo: obter identidade por escopo adicional, armazenar refresh token, alterar limites de assinatura ou criar um segundo fluxo de autenticação.",
+    "verify": [
+      "bun test test/runtime/provider-auth.test.ts test/web/provider-auth.test.ts test/web/ui-client.test.tsx test/runtime/child-env.test.ts && bun run typecheck && bun run lint"
+    ]
+  }
+}
