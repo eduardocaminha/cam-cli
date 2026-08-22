@@ -9,6 +9,7 @@
 // through parseWebArgs/DEFAULT_WEB_PORT, without opening a socket.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseWebArgs } from '../../index.ts';
@@ -20,6 +21,7 @@ import {
 	startWebServer,
 	WEB_HOSTNAME,
 } from '../../src/commands/web.ts';
+import { GATESHIP_HOME_ENV_VAR, openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
@@ -31,6 +33,22 @@ interface SpawnedWebCli {
 	readyUrl: Promise<string>;
 	stdoutText: Promise<string>;
 	stderrText: Promise<string>;
+}
+
+interface WebProcessFixture {
+	cwd: string;
+	gateshipHome: string;
+}
+
+function createWebProcessFixture(prefix: string): WebProcessFixture {
+	return {
+		cwd: createTestTmpdir(`${prefix}-project-`),
+		gateshipHome: createTestTmpdir(`${prefix}-home-`),
+	};
+}
+
+function fixtureEnv(fixture: WebProcessFixture): Record<string, string | undefined> {
+	return { ...process.env, [GATESHIP_HOME_ENV_VAR]: fixture.gateshipHome };
 }
 
 async function collectTextUntilClose(
@@ -60,9 +78,10 @@ function reserveEphemeralPort(): number {
 	return port;
 }
 
-function spawnWebCli(args: string[]): SpawnedWebCli {
+function spawnWebCli(args: string[], fixture = createWebProcessFixture('gship-web-cli')): SpawnedWebCli {
 	const proc = Bun.spawn(['bun', INDEX_TS, ...args], {
-		cwd: createTestTmpdir('gship-web-cli-'),
+		cwd: fixture.cwd,
+		env: fixtureEnv(fixture),
 		stdin: 'ignore',
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -107,13 +126,13 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T
 	}
 }
 
-async function launchAndTerminate(args: string[]): Promise<{
+async function launchAndTerminate(args: string[], fixture?: WebProcessFixture): Promise<{
 	url: string;
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 }> {
-	const launched = spawnWebCli(args);
+	const launched = spawnWebCli(args, fixture);
 	const url = await withTimeout(launched.readyUrl);
 	const response = await fetch(url);
 	expect(response.status).toBe(200);
@@ -155,12 +174,26 @@ describe('web server launch', () => {
 	});
 
 	test('bun index.ts binds the requested port and exits 143 on SIGTERM', async () => {
+		const fixture = createWebProcessFixture('gship-web-requested-port');
 		const port = reserveEphemeralPort();
-		const result = await launchAndTerminate([`--port=${port}`]);
+		const result = await launchAndTerminate([`--port=${port}`], fixture);
 		expect(result.url).toBe(`http://127.0.0.1:${port}`);
 		expect(result.stdout).toContain(`http://127.0.0.1:${port}`);
 		expect(result.stderr).toBe('');
 		expect(result.exitCode).toBe(143);
+
+		const registry = openProjectRegistry(fixture.gateshipHome);
+		try {
+			const projects = registry.list(fixture.cwd);
+			expect(projects).toHaveLength(1);
+			expect(projects[0]).toMatchObject({
+				root: realpathSync(fixture.cwd),
+				stateDir: join(fixture.cwd, '.gship'),
+				current: true,
+			});
+		} finally {
+			registry.close();
+		}
 	}, 10_000);
 
 	// The default entry takes no options, so its target is always DEFAULT_WEB_PORT
@@ -200,8 +233,10 @@ describe('web server launch', () => {
 	test.each(['0', '-1', 'NaN', 'Infinity'])(
 		'rejects invalid CLI --port value %s with a named diagnostic',
 		(value) => {
+			const fixture = createWebProcessFixture('gship-web-invalid-port');
 			const result = Bun.spawnSync(['bun', INDEX_TS, '--port', value], {
-				cwd: createTestTmpdir('gship-web-invalid-port-'),
+				cwd: fixture.cwd,
+				env: fixtureEnv(fixture),
 				stdout: 'pipe',
 				stderr: 'pipe',
 			});
@@ -211,11 +246,16 @@ describe('web server launch', () => {
 	);
 
 	test('an occupied port fails nonzero with a --port diagnostic', async () => {
-		const cwd = createTestTmpdir('gship-web-occupied-');
-		const occupied = startWebServer({ port: 0, cwd });
+		const fixture = createWebProcessFixture('gship-web-occupied');
+		const occupied = startWebServer({
+			port: 0,
+			cwd: fixture.cwd,
+			gateshipHome: fixture.gateshipHome,
+		});
 		try {
 			const result = Bun.spawnSync(['bun', INDEX_TS, `--port=${occupied.port}`], {
-				cwd,
+				cwd: fixture.cwd,
+				env: fixtureEnv(fixture),
 				stdout: 'pipe',
 				stderr: 'pipe',
 			});
