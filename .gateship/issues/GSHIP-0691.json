@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T09:36:38.806Z",
-  "updatedAt": "2026-08-22T09:36:38.806Z",
+  "updatedAt": "2026-08-22T10:43:40.111Z",
   "description": "Corrigir a economia de contexto do gship agent observada no teste real da v0.320.0. Hoje issues.list pagina a resposta, mas devolve description e spec completos; cinco issues produziram 20.479 bytes. runs.list também devolve registros completos e cinco runs produziram 9.174 bytes. O limite global de 64 KiB evita explosão ilimitada, mas não torna o caminho normal econômico em tokens.\\n\\nProjetar respostas específicas para agentes, sem alterar as rotas e payloads usados pela web. issues.list deve retornar somente id, title, stage, status, blockedBy, updatedAt e indicação de aprovação; description, spec, evidence e approval fingerprint ficam apenas em issues.get. runs.list deve retornar somente id, issueId, state, providerId, fixRounds, updatedAt, uma summary curta e pullRequest com url/ciStatus; workspacePath, sessionId, breakdowns, roles e históricos ficam fora da lista.\\n\\nAdicionar runs.get com input {runId}, retornando um único registro completo e limitado, para que a compactação da lista não remova acesso a detalhe. status.get deve projetar somente versão, contagens do backlog, ids/títulos plannable, resumo da run ativa e solicitações de atenção; não devolver scopes, specs ou evidence de drafts. Atualizar o guide para instruir o agente a usar listas para descoberta e operações get para detalhe.\\n\\nManter paginação sob demanda, JSON único, códigos de erro e o teto defensivo existente. Adicionar testes com fixtures deliberadamente grandes provando que issues.list, runs.list e status.get não contêm os campos detalhados e permanecem abaixo de 12 KiB na página padrão; issues.get e runs.get preservam acesso ao detalhe. Testar run inexistente como erro estruturado.\\n\\nFora de escopo: MCP, compressão, cache, banco novo, alterar a interface web, remover dados das rotas HTTP existentes, sumarização por modelo e mudar operações de mutação.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/commands/agent.test.ts test/web/run-api.test.ts && bun run typecheck && bun run lint"
     ]
+  },
+  "approval": {
+    "fingerprint": "14d73b1a633d17679151aa9cc737441e310ba9688e1c91a0f15ac479a07cd07d",
+    "approvedAt": "2026-08-22T10:43:40.111Z"
   }
 }
