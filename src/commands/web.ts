@@ -878,9 +878,12 @@ function claudeCredentialEnvManagedResponse(): Response {
  * Connect, reconnect and rotate all land on this one write-only route
  * (GSHIP-704): the candidate token is validated against Claude's own service,
  * in isolation from any ambient login, before anything is persisted, and the
- * response never carries the token back -- only the account, organization
- * and plan the operator is confirming, exactly like the write-only Resend
- * key above.
+ * response never carries the token back. What it confirms is exactly what
+ * was demonstrated (GSHIP-705) -- that this credential was accepted for one
+ * real inference call -- plus `identity` only when Claude actually reported
+ * some. A token from `claude setup-token` is limited to inference and
+ * commonly reports none, so `identity` is omitted rather than promised as
+ * empty fields a client could read as "no account".
  */
 async function connectClaudeCredential(
 	request: Request,
@@ -888,9 +891,16 @@ async function connectClaudeCredential(
 	gateshipHome: string,
 	/** The `captureBootClaudeToken` snapshot -- `process.env` no longer carries this value after boot. */
 	claudeEnv: Record<string, string | undefined>,
+	server: Pick<Bun.Server<unknown>, 'timeout'>,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	if (resolveClaudeCredentialStatus(claudeEnv).envManaged) return claudeCredentialEnvManagedResponse();
+	// Bun closes quiet responses after ten seconds by default, and validating a
+	// candidate token means waiting on a real model round trip (GSHIP-705),
+	// which the runtime bounds with its own timeout instead. Without this the
+	// connection would drop mid-validation and read as a failed connect for a
+	// token the service was still checking.
+	server.timeout(request, 0);
 	let body: unknown;
 	try {
 		body = await request.json();
@@ -922,9 +932,8 @@ async function connectClaudeCredential(
 	}
 	return Response.json({
 		ok: true,
-		account: validation.account,
-		organization: validation.organization,
-		plan: validation.plan,
+		validated: 'inference',
+		...(validation.identity === undefined ? {} : { identity: validation.identity }),
 	});
 }
 
@@ -2833,7 +2842,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// (GSHIP-704) all share this write-only PUT; DELETE is the explicit
 			// disconnect. Both are same-origin like every other mutating route.
 			'/api/providers/claude/credential': {
-				PUT: (request) => connectClaudeCredential(request, providerAuth, gateshipHome, bootClaudeEnv),
+				PUT: (request, requestServer) =>
+					connectClaudeCredential(request, providerAuth, gateshipHome, bootClaudeEnv, requestServer),
 				DELETE: (request) => disconnectClaudeCredential(request, gateshipHome, bootClaudeEnv),
 			},
 			'/api/issues': {

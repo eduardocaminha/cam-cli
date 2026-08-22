@@ -335,6 +335,8 @@ export interface SettingsCatalog {
 		/** Ajustes > Providers universal onboarding for a dedicated Claude subscription (GSHIP-704), isolated from Claude Desktop's or the terminal's own OAuth/Keychain login. */
 		claudeCredential: {
 			explanation: string;
+			/** GSHIP-705: what the check actually proves, and why no account may be promised with it. */
+			inferenceOnly: string;
 			cliMissing: string;
 			setupCommandLabel: string;
 			copyCommand: string;
@@ -774,6 +776,7 @@ export const LOCALE_CATALOG = {
 				usedPercent: (formatted) => `${formatted} used`, resets: 'resets', asOf: 'as of', credits: 'Credits', unlimited: 'unlimited', available: 'available', none: 'none', spendLimit: (used, limit, remainingPercent) => `Spend limit: ${used} of ${limit} (${remainingPercent} remaining)`, resetCredits: (_count, formatted) => `${formatted} reset credit(s) available`,
 				claudeCredential: {
 					explanation: 'A dedicated subscription token keeps Gateship\'s own Claude access separate from Claude Desktop\'s or the terminal\'s login. Generate one on this host and paste it once below; it is never shown again.',
+					inferenceOnly: 'Gateship checks the token with one minimal Claude call, without tools. A setup token is limited to inference, so Claude may report no email, organization or plan for it -- that is expected, not a failed connection.',
 					cliMissing: 'Claude CLI not found. Install it before connecting a dedicated subscription.',
 					setupCommandLabel: 'Run this command, then paste the printed token below:',
 					copyCommand: 'Copy command',
@@ -1145,6 +1148,7 @@ export const LOCALE_CATALOG = {
 				usedPercent: (formatted) => `${formatted} usados`, resets: 'reinicia', asOf: 'observado em', credits: 'Créditos', unlimited: 'ilimitados', available: 'disponíveis', none: 'nenhum', spendLimit: (used, limit, remainingPercent) => `Limite de gastos: ${used} de ${limit} (${remainingPercent} restantes)`, resetCredits: (count, formatted) => `${formatted} ${count === 1 ? 'crédito de reinício disponível' : 'créditos de reinício disponíveis'}`,
 				claudeCredential: {
 					explanation: 'Um token de assinatura dedicado mantém o acesso do Gateship ao Claude separado do login do Claude Desktop ou do terminal. Gere um neste host e cole-o uma única vez abaixo; ele não é mostrado novamente.',
+					inferenceOnly: 'O Gateship verifica o token com uma chamada mínima ao Claude, sem ferramentas. Um token de configuração é limitado a inferência, então o Claude pode não informar e-mail, organização ou plano para ele -- isso é esperado, não uma conexão que falhou.',
 					cliMissing: 'Claude CLI não encontrado. Instale-o antes de conectar uma assinatura dedicada.',
 					setupCommandLabel: 'Execute este comando e cole o token impresso abaixo:',
 					copyCommand: 'Copiar comando',

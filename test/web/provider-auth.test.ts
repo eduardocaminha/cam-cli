@@ -253,9 +253,7 @@ describe('provider auth web API', () => {
 describe('dedicated Claude credential web API', () => {
 	function fakeAuthValidating(outcome: {
 		ok: boolean;
-		account?: string;
-		organization?: string;
-		plan?: string;
+		identity?: { account?: string; organization?: string; plan?: string };
 		message?: string;
 	}): ProviderAuth {
 		return {
@@ -280,12 +278,10 @@ describe('dedicated Claude credential web API', () => {
 		return { handle, runtime, gateshipHome, origin: `http://${handle.hostname}:${handle.port}` };
 	}
 
-	test('validates before persisting, then reports account, organization and plan for confirmation -- never the token', async () => {
+	test('validates before persisting, then confirms what was validated -- never the token', async () => {
 		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({
 			ok: true,
-			account: 'alice@example.com',
-			organization: 'Acme',
-			plan: 'max',
+			identity: { account: 'alice@example.com', organization: 'Acme', plan: 'max' },
 		}));
 		try {
 			const response = await fetch(`${origin}/api/providers/claude/credential`, {
@@ -297,9 +293,8 @@ describe('dedicated Claude credential web API', () => {
 			const body = await response.json();
 			expect(body).toEqual({
 				ok: true,
-				account: 'alice@example.com',
-				organization: 'Acme',
-				plan: 'max',
+				validated: 'inference',
+				identity: { account: 'alice@example.com', organization: 'Acme', plan: 'max' },
 			});
 			expect(JSON.stringify(body)).not.toContain('sk-ant-oat01-super-secret');
 			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(true);
@@ -341,8 +336,28 @@ describe('dedicated Claude credential web API', () => {
 		}
 	});
 
+	// GSHIP-705: an inference-limited token exposes no email, organization or
+	// plan. The route confirms exactly what it validated and omits identity
+	// rather than promising empty fields a client could read as "no account".
+	test('confirms a validated credential that exposes no identity, without inventing one', async () => {
+		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({ ok: true }));
+		try {
+			const response = await fetch(`${origin}/api/providers/claude/credential`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ token: 'sk-ant-oat01-anonymous' }),
+			});
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ ok: true, validated: 'inference' });
+			expect(existsSync(join(gateshipHome, 'claude-credential'))).toBe(true);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('disconnect removes the file-backed credential and reports whether one was present', async () => {
-		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({ ok: true, account: 'a@x.com' }));
+		const { handle, runtime, gateshipHome, origin } = await serverWithHome(fakeAuthValidating({ ok: true }));
 		try {
 			await fetch(`${origin}/api/providers/claude/credential`, {
 				method: 'PUT',
@@ -461,7 +476,7 @@ describe('dedicated Claude credential web API', () => {
 			...fakeAuth(),
 			validateClaudeCredential: async () => {
 				calls += 1;
-				return { ok: true, account: 'unused@example.com' };
+				return { ok: true, identity: { account: 'unused@example.com' } };
 			},
 		};
 		let handle: Awaited<ReturnType<typeof serverWithHome>>['handle'] | undefined;

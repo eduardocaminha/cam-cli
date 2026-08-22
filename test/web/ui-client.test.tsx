@@ -28,7 +28,9 @@ import {
 	type ChainRunsView,
 	cancelDiagnostic,
 	commandRun,
+	connectClaudeCredential,
 	createIssue,
+	describeClaudeCredentialConfirmation,
 	DIAGNOSTIC_FINDINGS_PATH,
 	DIAGNOSTIC_SCHEDULE_PATH,
 	DIAGNOSTICS_PATH,
@@ -256,7 +258,9 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onAbandon={() => {}}
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
-			onConnectClaudeCredential={() => {}}
+			claudeCredentialError={null}
+			onConnectClaudeCredential={() => Promise.resolve(true)}
+			onDismissClaudeCredentialError={() => {}}
 			onDisconnectClaudeCredential={() => {}}
 			onCreateIssue={() => {}}
 			onApproveIssue={() => {}}
@@ -2295,6 +2299,28 @@ describe('settings surface', () => {
 		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(true);
 	});
 
+	// GSHIP-705: one missing `claude` binary produces both halves of this state
+	// at once -- the ENOENT fails the validation closed, and the status read
+	// right after it reports installed:false while the configured credential
+	// keeps login:'dedicated'. The refusal is now App-level state, so unlike
+	// the old component-local rotating flag it survives leaving Ajustes and
+	// coming back: if it hid Disconnect, nothing short of a reload would free
+	// the operator.
+	test('keeps Disconnect and the refusal visible when a refusal arrives with the Claude CLI absent', () => {
+		const providers = panel(settingsPage({
+			claudeCredentialError: 'spawn claude ENOENT',
+			providers: [
+				{ id: 'claude', installed: false, subscription: false, label: 'Claude Code', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(true);
+		expect(hasButton(providers, 'Rotate')).toBe(false);
+		expect(providers).toContain('spawn claude ENOENT');
+		expect(providers).toContain('role="alert"');
+	});
+
 	test('fails closed: a dedicated credential that no longer authenticates asks to reconnect, never falling back to external login silently', () => {
 		const providers = panel(settingsPage({
 			providers: [
@@ -2306,6 +2332,53 @@ describe('settings surface', () => {
 		expect(providers).toContain('Dedicated credential needs reconnecting.');
 		expect(providers).not.toContain('Dedicated subscription connected.');
 		expect(buttonIsEnabled(providers, 'Rotate')).toBe(true);
+	});
+
+	// GSHIP-705: `claude setup-token` prints the token once. Clearing the field
+	// on a refusal would cost the operator the credential itself, so the form
+	// keeps what was typed and carries the service's own refusal beside it.
+	test('keeps the token form open and shows a refusal beside the field it belongs to', () => {
+		const providers = panel(settingsPage({
+			claudeCredentialError: 'Claude refused this token for inference.',
+			providers: [
+				{ id: 'claude', installed: true, subscription: false, label: 'Claude Code', login: 'external' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('name="claude-credential-token"');
+		expect(providers).toContain('Claude refused this token for inference.');
+		expect(providers).toContain('role="alert"');
+	});
+
+	// A refused rotation must not collapse back to the connected card: that
+	// would hide both the refusal and the token the operator still has to fix.
+	test('a refused rotation stays on the form instead of reporting the old credential as connected', () => {
+		const providers = panel(settingsPage({
+			claudeCredentialError: 'OAuth token revoked.',
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', login: 'dedicated' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('name="claude-credential-token"');
+		expect(providers).toContain('OAuth token revoked.');
+		expect(hasButton(providers, 'Rotate')).toBe(true);
+	});
+
+	// GSHIP-705: the token is limited to inference, so the screen may not
+	// promise an email, organization or plan as the sign that it worked.
+	test('says what the check proves, without promising identity a setup token cannot expose', () => {
+		const providers = panel(settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: false, label: 'Claude Code', login: 'external' },
+				{ id: 'codex', installed: false, subscription: false, label: 'Codex', login: 'web' },
+			],
+		}), 'Local agents');
+
+		expect(providers).toContain('one minimal Claude call, without tools');
+		expect(providers).toContain('limited to inference');
 	});
 
 	// GSHIP-704: CLAUDE_CODE_OAUTH_TOKEN always wins over the file, so a
@@ -4042,6 +4115,42 @@ describe('same-origin transport', () => {
 				method: 'POST',
 				body: null,
 			}]);
+		});
+	});
+
+	// GSHIP-705: the connect call resolves only on what the service actually
+	// demonstrated. A token limited to inference reports no identity, and the
+	// confirmation says so instead of leaving an empty account to read as one.
+	test('confirms a dedicated credential by what was validated, not by an identity it may not have', async () => {
+		await withRecordedFetch({ ok: true, validated: 'inference' }, 200, async (calls) => {
+			const confirmation = await connectClaudeCredential('sk-ant-oat01-anonymous');
+			expect(confirmation).toEqual({});
+			expect(describeClaudeCredentialConfirmation(confirmation)).toBe(
+				'Dedicated Claude credential validated for inference. '
+				+ 'Claude reports no account, organization or plan for this token.',
+			);
+			expect(calls).toEqual([{
+				url: `${PROVIDERS_PATH}/claude/credential`,
+				method: 'PUT',
+				body: JSON.stringify({ token: 'sk-ant-oat01-anonymous' }),
+			}]);
+		});
+		await withRecordedFetch({
+			ok: true,
+			validated: 'inference',
+			identity: { account: 'alice@example.com', plan: 'max' },
+		}, 200, async () => {
+			expect(describeClaudeCredentialConfirmation(
+				await connectClaudeCredential('sk-ant-oat01-named'),
+			)).toBe('Dedicated Claude credential validated for inference: alice@example.com · max.');
+		});
+	});
+
+	// A refusal carries the service's own words to the field the operator has
+	// to correct, and never reports a connection that did not happen.
+	test('rejects a refused token with the service\'s own message', async () => {
+		await withRecordedFetch({ ok: false, code: 'invalid-token', message: 'OAuth token revoked.' }, 422, async () => {
+			await expect(connectClaudeCredential('sk-ant-oat01-revoked')).rejects.toThrow('OAuth token revoked.');
 		});
 	});
 

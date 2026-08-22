@@ -71,11 +71,26 @@ claude setup-token
 Paste the printed token once into the masked field in Ajustes > Providers.
 Gateship validates it against Claude's own service in an isolated child
 process -- carrying that candidate token, never a Keychain credential --
-before persisting anything, and shows the resolved account, organization and
-plan for confirmation. Connecting requires an explicit checkbox confirmation,
-so a copy-pasted token cannot silently attach the wrong subscription. The
-token itself is never returned to the browser again, on any outcome: connect,
-reconnect, rotate and disconnect are all write-only.
+before persisting anything. That check is one minimal, real inference call
+with every tool, MCP server, slash command and inherited customization
+disabled: `claude auth status` alone is not enough, because it reports a
+login for a token the API then refuses. Anything short of a completed call --
+a non-zero exit, an error envelope, or output that is not the JSON envelope
+the CLI promises -- is a refusal, and nothing is persisted.
+
+What Gateship then confirms is exactly what it demonstrated: that this
+credential was accepted for inference. A token from `claude setup-token` is
+limited to inference and commonly exposes no email, organization or plan at
+all, so neither the screen nor the API promises those fields. When the
+isolated status read does report identity it is shown alongside the
+confirmation; when it does not, Gateship says so plainly instead of leaving
+an empty account to be read as a missing one. Connecting still requires an
+explicit checkbox confirmation, so a copy-pasted token cannot silently attach
+the wrong subscription. A refused token is neither persisted nor erased from
+the field: the CLI prints it once, so it stays in place with the refusal
+rendered beside it and the confirmation still checked. The token itself is
+never returned to the browser again, on any outcome: connect, reconnect,
+rotate and disconnect are all write-only.
 
 The token is stored in one file, `claude-credential`, directly under
 `GATESHIP_HOME` -- never inside a project's repository or `.gship` directory,
