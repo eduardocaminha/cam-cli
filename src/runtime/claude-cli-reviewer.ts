@@ -51,6 +51,7 @@ import {
 	resolveModelSlot,
 } from './model-settings.ts';
 import { formatOperatorDecisionList } from './operator-decision.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from './operator-language.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
@@ -172,6 +173,8 @@ export function buildReviewPrompt(
 		'Report a finding only for a defect you can point at in a specific file:',
 		'a real bug, a broken contract, or work outside the issue. Style preference',
 		'and speculation are not findings.',
+		'',
+		...OPERATOR_LANGUAGE_CONTRACT,
 		'',
 		...(decisions.length === 0 ? [] : [
 			'Decisions the operator has already made for this run, oldest first:',

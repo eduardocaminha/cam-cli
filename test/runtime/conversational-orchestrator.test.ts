@@ -11,6 +11,7 @@ import {
 	ORCHESTRATOR_RESULT_SCHEMA,
 	parseOrchestratorResponse,
 } from '../../src/runtime/conversational-orchestrator.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import {
 	emptyOrchestratorHandoff,
@@ -108,9 +109,11 @@ describe('conversational orchestrator', () => {
 			emptyOrchestratorHandoff(),
 			[],
 		);
-		expect(prompt).toContain('Lead with the answer or outcome. Be concise');
-		expect(prompt).toContain('Organize longer answers by topic with short headings');
-		expect(prompt).toContain('Do not use emojis or em dashes.');
+		// GSHIP-703: the shared contract verbatim, not a paraphrase of it, so
+		// this surface cannot drift from the executor, reviewer and cycle
+		// resolver that carry the same lines.
+		expect(prompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
+		expect(prompt).toContain('Lead with the answer or outcome.');
 		expect(prompt).toContain('State facts, inferences, and uncertainty honestly.');
 		expect(prompt).toContain('re-explain the previous answer instead of answering a different question');
 		expect(prompt).toContain('preserve paths, commands, filenames, numbers, and URLs exactly');

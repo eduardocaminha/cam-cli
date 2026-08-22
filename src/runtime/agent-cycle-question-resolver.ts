@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AgentProviderId, AgentSession } from './agent-session.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from './operator-language.ts';
 import type {
 	RuntimeCycleQuestionInput,
 	RuntimeCycleQuestionResolver,
@@ -67,13 +68,15 @@ function usageOf(
 	return usage;
 }
 
-function promptFor(input: RuntimeCycleQuestionInput): string {
+export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): string {
 	return [
 		`Answer one bounded Gateship review-cycle question for run ${input.runId}, issue ${input.issueId}.`,
 		'You are the orchestrator, in a fresh mechanically read-only session. Do not edit files, approve, start, ship, or request tools that mutate state.',
 		'Return continue only with non-empty, concrete guidance that lets the existing executor either make a precise in-scope correction or provide an evidence-backed no-change rebuttal.',
 		'Return operator only when a concrete unresolved product or authority ambiguity requires a human decision, with that ambiguity in reason.',
 		'Do not expose hidden reasoning or credentials.',
+		'',
+		...OPERATOR_LANGUAGE_CONTRACT,
 		'',
 		'Current independent-review finding:',
 		input.finding,
@@ -109,7 +112,7 @@ export class AgentCycleQuestionResolver implements RuntimeCycleQuestionResolver 
 			sessionId: randomUUID(),
 			resume: false,
 			cwd: input.workspace,
-			prompt: promptFor(input),
+			prompt: buildCycleQuestionPrompt(input),
 			access: 'read-only',
 			outputSchema: CYCLE_QUESTION_RESULT_SCHEMA,
 			signal: input.signal,
