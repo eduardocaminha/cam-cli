@@ -1,7 +1,7 @@
 // webui/src/client.ts
 //
-// Same-origin transport for the screen. Reads go to the two existing GET
-// routes; writes go to the existing POST routes, which are the ones already
+// Same-origin transport for the screen. Reads include the global project
+// registry and the current runtime; writes go to the existing POST routes already
 // guarded by the trusted-origin check. No token, no second server, no
 // alternate base URL: the bundle is served by the process it talks to.
 
@@ -15,6 +15,7 @@ import type {
 
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const PROJECT_PATH = '/api/project';
+export const PROJECTS_PATH = '/api/projects';
 export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
 export const DIAGNOSTICS_PATH = '/api/diagnostics';
 export const DIAGNOSTIC_SCHEDULE_PATH = '/api/diagnostics/schedule';
@@ -115,6 +116,16 @@ export type ProjectStatusView =
 		reason: 'not-repository' | 'origin-missing' | 'github-origin-required' | 'origin-main-missing';
 		detail: string;
 	};
+
+export interface RegisteredProjectView {
+	id: string;
+	name: string;
+	root: string;
+	stateDir: string;
+	readiness: Exclude<ProjectStatusView['state'], 'checking'>;
+	repository?: string;
+	current: boolean;
+}
 
 export interface OperatorProfileView {
 	name: string;
@@ -401,6 +412,10 @@ interface ProjectPayload {
 	project?: Record<string, unknown>;
 }
 
+interface ProjectsPayload {
+	projects?: unknown[];
+}
+
 interface OperatorProfilePayload extends CommandPayload {
 	profile?: Partial<OperatorProfileView>;
 }
@@ -531,6 +546,37 @@ function projectRecord(record: Record<string, unknown> | undefined): ProjectStat
 export async function fetchProjectStatus(): Promise<ProjectStatusView> {
 	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Project');
 	return projectRecord(payload.project);
+}
+
+function registeredProjectRecord(value: unknown): RegisteredProjectView | null {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+	const record = value as Record<string, unknown>;
+	const { id, name, root, stateDir, readiness, repository, current } = record;
+	if (
+		typeof id !== 'string'
+		|| typeof name !== 'string'
+		|| typeof root !== 'string'
+		|| typeof stateDir !== 'string'
+		|| !['ready', 'empty', 'needs-attention'].includes(String(readiness))
+		|| typeof current !== 'boolean'
+	) return null;
+	return {
+		id,
+		name,
+		root,
+		stateDir,
+		readiness: readiness as RegisteredProjectView['readiness'],
+		...(typeof repository === 'string' ? { repository } : {}),
+		current,
+	};
+}
+
+/** The global registry is defensive: malformed rows are omitted, never made selectable. */
+export async function fetchProjects(): Promise<RegisteredProjectView[]> {
+	const payload = await readJson<ProjectsPayload>(await fetch(PROJECTS_PATH), 'Projects');
+	return (payload.projects ?? [])
+		.map(registeredProjectRecord)
+		.filter((project): project is RegisteredProjectView => project !== null);
 }
 
 function operatorProfileRecord(record: Partial<OperatorProfileView> | undefined): OperatorProfileView {

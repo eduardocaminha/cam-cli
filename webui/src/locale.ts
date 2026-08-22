@@ -34,6 +34,8 @@ export function applyLocalePreference(
 
 export interface ShellCatalog {
 	operatorNavigationLabel: string;
+	projectNavigationLabel: string;
+	allProjectsLabel: string;
 	skipLinkLabel: string;
 	languageLabel: string;
 	routeLabels: {
@@ -42,6 +44,19 @@ export interface ShellCatalog {
 		work: string;
 		settings: string;
 	};
+}
+
+export interface ProjectsCatalog {
+	title: string;
+	description: string;
+	currentBadge: string;
+	repositoryUnknown: string;
+	readinessLabel: string;
+	readiness: Readonly<Record<'ready' | 'empty' | 'needs-attention', string>>;
+	unavailableTitle: string;
+	unavailableDescription: string;
+	notFoundTitle: string;
+	notFoundDescription: string;
 }
 
 export interface ConversationCatalog {
@@ -401,6 +416,7 @@ export interface OnboardingCatalog {
 
 export interface LocaleCatalog {
 	shell: ShellCatalog;
+	projects: ProjectsCatalog;
 	conversation: ConversationCatalog;
 	runInspector: RunInspectorCatalog;
 	runsOperational: RunsOperationalCatalog;
@@ -414,6 +430,8 @@ export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
 			operatorNavigationLabel: 'Operator surfaces',
+			projectNavigationLabel: 'Projects',
+			allProjectsLabel: 'All projects',
 			skipLinkLabel: 'Skip to content',
 			languageLabel: 'Language',
 			routeLabels: {
@@ -422,6 +440,18 @@ export const LOCALE_CATALOG = {
 				work: 'Work',
 				settings: 'Settings',
 			},
+		},
+		projects: {
+			title: 'All projects',
+			description: 'Registered projects available to this Gateship installation.',
+			currentBadge: 'served by this instance',
+			repositoryUnknown: 'Repository not known',
+			readinessLabel: 'Readiness',
+			readiness: { ready: 'ready', empty: 'empty', 'needs-attention': 'needs attention' },
+			unavailableTitle: 'Project runtime not loaded',
+			unavailableDescription: 'This project is registered, but its runtime is not loaded in this Gateship instance.',
+			notFoundTitle: 'Project not registered',
+			notFoundDescription: 'This URL does not match a registered project.',
 		},
 		conversation: {
 			transcriptLabel: 'Conversation transcript',
@@ -753,6 +783,8 @@ export const LOCALE_CATALOG = {
 	'pt-BR': {
 		shell: {
 			operatorNavigationLabel: 'Superfícies do operador',
+			projectNavigationLabel: 'Projetos',
+			allProjectsLabel: 'Todos os projetos',
 			skipLinkLabel: 'Pular para o conteúdo',
 			languageLabel: 'Idioma',
 			routeLabels: {
@@ -761,6 +793,18 @@ export const LOCALE_CATALOG = {
 				work: 'Trabalho',
 				settings: 'Ajustes',
 			},
+		},
+		projects: {
+			title: 'Todos os projetos',
+			description: 'Projetos registrados disponíveis nesta instalação do Gateship.',
+			currentBadge: 'servido por esta instância',
+			repositoryUnknown: 'Repositório desconhecido',
+			readinessLabel: 'Prontidão',
+			readiness: { ready: 'pronto', empty: 'vazio', 'needs-attention': 'requer atenção' },
+			unavailableTitle: 'Runtime do projeto não carregado',
+			unavailableDescription: 'Este projeto está registrado, mas seu runtime não está carregado nesta instância do Gateship.',
+			notFoundTitle: 'Projeto não registrado',
+			notFoundDescription: 'Esta URL não corresponde a um projeto registrado.',
 		},
 		conversation: {
 			transcriptLabel: 'Transcrição da conversa',

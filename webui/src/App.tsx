@@ -1,9 +1,8 @@
 // webui/src/App.tsx
 //
 // The operator screen, as a pure function of its props: an app shell whose
-// content is one of four surfaces, chosen by the path the browser is on. Each
-// surface carries one operator task -- converse (/), inspect what ran (/runs),
-// plan what to run (/work), configure the local machine (/settings) -- so no
+// content is the all-projects overview or one of four project-scoped surfaces,
+// chosen by the browser path. Each operational surface carries one task, so no
 // column has to mix execution, telemetry, planning and configuration.
 //
 // Navigation is plain links to real paths, which the server answers with this
@@ -40,6 +39,7 @@ import {
 	type OperatorProfileView,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
+	type RegisteredProjectView,
 	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
@@ -99,8 +99,8 @@ import {
 	type WorkflowCohort,
 } from './run-view.ts';
 
-/** The four paths the server answers with this document, and nothing else. */
-export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
+/** Project selection and surface both come from this URL, never hidden state. */
+export type OperatorRoute = '/overview' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
 
 const MAIN_CONTENT_ID = 'main-content';
 
@@ -108,11 +108,13 @@ function formatCount(count: number, locale: Locale): string {
 	return new Intl.NumberFormat(locale).format(count);
 }
 
-const SURFACES: readonly { path: OperatorRoute; label: keyof ShellCatalog['routeLabels'] }[] = [
-	{ path: '/', label: 'conversation' },
-	{ path: '/runs', label: 'runs' },
-	{ path: '/work', label: 'work' },
-	{ path: '/settings', label: 'settings' },
+type ProjectSurface = 'conversation' | 'runs' | 'work' | 'settings';
+
+const SURFACES: readonly { suffix: string; label: keyof ShellCatalog['routeLabels']; surface: ProjectSurface }[] = [
+	{ suffix: '', label: 'conversation', surface: 'conversation' },
+	{ suffix: '/runs', label: 'runs', surface: 'runs' },
+	{ suffix: '/work', label: 'work', surface: 'work' },
+	{ suffix: '/settings', label: 'settings', surface: 'settings' },
 ];
 
 /**
@@ -122,8 +124,31 @@ const SURFACES: readonly { path: OperatorRoute; label: keyof ShellCatalog['route
  */
 export function routeOf(pathname: string): OperatorRoute {
 	const normalized = pathname.replace(/\/+$/, '');
-	const surface = SURFACES.find((entry) => entry.path === (normalized === '' ? '/' : normalized));
-	return surface?.path ?? '/';
+	const path = normalized === '' ? '/' : normalized;
+	if (path === '/overview') return path;
+	if (path === '/' || path === '/runs' || path === '/work' || path === '/settings') return path;
+	if (/^\/projects\/[^/]+(?:\/(?:runs|work|settings))?$/.test(path)) {
+		return path as `/projects/${string}`;
+	}
+	return '/overview';
+}
+
+interface RouteSelection {
+	projectId: string | null;
+	surface: ProjectSurface | 'overview';
+}
+
+function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
+	if (route === '/overview') return { projectId: null, surface: 'overview' };
+	const legacy = route === '/' ? 'conversation' : route.slice(1);
+	if (route === '/' || route === '/runs' || route === '/work' || route === '/settings') {
+		return { projectId: currentId, surface: legacy as ProjectSurface };
+	}
+	const match = /^\/projects\/([^/]+)(?:\/(runs|work|settings))?$/.exec(route);
+	if (match === null) return { projectId: null, surface: 'overview' };
+	let projectId = match[1] ?? '';
+	try { projectId = decodeURIComponent(projectId); } catch { /* unmatched id stays unavailable */ }
+	return { projectId, surface: (match[2] ?? 'conversation') as ProjectSurface };
 }
 
 export interface AppProps {
@@ -154,6 +179,8 @@ export interface AppProps {
 	brief: ProjectBriefView;
 	/** Read-only readiness of the cwd this process owns. */
 	project: ProjectStatusView;
+	/** Read-only global registry used by URL-backed project navigation. */
+	projects: readonly RegisteredProjectView[];
 	/** Human-owned identity and timezone, empty until explicitly saved. */
 	operatorProfile: OperatorProfileView;
 	/** Browser-derived suggestion; it is never persisted without a save. */
@@ -2372,11 +2399,12 @@ function ShellSidebar({
 	onSelectLocale,
 	runInspectorCatalog,
 	route,
+	projects,
 	run,
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectLocale' | 'staleService' | 'workspaceNotices'> & {
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectLocale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	run: RunView | null;
@@ -2387,10 +2415,13 @@ function ShellSidebar({
 	// card. A stopped chain queue (GSHIP-650) answers it too, the same way a
 	// preserved workspace already does -- but only while the switch is on and
 	// something else stopped it, never for the switch simply being off.
-	const queuePause = visibleQueuePause(chainRuns);
-	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
-	const attention = attentionOf(run, workspaceNotices, stoppedQueue);
 	const catalog = LOCALE_CATALOG[locale].shell;
+	const currentId = projects.find((project) => project.current)?.id ?? null;
+	const selection = routeSelection(route, currentId);
+	const operational = selection.projectId !== null && selection.projectId === currentId;
+	const queuePause = operational ? visibleQueuePause(chainRuns) : null;
+	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
+	const attention = attentionOf(operational ? run : null, operational ? workspaceNotices : [], stoppedQueue);
 	const humanVersion = humanVersionOf(version);
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
@@ -2403,32 +2434,56 @@ function ShellSidebar({
 						<span className="font-mono text-muted-foreground text-xs">v{humanVersion}</span>
 					)}
 				</div>
-				<Badge variant={attentionToneOf(attention)}>
+				{operational ? <Badge variant={attentionToneOf(attention)}>
 					{runInspectorCatalog.attentionLabels[attention]}
-				</Badge>
+				</Badge> : null}
 			</div>
+			<nav aria-label={catalog.projectNavigationLabel}>
+				<ul className="flex flex-col gap-1">
+					<li>
+						<a
+							aria-current={selection.surface === 'overview' ? 'page' : undefined}
+							className={cn(NAV_LINK_CLASS, selection.surface === 'overview' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+							href="/overview"
+						>
+							{catalog.allProjectsLabel}
+						</a>
+					</li>
+					{projects.map((project) => (
+						<li key={project.id}>
+							<a
+								aria-current={selection.projectId === project.id && selection.surface === 'conversation' ? 'page' : undefined}
+								className={cn(NAV_LINK_CLASS, selection.projectId === project.id && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+								href={`/projects/${encodeURIComponent(project.id)}`}
+							>
+								{project.name}
+							</a>
+						</li>
+					))}
+				</ul>
+			</nav>
 			<ChainPauseCallout pause={queuePause} />
-			<StaleServiceCallout staleService={staleService} />
-			<GitIdentityCallout gitIdentity={gitIdentity} />
+			{operational ? <StaleServiceCallout staleService={staleService} /> : null}
+			{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
 			<Separator />
-			<nav aria-label={catalog.operatorNavigationLabel}>
+			{selection.projectId === null ? null : <nav aria-label={catalog.operatorNavigationLabel}>
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
 					{SURFACES.map((surface) => (
-						<li key={surface.path}>
+						<li key={surface.surface}>
 							<a
-								aria-current={surface.path === route ? 'page' : undefined}
+								aria-current={surface.surface === selection.surface ? 'page' : undefined}
 								className={cn(
 									NAV_LINK_CLASS,
-									surface.path === route && 'bg-sidebar-accent text-sidebar-accent-foreground',
+									surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
 								)}
-								href={surface.path}
+								href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
 							>
 								{catalog.routeLabels[surface.label]}
 							</a>
 						</li>
 					))}
 				</ul>
-			</nav>
+			</nav>}
 			<label className="flex flex-col gap-1 text-sidebar-foreground text-xs lg:mt-auto" htmlFor="gateship-locale">
 				<span className="font-medium">{catalog.languageLabel}</span>
 				<select
@@ -2467,6 +2522,59 @@ function SurfaceColumn({
 	);
 }
 
+function OverviewSurface(props: AppProps): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].projects;
+	return (
+		<SurfaceColumn label={catalog.title} status={props.status}>
+			<div>
+				<h2 className="font-semibold text-xl">{catalog.title}</h2>
+				<p className="text-muted-foreground text-sm">{catalog.description}</p>
+			</div>
+			<ul className="grid gap-3">
+				{props.projects.map((project) => (
+					<li key={project.id}>
+						<Card>
+							<CardHeader>
+								<div className="flex flex-wrap items-center gap-2">
+									<CardTitle><a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>
+									{project.current ? <Badge variant="info">{catalog.currentBadge}</Badge> : null}
+								</div>
+								<CardDescription>{project.repository ?? catalog.repositoryUnknown}</CardDescription>
+							</CardHeader>
+							<CardPanel>
+								<p className="text-sm"><span className="font-medium">{catalog.readinessLabel}:</span> {catalog.readiness[project.readiness]}</p>
+							</CardPanel>
+						</Card>
+					</li>
+				))}
+			</ul>
+		</SurfaceColumn>
+	);
+}
+
+function UnavailableProjectSurface({ project, locale, status }: {
+	project: RegisteredProjectView;
+	locale: Locale;
+	status: string | null;
+}): React.ReactElement {
+	const catalog = LOCALE_CATALOG[locale].projects;
+	return (
+		<SurfaceColumn label={project.name} status={status}>
+			<Card>
+				<CardHeader>
+					<CardTitle>{project.name}</CardTitle>
+					<CardDescription>{project.repository ?? catalog.repositoryUnknown}</CardDescription>
+				</CardHeader>
+				<CardPanel>
+					<Badge variant={project.readiness === 'ready' ? 'success' : 'warning'}>{catalog.readiness[project.readiness]}</Badge>
+					<h2 className="font-semibold text-lg">{catalog.unavailableTitle}</h2>
+					<p className="text-muted-foreground text-sm">{catalog.unavailableDescription}</p>
+				</CardPanel>
+			</Card>
+		</SurfaceColumn>
+	);
+}
+
 function HomeSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
@@ -2489,7 +2597,7 @@ function HomeSurface(props: AppProps): React.ReactElement {
 				<RunCard
 					catalog={localeCatalog.runInspector}
 					footer={
-						<a className={TEXT_LINK_CLASS} href="/runs">
+						<a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(props.projects.find((project) => project.current)?.id ?? '')}/runs`}>
 							{localeCatalog.runInspector.viewDetailsLabel}
 						</a>
 					}
@@ -3343,8 +3451,9 @@ function CommandLine({ children }: { children: string }): React.ReactElement {
 function OnboardingSurface({
 	catalog,
 	project,
+	settingsHref,
 	status,
-}: Pick<AppProps, 'project' | 'status'> & { catalog: OnboardingCatalog }): React.ReactElement {
+}: Pick<AppProps, 'project' | 'status'> & { catalog: OnboardingCatalog; settingsHref: string }): React.ReactElement {
 	return (
 		<SurfaceColumn label={catalog.title} status={status}>
 			<Card>
@@ -3391,7 +3500,7 @@ function OnboardingSurface({
 					) : null}
 					<p className="text-muted-foreground text-sm">
 						{catalog.settingsGuidance.beforeLink}
-						<a className={TEXT_LINK_CLASS} href="/settings">
+						<a className={TEXT_LINK_CLASS} href={settingsHref}>
 							{catalog.settingsGuidance.linkLabel}
 						</a>
 						{catalog.settingsGuidance.afterLink}
@@ -3470,11 +3579,51 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 	);
 }
 
+function SelectedRouteSurface({
+	props,
+	selectedProject,
+	selection,
+}: {
+	props: AppProps;
+	selectedProject: RegisteredProjectView | null;
+	selection: RouteSelection;
+}): React.ReactElement {
+	const localeCatalog = LOCALE_CATALOG[props.locale];
+	if (selection.surface === 'overview') return <OverviewSurface {...props} />;
+	if (selectedProject === null) {
+		return (
+			<SurfaceColumn label={localeCatalog.projects.notFoundTitle} status={props.status}>
+				<h2 className="font-semibold text-xl">{localeCatalog.projects.notFoundTitle}</h2>
+				<p className="text-muted-foreground text-sm">{localeCatalog.projects.notFoundDescription}</p>
+			</SurfaceColumn>
+		);
+	}
+	if (!selectedProject.current) {
+		return <UnavailableProjectSurface locale={props.locale} project={selectedProject} status={props.status} />;
+	}
+	if (props.project.state !== 'ready' && selection.surface !== 'settings') {
+		return (
+			<OnboardingSurface
+				catalog={localeCatalog.onboarding}
+				project={props.project}
+				settingsHref={`/projects/${encodeURIComponent(selectedProject.id)}/settings`}
+				status={props.status}
+			/>
+		);
+	}
+	if (selection.surface === 'runs') return <RunsSurface {...props} />;
+	if (selection.surface === 'work') return <WorkSurface {...props} />;
+	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
+	return <HomeSurface {...props} />;
+}
+
 export function App(props: AppProps): React.ReactElement {
 	// The array arrives newest first, so the operable run is its head and the
 	// history below it is the same array, read once.
 	const run = props.runs[0] ?? null;
-	const projectBlocksSurface = props.project.state !== 'ready' && props.route !== '/settings';
+	const currentProject = props.projects.find((project) => project.current) ?? null;
+	const selection = routeSelection(props.route, currentProject?.id ?? null);
+	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
@@ -3489,6 +3638,7 @@ export function App(props: AppProps): React.ReactElement {
 				gitIdentity={props.gitIdentity}
 				locale={props.locale}
 				onSelectLocale={props.onSelectLocale}
+				projects={props.projects}
 				runInspectorCatalog={localeCatalog.runInspector}
 				route={props.route}
 				run={run}
@@ -3496,17 +3646,7 @@ export function App(props: AppProps): React.ReactElement {
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
 			/>
-			{projectBlocksSurface ? (
-				<OnboardingSurface
-					catalog={localeCatalog.onboarding}
-					project={props.project}
-					status={props.status}
-				/>
-			) : null}
-			{!projectBlocksSurface && props.route === '/runs' ? <RunsSurface {...props} /> : null}
-			{!projectBlocksSurface && props.route === '/work' ? <WorkSurface {...props} /> : null}
-			{props.route === '/settings' ? <SettingsSurface {...props} /> : null}
-			{!projectBlocksSurface && props.route === '/' ? <HomeSurface {...props} /> : null}
+			<SelectedRouteSurface props={props} selectedProject={selectedProject} selection={selection} />
 		</div>
 	);
 }

@@ -2165,7 +2165,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const projectRoot = realpathSync(resolve(options.cwd));
 	const { registry: projectRegistry, close: closeProjectRegistry } =
 		composeProjectRegistry(options, stateDir, containerBuild);
-	projectRegistry.reconcile({
+	const currentProject = projectRegistry.reconcile({
 		root: projectRoot,
 		stateDir,
 		readiness: inspectProject(projectRoot),
@@ -2241,17 +2241,24 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const orchestrator = options.orchestrator?.(execute)
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
+	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
+	const redirect = (path: string) => (request: Request) =>
+		Response.redirect(new URL(path, request.url).toString(), 302);
 	const server = Bun.serve({
 		hostname: resolveBindHostname(),
 		port: options.port,
 		routes: {
-			// The operator surfaces are four enumerated paths, each answered with
-			// the same document; the client reads which one it is from the path.
-			// There is no catch-all, so an unknown path is still a 404.
-			'/': () => serveWebAsset(assets.indexHtml),
-			'/runs': () => serveWebAsset(assets.indexHtml),
-			'/work': () => serveWebAsset(assets.indexHtml),
-			'/settings': () => serveWebAsset(assets.indexHtml),
+			// The canonical tree is URL-selected by project. Legacy paths only
+			// redirect, so there is one navigable location for every surface.
+			'/': redirect('/overview'),
+			'/overview': () => serveWebAsset(assets.indexHtml),
+			'/runs': redirect(`${projectPath}/runs`),
+			'/work': redirect(`${projectPath}/work`),
+			'/settings': redirect(`${projectPath}/settings`),
+			'/projects/:projectId': () => serveWebAsset(assets.indexHtml),
+			'/projects/:projectId/runs': () => serveWebAsset(assets.indexHtml),
+			'/projects/:projectId/work': () => serveWebAsset(assets.indexHtml),
+			'/projects/:projectId/settings': () => serveWebAsset(assets.indexHtml),
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {
