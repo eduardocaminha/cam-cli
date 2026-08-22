@@ -21,7 +21,7 @@ async function get(handle: { hostname: string; port: number }, path: string): Pr
 }
 
 describe('embedded web bundle', () => {
-	test('serves index.html, app.js and app.css with the right types', async () => {
+	test('serves the built document and application bundle with the right types', async () => {
 		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
 		try {
 			const page = await get(handle, '/');
@@ -35,7 +35,10 @@ describe('embedded web bundle', () => {
 			expect(html).toContain('id="root"');
 			expect(html).toContain('<html lang="en-US">');
 			expect(html).toContain('<title>Gateship</title>');
-			expect(html).toContain('rel="icon" href="data:image/svg+xml,');
+			expect(html).toContain(
+				'rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any"',
+			);
+			expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
 			// The inline diagnostic page is gone: no script body, no raw JSON dump.
 			expect(html).not.toContain('JSON.stringify');
 			expect(html).not.toContain('Loading snapshot...');
@@ -113,6 +116,11 @@ describe('embedded web bundle', () => {
 		expect(assets.indexHtml.path.endsWith('index.html')).toBe(true);
 		expect(assets.appJs.path.endsWith('app.js')).toBe(true);
 		expect(assets.appCss.path.endsWith('app.css')).toBe(true);
+		expect(assets.favicon.path.endsWith('favicon.svg')).toBe(true);
+		expect(assets.appleTouchIcon.path.endsWith('apple-touch-icon.png')).toBe(true);
+		expect(assets.icon192.path.endsWith('icon-192.png')).toBe(true);
+		expect(assets.icon512.path.endsWith('icon-512.png')).toBe(true);
+		expect(assets.manifest.path.endsWith('manifest.webmanifest')).toBe(true);
 		expect(readFileSync(assets.indexHtml.path, 'utf8')).toBe(
 			readFileSync(join(DIST_DIR, 'index.html'), 'utf8'),
 		);
@@ -127,6 +135,11 @@ describe('embedded web bundle', () => {
 		expect(overridden.indexHtml.path).toBe(join(dir, 'index.html'));
 		expect(overridden.appJs.path).toBe(join(dir, 'app.js'));
 		expect(overridden.appCss.path).toBe(join(dir, 'app.css'));
+		expect(overridden.favicon.path).toBe(join(dir, 'favicon.svg'));
+		expect(overridden.appleTouchIcon.path).toBe(join(dir, 'apple-touch-icon.png'));
+		expect(overridden.icon192.path).toBe(join(dir, 'icon-192.png'));
+		expect(overridden.icon512.path).toBe(join(dir, 'icon-512.png'));
+		expect(overridden.manifest.path).toBe(join(dir, 'manifest.webmanifest'));
 		expect(overridden.indexHtml.contentType).toContain('text/html');
 
 		// Absent and blank both keep the embedded copy; the override is explicit.

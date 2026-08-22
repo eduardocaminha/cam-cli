@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '..');
@@ -28,7 +28,16 @@ describe('web UI scaffold', () => {
 
 		// Unhashed names, because static `with { type: "file" }` specifiers
 		// (src/commands/web-assets.ts) cannot name a content hash.
-		expect(readdirSync(distDir).sort()).toEqual(['app.css', 'app.js', 'index.html']);
+		expect(readdirSync(distDir).sort()).toEqual([
+			'app.css',
+			'app.js',
+			'apple-touch-icon.png',
+			'favicon.svg',
+			'icon-192.png',
+			'icon-512.png',
+			'index.html',
+			'manifest.webmanifest',
+		]);
 		expect(html).toContain('class="flex');
 		expect(builtCss).toContain('display:flex');
 		expect(builtCss).not.toContain('@import "tailwindcss"');
