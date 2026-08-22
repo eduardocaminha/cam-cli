@@ -29,15 +29,22 @@ and [`gh auth login`](https://cli.github.com/manual/gh_auth_login).
 Running the [container image](../README.md#container) does not change any of
 this. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GH_CONFIG_DIR` and
 `GIT_CONFIG_GLOBAL` point at the named volume instead of `$HOME`, so
-`claude auth login` and `gh auth login` (with the git credential helper
-`gh auth setup-git`/`gh auth login` wires into global git config) still write
-to the store each tool already owns; Gateship still never reads it. `CODEX_HOME`
-is wired the same way, but Codex's own ChatGPT sign-in cannot complete from
-inside the container yet -- see the [container section](../README.md#container).
-The image carries no credential of its own, and the operator authenticates
-inside the container on first boot, never by copying a host credential file
--- on macOS the Claude CLI keeps its credential in the Keychain, and there is
-no such file to copy in the first place.
+each tool still writes to the store it owns; Gateship never reads it.
+Authenticate inside the container on first boot:
+
+```bash
+docker compose exec gateship claude auth login
+docker compose exec gateship codex login --device-auth
+docker compose exec gateship gh auth login --web
+docker compose exec gateship gh auth setup-git
+```
+
+Codex device authentication is the supported headless subscription flow and
+persists in `CODEX_HOME`. The GitHub commands also persist the git credential
+helper in `GIT_CONFIG_GLOBAL`. The image carries no credential of its own, and
+the operator never copies a host credential file into it or supplies a provider
+API key. On macOS the Claude CLI keeps its host credential in the Keychain, so
+there is no portable host file to copy in the first place.
 
 ## Environment boundary
 

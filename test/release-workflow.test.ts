@@ -232,7 +232,7 @@ describe('release.yml attest step (US-R1-002, CAM-495)', () => {
 const releaseImageJobIdx = workflow.indexOf('\n  release-image:');
 const releaseImageJobBlock = workflow.slice(releaseImageJobIdx);
 
-describe('release.yml release-image job (GSHIP-657, GSHIP-665)', () => {
+describe('release.yml release-image job (GSHIP-657, GSHIP-665, GSHIP-699)', () => {
 	test('the job is present, runs on a Linux runner, and only after resolve-release has produced a tag', () => {
 		expect(releaseImageJobIdx).toBeGreaterThan(-1);
 		expect(releaseImageJobBlock).toContain('runs-on: ubuntu-latest');
@@ -242,6 +242,20 @@ describe('release.yml release-image job (GSHIP-657, GSHIP-665)', () => {
 
 	test('checks out the exact resolved sha, never an implicit ref', () => {
 		expect(releaseImageJobBlock).toContain('ref: ${{ needs.resolve-release.outputs.sha }}');
+	});
+
+	test('registers arm64 emulation before Buildx executes target-platform stages', () => {
+		const qemuIdx = releaseImageJobBlock.indexOf(
+			'uses: docker/setup-qemu-action@v3',
+		);
+		const buildxIdx = releaseImageJobBlock.indexOf(
+			'uses: docker/setup-buildx-action@v3',
+		);
+		expect(qemuIdx).toBeGreaterThan(-1);
+		expect(releaseImageJobBlock.slice(qemuIdx, buildxIdx)).toContain(
+			'platforms: arm64',
+		);
+		expect(buildxIdx).toBeGreaterThan(qemuIdx);
 	});
 
 	test('carries the permissions the registry push and attestation require', () => {
@@ -289,6 +303,7 @@ describe('release.yml release-image job (GSHIP-657, GSHIP-665)', () => {
 			nextStepIdx === -1 ? releaseImageJobBlock.length : nextStepIdx,
 		);
 		expect(buildStepBlock).toContain('push: true');
+		expect(buildStepBlock).toContain('platforms: linux/amd64,linux/arm64');
 		expect(buildStepBlock).toContain(
 			'ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.tag }}',
 		);

@@ -13,8 +13,17 @@ import { resolve } from 'node:path';
 
 const COMPOSE_PATH = resolve(import.meta.dir, '..', 'compose.yaml');
 const DOCKERFILE_PATH = resolve(import.meta.dir, '..', 'Dockerfile');
+const README_PATH = resolve(import.meta.dir, '..', 'README.md');
+const CREDENTIALS_DOC_PATH = resolve(
+	import.meta.dir,
+	'..',
+	'docs',
+	'credentials-and-notifications.md',
+);
 const compose = readFileSync(COMPOSE_PATH, 'utf8');
 const dockerfile = readFileSync(DOCKERFILE_PATH, 'utf8');
+const readme = readFileSync(README_PATH, 'utf8');
+const credentialsDoc = readFileSync(CREDENTIALS_DOC_PATH, 'utf8');
 
 describe('compose.yaml image consumption (GSHIP-657)', () => {
 	test('image defaults to the unpublished local tag, so it builds unless overridden', () => {
@@ -38,6 +47,13 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 		expect(compose).toContain('cap_drop:\n      - ALL');
 		expect(compose).toContain('- /tmp:rw,nosuid,nodev,mode=1777');
 	});
+
+	test('uses long volume syntax so Windows drive-letter bind mounts remain portable', () => {
+		expect(compose).toContain(
+			'type: bind\n        source: ${GATESHIP_PROJECT_DIR:-.}\n        target: /workspace',
+		);
+		expect(compose).not.toContain('${GATESHIP_PROJECT_DIR:-.}:/workspace');
+	});
 });
 
 describe('container provider CLI installation', () => {
@@ -48,5 +64,23 @@ describe('container provider CLI installation', () => {
 		expect(dockerfile).not.toContain('https://claude.ai/install.sh | bash\n');
 		expect(dockerfile).toMatch(/RUN bun add -g @openai\/codex@\d+\.\d+\.\d+\n/);
 		expect(dockerfile).not.toContain('RUN bun add -g @openai/codex\n');
+	});
+});
+
+describe('canonical portable container documentation (GSHIP-699)', () => {
+	test('documents supported Docker hosts and equivalent POSIX and PowerShell startup', () => {
+		expect(readme).toContain('Docker Desktop on Windows and macOS');
+		expect(readme).toContain('Docker Engine on Linux');
+		expect(readme).toContain('### POSIX shells');
+		expect(readme).toContain('### PowerShell');
+		expect(readme).toContain('$env:GATESHIP_PROJECT_DIR = "C:\\path\\to\\project"');
+	});
+
+	test('documents the supported headless Codex subscription login in the persisted CODEX_HOME', () => {
+		const login = 'docker compose exec gateship codex login --device-auth';
+		expect(readme).toContain(login);
+		expect(credentialsDoc).toContain(login);
+		expect(readme).not.toContain('ChatGPT sign-in does not work from inside this container');
+		expect(credentialsDoc).not.toContain("ChatGPT sign-in cannot complete from\ninside the container");
 	});
 });
