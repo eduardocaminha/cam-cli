@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-692",
+  "title": "Distinguir fila concluída e merge confirmado na interface",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-22T11:42:28.042Z",
+  "updatedAt": "2026-08-22T11:42:28.042Z",
+  "description": "Clarificar os estados terminais sem adicionar nova fonte de verdade. Quando a execução encadeada estiver ligada e pausar por no-admissible-issue, a interface deve mostrar Queue complete em tom neutro ou positivo, explicar que não resta trabalho elegível e não classificar o shell como Needs you. A notificação remota para esse motivo deve informar conclusão da fila; motivos de falha, interrupção ou bloqueio continuam usando Queue stopped e exigindo atenção. Em toda apresentação de pull request, uma run em state done com pullRequest confirmado deve exibir um selo Merged roxo, visualmente equivalente ao estado merged do GitHub, no detalhe e no histórico. O selo nunca aparece para estados diferentes de done. Reutilizar apenas run.state e pullRequest já persistidos, sem nova consulta ao GitHub, tabela, endpoint, polling ou heurística.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Clarificar os estados terminais sem adicionar nova fonte de verdade. Quando a execução encadeada estiver ligada e pausar por no-admissible-issue, a interface deve mostrar Queue complete em tom neutro ou positivo, explicar que não resta trabalho elegível e não classificar o shell como Needs you. A notificação remota para esse motivo deve informar conclusão da fila; motivos de falha, interrupção ou bloqueio continuam usando Queue stopped e exigindo atenção. Em toda apresentação de pull request, uma run em state done com pullRequest confirmado deve exibir um selo Merged roxo, visualmente equivalente ao estado merged do GitHub, no detalhe e no histórico. O selo nunca aparece para estados diferentes de done. Reutilizar apenas run.state e pullRequest já persistidos, sem nova consulta ao GitHub, tabela, endpoint, polling ou heurística.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/runtime/remote-notifier.test.ts && bun run typecheck"
+    ]
+  }
+}
