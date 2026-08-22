@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T17:32:17.478Z",
-  "updatedAt": "2026-08-22T17:32:17.478Z",
+  "updatedAt": "2026-08-22T17:38:06.147Z",
   "description": "Desacoplar, na distribuicao Docker, o home global do stateDir do projeto sem adicionar outro servico, daemon, banco ou volume nomeado. Preservar o unico volume gateship-state, mas monta-lo em /var/lib/gateship; definir GATESHIP_HOME e os diretorios persistentes de Claude, Codex, gh e git nesse volume, mantendo os mesmos subcaminhos de credenciais para que a troca do ponto de montagem nao copie nem exponha tokens. Substituir o bind de um unico repositorio por GATESHIP_PROJECTS_DIR montado em /projects e selecionar o repositorio inicial por GATESHIP_PROJECT_PATH relativo nesse mount, com defaults que continuam permitindo executar um unico projeto. O stateDir do projeto selecionado continua sendo <repo>/.gship no bind; o home global guarda apenas registry e credenciais. Corrigir a composicao do ProjectRegistry para respeitar GATESHIP_HOME explicito tambem no container, em vez de forcar o stateDir corrente. Atualizar os exemplos POSIX e PowerShell, os comandos de login e os testes deterministas de compose/home. Fora do escopo: descoberta ou cadastro automatico de repositorios, picker mutavel, runtime switching, segundo RunRuntime, paralelismo, migracao fisica de estado legado, segundo volume, Docker socket, entrypoint auxiliar, token/API key na UI ou mount de credenciais do host.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/compose-config.test.ts test/runtime/project-registry.test.ts test/runtime/provider-env.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "6f3d78ce4f48ea0ec6108cab0cc38ebeee3f83f4128985bdb16e6ab5cb2cc0c0",
+    "approvedAt": "2026-08-22T17:38:06.147Z"
   }
 }
