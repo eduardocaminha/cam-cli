@@ -39,11 +39,25 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 		this.#contexts.set(projectId, context);
 	}
 
+	/**
+	 * Readiness gates composition, not a context this manager already owns. The
+	 * only context registered without being composed here is the boot project's,
+	 * whose runtime is the process's own -- the same one the unscoped routes
+	 * answer from whatever its readiness is. So a boot project still in
+	 * onboarding keeps answering its own scoped reads and its own stream instead
+	 * of losing its snapshot, its notices and its version to a refusal the
+	 * unscoped routes never gave; `admitStart` and `admitResume` already read an
+	 * owned context the same way. Everything else is unchanged: an unknown
+	 * project is still not found, and a project with no context is still refused
+	 * unless the registry reports it ready.
+	 */
 	get(projectId: string): { project: RegisteredProject; context: T } {
 		const project = this.registry.get(projectId, this.currentRoot);
 		if (project === null) {
 			throw new ProjectRuntimeLookupError('project-not-found', 'Project not found.', 404);
 		}
+		const owned = this.#contexts.get(project.id);
+		if (owned !== undefined) return { project, context: owned };
 		if (project.readiness !== 'ready') {
 			throw new ProjectRuntimeLookupError(
 				'project-not-ready',
@@ -51,11 +65,8 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 				409,
 			);
 		}
-		let context = this.#contexts.get(project.id);
-		if (context === undefined) {
-			context = this.compose(project);
-			this.#contexts.set(project.id, context);
-		}
+		const context = this.compose(project);
+		this.#contexts.set(project.id, context);
 		return { project, context };
 	}
 

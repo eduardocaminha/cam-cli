@@ -2974,8 +2974,8 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('a non-current project route never renders or operates on current runtime data', () => {
-		for (const suffix of ['', '/runs', '/work', '/settings']) {
+	test('a non-current project keeps every surface but runs unavailable', () => {
+		for (const suffix of ['', '/work', '/settings']) {
 			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
 				projects: [CURRENT_PROJECT, OTHER_PROJECT],
 				runs: [runIn('interrupted')],
@@ -2989,6 +2989,44 @@ describe('operator shell', () => {
 			expect(html).not.toContain('>Start<');
 			expect(html).not.toContain('Operator profile');
 		}
+	});
+
+	test('runs is operational for a ready non-current project and commands it', () => {
+		const html = renderAt('/projects/project-other/runs', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+			workspaceNotices: NOTICES,
+		});
+
+		expect(html).not.toContain('Project runtime not loaded');
+		expect(html).toContain('CAM-900');
+		expect(html).toContain('>Resume<');
+		expect(html).toContain('>Abandon<');
+		// No surface but runs opens: work and settings stay the boot project's.
+		expect(html).not.toContain('>Start<');
+		expect(html).not.toContain('Operator profile');
+	});
+
+	test('a not-ready non-current project keeps the unavailable surface on runs too', () => {
+		const html = renderAt('/projects/project-other/runs', {
+			projects: [CURRENT_PROJECT, { ...OTHER_PROJECT, readiness: 'empty' as const }],
+			runs: [runIn('interrupted')],
+		});
+
+		expect(html).toContain('Project runtime not loaded');
+		expect(html).not.toContain('CAM-900');
+		expect(html).not.toContain('>Resume<');
+	});
+
+	test('an unknown project keeps the typed not-found surface', () => {
+		const html = renderAt('/projects/project-missing/runs', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+		});
+
+		expect(html).toContain('Project not registered');
+		expect(html).not.toContain('CAM-900');
+		expect(html).not.toContain('>Resume<');
 	});
 
 	test('the persistent language control renders both self-named choices and marks the locale on every surface', () => {
@@ -4081,7 +4119,7 @@ describe('same-origin transport', () => {
 			createdAt: '2026-08-16T03:04:05.000Z',
 		}];
 		const calls = await withRecordedFetch({ events }, 200, async () => {
-			expect(await fetchRunEvents('run-1')).toEqual(events);
+			expect(await fetchRunEvents(null, 'run-1')).toEqual(events);
 		});
 
 		expect(calls).toEqual([
@@ -4242,10 +4280,10 @@ describe('same-origin transport', () => {
 
 	test('each command posts to its own run-scoped route', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
-			await commandRun('run-1', 'resume');
-			await commandRun('run-1', 'abandon');
-			await commandRun('run-1', 'cancel');
-			await commandRun('run-1', 'ship');
+			await commandRun(null, 'run-1', 'resume');
+			await commandRun(null, 'run-1', 'abandon');
+			await commandRun(null, 'run-1', 'cancel');
+			await commandRun(null, 'run-1', 'ship');
 		});
 
 		expect(calls.map((call) => call.url)).toEqual([
@@ -4259,7 +4297,7 @@ describe('same-origin transport', () => {
 
 	test('resume sends operator guidance only when one was supplied', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
-			await commandRun('run-1', 'resume', 'Use the smaller seam.');
+			await commandRun(null, 'run-1', 'resume', 'Use the smaller seam.');
 		});
 
 		expect(calls).toEqual([{
@@ -4271,7 +4309,7 @@ describe('same-origin transport', () => {
 
 	test('a refused command surfaces the server message instead of a generic failure', async () => {
 		await withRecordedFetch({ ok: false, message: 'Run not found.' }, 404, async () => {
-			expect(await commandRun('run-x', 'ship')).toBe('Run not found.');
+			expect(await commandRun(null, 'run-x', 'ship')).toBe('Run not found.');
 		});
 	});
 
@@ -4283,15 +4321,15 @@ describe('same-origin transport', () => {
 		];
 		// One read per refresh: the newest run and the history come from it.
 		await withRecordedFetch({ runs: history }, 200, async (calls) => {
-			expect(await fetchRuns()).toEqual(history);
+			expect(await fetchRuns(null)).toEqual(history);
 			expect(calls).toEqual([{ url: RUNS_PATH, method: 'GET', body: null }]);
 		});
 		await withRecordedFetch({ runs: [] }, 200, async () => {
-			expect(await fetchRuns()).toEqual([]);
+			expect(await fetchRuns(null)).toEqual([]);
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
-				expect(await fetchBacklog()).toEqual({
+				expect(await fetchBacklog(null)).toEqual({
 					plannable: [],
 					ideas: [],
 					drafts: [],
@@ -4305,7 +4343,7 @@ describe('same-origin transport', () => {
 			idleState: { backlog: { plannable: BACKLOG, byStage: { idea: [BACKLOG[0]!] } } },
 			version: '0.292.0',
 		}, 200, async () => {
-				expect(await fetchBacklog()).toEqual({
+				expect(await fetchBacklog(null)).toEqual({
 					plannable: BACKLOG,
 					ideas: [BACKLOG[0]!],
 					drafts: [],
@@ -4324,32 +4362,32 @@ describe('same-origin transport', () => {
 			detail: 'Restart the service para aplicar o que entrou depois do boot.',
 		};
 		await withRecordedFetch({ staleService }, 200, async (calls) => {
-			expect((await fetchBacklog()).staleService).toEqual(staleService);
+			expect((await fetchBacklog(null)).staleService).toEqual(staleService);
 			expect(calls).toEqual([{ url: SNAPSHOT_PATH, method: 'GET', body: null }]);
 		});
 		// The absent field is the ordinary case, and a notice missing a sha is not
 		// a divergence the screen is willing to announce.
 		await withRecordedFetch({ workspaceNotices: [] }, 200, async () => {
-			expect((await fetchBacklog()).staleService).toBeNull();
+			expect((await fetchBacklog(null)).staleService).toBeNull();
 		});
 		await withRecordedFetch({ staleService: { bootSha: '1'.repeat(40) } }, 200, async () => {
-			expect((await fetchBacklog()).staleService).toBeNull();
+			expect((await fetchBacklog(null)).staleService).toBeNull();
 		});
 	});
 
 	test('the missing git identity notice is read from its own snapshot field (GSHIP-654)', async () => {
 		const gitIdentity = { detail: 'no git author identity is configured' };
 		await withRecordedFetch({ gitIdentity }, 200, async (calls) => {
-			expect((await fetchBacklog()).gitIdentity).toEqual(gitIdentity);
+			expect((await fetchBacklog(null)).gitIdentity).toEqual(gitIdentity);
 			expect(calls).toEqual([{ url: SNAPSHOT_PATH, method: 'GET', body: null }]);
 		});
 		// The absent field is the ordinary case: an identity is configured.
 		await withRecordedFetch({ workspaceNotices: [] }, 200, async () => {
-			expect((await fetchBacklog()).gitIdentity).toBeNull();
+			expect((await fetchBacklog(null)).gitIdentity).toBeNull();
 		});
 		// A notice missing its detail is not one the screen is willing to show.
 		await withRecordedFetch({ gitIdentity: {} }, 200, async () => {
-			expect((await fetchBacklog()).gitIdentity).toBeNull();
+			expect((await fetchBacklog(null)).gitIdentity).toBeNull();
 		});
 	});
 
@@ -4402,8 +4440,8 @@ describe('same-origin transport', () => {
 
 	test('a failed read is reported as a transport error, not as empty data', async () => {
 		await withRecordedFetch({}, 500, async () => {
-			await expect(fetchRuns()).rejects.toThrow('Runs responded with 500');
-			await expect(fetchBacklog()).rejects.toThrow('Snapshot responded with 500');
+			await expect(fetchRuns(null)).rejects.toThrow('Runs responded with 500');
+			await expect(fetchBacklog(null)).rejects.toThrow('Snapshot responded with 500');
 		});
 	});
 });
