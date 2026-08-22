@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-702",
   "title": "Possuir runtimes registrados sob demanda",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T17:52:17.229Z",
-  "updatedAt": "2026-08-22T19:13:58.068Z",
+  "updatedAt": "2026-08-22T19:23:53.305Z",
   "description": "Permitir que as operacoes agent-facing project-scoped do ciclo operem qualquer projeto registrado e ready, mesmo quando ele nao for o repositorio de boot, sem criar outro processo ou reatribuir um singleton global. Compor sob demanda, a partir de root e stateDir do ProjectRegistry, os mesmos colaboradores atuais de ciclo para cada projeto; manter um contexto isolado por projeto durante a vida do processo, uma SQLite por stateDir, worktrees e notificacoes no projeto correto, e encerrar todos os contextos no shutdown. Preservar 404 project-not-found para ID desconhecido e retornar 409 project-not-ready para registro sem readiness ready. Substituir project-runtime-unavailable nas rotas canonicas de status.get, backlog, issues, brief e runs pelo contexto correspondente. Aplicar inicialmente admissao global serial: no maximo uma run nao terminal pode ser iniciada ou retomada no conjunto de projetos, enquanto leituras e a progressao da run ja admitida continuam funcionando; a serializacao ja existente dentro de cada projeto permanece. Rotas browser legadas continuam pertencendo apenas ao projeto de boot. Fora do escopo: descoberta, cadastro ou clone de projeto; UI multiprojeto operacional; conversa/orquestrador, diagnosticos ou settings de projeto nao corrente; SSE multiprojeto; paralelismo entre projetos; limite configuravel; segundo servico, daemon, banco compartilhado ou broker.",
   "specSource": "operator",
   "spec": {

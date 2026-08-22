@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
@@ -12,9 +13,21 @@ interface ProjectList {
 	projects: Array<{ id: string; current: boolean }>;
 }
 
+function readyProject(root: string): void {
+	execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: root });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: root });
+	writeFileSync(join(root, 'README.md'), '# Test\n');
+	execFileSync('git', ['add', 'README.md'], { cwd: root });
+	execFileSync('git', ['commit', '-m', 'seed'], { cwd: root });
+	execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/test.git'], { cwd: root });
+	execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root });
+}
+
 describe('project-scoped agent API', () => {
 	test('delegates current-project routes to the existing runtime and collaborators', async () => {
 		const cwd = createTestTmpdir('gship-project-agent-current-');
+		readyProject(cwd);
 		const runtime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
 		let brief: ProjectBrief = {
 			objective: 'Current objective',
@@ -68,7 +81,50 @@ describe('project-scoped agent API', () => {
 		}
 	});
 
-	test('rejects every lifecycle route for a registered non-current project before work', async () => {
+	test('composes and reuses an isolated runtime for a ready non-current project', async () => {
+		const cwd = createTestTmpdir('gship-project-agent-owner-ready-');
+		const foreignRoot = createTestTmpdir('gship-project-agent-ready-foreign-');
+		const foreignState = createTestTmpdir('gship-project-agent-ready-state-');
+		readyProject(foreignRoot);
+		const registry = openProjectRegistry(createTestTmpdir('gship-project-agent-ready-home-'));
+		const foreign = registry.reconcile({
+			root: foreignRoot,
+			stateDir: foreignState,
+			readiness: {
+				state: 'ready',
+				name: 'foreign',
+				repository: 'acme/test',
+				remoteUrl: 'git@github.com:acme/test.git',
+				sourceRef: 'origin/main',
+			},
+		});
+		const handle = startWebServer({ port: 0, cwd, projectRegistry: registry });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const base = `${origin}/api/projects/${foreign.id}`;
+		try {
+			const snapshot = await fetch(`${base}/snapshot`);
+			expect(snapshot.status).toBe(200);
+			expect(existsSync(join(foreignState, 'runtime.sqlite'))).toBe(true);
+
+			const updated = await fetch(`${base}/brief`, {
+				method: 'PUT',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({
+					objective: 'Foreign objective', decisions: [], constraints: [], openItems: [],
+				}),
+			});
+			expect(updated.status).toBe(200);
+			expect(await fetch(`${base}/brief`).then((response) => response.json())).toMatchObject({
+				brief: { objective: 'Foreign objective' },
+			});
+			expect(existsSync(join(cwd, '.gship', 'runtime.sqlite'))).toBe(true);
+		} finally {
+			await handle.stop();
+			registry.close();
+		}
+	});
+
+	test('rejects every lifecycle route for a registered project that is not ready', async () => {
 		const cwd = createTestTmpdir('gship-project-agent-owner-');
 		const foreignRoot = createTestTmpdir('gship-project-agent-foreign-');
 		const foreignState = createTestTmpdir('gship-project-agent-foreign-state-');
@@ -128,7 +184,7 @@ describe('project-scoped agent API', () => {
 				expect(response.status).toBe(409);
 				expect(await response.json()).toMatchObject({
 					ok: false,
-					code: 'project-runtime-unavailable',
+					code: 'project-not-ready',
 				});
 			}
 			expect(collaboratorCalls).toBe(0);

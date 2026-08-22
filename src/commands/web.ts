@@ -115,9 +115,14 @@ import { ensureCodexHome } from '../runtime/provider-env.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
 	openProjectRegistry,
+	type RegisteredProject,
 	type ProjectRegistry,
 	resolveGateshipHome,
 } from '../runtime/project-registry.ts';
+import {
+	ProjectRuntimeLookupError,
+	ProjectRuntimeManager,
+} from '../runtime/project-runtime-manager.ts';
 import { readProjectOperationalStatus } from '../runtime/project-status.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
@@ -226,6 +231,19 @@ export interface ProjectBriefAccess {
 	get(): ProjectBrief;
 	/** Persists the complete brief and atomically invalidates automatic handoff. */
 	set(brief: ProjectBrief): void;
+}
+
+interface ProjectCycleContext {
+	root: string;
+	stateDir: string;
+	runtime: RunRuntime;
+	projectBrief: ProjectBriefAccess;
+	issueIntake: IssueIntakeWriter;
+	issueSpecifier: IssueSpecifier;
+	issueApprover: IssueApprover;
+	issueAbandoner: IssueAbandoner;
+	issueReader: (id: string) => IssueEntry | null;
+	close(): Promise<void>;
 }
 
 function briefList(value: unknown, label: string): string[] {
@@ -1376,11 +1394,13 @@ async function readIssueId(request: Request): Promise<string | Response> {
 async function startDurableRun(
 	request: Request,
 	runtime: RunRuntime,
+	admit?: () => void,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	const issueId = await readIssueId(request);
 	if (issueId instanceof Response) return issueId;
 	try {
+		admit?.();
 		return Response.json({ ok: true, run: runtime.startRun(issueId, commandSource(request)) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
@@ -1444,6 +1464,7 @@ async function resumeDurableRun(
 	request: Request,
 	runtime: RunRuntime,
 	runId: string,
+	admit?: () => void,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	if (runtime.getRun(runId) === null) {
@@ -1455,6 +1476,7 @@ async function resumeDurableRun(
 	const operatorGuidance = await readOptionalOperatorGuidance(request);
 	if (operatorGuidance instanceof Response) return operatorGuidance;
 	try {
+		admit?.();
 		return Response.json(
 			{ ok: true, run: runtime.resumeRun(runId, operatorGuidance, commandSource(request)) },
 			{ status: 202 },
@@ -1884,6 +1906,7 @@ async function executeOrchestratorCommand(
 	issueSpecifier: IssueSpecifier,
 	issueApprover: IssueApprover,
 	issueAbandoner: IssueAbandoner,
+	admission?: { start(): void; resume(runId: string): void },
 ): Promise<string> {
 	switch (command.type) {
 		case 'none':
@@ -1900,6 +1923,7 @@ async function executeOrchestratorCommand(
 			// The publication is already durable: a failing start must report the
 			// created id instead of escaping as a generic refusal.
 			try {
+				admission?.start();
 				const run = runtime.startRun(issue.id);
 				return `${issue.id} created in the backlog and run ${run.id} started.`;
 			} catch (error) {
@@ -1927,10 +1951,12 @@ async function executeOrchestratorCommand(
 			return `${issue.id} abandoned in the backlog.`;
 		}
 		case 'start_run': {
+			admission?.start();
 			const run = runtime.startRun(command.issueId);
 			return `Run ${run.id} started for ${run.issueId}.`;
 		}
 		case 'resume_run': {
+			admission?.resume(command.runId);
 			const run = runtime.resumeRun(command.runId, command.guidance);
 			return `Run ${run.id} retomada.`;
 		}
@@ -2052,17 +2078,39 @@ function resolveIssueWriters(
 	issueApprover: IssueApprover;
 	issueAbandoner: IssueAbandoner;
 } {
+	const defaults = defaultIssueWriters(options.cwd, ensureIdentity);
 	return {
-		issueIntake: options.issueIntake
-			?? ((input, intakeOptions) => createOperatorIssue(
-				options.cwd, input, intakeOptions, undefined, ensureIdentity,
-			)),
-		issueSpecifier: options.issueSpecifier
-			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input, undefined, ensureIdentity)),
-		issueApprover: options.issueApprover
-			?? ((id) => approveOperatorIssue(options.cwd, id, undefined, ensureIdentity)),
-		issueAbandoner: options.issueAbandoner
-			?? ((id, input) => abandonOperatorIssue(options.cwd, id, input, undefined, ensureIdentity)),
+		issueIntake: options.issueIntake ?? defaults.issueIntake,
+		issueSpecifier: options.issueSpecifier ?? defaults.issueSpecifier,
+		issueApprover: options.issueApprover ?? defaults.issueApprover,
+		issueAbandoner: options.issueAbandoner ?? defaults.issueAbandoner,
+	};
+}
+
+function defaultIssueWriters(
+	cwd: string,
+	ensureIdentity: () => GitIdentityResult,
+): {
+	issueIntake: IssueIntakeWriter;
+	issueSpecifier: IssueSpecifier;
+	issueApprover: IssueApprover;
+	issueAbandoner: IssueAbandoner;
+} {
+	return {
+		issueIntake: (input, intakeOptions) => createOperatorIssue(
+			cwd, input, intakeOptions, undefined, ensureIdentity,
+		),
+		issueSpecifier: (id, input) => specifyOperatorIssue(cwd, id, input, undefined, ensureIdentity),
+		issueApprover: (id) => approveOperatorIssue(cwd, id, undefined, ensureIdentity),
+		issueAbandoner: (id, input) => abandonOperatorIssue(cwd, id, input, undefined, ensureIdentity),
+	};
+}
+
+function cachedGitIdentity(ensure: () => GitIdentityResult): () => GitIdentityResult {
+	let result: GitIdentityResult | undefined;
+	return () => {
+		if (result === undefined || result.outcome === 'missing') result = ensure();
+		return result;
 	};
 }
 
@@ -2195,13 +2243,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// commit fail with "Author identity unknown" regardless of a login that
 	// happens seconds later -- exactly the failure this exists to prevent.
 	const ensureGitIdentityFn = options.ensureGitIdentity ?? (() => ensureGitIdentity(options.cwd));
-	let gitIdentityEnsured: GitIdentityResult | undefined;
-	const ensureGitIdentityOnce = (): GitIdentityResult => {
-		if (gitIdentityEnsured === undefined || gitIdentityEnsured.outcome === 'missing') {
-			gitIdentityEnsured = ensureGitIdentityFn();
-		}
-		return gitIdentityEnsured;
-	};
+	const ensureGitIdentityOnce = cachedGitIdentity(ensureGitIdentityFn);
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(
 			options.cwd,
@@ -2233,9 +2275,61 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		get: () => runRuntime.getProjectBrief(),
 		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
 	};
+	const bootContext: ProjectCycleContext = {
+		root: projectRoot,
+		stateDir,
+		runtime: runRuntime,
+		projectBrief,
+		issueIntake,
+		issueSpecifier,
+		issueApprover,
+		issueAbandoner,
+		issueReader,
+		close: async () => undefined,
+	};
+	const composeProjectRuntime = (project: RegisteredProject): ProjectCycleContext => {
+		const ensureIdentity = cachedGitIdentity(() => ensureGitIdentity(project.root));
+		const runtime = new RunRuntime(createDefaultRunRuntimeOptions(
+			project.root,
+			ensureIdentity,
+			workflowRevision,
+			project.stateDir,
+		));
+		const writers = defaultIssueWriters(project.root, ensureIdentity);
+		const unsubscribe = runtime.subscribe(createRemoteNotifier({
+			cwd: project.root,
+			stateDir: project.stateDir,
+		}));
+		return {
+			root: project.root,
+			stateDir: project.stateDir,
+			runtime,
+			projectBrief: {
+				get: () => runtime.getProjectBrief(),
+				set: (brief) => runtime.setProjectBrief(brief),
+			},
+			...writers,
+			issueReader: (id) => readPublishedIssue(project.root, id),
+			close: async () => {
+				unsubscribe();
+				await runtime.stop();
+				runtime.close();
+			},
+		};
+	};
+	const projectRuntimes = new ProjectRuntimeManager(
+		projectRegistry,
+		projectRoot,
+		composeProjectRuntime,
+	);
+	projectRuntimes.register(currentProject.id, bootContext);
 	const execute = (command: OrchestratorCommand): Promise<string> =>
 		executeOrchestratorCommand(
 			command, runRuntime, issueIntake, issueSpecifier, issueApprover, issueAbandoner,
+			{
+				start: () => { projectRuntimes.admitStart(currentProject.id); },
+				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
+			},
 		);
 	const orchestrator = options.orchestrator?.(execute)
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
@@ -2243,46 +2337,42 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
 		Response.redirect(new URL(path, request.url).toString(), 302);
-	const currentProjectOperation = (
+	const projectOperation = (
 		projectId: string,
-		operation: () => MaybePromise<Response>,
+		operation: (context: ProjectCycleContext) => MaybePromise<Response>,
 	): MaybePromise<Response> => {
-		const project = projectRegistry.get(projectId, projectRoot);
-		if (project === null) {
-			return Response.json(
-				{ ok: false, code: 'project-not-found', message: 'Project not found.' },
-				{ status: 404 },
-			);
-		}
-		if (project.id !== currentProject.id) {
+		try {
+			return operation(projectRuntimes.get(projectId).context);
+		} catch (error) {
+			if (!(error instanceof ProjectRuntimeLookupError)) throw error;
 			return Response.json(
 				{
 					ok: false,
-					code: 'project-runtime-unavailable',
-					message: 'This Gateship instance does not own the requested project runtime.',
+					code: error.code,
+					message: error.message,
 				},
-				{ status: 409 },
+				{ status: error.status },
 			);
 		}
-		return operation();
 	};
-	const readSnapshot = (): Response => {
+	const readProjectSnapshot = (context: ProjectCycleContext): Response => {
 		const snapshot: Record<string, unknown> = {
-			idleState: readIdleSnapshotState(options.cwd),
+			idleState: readIdleSnapshotState(context.root),
 			version: snapshotVersion,
 		};
-		const workspaceNotices = runRuntime.listWorkspaceNotices();
+		const workspaceNotices = context.runtime.listWorkspaceNotices();
 		if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;
 		// Its own field: `workspaceNotices` means a preserved local resource
 		// waiting for a decision, which this is not.
-		const staleService = staleServiceNotice(options.cwd, bootSourceSha);
+		const staleService = staleServiceNotice(context.root, bootSourceSha);
 		if (staleService !== null) snapshot['staleService'] = staleService;
 		// Keep snapshot reads local and cheap. Credential derivation remains in
 		// the intake and ship write paths, never this GET handler.
-		const gitIdentity = checkGitIdentity(options.cwd);
+		const gitIdentity = checkGitIdentity(context.root);
 		if (gitIdentity.outcome === 'missing') snapshot['gitIdentity'] = { detail: gitIdentity.detail };
 		return Response.json(snapshot);
 	};
+	const readSnapshot = (): Response => readProjectSnapshot(bootContext);
 	const server = Bun.serve({
 		hostname: resolveBindHostname(),
 		port: options.port,
@@ -2320,121 +2410,130 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			// Agent-facing lifecycle routes are project-explicit. The registry
 			// guard runs before the current runtime or any of its collaborators.
-			'/api/projects/:projectId/snapshot': (request) => currentProjectOperation(
+			'/api/projects/:projectId/snapshot': (request) => projectOperation(
 				request.params.projectId,
-				readSnapshot,
+				readProjectSnapshot,
 			),
-			'/api/projects/:projectId/backlog': (request) => currentProjectOperation(
+			'/api/projects/:projectId/backlog': (request) => projectOperation(
 				request.params.projectId,
-				() => Response.json(readIdleSnapshotState(options.cwd)),
+				(context) => Response.json(readIdleSnapshotState(context.root)),
 			),
 			'/api/projects/:projectId/runs': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => Response.json({ runs: listRunsWithInsights(runRuntime) }),
+					(context) => Response.json({ runs: listRunsWithInsights(context.runtime) }),
 				),
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => startDurableRun(request, runRuntime),
+					(context) => startDurableRun(
+						request,
+						context.runtime,
+						() => { projectRuntimes.admitStart(request.params.projectId); },
+					),
 				),
 			},
 			'/api/projects/:projectId/brief': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => Response.json({
-						brief: projectBrief.get(),
-						handoff: runRuntime.getOrchestratorHandoff(),
+					(context) => Response.json({
+						brief: context.projectBrief.get(),
+						handoff: context.runtime.getOrchestratorHandoff(),
 					}),
 				),
-				PUT: (request) => currentProjectOperation(
+				PUT: (request) => projectOperation(
 					request.params.projectId,
-					() => writeProjectBrief(request, projectBrief),
+					(context) => writeProjectBrief(request, context.projectBrief),
 				),
 			},
 			'/api/projects/:projectId/issues': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => listPublishedIssues(options.cwd),
+					(context) => listPublishedIssues(context.root),
 				),
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => createIssueFromOperator(request, issueIntake),
+					(context) => createIssueFromOperator(request, context.issueIntake),
 				),
 			},
 			'/api/projects/:projectId/issues/:issueId': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => readPublishedIssueResponse(issueReader, request.params.issueId),
+					(context) => readPublishedIssueResponse(context.issueReader, request.params.issueId),
 				),
 			},
 			'/api/projects/:projectId/issues/:issueId/spec': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => specifyIssueFromOperator(
+					(context) => specifyIssueFromOperator(
 						request,
 						request.params.issueId,
-						runRuntime,
-						issueSpecifier,
+						context.runtime,
+						context.issueSpecifier,
 					),
 				),
 			},
 			'/api/projects/:projectId/issues/:issueId/approve': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => approveIssueFromOperator(
+					(context) => approveIssueFromOperator(
 						request,
 						request.params.issueId,
-						runRuntime,
-						issueApprover,
-						issueReader,
+						context.runtime,
+						context.issueApprover,
+						context.issueReader,
 					),
 				),
 			},
 			'/api/projects/:projectId/issues/:issueId/abandon': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => abandonIssueFromOperator(
+					(context) => abandonIssueFromOperator(
 						request,
 						request.params.issueId,
-						runRuntime,
-						issueAbandoner,
+						context.runtime,
+						context.issueAbandoner,
 					),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/cancel': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => cancelDurableRun(request, runRuntime, request.params.runId),
+					(context) => cancelDurableRun(request, context.runtime, request.params.runId),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => readRun(runRuntime, request.params.runId),
+					(context) => readRun(context.runtime, request.params.runId),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/abandon': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => abandonDurableRun(request, runRuntime, request.params.runId),
+					(context) => abandonDurableRun(request, context.runtime, request.params.runId),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/events': {
-				GET: (request) => currentProjectOperation(
+				GET: (request) => projectOperation(
 					request.params.projectId,
-					() => readRunEvents(runRuntime, request.params.runId),
+					(context) => readRunEvents(context.runtime, request.params.runId),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/resume': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => resumeDurableRun(request, runRuntime, request.params.runId),
+					(context) => resumeDurableRun(
+						request,
+						context.runtime,
+						request.params.runId,
+						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); },
+					),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/ship': {
-				POST: (request) => currentProjectOperation(
+				POST: (request) => projectOperation(
 					request.params.projectId,
-					() => shipDurableRun(request, runRuntime, request.params.runId),
+					(context) => shipDurableRun(request, context.runtime, request.params.runId),
 				),
 			},
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
@@ -2477,7 +2576,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: listRunsWithInsights(runRuntime) }),
-				POST: (request) => startDurableRun(request, runRuntime),
+				POST: (request) => startDurableRun(
+					request,
+					runRuntime,
+					() => { projectRuntimes.admitStart(currentProject.id); },
+				),
 			},
 			'/api/providers': () => listProviders(providerAuth, runRuntime),
 			// The read stays unguarded like every other GET: a same-origin browser
@@ -2627,7 +2730,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				GET: (request) => readRunEvents(runRuntime, request.params.runId),
 			},
 			'/api/runs/:runId/resume': {
-				POST: (request) => resumeDurableRun(request, runRuntime, request.params.runId),
+				POST: (request) => resumeDurableRun(
+					request,
+					runRuntime,
+					request.params.runId,
+					() => { projectRuntimes.admitResume(currentProject.id, request.params.runId); },
+				),
 			},
 			'/api/runs/:runId/ship': {
 				POST: (request) => shipDurableRun(request, runRuntime, request.params.runId),
@@ -2663,6 +2771,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		stop: async () => {
 			if (stopped) return;
 			stopped = true;
+			await projectRuntimes.close();
 			unsubscribeRemoteNotifier();
 			await selfUpdate.stop();
 			if (ownsOrchestrator) await orchestrator.stop();
