@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T23:04:43.138Z",
-  "updatedAt": "2026-08-22T23:04:43.138Z",
+  "updatedAt": "2026-08-22T23:14:17.250Z",
   "description": "Tornar /projects/:projectId/runs a primeira superfície browser operacional para qualquer projeto registrado e ready, sem mover o projeto de boot. O cliente deve derivar o projectId exclusivamente da URL e carregar snapshot, runs e eventos da run mais recente pelas rotas project-scoped já existentes. Adicionar GET /api/projects/:projectId/events como SSE ligado somente ao RunRuntime daquele projeto, com unsubscribe no fechamento e respostas tipadas project-not-found ou project-not-ready antes de abrir o stream. Resume, cancel, abandon e ship disparados pela página devem usar o mesmo projectId selecionado; sidebar, atenção, relatório, custo, PR, CI, histórico e notices devem refletir apenas esse projeto, nunca dados do runtime de boot. Uma navegação ou refresh para outro projeto deve reconstruir o documento e a assinatura sem localStorage, polling geral ou estado oculto. Preservar redirects legados para o projeto de boot, admissão global serial, uma SQLite por projeto e os limites atuais do histórico. Projetos desconhecidos ou não ready continuam com a superfície tipada existente. Fora do escopo: tornar conversation, work ou settings operacionais para projeto não corrente; criar ou aprovar issues; iniciar runs pela UI de outro projeto; propostas, diagnósticos ou brief multiprojeto; agregação no overview; paralelismo; segundo serviço, broker ou banco compartilhado.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/project-scoped-browser-runs.test.ts test/web/ui-client.test.tsx test/web/embedded-ui.test.ts test/runtime/project-runtime-manager.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "14ae4d813cee3f2a96a9e57335bdfc5dbbf7465c4d7b3774d78dffab439f7f65",
+    "approvedAt": "2026-08-22T23:14:17.250Z"
   }
 }
