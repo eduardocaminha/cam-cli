@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
 	AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES,
@@ -14,6 +17,17 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const jsonResponse = (body: unknown, status = 200): Response => Response.json(body, { status });
 const PROJECT_ID = 'project-1';
+
+function readyProject(root: string): void {
+	execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: root });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: root });
+	writeFileSync(join(root, 'README.md'), '# Test\n');
+	execFileSync('git', ['add', 'README.md'], { cwd: root });
+	execFileSync('git', ['commit', '-m', 'seed'], { cwd: root });
+	execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/test.git'], { cwd: root });
+	execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root });
+}
 
 describe('canonical agent CLI', () => {
 	test('parses call input and an explicit local service URL', () => {
@@ -364,9 +378,11 @@ describe('canonical agent CLI', () => {
 	test('the service requires explicit authorization before an agent updates the brief', async () => {
 		let brief: ProjectBrief = { objective: '', decisions: [], constraints: [], openItems: [] };
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const cwd = createTestTmpdir('gship-agent-brief-');
+		readyProject(cwd);
 		const handle = startWebServer({
 			port: 0,
-			cwd: createTestTmpdir('gship-agent-brief-'),
+			cwd,
 			runRuntime: runtime,
 			projectBrief: { get: () => brief, set: (next) => { brief = next; } },
 		});
