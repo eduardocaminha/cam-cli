@@ -14,6 +14,7 @@ import {
 } from '../../src/runtime/claude-cli-executor.ts';
 import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import { PROPOSAL_LIMITS } from '../../src/runtime/run-proposal.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -321,6 +322,24 @@ describe('Claude CLI runtime executor', () => {
 	});
 
 	// GSHIP-612: the executor reports out-of-scope ideas instead of building them.
+	// GSHIP-703: the executor prompt is the one both providers send, so the
+	// language contract reaching it here reaches the Codex executor too; the
+	// Codex side asserts the same bytes over a real child.
+	test('carries the shared operator language contract on every turn shape', () => {
+		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
+		expect(buildWorkPrompt('CAM-703', '{"id":"CAM-703"}', false, undefined, undefined))
+			.toContain(contract);
+		expect(buildWorkPrompt(
+			'CAM-703',
+			'{"id":"CAM-703"}',
+			true,
+			'1. src/a.ts: quebra o contrato',
+			'Responda em português.',
+			['Manter o seam menor.'],
+			'verify failed',
+		)).toContain(contract);
+	});
+
 	test('asks for bounded proposals and keeps them out of a paused turn', () => {
 		expect(EXECUTION_RESULT_SCHEMA.required).toContain('proposals');
 		expect(EXECUTION_RESULT_SCHEMA.properties.proposals.maxItems)
@@ -668,9 +687,10 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 	const issueId = 'CAM-637';
 	const issue = '{"id":"CAM-637"}';
 
-	// With no decisions -- every run's first turn -- the prompt must stay
-	// byte-for-byte what it was before this issue.
-	test('with no decisions, the prompt is exactly what it was before this issue', () => {
+	// With no decisions -- every run's first turn -- the prompt is exactly the
+	// role instructions plus the shared language contract (GSHIP-703) and the
+	// issue record, with no decision block at all.
+	test('with no decisions, the prompt is the base instructions and nothing else', () => {
 		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, []);
 		expect(prompt).toBe([
 			`Implement Gateship issue ${issueId}.`,
@@ -681,6 +701,8 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 			'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 			'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 			`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+			'',
+			...OPERATOR_LANGUAGE_CONTRACT,
 			'',
 			'Issue record:',
 			issue,

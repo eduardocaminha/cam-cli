@@ -5,6 +5,7 @@ import { buildReviewPrompt, collectChange } from '../../src/runtime/claude-cli-r
 import { CodexCliReviewer } from '../../src/runtime/codex-cli-reviewer.ts';
 import { buildCodexReviewArgv } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import type { RuntimeExecutionInput } from '../../src/runtime/run-runtime.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -117,5 +118,8 @@ describe('independent Codex reviewer', () => {
 
 		const change = collectChange(() => ({ exitCode: 0, stdout: '', stderr: '' }), 'ignored');
 		expect(capturedPrompt).toBe(buildReviewPrompt('CAM-1', '{"id":"CAM-1"}', change, decisions));
+		// GSHIP-703: same shared builder, so this reviewer's findings carry the
+		// one operator language contract, not a Codex-specific copy of it.
+		expect(capturedPrompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
 	});
 });

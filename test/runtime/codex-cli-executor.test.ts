@@ -13,6 +13,7 @@ import {
 	probeCodexModel,
 } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -314,6 +315,9 @@ describe('Codex CLI runtime executor', () => {
 		expect(input).toBe(
 			buildWorkPrompt('CAM-37', '{"id":"CAM-37"}', false, undefined, undefined, decisions),
 		);
+		// GSHIP-703: same shared builder, so the real Codex child receives the
+		// one operator language contract, not a Codex-specific copy of it.
+		expect(input).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
 	});
 
 	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.

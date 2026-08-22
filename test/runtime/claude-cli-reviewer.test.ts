@@ -18,6 +18,7 @@ import {
 	parseReviewVerdict,
 	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewResult,
@@ -334,9 +335,10 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 	const issue = '{"id":"CAM-630"}';
 	const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n' };
 
-	// With no decisions -- every run's first review -- the prompt must stay
-	// byte-for-byte what it was before this issue.
-	test('with no decisions, the prompt is exactly what it was before this issue', () => {
+	// With no decisions -- every run's first review -- the prompt is exactly
+	// the judging instructions plus the shared language contract (GSHIP-703)
+	// and the verdict format, with no decision block at all.
+	test('with no decisions, the prompt is the base instructions and nothing else', () => {
 		const prompt = buildReviewPrompt(issueId, issue, change, []);
 		expect(prompt).toBe([
 			`Review the uncommitted change in this worktree for Gateship issue ${issueId}.`,
@@ -349,6 +351,8 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			'Report a finding only for a defect you can point at in a specific file:',
 			'a real bug, a broken contract, or work outside the issue. Style preference',
 			'and speculation are not findings.',
+			'',
+			...OPERATOR_LANGUAGE_CONTRACT,
 			'',
 			'End your reply with a single JSON object on the last line and nothing after it:',
 			'{"verdict":"CLEAN","findings":[]}',
@@ -376,6 +380,16 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 		// The block sits after the judging instructions and before the verdict format.
 		expect(prompt.indexOf('Judge only whether')).toBeLessThan(prompt.indexOf('Decisions the operator'));
 		expect(prompt.indexOf('Decisions the operator')).toBeLessThan(prompt.indexOf('End your reply'));
+	});
+
+	// GSHIP-703: the reviewer prompt is shared by both providers, so findings
+	// carry the same contract whichever one reviews; the Codex side asserts
+	// the same bytes over its own reviewer.
+	test('carries the shared operator language contract with and without decisions', () => {
+		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
+		expect(buildReviewPrompt(issueId, issue, change, [])).toContain(contract);
+		expect(buildReviewPrompt(issueId, issue, change, ['Keep the smaller seam.']))
+			.toContain(contract);
 	});
 
 	test('multiple decisions render numbered in the order given', () => {

@@ -21,6 +21,7 @@ import {
 	resolveModelSlot,
 } from './model-settings.ts';
 import { formatOperatorDecisionList } from './operator-decision.ts';
+import { OPERATOR_LANGUAGE_CONTRACT } from './operator-language.ts';
 import { normalizeProposalDrafts, PROPOSAL_LIMITS } from './run-proposal.ts';
 import type {
 	RuntimeExecutionInput,
@@ -205,6 +206,8 @@ export function buildWorkPrompt(
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+		'',
+		...OPERATOR_LANGUAGE_CONTRACT,
 		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
