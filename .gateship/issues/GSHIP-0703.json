@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-703",
+  "title": "Aplicar contrato de linguagem ao output das runs",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-22T19:31:05.522Z",
+  "updatedAt": "2026-08-22T19:31:05.522Z",
+  "description": "Aplicar o contrato de linguagem ja decidido a todo texto de agentes exibido ao operador durante uma run. Centralizar uma instrucao provider-neutral curta e inclui-la nos prompts compartilhados do executor Claude/Codex, reviewer Claude/Codex, resolvedor de perguntas do ciclo e orquestrador conversacional. Summary, progresso textual, perguntas, propostas e findings devem usar a lingua predominante do pedido/spec e, quando houver, da orientacao mais recente do operador; manter identificadores, comandos, paths, nomes de arquivo, numeros e URLs literalmente. O texto deve ser conciso, em linguagem simples, organizado por topicos apenas quando necessario, sem emojis, em dashes, filler, elogios ou teatralidade. A aplicacao e por prompt, nao por pos-processamento: Gateship nao traduz, reescreve ou rejeita output depois de gerado. Cobrir deterministicamente que todos os quatro pontos recebem o mesmo contrato e que Claude e Codex continuam compartilhando seus prompts. Fora do escopo: detectar idioma com biblioteca ou modelo, persistir locale no servidor, traduzir historico, alterar schemas JSON, filtrar codigo/diffs, mudar UI/i18n ou bloquear uma run por estilo.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Aplicar o contrato de linguagem ja decidido a todo texto de agentes exibido ao operador durante uma run. Centralizar uma instrucao provider-neutral curta e inclui-la nos prompts compartilhados do executor Claude/Codex, reviewer Claude/Codex, resolvedor de perguntas do ciclo e orquestrador conversacional. Summary, progresso textual, perguntas, propostas e findings devem usar a lingua predominante do pedido/spec e, quando houver, da orientacao mais recente do operador; manter identificadores, comandos, paths, nomes de arquivo, numeros e URLs literalmente. O texto deve ser conciso, em linguagem simples, organizado por topicos apenas quando necessario, sem emojis, em dashes, filler, elogios ou teatralidade. A aplicacao e por prompt, nao por pos-processamento: Gateship nao traduz, reescreve ou rejeita output depois de gerado. Cobrir deterministicamente que todos os quatro pontos recebem o mesmo contrato e que Claude e Codex continuam compartilhando seus prompts. Fora do escopo: detectar idioma com biblioteca ou modelo, persistir locale no servidor, traduzir historico, alterar schemas JSON, filtrar codigo/diffs, mudar UI/i18n ou bloquear uma run por estilo.",
+    "verify": [
+      "bun test test/runtime/conversational-orchestrator.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/agent-cycle-question-resolver.test.ts && bun run typecheck"
+    ]
+  }
+}
