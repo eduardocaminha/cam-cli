@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T13:23:53.151Z",
-  "updatedAt": "2026-08-22T13:23:53.151Z",
+  "updatedAt": "2026-08-22T13:28:14.283Z",
   "description": "Impedir que os testes de fronteira de processo em test/web/launch.test.ts escrevam no GATESHIP_HOME nativo do usuário. Todo Bun.spawn e Bun.spawnSync que inicia index.ts nesse arquivo deve receber explicitamente um GATESHIP_HOME absoluto criado pelo scratch helper e herdado apenas para aquela fixture, incluindo os caminhos de porta normal, porta padrão, argumentos inválidos e porta ocupada. A cobertura deve provar que um processo web real cria/reconcilia seu registro dentro do home temporário informado, sem depender de ~/.gateship nem de mutação implícita do ambiente do processo pai. Preservar integralmente a resolução de GATESHIP_HOME em produção. Não adicionar filtros por nome/caminho, poda automática de projetos inexistentes, TTL, API de remoção, migração de banco ou mudanças na UI. Depois do ship, remover operacionalmente somente as entradas de fixture desta run do registro local, mantendo backup recuperável.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/launch.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "8e9a240d19dfd6fcbc69e74dda3054f112a49faf992e3e8596ff3db05c93fa78",
+    "approvedAt": "2026-08-22T13:28:14.283Z"
   }
 }
