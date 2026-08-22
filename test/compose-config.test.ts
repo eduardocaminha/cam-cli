@@ -50,9 +50,16 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 
 	test('uses long volume syntax so Windows drive-letter bind mounts remain portable', () => {
 		expect(compose).toContain(
-			'type: bind\n        source: ${GATESHIP_PROJECT_DIR:-.}\n        target: /workspace',
+			'type: bind\n        source: ${GATESHIP_PROJECTS_DIR:-.}\n        target: /projects',
 		);
-		expect(compose).not.toContain('${GATESHIP_PROJECT_DIR:-.}:/workspace');
+		expect(compose).not.toContain('${GATESHIP_PROJECTS_DIR:-.}:/projects');
+	});
+
+	test('selects one repository relative to the projects mount and keeps project state on the bind', () => {
+		expect(compose).toContain('working_dir: /projects/${GATESHIP_PROJECT_PATH:-.}');
+		expect(compose).toContain('- gateship-state:/var/lib/gateship');
+		expect(compose).not.toContain('gateship-state:/projects');
+		expect(compose.match(/^\s+- gateship-state:/gm) ?? []).toHaveLength(1);
 	});
 });
 
@@ -73,7 +80,8 @@ describe('canonical portable container documentation (GSHIP-699)', () => {
 		expect(readme).toContain('Docker Engine on Linux');
 		expect(readme).toContain('### POSIX shells');
 		expect(readme).toContain('### PowerShell');
-		expect(readme).toContain('$env:GATESHIP_PROJECT_DIR = "C:\\path\\to\\project"');
+		expect(readme).toContain('$env:GATESHIP_PROJECTS_DIR = "C:\\path\\to\\projects"');
+		expect(readme).toContain('$env:GATESHIP_PROJECT_PATH = "product"');
 	});
 
 	test('documents the supported headless Codex subscription login in the persisted CODEX_HOME', () => {

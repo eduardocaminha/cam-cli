@@ -15,8 +15,8 @@
 // `canCommitAuthorIdentity` for exactly what that covers and why.
 //
 // The write is gated on ownership: this only ever runs `git config --global
-// user.name/email` when GIT_CONFIG_GLOBAL resolves inside this project's own
-// `.gship/` state (the container's case), never against whatever `--global`
+// user.name/email` when GIT_CONFIG_GLOBAL resolves inside the explicit
+// GATESHIP_HOME (the container's case), never against whatever `--global`
 // would otherwise mean -- the real person's `~/.gitconfig` when running from
 // source. Outside that ownership, a missing identity is reported, not fixed.
 //
@@ -123,18 +123,19 @@ function canCommitAuthorIdentity(runGit: IdentityCommandRunner, cwd: string): bo
 }
 
 /**
- * Whether `git config --global` writes land inside this project's own
- * `.gship/` state rather than somewhere Gateship does not own -- concretely,
+ * Whether `git config --global` writes land inside the explicit global
+ * Gateship home rather than somewhere Gateship does not own -- concretely,
  * `~/.gitconfig` when running from source, since `--global` always means the
- * real person's config there. Only the container sets GIT_CONFIG_GLOBAL, and
- * only ever to a path under its own volume-backed state (the Dockerfile), so
- * an unset or unrelated GIT_CONFIG_GLOBAL means Gateship does not own it.
+ * real person's config there. The container sets both paths to the one named
+ * volume (the Dockerfile), so an unset or unrelated path is not owned.
  */
-function ownsGlobalGitConfig(cwd: string, env: Record<string, string | undefined>): boolean {
+function ownsGlobalGitConfig(env: Record<string, string | undefined>): boolean {
 	const configured = env['GIT_CONFIG_GLOBAL'];
-	if (configured === undefined || configured.trim().length === 0) return false;
-	const stateDir = resolve(cwd, '.gship') + sep;
-	return resolve(configured).startsWith(stateDir);
+	const gateshipHome = env['GATESHIP_HOME'];
+	if (configured === undefined || configured.trim().length === 0
+		|| gateshipHome === undefined || gateshipHome.trim().length === 0) return false;
+	const home = resolve(gateshipHome) + sep;
+	return resolve(configured).startsWith(home);
 }
 
 const NOT_OWNED_DETAIL = 'no git author identity is configured; set `git config --global user.name`/`user.email`'
@@ -175,7 +176,7 @@ export function checkGitIdentity(cwd: string, options: GitIdentityCheckOptions =
 
 	if (canCommitAuthorIdentity(runGit, cwd)) return { outcome: 'already-configured' };
 
-	if (!ownsGlobalGitConfig(cwd, env)) return { outcome: 'missing', detail: NOT_OWNED_DETAIL };
+	if (!ownsGlobalGitConfig(env)) return { outcome: 'missing', detail: NOT_OWNED_DETAIL };
 	return { outcome: 'missing', detail: WILL_DERIVE_ON_COMMIT_DETAIL };
 }
 
@@ -221,7 +222,7 @@ export function ensureGitIdentity(cwd: string, options: GitIdentityOptions = {})
 
 	const check = checkGitIdentity(cwd, { runGit, env });
 	if (check.outcome === 'already-configured') return check;
-	if (!ownsGlobalGitConfig(cwd, env)) return check;
+	if (!ownsGlobalGitConfig(env)) return check;
 
 	const account = runGh(['api', 'user', '--jq', '{id: .id, login: .login, name: .name}']);
 	if (account.exitCode !== 0) {

@@ -24,8 +24,8 @@ describe('global project registry', () => {
 		expect(resolveGateshipHome({ env: {}, nativeHome: '/Users/operator' }))
 			.toBe('/Users/operator/.gateship');
 		expect(resolveGateshipHome({
-			env: {}, nativeHome: '/Users/operator', containerStateDir: '/state/project',
-		})).toBe('/state/project');
+			env: { GATESHIP_HOME: '/var/lib/gateship' }, nativeHome: '/Users/operator',
+		})).toBe('/var/lib/gateship');
 	});
 
 	test('reconciles canonical roots uniquely and preserves identity across restarts', () => {

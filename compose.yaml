@@ -1,10 +1,12 @@
 # One image, one volume, one process supervising its children (AGENTS.md).
-# GATESHIP_PROJECT_DIR is the git repository Gateship manages -- the current
-# directory by default. The published port stays bound to the host's loopback
-# only, so the container is reachable exactly like the local binary was:
+# GATESHIP_PROJECTS_DIR is the host directory exposed at /projects, and
+# GATESHIP_PROJECT_PATH selects the initial repository relative to that mount.
+# Their defaults keep the current directory usable as one project. The
+# published port stays bound to the host's loopback only, so the container is
+# reachable exactly like the local binary was:
 # from this machine alone.
 #
-#   GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECT_DIR=/path/to/project docker compose up
+#   GSHIP_BUILD_SHA=$(git rev-parse HEAD) GATESHIP_PROJECTS_DIR=/path/to/projects GATESHIP_PROJECT_PATH=product docker compose up
 #
 # GSHIP_BUILD_SHA is optional -- an unset one still builds, it just leaves the
 # image unable to say what commit it came from (see the Dockerfile and
@@ -22,12 +24,11 @@
 #
 #   GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3 docker compose up
 #
-# The named volume below is mounted over ./.gship inside that repository,
-# which is where the SQLite store, managed worktrees and (via
-# CLAUDE_CONFIG_DIR/CODEX_HOME/GH_CONFIG_DIR in the Dockerfile) the Claude,
-# Codex and GitHub CLI logins already live. Recreating the container against
-# the same project directory and the same volume returns the operator to the
-# same place.
+# The named volume below is the product-wide home: it carries the project
+# registry and the CLI-owned login stores. Each selected repository keeps its
+# own SQLite store and managed worktrees in <repo>/.gship on the bind mount.
+# Recreating the container with the same projects bind and named volume returns
+# the operator to the same place without copying host credentials.
 services:
   gateship:
     build:
@@ -36,7 +37,8 @@ services:
         GSHIP_BUILD_SHA: ${GSHIP_BUILD_SHA:-}
     image: ${GATESHIP_IMAGE:-gateship:latest}
     init: true
-    # The repository and named state volume are the only durable write
+    working_dir: /projects/${GATESHIP_PROJECT_PATH:-.}
+    # The projects bind and named state volume are the only durable write
     # surfaces. Everything baked into the image stays immutable, and a child
     # cannot gain privileges through a setuid/setgid binary. Root retains only
     # the two filesystem capabilities needed to operate bind-mounted projects
@@ -57,9 +59,9 @@ services:
       # Long syntax keeps Windows drive letters from being interpreted as a
       # short-syntax field separator by Docker Compose.
       - type: bind
-        source: ${GATESHIP_PROJECT_DIR:-.}
-        target: /workspace
-      - gateship-state:/workspace/.gship
+        source: ${GATESHIP_PROJECTS_DIR:-.}
+        target: /projects
+      - gateship-state:/var/lib/gateship
     stdin_open: true
     tty: true
 

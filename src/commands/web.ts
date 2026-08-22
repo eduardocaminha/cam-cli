@@ -2137,14 +2137,12 @@ function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDi
 
 function composeProjectRegistry(
 	options: Pick<WebServerOptions, 'gateshipHome' | 'projectRegistry'>,
-	stateDir: string,
-	containerBuild: boolean,
 ): { registry: ProjectRegistry; close: () => void } {
 	if (options.projectRegistry !== undefined) {
 		return { registry: options.projectRegistry, close: () => undefined };
 	}
 	const home = options.gateshipHome === undefined
-		? resolveGateshipHome({ containerStateDir: containerBuild ? stateDir : undefined })
+		? resolveGateshipHome()
 		: resolveGateshipHome({ env: { GATESHIP_HOME: options.gateshipHome } });
 	const registry = openProjectRegistry(home);
 	return { registry, close: () => registry.close() };
@@ -2165,7 +2163,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const containerBuild = isContainerBuild();
 	const projectRoot = realpathSync(resolve(options.cwd));
 	const { registry: projectRegistry, close: closeProjectRegistry } =
-		composeProjectRegistry(options, stateDir, containerBuild);
+		composeProjectRegistry(options);
 	const currentProject = projectRegistry.reconcile({
 		root: projectRoot,
 		stateDir,
