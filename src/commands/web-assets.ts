@@ -2,7 +2,7 @@
 //
 // Where the browser bundle comes from, and nothing else.
 //
-// The three specifiers below are static `with { type: "file" }` imports, so
+// The specifiers below are static `with { type: "file" }` imports, so
 // `bun build --compile` copies the built bundle verbatim into the binary and
 // each import evaluates to a `$bunfs` path there and to a real disk path in
 // development. That is the only embedding mechanism this repository accepts:
@@ -22,7 +22,12 @@ import process from 'node:process';
 
 import appCssPath from '../../webui/dist/app.css' with { type: 'file' };
 import appJsPath from '../../webui/dist/app.js' with { type: 'file' };
+import appleTouchIconPath from '../../webui/dist/apple-touch-icon.png' with { type: 'file' };
+import faviconPath from '../../webui/dist/favicon.svg' with { type: 'file' };
+import icon192Path from '../../webui/dist/icon-192.png' with { type: 'file' };
+import icon512Path from '../../webui/dist/icon-512.png' with { type: 'file' };
 import indexHtmlPath from '../../webui/dist/index.html' with { type: 'file' };
+import manifestPath from '../../webui/dist/manifest.webmanifest' with { type: 'file' };
 
 /** Explicit disk override, for iterating on the UI without recompiling. */
 export const WEB_DIR_ENV = 'GSHIP_WEB_DIR';
@@ -36,6 +41,11 @@ export interface WebAssets {
 	indexHtml: WebAsset;
 	appJs: WebAsset;
 	appCss: WebAsset;
+	favicon: WebAsset;
+	appleTouchIcon: WebAsset;
+	icon192: WebAsset;
+	icon512: WebAsset;
+	manifest: WebAsset;
 }
 
 /**
@@ -52,6 +62,14 @@ const EMBEDDED: WebAssets = {
 	indexHtml: { path: embeddedPath(indexHtmlPath), contentType: 'text/html; charset=utf-8' },
 	appJs: { path: embeddedPath(appJsPath), contentType: 'text/javascript; charset=utf-8' },
 	appCss: { path: embeddedPath(appCssPath), contentType: 'text/css; charset=utf-8' },
+	favicon: { path: embeddedPath(faviconPath), contentType: 'image/svg+xml' },
+	appleTouchIcon: { path: embeddedPath(appleTouchIconPath), contentType: 'image/png' },
+	icon192: { path: embeddedPath(icon192Path), contentType: 'image/png' },
+	icon512: { path: embeddedPath(icon512Path), contentType: 'image/png' },
+	manifest: {
+		path: embeddedPath(manifestPath),
+		contentType: 'application/manifest+json; charset=utf-8',
+	},
 };
 
 /**
@@ -67,6 +85,17 @@ export function resolveWebAssets(env: NodeJS.ProcessEnv = process.env): WebAsset
 		indexHtml: { path: join(dir, 'index.html'), contentType: EMBEDDED.indexHtml.contentType },
 		appJs: { path: join(dir, 'app.js'), contentType: EMBEDDED.appJs.contentType },
 		appCss: { path: join(dir, 'app.css'), contentType: EMBEDDED.appCss.contentType },
+		favicon: { path: join(dir, 'favicon.svg'), contentType: EMBEDDED.favicon.contentType },
+		appleTouchIcon: {
+			path: join(dir, 'apple-touch-icon.png'),
+			contentType: EMBEDDED.appleTouchIcon.contentType,
+		},
+		icon192: { path: join(dir, 'icon-192.png'), contentType: EMBEDDED.icon192.contentType },
+		icon512: { path: join(dir, 'icon-512.png'), contentType: EMBEDDED.icon512.contentType },
+		manifest: {
+			path: join(dir, 'manifest.webmanifest'),
+			contentType: EMBEDDED.manifest.contentType,
+		},
 	};
 }
 

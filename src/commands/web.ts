@@ -2262,6 +2262,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/projects/:projectId/settings': () => serveWebAsset(assets.indexHtml),
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
+			'/favicon.svg': () => serveWebAsset(assets.favicon),
+			'/apple-touch-icon.png': () => serveWebAsset(assets.appleTouchIcon),
+			'/icon-192.png': () => serveWebAsset(assets.icon192),
+			'/icon-512.png': () => serveWebAsset(assets.icon512),
+			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': () => {
 				const snapshot: Record<string, unknown> = {
 					idleState: readIdleSnapshotState(options.cwd),

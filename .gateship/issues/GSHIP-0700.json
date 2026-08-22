@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-700",
   "title": "Completar metadata e icones do aplicativo Gateship",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T14:04:29.115Z",
-  "updatedAt": "2026-08-22T14:05:53.180Z",
+  "updatedAt": "2026-08-22T14:21:17.986Z",
   "description": "Substituir o favicon data URI antigo por um conjunto coerente de metadata e icones do aplicativo, derivado do mark oficial Gateship ja existente no repositorio. Preparar uma versao opticamente simplificada do gate e da escada para leitura em tamanhos pequenos, sem redesenhar o logo ou introduzir outra marca. Servir pelo mesmo binario um favicon SVG, apple-touch-icon PNG, icones instalaveis 192 e 512 e manifest.webmanifest com nome, short name, descricao, start_url /overview, scope /, display standalone, theme/background colors e finalidades apropriadas. Completar o head com application-name, description, color-scheme, theme-color claro/escuro, links de icon/manifest/apple icon e robots noindex,nofollow por se tratar da central local do operador. Preservar o title Gateship, a localizacao por idioma do aplicativo e a politica de assets estaticos embutidos. Nao adicionar Next.js, biblioteca de metadata, dependencia de geracao em runtime, sitemap, Open Graph de marketing, animacao ou redesign da interface.",
   "specSource": "operator",
   "spec": {

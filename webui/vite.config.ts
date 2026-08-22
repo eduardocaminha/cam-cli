@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 /**
  * Stable, unhashed output names. The compiled binary embeds the bundle through
- * three static `import ... with { type: 'file' }` specifiers (src/commands/
+ * static `import ... with { type: 'file' }` specifiers (src/commands/
  * web-assets.ts), and a static specifier cannot name a content hash. Cache
  * busting is not needed for a bundle that ships inside the process serving it.
  */

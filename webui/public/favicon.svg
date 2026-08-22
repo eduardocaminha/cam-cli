@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-125 -125 2750 2750">
+	<!-- The official gate and stair, with the offset depth omitted at icon scale. -->
+	<rect x="-125" y="-125" width="2750" height="2750" fill="#171717" />
+	<path
+		d="M1250 125C1871 125 2375 629 2375 1250V2375H125V1250C125 629 629 125 1250 125Z"
+		fill="none"
+		stroke="#fafafa"
+		stroke-width="300"
+	/>
+	<path
+		d="M1750 875V1625H1500V1375H1250V1125H1000V875H1750ZM1250 1375V1625H1000V1375H1250ZM1000 1625V1875H750V1625H1000Z"
+		fill="#fafafa"
+	/>
+</svg>
