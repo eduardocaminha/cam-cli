@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-698",
+  "title": "Escopar o contrato do ciclo dos agentes por projectId",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-22T13:58:06.345Z",
+  "updatedAt": "2026-08-22T13:58:06.345Z",
+  "description": "Tornar explicito o projeto em todas as operacoes agent-facing do ciclo atual. Adicionar projectId obrigatorio a status.get, backlog.list, issues.list/get/create/specify/approve/abandon, brief.get/update, runs.list/get/events/start/respond/cancel/abandon/ship e mapear essas operacoes para endpoints canonicos sob /api/projects/:projectId. Os handlers devem resolver o ID pelo ProjectRegistry e reutilizar exatamente o runtime e os colaboradores ja pertencentes ao projeto corrente. ID desconhecido retorna 404 project-not-found; ID registrado que nao seja o runtime corrente retorna 409 project-runtime-unavailable, sem abrir banco mutavel, executar recovery, criar worktree ou alterar estado. projects.list e projects.status permanecem globais e read-only. Preservar temporariamente as APIs sem prefixo apenas para o browser atual; nao adicionar compatibilidade ao agent CLI. Fora do escopo: runtime switching, segundo RunRuntime, UI multiprojeto mutavel, cadastro/remocao manual, migracao fisica, container e paralelismo.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tornar explicito o projeto em todas as operacoes agent-facing do ciclo atual. Adicionar projectId obrigatorio a status.get, backlog.list, issues.list/get/create/specify/approve/abandon, brief.get/update, runs.list/get/events/start/respond/cancel/abandon/ship e mapear essas operacoes para endpoints canonicos sob /api/projects/:projectId. Os handlers devem resolver o ID pelo ProjectRegistry e reutilizar exatamente o runtime e os colaboradores ja pertencentes ao projeto corrente. ID desconhecido retorna 404 project-not-found; ID registrado que nao seja o runtime corrente retorna 409 project-runtime-unavailable, sem abrir banco mutavel, executar recovery, criar worktree ou alterar estado. projects.list e projects.status permanecem globais e read-only. Preservar temporariamente as APIs sem prefixo apenas para o browser atual; nao adicionar compatibilidade ao agent CLI. Fora do escopo: runtime switching, segundo RunRuntime, UI multiprojeto mutavel, cadastro/remocao manual, migracao fisica, container e paralelismo.",
+    "verify": [
+      "bun test test/commands/agent.test.ts test/web/project-scoped-agent-api.test.ts test/web/project-status-api.test.ts && bun run typecheck"
+    ]
+  }
+}
