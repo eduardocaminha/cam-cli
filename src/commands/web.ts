@@ -2245,6 +2245,46 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
 		Response.redirect(new URL(path, request.url).toString(), 302);
+	const currentProjectOperation = (
+		projectId: string,
+		operation: () => MaybePromise<Response>,
+	): MaybePromise<Response> => {
+		const project = projectRegistry.get(projectId, projectRoot);
+		if (project === null) {
+			return Response.json(
+				{ ok: false, code: 'project-not-found', message: 'Project not found.' },
+				{ status: 404 },
+			);
+		}
+		if (project.id !== currentProject.id) {
+			return Response.json(
+				{
+					ok: false,
+					code: 'project-runtime-unavailable',
+					message: 'This Gateship instance does not own the requested project runtime.',
+				},
+				{ status: 409 },
+			);
+		}
+		return operation();
+	};
+	const readSnapshot = (): Response => {
+		const snapshot: Record<string, unknown> = {
+			idleState: readIdleSnapshotState(options.cwd),
+			version: snapshotVersion,
+		};
+		const workspaceNotices = runRuntime.listWorkspaceNotices();
+		if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;
+		// Its own field: `workspaceNotices` means a preserved local resource
+		// waiting for a decision, which this is not.
+		const staleService = staleServiceNotice(options.cwd, bootSourceSha);
+		if (staleService !== null) snapshot['staleService'] = staleService;
+		// Keep snapshot reads local and cheap. Credential derivation remains in
+		// the intake and ship write paths, never this GET handler.
+		const gitIdentity = checkGitIdentity(options.cwd);
+		if (gitIdentity.outcome === 'missing') snapshot['gitIdentity'] = { detail: gitIdentity.detail };
+		return Response.json(snapshot);
+	};
 	const server = Bun.serve({
 		hostname: resolveBindHostname(),
 		port: options.port,
@@ -2267,32 +2307,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/icon-192.png': () => serveWebAsset(assets.icon192),
 			'/icon-512.png': () => serveWebAsset(assets.icon512),
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
-			'/api/snapshot': () => {
-				const snapshot: Record<string, unknown> = {
-					idleState: readIdleSnapshotState(options.cwd),
-					version: snapshotVersion,
-				};
-				const workspaceNotices = runRuntime.listWorkspaceNotices();
-				if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;
-				// Its own field: `workspaceNotices` means a preserved local resource
-				// waiting for a decision, which this is not.
-				const staleService = staleServiceNotice(options.cwd, bootSourceSha);
-				if (staleService !== null) snapshot['staleService'] = staleService;
-				// `checkGitIdentity`, never `ensureGitIdentity`, and never the commit
-				// paths' cache above (GSHIP-654): this is a GET handler on Bun's
-				// single-threaded server, so it must never be the one that calls
-				// `gh` -- that call carries its own five-second timeout, and a
-				// blocked GET would stall every other request the service is
-				// trying to answer at the same time. One cheap local `git var`
-				// read, on every request, with no cache of its own: derivation
-				// itself belongs only to the intake and ship commit paths, which
-				// call `ensureGitIdentity` right before their own write, so this
-				// notice reflects whatever they most recently derived without ever
-				// causing that derivation itself.
-				const gitIdentity = checkGitIdentity(options.cwd);
-				if (gitIdentity.outcome === 'missing') snapshot['gitIdentity'] = { detail: gitIdentity.detail };
-				return Response.json(snapshot);
-			},
+			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
 			'/api/projects': () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 			'/api/projects/:projectId/status': (request) => {
@@ -2304,6 +2319,125 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					);
 				}
 				return Response.json(readProjectOperationalStatus(project));
+			},
+			// Agent-facing lifecycle routes are project-explicit. The registry
+			// guard runs before the current runtime or any of its collaborators.
+			'/api/projects/:projectId/snapshot': (request) => currentProjectOperation(
+				request.params.projectId,
+				readSnapshot,
+			),
+			'/api/projects/:projectId/backlog': (request) => currentProjectOperation(
+				request.params.projectId,
+				() => Response.json(readIdleSnapshotState(options.cwd)),
+			),
+			'/api/projects/:projectId/runs': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => Response.json({ runs: listRunsWithInsights(runRuntime) }),
+				),
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => startDurableRun(request, runRuntime),
+				),
+			},
+			'/api/projects/:projectId/brief': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => Response.json({
+						brief: projectBrief.get(),
+						handoff: runRuntime.getOrchestratorHandoff(),
+					}),
+				),
+				PUT: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => writeProjectBrief(request, projectBrief),
+				),
+			},
+			'/api/projects/:projectId/issues': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => listPublishedIssues(options.cwd),
+				),
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => createIssueFromOperator(request, issueIntake),
+				),
+			},
+			'/api/projects/:projectId/issues/:issueId': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => readPublishedIssueResponse(issueReader, request.params.issueId),
+				),
+			},
+			'/api/projects/:projectId/issues/:issueId/spec': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => specifyIssueFromOperator(
+						request,
+						request.params.issueId,
+						runRuntime,
+						issueSpecifier,
+					),
+				),
+			},
+			'/api/projects/:projectId/issues/:issueId/approve': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => approveIssueFromOperator(
+						request,
+						request.params.issueId,
+						runRuntime,
+						issueApprover,
+						issueReader,
+					),
+				),
+			},
+			'/api/projects/:projectId/issues/:issueId/abandon': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => abandonIssueFromOperator(
+						request,
+						request.params.issueId,
+						runRuntime,
+						issueAbandoner,
+					),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/cancel': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => cancelDurableRun(request, runRuntime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => readRun(runRuntime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/abandon': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => abandonDurableRun(request, runRuntime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/events': {
+				GET: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => readRunEvents(runRuntime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/resume': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => resumeDurableRun(request, runRuntime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/ship': {
+				POST: (request) => currentProjectOperation(
+					request.params.projectId,
+					() => shipDurableRun(request, runRuntime, request.params.runId),
+				),
 			},
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {

@@ -24,40 +24,43 @@ const requiredString = (input: Record<string, unknown>, field: string): string =
 	return value.trim();
 };
 
-const issuePath = (suffix = '') => (input: Record<string, unknown>) =>
-	`/api/issues/${encodeURIComponent(requiredString(input, 'issueId'))}${suffix}`;
-const runPath = (suffix: string) => (input: Record<string, unknown>) =>
-	`/api/runs/${encodeURIComponent(requiredString(input, 'runId'))}${suffix}`;
+const projectRootPath = (input: Record<string, unknown>) =>
+	`/api/projects/${encodeURIComponent(requiredString(input, 'projectId'))}`;
 const projectPath = (suffix: string) => (input: Record<string, unknown>) =>
-	`/api/projects/${encodeURIComponent(requiredString(input, 'projectId'))}${suffix}`;
+	`${projectRootPath(input)}${suffix}`;
+const issuePath = (suffix = '') => (input: Record<string, unknown>) =>
+	`${projectRootPath(input)}/issues/${encodeURIComponent(requiredString(input, 'issueId'))}${suffix}`;
+const runPath = (suffix: string) => (input: Record<string, unknown>) =>
+	`${projectRootPath(input)}/runs/${encodeURIComponent(requiredString(input, 'runId'))}${suffix}`;
 
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
-	'status.get': { method: 'GET', path: () => '/api/snapshot', input: '{}' },
-	'backlog.list': { method: 'GET', path: () => '/api/backlog', input: '{limit?, offset?}' },
-	'issues.list': { method: 'GET', path: () => '/api/issues', input: '{limit?, offset?}', listField: 'issues' },
-	'issues.get': { method: 'GET', path: issuePath(), input: '{issueId}' },
-	'runs.list': { method: 'GET', path: () => '/api/runs', input: '{limit?, offset?}', listField: 'runs' },
-	'runs.get': { method: 'GET', path: runPath(''), input: '{runId}' },
-	'runs.events': { method: 'GET', path: runPath('/events'), input: '{runId, limit?, offset?}', listField: 'events' },
-	'issues.create': { method: 'POST', path: () => '/api/issues', input: '{title, scope, verificationCommand, evidence?}' },
-	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{issueId, scope, verificationCommand, evidence?}' },
-	'issues.approve': { method: 'POST', path: issuePath('/approve'), input: '{issueId, fingerprint, authorization}' },
-	'issues.abandon': { method: 'POST', path: issuePath('/abandon'), input: '{issueId, reason}' },
-	'brief.get': { method: 'GET', path: () => '/api/brief', input: '{}' },
-	'brief.update': { method: 'PUT', path: () => '/api/brief', input: '{objective, decisions, constraints, openItems, authorization}' },
-	'runs.start': { method: 'POST', path: () => '/api/runs', input: '{issueId}' },
-	'runs.respond': { method: 'POST', path: runPath('/resume'), input: '{runId, message}' },
-	'runs.cancel': { method: 'POST', path: runPath('/cancel'), input: '{runId}' },
-	'runs.abandon': { method: 'POST', path: runPath('/abandon'), input: '{runId}' },
-	'runs.ship': { method: 'POST', path: runPath('/ship'), input: '{runId}' },
+	'status.get': { method: 'GET', path: projectPath('/snapshot'), input: '{projectId}' },
+	'backlog.list': { method: 'GET', path: projectPath('/backlog'), input: '{projectId, limit?, offset?}' },
+	'issues.list': { method: 'GET', path: projectPath('/issues'), input: '{projectId, limit?, offset?}', listField: 'issues' },
+	'issues.get': { method: 'GET', path: issuePath(), input: '{projectId, issueId}' },
+	'runs.list': { method: 'GET', path: projectPath('/runs'), input: '{projectId, limit?, offset?}', listField: 'runs' },
+	'runs.get': { method: 'GET', path: runPath(''), input: '{projectId, runId}' },
+	'runs.events': { method: 'GET', path: runPath('/events'), input: '{projectId, runId, limit?, offset?}', listField: 'events' },
+	'issues.create': { method: 'POST', path: projectPath('/issues'), input: '{projectId, title, scope, verificationCommand, evidence?}' },
+	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{projectId, issueId, scope, verificationCommand, evidence?}' },
+	'issues.approve': { method: 'POST', path: issuePath('/approve'), input: '{projectId, issueId, fingerprint, authorization}' },
+	'issues.abandon': { method: 'POST', path: issuePath('/abandon'), input: '{projectId, issueId, reason}' },
+	'brief.get': { method: 'GET', path: projectPath('/brief'), input: '{projectId}' },
+	'brief.update': { method: 'PUT', path: projectPath('/brief'), input: '{projectId, objective, decisions, constraints, openItems, authorization}' },
+	'runs.start': { method: 'POST', path: projectPath('/runs'), input: '{projectId, issueId}' },
+	'runs.respond': { method: 'POST', path: runPath('/resume'), input: '{projectId, runId, message}' },
+	'runs.cancel': { method: 'POST', path: runPath('/cancel'), input: '{projectId, runId}' },
+	'runs.abandon': { method: 'POST', path: runPath('/abandon'), input: '{projectId, runId}' },
+	'runs.ship': { method: 'POST', path: runPath('/ship'), input: '{projectId, runId}' },
 };
 
 const GUIDE = [
 	'Use gship agent as the source of truth for Gateship state and actions.',
 	'Use issues.list and runs.list for discovery, then issues.get or runs.get for detail.',
+	'Use projects.list to select a projectId, then pass it to every project lifecycle operation.',
 	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
 	'Never invent operator approval or authorization; pass only explicit operator text.',
@@ -356,11 +359,12 @@ function httpError(payload: unknown, status: number): Record<string, unknown> {
 }
 
 function requestBody(operation: string, input: Record<string, unknown>): Record<string, unknown> {
+	const { projectId: _projectId, ...projectInput } = input;
 	if (operation === 'brief.update') {
-		const { authorization: _authorization, ...brief } = input;
+		const { authorization: _authorization, ...brief } = projectInput;
 		return brief;
 	}
-	return input;
+	return projectInput;
 }
 
 export interface AgentExecutionResult {
@@ -441,7 +445,7 @@ export async function executeAgent(
 		result = projectResult(operationName, result);
 		if (operationName === 'status.get') {
 			const { response: runsResponse, payload: runsPayload } = await readJsonResponse(
-				`${parsed.url}/api/runs`,
+				`${parsed.url}${projectPath('/runs')(parsed.input)}`,
 				{ method: 'GET', headers },
 				parsed.url,
 				fetchFn,

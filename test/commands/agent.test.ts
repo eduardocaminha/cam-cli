@@ -13,6 +13,7 @@ import { type ProjectBrief, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const jsonResponse = (body: unknown, status = 200): Response => Response.json(body, { status });
+const PROJECT_ID = 'project-1';
 
 describe('canonical agent CLI', () => {
 	test('parses call input and an explicit local service URL', () => {
@@ -57,6 +58,20 @@ describe('canonical agent CLI', () => {
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
+		for (const operation of operations.filter(({ name }) =>
+			!['project.inspect', 'projects.list', 'projects.status'].includes(name))) {
+			expect(operation.input).toContain('projectId');
+		}
+	});
+
+	test('requires projectId for every project lifecycle call', async () => {
+		const result = await executeAgent([
+			'call', 'issues.get', '--input', '{"issueId":"GSHIP-698"}',
+		]);
+		expect(result).toMatchObject({
+			exitCode: 1,
+			output: { ok: false, code: 'invalid-input', message: expect.stringContaining('projectId') },
+		});
 	});
 
 	test('reads one registered project status by id without accepting locations', async () => {
@@ -127,8 +142,14 @@ describe('canonical agent CLI', () => {
 			pullRequest: { url: retained, ciStatus: retained, prNumber: index },
 		}));
 
-		const listedIssues = await executeAgent(['call', 'issues.list'], async () => jsonResponse({ issues }));
-		const listedRuns = await executeAgent(['call', 'runs.list'], async () => jsonResponse({ runs }));
+		const listedIssues = await executeAgent(
+			['call', 'issues.list', '--input', `{"projectId":"${PROJECT_ID}"}`],
+			async () => jsonResponse({ issues }),
+		);
+		const listedRuns = await executeAgent(
+			['call', 'runs.list', '--input', `{"projectId":"${PROJECT_ID}"}`],
+			async () => jsonResponse({ runs }),
+		);
 		for (const result of [listedIssues, listedRuns]) {
 			expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThan(AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES);
 		}
@@ -168,11 +189,11 @@ describe('canonical agent CLI', () => {
 			pullRequest: { url: 'https://example.com/1', ciStatus: 'success' },
 		};
 		const issueDetail = await executeAgent(
-			['call', 'issues.get', '--input', '{"issueId":"GSHIP-1"}'],
+			['call', 'issues.get', '--input', `{"projectId":"${PROJECT_ID}","issueId":"GSHIP-1"}`],
 			async () => jsonResponse({ issue: detailedIssue, fingerprint: fingerprintSpec(spec) }),
 		);
 		const runDetail = await executeAgent(
-			['call', 'runs.get', '--input', '{"runId":"run-1"}'],
+			['call', 'runs.get', '--input', `{"projectId":"${PROJECT_ID}","runId":"run-1"}`],
 			async () => jsonResponse({ run: detailedRun }),
 		);
 		expect(issueDetail.output['result']).toHaveProperty('issue.spec');
@@ -184,7 +205,9 @@ describe('canonical agent CLI', () => {
 
 	test('preserves more than one hundred blockers instead of silently clamping them', async () => {
 		const blockers = Array.from({ length: 125 }, (_, index) => `GSHIP-${1_000 + index}`);
-		const result = await executeAgent(['call', 'issues.list'], async () => jsonResponse({
+		const result = await executeAgent([
+			'call', 'issues.list', '--input', `{"projectId":"${PROJECT_ID}"}`,
+		], async () => jsonResponse({
 			issues: [{
 				id: 'GSHIP-691',
 				title: 'Compact agent output',
@@ -214,7 +237,7 @@ describe('canonical agent CLI', () => {
 			(_, index) => `GSHIP-${index}-${'b'.repeat(400)}`,
 		);
 		const defaultPage = await executeAgent(
-			['call', 'issues.list'],
+			['call', 'issues.list', '--input', `{"projectId":"${PROJECT_ID}"}`],
 			async () => jsonResponse(issueWith(overDefaultBudget)),
 		);
 		expect(defaultPage).toMatchObject({
@@ -225,7 +248,7 @@ describe('canonical agent CLI', () => {
 		expect(Buffer.byteLength(JSON.stringify(defaultPage.output))).toBeLessThan(AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES);
 
 		const explicitPage = await executeAgent(
-			['call', 'issues.list', '--input', '{"limit":1}'],
+			['call', 'issues.list', '--input', `{"projectId":"${PROJECT_ID}","limit":1}`],
 			async () => jsonResponse(issueWith(overDefaultBudget)),
 		);
 		expect(explicitPage.exitCode).toBe(0);
@@ -237,7 +260,7 @@ describe('canonical agent CLI', () => {
 			(_, index) => `GSHIP-${index}-${'b'.repeat(1_000)}`,
 		);
 		const globalLimit = await executeAgent(
-			['call', 'issues.list', '--input', '{"limit":1}'],
+			['call', 'issues.list', '--input', `{"projectId":"${PROJECT_ID}","limit":1}`],
 			async () => jsonResponse(issueWith(overGlobalBudget)),
 		);
 		expect(globalLimit).toMatchObject({ exitCode: 1, output: { ok: false, code: 'output-too-large' } });
@@ -248,9 +271,11 @@ describe('canonical agent CLI', () => {
 	test('projects status to backlog counts, discovery rows, active run and attention only', async () => {
 		const detail = 's'.repeat(5_000);
 		const calls: string[] = [];
-		const result = await executeAgent(['call', 'status.get'], async (url) => {
+		const result = await executeAgent([
+			'call', 'status.get', '--input', `{"projectId":"${PROJECT_ID}"}`,
+		], async (url) => {
 			calls.push(String(url));
-			if (String(url).endsWith('/api/runs')) {
+			if (String(url).endsWith('/runs')) {
 				return jsonResponse({ runs: [{
 					id: 'run-active', issueId: 'GSHIP-691', state: 'waiting-user', providerId: 'codex',
 					fixRounds: 0, updatedAt: '2026-08-22T10:00:00.000Z', summary: detail,
@@ -268,8 +293,8 @@ describe('canonical agent CLI', () => {
 			});
 		});
 		expect(calls).toEqual([
-			'http://127.0.0.1:7777/api/snapshot',
-			'http://127.0.0.1:7777/api/runs',
+			`http://127.0.0.1:7777/api/projects/${PROJECT_ID}/snapshot`,
+			`http://127.0.0.1:7777/api/projects/${PROJECT_ID}/runs`,
 		]);
 		expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThan(12 * 1024);
 		const status = result.output['result'] as Record<string, unknown>;
@@ -288,12 +313,13 @@ describe('canonical agent CLI', () => {
 	test('calls read-only operations and pages list results', async () => {
 		const requests: Array<{ url: string; init?: RequestInit }> = [];
 		const result = await executeAgent([
-			'call', 'runs.list', '--input', '{"offset":1,"limit":1}', '--url', 'http://127.0.0.1:7788',
+			'call', 'runs.list', '--input', `{"projectId":"${PROJECT_ID}","offset":1,"limit":1}`,
+			'--url', 'http://127.0.0.1:7788',
 		], async (url, init) => {
 			requests.push({ url: String(url), init });
 			return jsonResponse({ runs: [{ id: 'one' }, { id: 'two' }, { id: 'three' }] });
 		});
-		expect(requests[0]?.url).toBe('http://127.0.0.1:7788/api/runs');
+		expect(requests[0]?.url).toBe(`http://127.0.0.1:7788/api/projects/${PROJECT_ID}/runs`);
 		expect(requests[0]?.init?.method).toBe('GET');
 		expect(result.output).toMatchObject({
 			ok: true,
@@ -303,16 +329,16 @@ describe('canonical agent CLI', () => {
 
 	test('routes every mutation class with JSON and agent-cli provenance', async () => {
 		const cases: Array<[string, Record<string, unknown>, string, string]> = [
-			['issues.create', { title: 'T', scope: 'S', verificationCommand: 'bun test' }, 'POST', '/api/issues'],
-			['issues.specify', { issueId: 'GSHIP-1', scope: 'S', verificationCommand: 'bun test' }, 'POST', '/api/issues/GSHIP-1/spec'],
-			['issues.approve', { issueId: 'GSHIP-1', fingerprint: 'abc', authorization: 'Operator approves.' }, 'POST', '/api/issues/GSHIP-1/approve'],
-			['issues.abandon', { issueId: 'GSHIP-1', reason: 'No longer needed.' }, 'POST', '/api/issues/GSHIP-1/abandon'],
-			['brief.update', { objective: 'O', decisions: [], constraints: [], openItems: [], authorization: 'Operator authorizes.' }, 'PUT', '/api/brief'],
-			['runs.start', { issueId: 'GSHIP-1' }, 'POST', '/api/runs'],
-			['runs.respond', { runId: 'run-1', message: 'Proceed.' }, 'POST', '/api/runs/run-1/resume'],
-			['runs.cancel', { runId: 'run-1' }, 'POST', '/api/runs/run-1/cancel'],
-			['runs.abandon', { runId: 'run-1' }, 'POST', '/api/runs/run-1/abandon'],
-			['runs.ship', { runId: 'run-1' }, 'POST', '/api/runs/run-1/ship'],
+			['issues.create', { projectId: PROJECT_ID, title: 'T', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues`],
+			['issues.specify', { projectId: PROJECT_ID, issueId: 'GSHIP-1', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/spec`],
+			['issues.approve', { projectId: PROJECT_ID, issueId: 'GSHIP-1', fingerprint: 'abc', authorization: 'Operator approves.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/approve`],
+			['issues.abandon', { projectId: PROJECT_ID, issueId: 'GSHIP-1', reason: 'No longer needed.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/abandon`],
+			['brief.update', { projectId: PROJECT_ID, objective: 'O', decisions: [], constraints: [], openItems: [], authorization: 'Operator authorizes.' }, 'PUT', `/api/projects/${PROJECT_ID}/brief`],
+			['runs.start', { projectId: PROJECT_ID, issueId: 'GSHIP-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs`],
+			['runs.respond', { projectId: PROJECT_ID, runId: 'run-1', message: 'Proceed.' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/resume`],
+			['runs.cancel', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/cancel`],
+			['runs.abandon', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/abandon`],
+			['runs.ship', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/ship`],
 		];
 		for (const [operation, input, method, path] of cases) {
 			let captured: { url: string; init?: RequestInit } | undefined;
@@ -331,6 +357,7 @@ describe('canonical agent CLI', () => {
 				expect(new Headers(captured?.init?.headers).get('x-gateship-operator-authorization')).toBe('Operator authorizes.');
 				expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('authorization');
 			}
+			expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('projectId');
 		}
 	});
 
@@ -345,6 +372,10 @@ describe('canonical agent CLI', () => {
 		});
 		const origin = `http://${handle.hostname}:${handle.port}`;
 		try {
+			const projects = await fetch(`${origin}/api/projects`).then((response) => response.json()) as {
+				projects: Array<{ id: string; current: boolean }>;
+			};
+			const projectId = projects.projects.find((project) => project.current)!.id;
 			const forbidden = await fetch(`${origin}/api/brief`, {
 				method: 'PUT',
 				headers: {
@@ -360,6 +391,7 @@ describe('canonical agent CLI', () => {
 			const updated = await executeAgent([
 				'call', 'brief.update', '--url', origin,
 				'--input', JSON.stringify({
+					projectId,
 					objective: 'Ship safely.',
 					decisions: [],
 					constraints: [],
@@ -376,13 +408,13 @@ describe('canonical agent CLI', () => {
 	});
 
 	test('propagates HTTP refusals and unavailable services as JSON errors', async () => {
-		const refused = await executeAgent(['call', 'runs.start', '--input', '{"issueId":"GSHIP-1"}'],
+		const refused = await executeAgent(['call', 'runs.start', '--input', `{"projectId":"${PROJECT_ID}","issueId":"GSHIP-1"}`],
 			async () => jsonResponse({ ok: false, code: 'run-preflight-failed', message: 'Not approved.' }, 409));
 		expect(refused).toMatchObject({
 			exitCode: 1,
 			output: { ok: false, code: 'run-preflight-failed', message: 'Not approved.', httpStatus: 409 },
 		});
-		const unavailable = await executeAgent(['call', 'status.get'], async () => {
+		const unavailable = await executeAgent(['call', 'status.get', '--input', `{"projectId":"${PROJECT_ID}"}`], async () => {
 			throw new Error('ECONNREFUSED');
 		});
 		expect(unavailable).toMatchObject({
@@ -392,7 +424,7 @@ describe('canonical agent CLI', () => {
 	});
 
 	test('always limits the single JSON output object', async () => {
-		const result = await executeAgent(['call', 'issues.get', '--input', '{"issueId":"GSHIP-1"}'],
+		const result = await executeAgent(['call', 'issues.get', '--input', `{"projectId":"${PROJECT_ID}","issueId":"GSHIP-1"}`],
 			async () => jsonResponse({ detail: 'x'.repeat(AGENT_MAX_OUTPUT_BYTES * 2) }));
 		expect(result.output).not.toBeArray();
 		expect(Buffer.byteLength(JSON.stringify(result.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
