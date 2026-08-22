@@ -1734,13 +1734,13 @@ describe('work surface', () => {
 		expect(buttonIsEnabled(card, 'Abandon')).toBe(false);
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
-		expect(card).not.toContain('Evidence checked in the run workspace');
+		expect(card).not.toContain('Evidence captured when specified');
 	});
 
 	// GSHIP-629: the spec's executable premise is shown beside the scope and the
 	// verification command it sits next to, read-only -- this panel edits the
 	// scope and the command, never the recorded evidence.
-	test('shows the evidence checked in the run workspace beside the scope and the verification command', () => {
+	test('shows the evidence captured when specified beside the scope and verification command', () => {
 		const html = workPage({ drafts: [{
 			id: 'CAM-42',
 			title: 'Draft revisável',
@@ -1754,7 +1754,7 @@ describe('work surface', () => {
 		}] });
 		const card = panel(html, 'Review and approve');
 
-		expect(card).toContain('Evidence checked in the run workspace');
+		expect(card).toContain('Evidence captured when specified');
 		expect(card).toContain('wc -l src/domain-models.ts');
 		expect(card).toContain('3 src/domain-models.ts');
 		expect(card).toContain('git log --oneline -1');

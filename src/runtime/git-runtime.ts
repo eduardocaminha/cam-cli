@@ -17,11 +17,13 @@ import type {
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const DIAGNOSTIC_TAIL_LENGTH = 2_000;
+export const VERIFICATION_COMMAND_TIMEOUT_MS = 30_000;
 
 export interface CommandResult {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
+	timedOut?: boolean;
 }
 
 export type GitCommandRunner = (cwd: string, args: string[]) => CommandResult;
@@ -30,6 +32,7 @@ export interface VerificationCommandInput {
 	cwd: string;
 	command: string;
 	signal: AbortSignal;
+	timeoutMs?: number;
 }
 
 export type VerificationCommandRunner = (
@@ -138,16 +141,56 @@ export async function runOwnedCommand(input: OwnedCommandInput): Promise<Command
 	}
 }
 
-async function defaultRunCommand(
+export async function runVerificationCommand(
 	input: VerificationCommandInput,
 	terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
 ): Promise<CommandResult> {
-	return runOwnedCommand({
-		cmd: [shellCommand(), '-lc', input.command],
-		cwd: input.cwd,
-		signal: input.signal,
-		terminationGraceMs,
-	});
+	if (input.timeoutMs === undefined) {
+		return runOwnedCommand({
+			cmd: [shellCommand(), '-lc', input.command],
+			cwd: input.cwd,
+			signal: input.signal,
+			terminationGraceMs,
+		});
+	}
+	const controller = new AbortController();
+	let timedOut = false;
+	const timeoutMs = input.timeoutMs;
+	const timeout = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, timeoutMs);
+	const cancel = (): void => controller.abort();
+	input.signal.addEventListener('abort', cancel, { once: true });
+	if (input.signal.aborted) cancel();
+	try {
+		return await runOwnedCommand({
+			cmd: [shellCommand(), '-lc', input.command],
+			cwd: input.cwd,
+			signal: controller.signal,
+			terminationGraceMs,
+		});
+	} catch (error) {
+		if (!timedOut || input.signal.aborted) throw error;
+		return {
+			exitCode: 124,
+			stdout: '',
+			stderr: `command timed out after ${timeoutMs}ms`,
+			timedOut: true,
+		};
+	} finally {
+		clearTimeout(timeout);
+		input.signal.removeEventListener('abort', cancel);
+	}
+}
+
+function runtimeVerificationCommandRunner(
+	options: GitRuntimeOptions,
+	timeoutMs?: number,
+): VerificationCommandRunner {
+	const runCommand = options.runCommand;
+	if (runCommand !== undefined) return (input) => runCommand({ ...input, timeoutMs });
+	return (input) => runVerificationCommand({ ...input, timeoutMs }, options.terminationGraceMs);
 }
 
 function verificationCommands(issueContent: string): string[] {
@@ -201,7 +244,7 @@ function commandFailure(label: string, result: CommandResult): RuntimePreflightE
 	return new RuntimePreflightError(`${label}: ${detail}`);
 }
 
-function evidenceOutputText(result: CommandResult): string {
+export function evidenceOutputText(result: CommandResult): string {
 	return `${result.stdout}\n${result.stderr}`.trim();
 }
 
@@ -289,9 +332,9 @@ export function createGitRuntimePreflight(
  * also owns whether a given pass runs this check at all). No worktree of its
  * own is cut here -- there is nothing to clean up and nothing that can leak an
  * orphaned `.git/worktrees` entry if the process dies mid-check. Each command
- * runs through the same cancellable, timeout-bound path `GitIssueVerifier`
- * already uses for verify commands, so a command that hangs is terminated by
- * the run's own abort instead of blocking the service.
+ * runs through the same owned command path as verification. Evidence gets the
+ * same bounded deadline used at intake; general verification remains governed
+ * only by the run's cancellation signal.
  */
 export class GitEvidenceChecker implements RuntimeEvidenceCheck {
 	readonly #loadIssue: (cwd: string, issueId: string) => string;
@@ -299,8 +342,10 @@ export class GitEvidenceChecker implements RuntimeEvidenceCheck {
 
 	constructor(options: GitRuntimeOptions = {}) {
 		this.#loadIssue = options.loadIssueFromWorkspace ?? defaultLoadIssueFromWorkspace;
-		this.#runCommand = options.runCommand ?? ((input) =>
-			defaultRunCommand(input, options.terminationGraceMs));
+		this.#runCommand = runtimeVerificationCommandRunner(
+			options,
+			VERIFICATION_COMMAND_TIMEOUT_MS,
+		);
 	}
 
 	async check(input: RuntimeExecutionInput): Promise<RuntimeVerificationResult> {
@@ -348,8 +393,7 @@ export class GitIssueVerifier implements RuntimeVerifier {
 	constructor(options: GitRuntimeOptions = {}) {
 		this.#runGit = options.runGit ?? defaultRunGit;
 		this.#loadIssue = options.loadIssue ?? defaultLoadIssue;
-		this.#runCommand = options.runCommand ?? ((input) =>
-			defaultRunCommand(input, options.terminationGraceMs));
+		this.#runCommand = runtimeVerificationCommandRunner(options);
 	}
 
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
@@ -414,9 +458,9 @@ function hasVerifyScript(cwd: string): boolean {
 /**
  * The project's full verification gate (GSHIP-649): whatever `package.json`
  * already declares as its `verify` script -- e.g. `bun run check:all` --
- * run once per ready-to-ship pass, through the same cancellable,
- * timeout-bound command path `GitIssueVerifier` and `GitEvidenceChecker`
- * already use. The slice never hardcodes what `verify` runs: a project that
+ * run once per ready-to-ship pass, through the same owned, cancellable command
+ * path `GitIssueVerifier` and `GitEvidenceChecker` already use. General
+ * verification has no deadline of its own. The slice never hardcodes what `verify` runs: a project that
  * declares no such script is skipped, not failed, so this stays exactly the
  * cutout the issue's own `spec.verify` and the project's full manifest
  * already agree on.
@@ -425,8 +469,7 @@ export class GitFullVerifier implements RuntimeVerifier {
 	readonly #runCommand: VerificationCommandRunner;
 
 	constructor(options: GitRuntimeOptions = {}) {
-		this.#runCommand = options.runCommand ?? ((input) =>
-			defaultRunCommand(input, options.terminationGraceMs));
+		this.#runCommand = runtimeVerificationCommandRunner(options);
 	}
 
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {

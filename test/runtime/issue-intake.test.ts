@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -11,6 +11,7 @@ import {
 } from '../../src/runtime/issue-intake.ts';
 import type { GitIdentityResult } from '../../src/runtime/git-identity.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
+import { VERIFICATION_COMMAND_TIMEOUT_MS } from '../../src/runtime/git-runtime.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -76,9 +77,9 @@ function seedFixture(
 }
 
 describe('remote-main operator issue intake', () => {
-	test('records approval for the exact published spec when requested', () => {
+	test('records approval for the exact published spec when requested', async () => {
 		const fixture = seedFixture();
-		createOperatorIssue(fixture.local, {
+		await createOperatorIssue(fixture.local, {
 			title: 'Approved intake',
 			scope: 'Ship the approved contract.',
 			verificationCommand: 'bun test',
@@ -92,7 +93,7 @@ describe('remote-main operator issue intake', () => {
 		});
 	});
 
-	test('files a specified issue from the fresh remote base without moving local main', () => {
+	test('files a specified issue from the fresh remote base without moving local main', async () => {
 		const fixture = seedFixture();
 		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
 		writeFileSync(join(fixture.local, 'operator-notes.txt'), 'keep me\n');
@@ -104,7 +105,7 @@ describe('remote-main operator issue intake', () => {
 		git(fixture.seed, ['commit', '-q', '-m', 'remote backlog advance']);
 		git(fixture.seed, ['push', '-q', fixture.remote, 'main']);
 
-		const created = createOperatorIssue(
+		const created = await createOperatorIssue(
 			fixture.local,
 			{
 				title: 'Intake direto',
@@ -136,40 +137,117 @@ describe('remote-main operator issue intake', () => {
 			.toBe(git(fixture.remote, ['rev-parse', 'main']));
 	});
 
-	// GSHIP-629: the intake persists the executable premise exactly as sent,
-	// and never runs it -- an evidence command that would leave a detectable
-	// side effect must not fire during intake.
-	test('accepts and persists evidence without ever running the recorded command', () => {
+	test('captures evidence against the fresh remote sha and stores the observed output', async () => {
 		const fixture = seedFixture();
+		const sourceSha = git(fixture.remote, ['rev-parse', 'main']);
 
-		const created = createOperatorIssue(fixture.local, {
+		const created = await createOperatorIssue(fixture.local, {
 			title: 'Intake com evidência',
-			scope: 'O intake registra a evidência sem executá-la.',
+			scope: 'O intake executa e captura a evidência.',
 			verificationCommand: 'bun test',
-			evidence: [
-				{ command: 'touch should-not-execute.txt', output: 'irrelevant' },
-				{ command: 'wc -l README.md', output: '10 README.md' },
-			],
+			evidence: [{ command: 'git rev-parse HEAD', output: '' }],
 		}, {}, () => '2026-08-16T08:00:00.000Z');
 
-		expect(existsSync(join(fixture.local, 'should-not-execute.txt'))).toBe(false);
 		expect(created).toMatchObject({ id: 'GSHIP-3', title: 'Intake com evidência' });
 		const content = git(fixture.remote, ['show', 'main:.gateship/issues/GSHIP-0003.json']);
 		const issue = JSON.parse(content) as Record<string, unknown>;
 		expect(issue['spec']).toMatchObject({
-			evidence: [
-				{ command: 'touch should-not-execute.txt', output: 'irrelevant' },
-				{ command: 'wc -l README.md', output: '10 README.md' },
-			],
+			evidence: [{ command: 'git rev-parse HEAD', output: sourceSha }],
 		});
 	});
 
-	test('rejects evidence past the item or size limit before touching the remote', () => {
+	test('intake supplies its 30-second deadline to the shared command runner by default', async () => {
+		const fixture = seedFixture();
+		let observedTimeout: number | undefined;
+		await createOperatorIssue(fixture.local, {
+			title: 'Intake evidence timeout',
+			scope: 'Filing evidence has a bounded deadline.',
+			verificationCommand: 'true',
+			evidence: [{ command: 'printf captured', output: '' }],
+		}, {
+			runCommand: async ({ timeoutMs }) => {
+				observedTimeout = timeoutMs;
+				return { exitCode: 0, stdout: 'captured', stderr: '' };
+			},
+		});
+		expect(observedTimeout).toBe(VERIFICATION_COMMAND_TIMEOUT_MS);
+	});
+
+	test('rejects divergent evidence with command and both outputs, without publishing or leaking a worktree', async () => {
+		const fixture = seedFixture();
+		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+		const worktreesBefore = git(fixture.local, ['worktree', 'list', '--porcelain']);
+
+		try {
+			await createOperatorIssue(fixture.local, {
+				title: 'Divergent evidence',
+				scope: 'Refuse an invented premise.',
+				verificationCommand: 'true',
+				evidence: [{ command: 'printf observed', output: 'expected' }],
+			});
+			throw new Error('expected divergent evidence to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect((error as IssueIntakeError).message).toContain('`printf observed`');
+			expect((error as IssueIntakeError).message).toContain('Expected: `expected`');
+			expect((error as IssueIntakeError).message).toContain('Observed: `observed`');
+		}
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+		expect(git(fixture.local, ['worktree', 'list', '--porcelain'])).toBe(worktreesBefore);
+	});
+
+	test('treats every supplied non-empty output as an exact expectation, including whitespace', async () => {
+		for (const expected of [' observed ', '   ']) {
+			const fixture = seedFixture();
+			const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+			try {
+				await createOperatorIssue(fixture.local, {
+					title: 'Exact evidence expectation',
+					scope: 'Supplied output must match byte for byte.',
+					verificationCommand: 'true',
+					evidence: [{ command: 'printf observed', output: expected }],
+				});
+				throw new Error('expected whitespace-sensitive evidence to fail');
+			} catch (error) {
+				expect(error).toBeInstanceOf(IssueIntakeError);
+				expect((error as IssueIntakeError).message).toContain(`Expected: \`${expected}\``);
+				expect((error as IssueIntakeError).message).toContain('Observed: `observed`');
+			}
+			expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+		}
+	});
+
+	test('rejects non-zero and timed-out evidence commands and cleans their worktrees', async () => {
+		for (const testCase of [
+			{ command: 'printf failed >&2; exit 7', options: {}, reason: 'exited 7' },
+			{ command: 'sleep 5', options: { evidenceTimeoutMs: 20 }, reason: 'timed out' },
+		]) {
+			const fixture = seedFixture();
+			const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+			const worktreesBefore = git(fixture.local, ['worktree', 'list', '--porcelain']);
+			try {
+				await createOperatorIssue(fixture.local, {
+					title: 'Unconfirmed evidence',
+					scope: 'Only confirmed evidence may publish.',
+					verificationCommand: 'true',
+					evidence: [{ command: testCase.command, output: '' }],
+				}, testCase.options);
+				throw new Error('expected evidence command to fail');
+			} catch (error) {
+				expect(error).toBeInstanceOf(IssueIntakeError);
+				expect((error as IssueIntakeError).message).toContain(testCase.reason);
+			}
+			expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+			expect(git(fixture.local, ['worktree', 'list', '--porcelain'])).toBe(worktreesBefore);
+		}
+	});
+
+	test('rejects evidence past the item or size limit before touching the remote', async () => {
 		const fixture = seedFixture();
 		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
 
 		try {
-			createOperatorIssue(fixture.local, {
+			await createOperatorIssue(fixture.local, {
 				title: 'Evidência demais',
 				scope: 'Excede o limite de itens.',
 				verificationCommand: 'bun test',
@@ -188,19 +266,19 @@ describe('remote-main operator issue intake', () => {
 		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
 	});
 
-	test('a specified draft revised without resending evidence loses it, same as any other spec replacement', () => {
+	test('a specified draft revised without resending evidence loses it, same as any other spec replacement', async () => {
 		const fixture = seedFixture();
-		specifyOperatorIssue(fixture.local, 'CAM-1', {
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
 			scope: 'Contrato com evidência.',
 			verificationCommand: 'bun test',
-			evidence: [{ command: 'true', output: 'ok' }],
+			evidence: [{ command: 'printf ok', output: 'ok' }],
 		}, () => '2026-08-16T09:00:00.000Z');
 		let issue = JSON.parse(
 			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
 		) as Record<string, unknown>;
-		expect(issue['spec']).toMatchObject({ evidence: [{ command: 'true', output: 'ok' }] });
+		expect(issue['spec']).toMatchObject({ evidence: [{ command: 'printf ok', output: 'ok' }] });
 
-		specifyOperatorIssue(fixture.local, 'CAM-1', {
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
 			scope: 'Contrato revisado sem reenviar evidência.',
 			verificationCommand: 'bun test',
 		}, () => '2026-08-16T09:01:00.000Z');
@@ -210,12 +288,52 @@ describe('remote-main operator issue intake', () => {
 		expect((issue['spec'] as Record<string, unknown>)['evidence']).toBeUndefined();
 	});
 
-	test('fails closed when the runtime source cannot be fetched', () => {
+	test('re-specification captures omitted output and cancellation refuses without publishing', async () => {
+		const fixture = seedFixture();
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
+			scope: 'Capture the revised premise.',
+			verificationCommand: 'true',
+			evidence: [{ command: 'printf revised' }],
+		});
+		const issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(issue['spec']).toMatchObject({
+			evidence: [{ command: 'printf revised', output: 'revised' }],
+		});
+
+		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+		const worktreesBefore = git(fixture.local, ['worktree', 'list', '--porcelain']);
+		const controller = new AbortController();
+		controller.abort();
+		try {
+			await specifyOperatorIssue(
+				fixture.local,
+				'CAM-1',
+				{
+					scope: 'Cancelled revision.',
+					verificationCommand: 'true',
+					evidence: [{ command: 'sleep 5' }],
+				},
+				undefined,
+				undefined,
+				{ signal: controller.signal },
+			);
+			throw new Error('expected cancelled evidence to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect((error as IssueIntakeError).message).toContain('cancelled');
+		}
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
+		expect(git(fixture.local, ['worktree', 'list', '--porcelain'])).toBe(worktreesBefore);
+	});
+
+	test('fails closed when the runtime source cannot be fetched', async () => {
 		const fixture = seedFixture();
 		git(fixture.local, ['remote', 'set-url', 'origin', join(fixture.root, 'missing.git')]);
 
 		try {
-			createOperatorIssue(fixture.local, {
+			await createOperatorIssue(fixture.local, {
 				title: 'Never published',
 				scope: 'Remote must be reachable.',
 				verificationCommand: 'bun test',
@@ -227,13 +345,13 @@ describe('remote-main operator issue intake', () => {
 		}
 	});
 
-	test('promotes an existing idea on fresh remote main without moving local main', () => {
+	test('promotes an existing idea on fresh remote main without moving local main', async () => {
 		const fixture = seedFixture();
 		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
 		writeFileSync(join(fixture.local, 'operator-notes.txt'), 'keep me\n');
 		const dirtyBefore = git(fixture.local, ['status', '--porcelain', '--untracked-files=all']);
 
-		const specified = specifyOperatorIssue(
+		const specified = await specifyOperatorIssue(
 			fixture.local,
 			'CAM-2',
 			{
@@ -261,20 +379,20 @@ describe('remote-main operator issue intake', () => {
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
 	});
 
-	test('revises a specified draft, always invalidates approval, and can reapprove it', () => {
+	test('revises a specified draft, always invalidates approval, and can reapprove it', async () => {
 		const fixture = seedFixture();
 		const input = { scope: 'Contrato revisado.', verificationCommand: 'bun test focused' };
 
-		specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:00:00.000Z');
-		approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:01:00.000Z');
-		specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:02:00.000Z');
+		await specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:00:00.000Z');
+		await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:01:00.000Z');
+		await specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:02:00.000Z');
 		let issue = JSON.parse(
 			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
 		) as Record<string, unknown>;
 		expect(issue['approval']).toBeUndefined();
 		expect(issue['updatedAt']).toBe('2026-08-16T06:02:00.000Z');
 
-		approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:03:00.000Z');
+		await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:03:00.000Z');
 		issue = JSON.parse(
 			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
 		) as Record<string, unknown>;
@@ -287,18 +405,18 @@ describe('remote-main operator issue intake', () => {
 	// GSHIP-614: the second approval of the same published contract is the same
 	// decision, so it must not publish a commit that a run in flight would then
 	// have to merge around.
-	test('approving the published contract again publishes nothing and keeps approvedAt', () => {
+	test('approving the published contract again publishes nothing and keeps approvedAt', async () => {
 		const fixture = seedFixture();
-		specifyOperatorIssue(
+		await specifyOperatorIssue(
 			fixture.local,
 			'CAM-1',
 			{ scope: 'Contrato aprovado.', verificationCommand: 'bun test focused' },
 			() => '2026-08-16T07:00:00.000Z',
 		);
-		const first = approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:01:00.000Z');
+		const first = await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:01:00.000Z');
 		const publishedAfterApproval = git(fixture.remote, ['rev-parse', 'main']);
 
-		const again = approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:02:00.000Z');
+		const again = await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:02:00.000Z');
 
 		expect(again).toMatchObject({ id: 'CAM-1', title: 'fixture 1' });
 		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedAfterApproval);
@@ -313,7 +431,7 @@ describe('remote-main operator issue intake', () => {
 		expect(issue['updatedAt']).toBe('2026-08-16T07:01:00.000Z');
 	});
 
-	test('abandons an open issue keeping every other field as published', () => {
+	test('abandons an open issue keeping every other field as published', async () => {
 		const fixture = seedFixture();
 		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
 		writeFileSync(join(fixture.local, 'operator-notes.txt'), 'keep me\n');
@@ -329,7 +447,7 @@ describe('remote-main operator issue intake', () => {
 		git(fixture.seed, ['commit', '-q', '-m', 'remote backlog advance']);
 		git(fixture.seed, ['push', '-q', fixture.remote, 'main']);
 
-		const abandoned = abandonOperatorIssue(
+		const abandoned = await abandonOperatorIssue(
 			fixture.local,
 			'CAM-1',
 			{ reason: 'O recurso saiu do produto; não há mais o que entregar.' },
@@ -354,18 +472,18 @@ describe('remote-main operator issue intake', () => {
 			.toBe(git(fixture.remote, ['rev-parse', 'main']));
 	});
 
-	test('rejects an unknown issue and an issue that is no longer open', () => {
+	test('rejects an unknown issue and an issue that is no longer open', async () => {
 		const fixture = seedFixture();
 
 		try {
-			abandonOperatorIssue(fixture.local, 'CAM-404', { reason: 'Não existe.' });
+			await abandonOperatorIssue(fixture.local, 'CAM-404', { reason: 'Não existe.' });
 			throw new Error('expected abandonOperatorIssue to fail');
 		} catch (error) {
 			expect(error).toBeInstanceOf(IssueIntakeError);
 			expect(error).toMatchObject({ code: 'issue-not-found', status: 404 });
 		}
 
-		abandonOperatorIssue(
+		await abandonOperatorIssue(
 			fixture.local,
 			'CAM-2',
 			{ reason: 'A ideia foi absorvida por outra tarefa.' },
@@ -377,7 +495,7 @@ describe('remote-main operator issue intake', () => {
 		expect(idea).toMatchObject({ stage: 'idea', status: 'abandoned' });
 
 		try {
-			abandonOperatorIssue(fixture.local, 'CAM-2', { reason: 'De novo.' });
+			await abandonOperatorIssue(fixture.local, 'CAM-2', { reason: 'De novo.' });
 			throw new Error('expected abandonOperatorIssue to fail');
 		} catch (error) {
 			expect(error).toBeInstanceOf(IssueIntakeError);
@@ -385,12 +503,12 @@ describe('remote-main operator issue intake', () => {
 		}
 	});
 
-	test('requires a concrete justification before touching the remote', () => {
+	test('requires a concrete justification before touching the remote', async () => {
 		const fixture = seedFixture();
 		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
 
 		try {
-			abandonOperatorIssue(fixture.local, 'CAM-1', { reason: '   ' });
+			await abandonOperatorIssue(fixture.local, 'CAM-1', { reason: '   ' });
 			throw new Error('expected abandonOperatorIssue to fail');
 		} catch (error) {
 			expect(error).toBeInstanceOf(IssueIntakeError);
@@ -408,7 +526,7 @@ describe('remote-main operator issue intake', () => {
 // src/commands/web.ts having been read first, which is a display of the same
 // outcome and not a trigger for it (GSHIP-654).
 describe('git author identity on the commit path (GSHIP-654)', () => {
-	test('a missing identity is derived on the very first commit attempt, with no snapshot ever read', () => {
+	test('a missing identity is derived on the very first commit attempt, with no snapshot ever read', async () => {
 		// No identify(fixture.local): this clone starts with no committer
 		// identity at all, local or global, so this commit only succeeds if
 		// something derives one before git ever runs it. The real
@@ -433,7 +551,7 @@ describe('git author identity on the commit path (GSHIP-654)', () => {
 
 		// No startWebServer, no /api/snapshot, no HTTP request anywhere in this
 		// test -- the entire derive-and-use happens on the commit path alone.
-		const issue = createOperatorIssue(
+		const issue = await createOperatorIssue(
 			fixture.local,
 			{
 				title: 'First intake, no identity yet',
@@ -451,7 +569,7 @@ describe('git author identity on the commit path (GSHIP-654)', () => {
 		expect(author).toBe('Derived Operator <777+derived-operator@users.noreply.github.com>');
 	});
 
-	test('a persistently missing identity fails clearly before any worktree is touched, not with a raw git error', () => {
+	test('a persistently missing identity fails clearly before any worktree is touched, not with a raw git error', async () => {
 		const fixture = seedFixture({ identifyLocal: false });
 		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
 		const ensureIdentity = (): GitIdentityResult => ({
@@ -460,7 +578,7 @@ describe('git author identity on the commit path (GSHIP-654)', () => {
 		});
 
 		try {
-			createOperatorIssue(
+			await createOperatorIssue(
 				fixture.local,
 				{
 					title: 'Should never publish',

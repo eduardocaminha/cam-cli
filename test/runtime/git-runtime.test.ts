@@ -9,6 +9,8 @@ import {
 	GitFullVerifier,
 	GitIssueVerifier,
 	type GitCommandRunner,
+	runVerificationCommand,
+	VERIFICATION_COMMAND_TIMEOUT_MS,
 } from '../../src/runtime/git-runtime.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -106,12 +108,14 @@ describe('git runtime boundary', () => {
 
 	test('runs every verify command in order and emits command lifecycle events', async () => {
 		const commands: string[] = [];
+		const timeouts: Array<number | undefined> = [];
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const verifier = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
 			loadIssue: () => issueWithVerification(['bun test one', 'test -f output.txt']),
-			runCommand: async ({ command }) => {
+			runCommand: async ({ command, timeoutMs }) => {
 				commands.push(command);
+				timeouts.push(timeoutMs);
 				return { exitCode: 0, stdout: '', stderr: '' };
 			},
 		});
@@ -123,6 +127,7 @@ describe('git runtime boundary', () => {
 
 		expect(result).toEqual({ ok: true });
 		expect(commands).toEqual(['bun test one', 'test -f output.txt']);
+		expect(timeouts).toEqual([undefined, undefined]);
 		expect(events.map((event) => event.kind)).toEqual([
 			'verify.command.started',
 			'verify.command.completed',
@@ -172,6 +177,17 @@ describe('git runtime boundary', () => {
 		controller.abort();
 		await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
 	});
+
+	test('the shared verification runner times out and terminates its subprocess group', async () => {
+		const result = await runVerificationCommand({
+			cwd: process.cwd(),
+			command: "trap 'exit 0' TERM; while :; do sleep 0.1; done",
+			signal: new AbortController().signal,
+			timeoutMs: 20,
+		}, 50);
+		expect(result).toMatchObject({ exitCode: 124, timedOut: true });
+		expect(result.stderr).toContain('timed out after 20ms');
+	});
 });
 
 // GSHIP-629: the spec's executable premise. Checked by GitEvidenceChecker in
@@ -198,11 +214,13 @@ describe('GitEvidenceChecker', () => {
 	test('matching evidence passes, running each command in the input cwd', async () => {
 		const commands: string[] = [];
 		const cwds: string[] = [];
+		const timeouts: Array<number | undefined> = [];
 		const checker = new GitEvidenceChecker({
 			loadIssueFromWorkspace: () => issueWithEvidence([{ command: 'echo hi', output: 'hi' }]),
-			runCommand: async ({ cwd, command }) => {
+			runCommand: async ({ cwd, command, timeoutMs }) => {
 				commands.push(command);
 				cwds.push(cwd);
+				timeouts.push(timeoutMs);
 				return { exitCode: 0, stdout: 'hi\n', stderr: '' };
 			},
 		});
@@ -210,6 +228,7 @@ describe('GitEvidenceChecker', () => {
 		expect(await checker.check(verificationInput)).toEqual({ ok: true });
 		expect(commands).toEqual(['echo hi']);
 		expect(cwds).toEqual([verificationInput.cwd]);
+		expect(timeouts).toEqual([VERIFICATION_COMMAND_TIMEOUT_MS]);
 	});
 
 	test('diverging evidence fails, showing the command and both outputs', async () => {
@@ -339,11 +358,11 @@ describe('GitFullVerifier', () => {
 	test('runs bun run verify and emits command lifecycle events when a script is declared', async () => {
 		const dir = createTestTmpdir('gship-full-verify-clean-');
 		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
-		const commands: Array<{ cwd: string; command: string }> = [];
+		const commands: Array<{ cwd: string; command: string; timeoutMs: number | undefined }> = [];
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const verifier = new GitFullVerifier({
-			runCommand: async ({ cwd, command }) => {
-				commands.push({ cwd, command });
+			runCommand: async ({ cwd, command, timeoutMs }) => {
+				commands.push({ cwd, command, timeoutMs });
 				return { exitCode: 0, stdout: '', stderr: '' };
 			},
 		});
@@ -358,7 +377,7 @@ describe('GitFullVerifier', () => {
 		// The command is always `bun run verify`, never the script's own content
 		// (`bun run check:all` above): the slice never hardcodes or inlines what
 		// the project declared, it only asks bun to resolve the script by name.
-		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify' }]);
+		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify', timeoutMs: undefined }]);
 		expect(events).toEqual([
 			{ kind: 'full-verify.command.started' },
 			{ kind: 'full-verify.command.completed', payload: { exitCode: 0 } },

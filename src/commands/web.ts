@@ -118,6 +118,14 @@ import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
+type MaybePromise<T> = T | Promise<T>;
+type IssueIntakeWriter = (
+	input: unknown,
+	options?: { approve?: boolean },
+) => MaybePromise<CreatedOperatorIssue>;
+type IssueSpecifier = (id: string, input: unknown) => MaybePromise<CreatedOperatorIssue>;
+type IssueApprover = (id: string) => MaybePromise<CreatedOperatorIssue>;
+type IssueAbandoner = (id: string, input: unknown) => MaybePromise<CreatedOperatorIssue>;
 
 /**
  * Overrides the interface `Bun.serve` binds to, independent from
@@ -142,15 +150,15 @@ export interface WebServerOptions {
 	/** Injectable native updater. Production owns one over the runtime database. */
 	selfUpdate?: SelfUpdateAccess;
 	/** Test seam for the remote-main operator issue writer. */
-	issueIntake?: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
+	issueIntake?: IssueIntakeWriter;
 	/** Test seam for promoting an existing idea with the operator contract. */
-	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
+	issueSpecifier?: IssueSpecifier;
 	/** Test seam for approving an existing specified issue. */
-	issueApprover?: (id: string) => CreatedOperatorIssue;
+	issueApprover?: IssueApprover;
 	/** Test seam for reading the currently published issue during agent approval. */
 	issueReader?: (id: string) => IssueEntry | null;
 	/** Test seam for closing an open issue with a durable justification. */
-	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
+	issueAbandoner?: IssueAbandoner;
 	/** Test seam for credential-blind provider status and managed Codex login. */
 	providerAuth?: ProviderAuth;
 	/** Test seam for probing a chosen model/effort against the provider's own CLI. */
@@ -675,7 +683,7 @@ async function writeOperatorProfile(request: Request, runtime: RunRuntime): Prom
 
 async function createIssueFromOperator(
 	request: Request,
-	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
+	issueIntake: IssueIntakeWriter,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -689,7 +697,7 @@ async function createIssueFromOperator(
 	}
 	try {
 		const input = parseOperatorIssueInput(body);
-		return Response.json({ ok: true, issue: issueIntake(input) }, { status: 201 });
+		return Response.json({ ok: true, issue: await issueIntake(input) }, { status: 201 });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -857,7 +865,7 @@ async function specifyIssueFromOperator(
 	request: Request,
 	id: string,
 	runtime: RunRuntime,
-	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+	issueSpecifier: IssueSpecifier,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -872,7 +880,7 @@ async function specifyIssueFromOperator(
 	try {
 		const input = parseOperatorSpecInput(body);
 		assertIssueFileIsFree(runtime, id);
-		return Response.json({ ok: true, issue: issueSpecifier(id, input) });
+		return Response.json({ ok: true, issue: await issueSpecifier(id, input) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -886,14 +894,14 @@ async function approveIssueFromOperator(
 	request: Request,
 	id: string,
 	runtime: RunRuntime,
-	issueApprover: (id: string) => CreatedOperatorIssue,
+	issueApprover: IssueApprover,
 	issueReader: (id: string) => IssueEntry | null,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	try {
 		if (commandSource(request) === 'agent-cli') await assertAgentApproval(request, id, issueReader);
 		assertIssueFileIsFree(runtime, id);
-		return Response.json({ ok: true, issue: issueApprover(id) });
+		return Response.json({ ok: true, issue: await issueApprover(id) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -982,7 +990,7 @@ async function abandonIssueFromOperator(
 	request: Request,
 	id: string,
 	runtime: RunRuntime,
-	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
+	issueAbandoner: IssueAbandoner,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -997,7 +1005,7 @@ async function abandonIssueFromOperator(
 	try {
 		const input = parseOperatorAbandonInput(body);
 		assertIssueFileIsFree(runtime, id);
-		return Response.json({ ok: true, issue: issueAbandoner(id, input) });
+		return Response.json({ ok: true, issue: await issueAbandoner(id, input) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -1144,7 +1152,7 @@ async function promoteDiagnosticFindingFromOperator(
 	request: Request,
 	diagnostics: DiagnosticsRuntime,
 	findingId: string,
-	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
+	issueIntake: IssueIntakeWriter,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -1173,7 +1181,7 @@ async function promoteDiagnosticFindingFromOperator(
 				409,
 			);
 		}
-		const issue = issueIntake(input, { approve: false });
+		const issue = await issueIntake(input, { approve: false });
 		return Response.json({
 			ok: true,
 			issue,
@@ -1218,7 +1226,7 @@ async function promoteProposalFromOperator(
 	request: Request,
 	runtime: RunRuntime,
 	proposalId: string,
-	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
+	issueIntake: IssueIntakeWriter,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -1247,7 +1255,7 @@ async function promoteProposalFromOperator(
 				409,
 			);
 		}
-		const issue = issueIntake(input, { approve: false });
+		const issue = await issueIntake(input, { approve: false });
 		return Response.json({
 			ok: true,
 			issue,
@@ -1835,10 +1843,10 @@ export function createDefaultRunRuntimeOptions(
 async function executeOrchestratorCommand(
 	command: OrchestratorCommand,
 	runtime: RunRuntime,
-	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
-	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
-	issueApprover: (id: string) => CreatedOperatorIssue,
-	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
+	issueIntake: IssueIntakeWriter,
+	issueSpecifier: IssueSpecifier,
+	issueApprover: IssueApprover,
+	issueAbandoner: IssueAbandoner,
 ): Promise<string> {
 	switch (command.type) {
 		case 'none':
@@ -1847,11 +1855,11 @@ async function executeOrchestratorCommand(
 			runtime.setProjectBrief(command.brief);
 			return 'Project brief updated and automatic handoff cleared.';
 		case 'create_issue': {
-			const issue = issueIntake(command);
+			const issue = await issueIntake(command);
 			return `${issue.id} created in the backlog.`;
 		}
 		case 'create_and_start_issue': {
-			const issue = issueIntake(command, { approve: true });
+			const issue = await issueIntake(command, { approve: true });
 			// The publication is already durable: a failing start must report the
 			// created id instead of escaping as a generic refusal.
 			try {
@@ -1868,17 +1876,17 @@ async function executeOrchestratorCommand(
 		// on main what the screen refuses while a run is in flight.
 		case 'specify_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = issueSpecifier(command.issueId, command);
+			const issue = await issueSpecifier(command.issueId, command);
 			return `${issue.id} specified in the backlog.`;
 		}
 		case 'approve_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = issueApprover(command.issueId);
+			const issue = await issueApprover(command.issueId);
 			return `${issue.id} approved in the backlog.`;
 		}
 		case 'abandon_issue': {
 			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = issueAbandoner(command.issueId, command);
+			const issue = await issueAbandoner(command.issueId, command);
 			return `${issue.id} abandoned in the backlog.`;
 		}
 		case 'start_run': {
@@ -2002,10 +2010,10 @@ function resolveIssueWriters(
 	options: WebServerOptions,
 	ensureIdentity: () => GitIdentityResult,
 ): {
-	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
-	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue;
-	issueApprover: (id: string) => CreatedOperatorIssue;
-	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue;
+	issueIntake: IssueIntakeWriter;
+	issueSpecifier: IssueSpecifier;
+	issueApprover: IssueApprover;
+	issueAbandoner: IssueAbandoner;
 } {
 	return {
 		issueIntake: options.issueIntake
