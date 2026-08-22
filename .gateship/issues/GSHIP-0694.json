@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T12:47:13.780Z",
-  "updatedAt": "2026-08-22T12:47:13.780Z",
+  "updatedAt": "2026-08-22T12:48:08.644Z",
   "description": "Introduzir `GATESHIP_HOME` como raiz global do produto. Um valor explícito deve ser um caminho absoluto; na ausência, o modo nativo usa `~/.gateship`. Persistir em SQLite, dentro desse home, um registro de projetos separado dos bancos de runtime de cada projeto. Ao iniciar, o serviço registra ou reconcilia automaticamente o project root atual usando caminho canônico e único, preserva um ID estável entre reinícios e aponta para o `stateDir` já resolvido pela composição. A adoção não deve mover, copiar nem recriar `<stateDir>/runtime.sqlite`, worktrees, notificações ou qualquer histórico existente. Expor uma leitura `/api/projects` e a operação compacta `projects.list` no agent CLI, com identidade, nome, root, stateDir, readiness/repository quando conhecidos e indicação do projeto servido nesta instância. Atualizar o HANDOFF com o plano multiprojeto aprovado e a etapa corrente. Não adicionar cadastro manual, remoção, project picker, rotas escopadas, troca de runtime, migração física, credenciais globais, mudanças no container ou paralelismo.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/project-registry.test.ts test/runtime/project-readiness.test.ts test/web/project-status-api.test.ts test/web/idle-state.test.ts test/commands/agent.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "b9bd3937fe57e35de1c198b02692413a46c1505b92308f79bcf0348ec853e5e5",
+    "approvedAt": "2026-08-22T12:48:08.644Z"
   }
 }
