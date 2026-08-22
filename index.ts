@@ -58,7 +58,25 @@ export function parseWebArgs(args: string[]): { port: number; help: boolean } | 
 	return { port, help: false };
 }
 
-async function launchWeb(args: string[]): Promise<number> {
+export type WebInvocation =
+	| { kind: 'web'; stateDir?: string; serverArgs: string[] }
+	| { kind: 'invalid-self-update-serve' }
+	| { kind: 'other' };
+
+export function resolveWebInvocation(argv: string[]): WebInvocation {
+	const command = argv[2];
+	if (command === '__self-update-serve') {
+		const stateDir = argv[3];
+		return stateDir === undefined
+			? { kind: 'invalid-self-update-serve' }
+			: { kind: 'web', stateDir, serverArgs: argv.slice(4) };
+	}
+	return command === undefined || command.startsWith('--port')
+		? { kind: 'web', serverArgs: argv.slice(2) }
+		: { kind: 'other' };
+}
+
+async function launchWeb(args: string[], stateDir?: string): Promise<number> {
 	const parsed = parseWebArgs(args);
 	if (parsed === null) {
 		printFatalHint('run `gship --help` for usage');
@@ -68,7 +86,7 @@ async function launchWeb(args: string[]): Promise<number> {
 		process.stdout.write(HELP);
 		return 0;
 	}
-	return runWeb({ port: parsed.port, cwd: process.cwd() });
+	return runWeb({ port: parsed.port, cwd: process.cwd(), stateDir, serverArgs: args });
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -84,7 +102,9 @@ export async function main(argv: string[]): Promise<number> {
 			rmSync(planPath, { force: true });
 		}
 	}
-	if (command === undefined || command.startsWith('--port')) return launchWeb(argv.slice(2));
+	const web = resolveWebInvocation(argv);
+	if (web.kind === 'invalid-self-update-serve') return 1;
+	if (web.kind === 'web') return launchWeb(web.serverArgs, web.stateDir);
 	if (command === 'help' || command === '--help' || command === '-h') {
 		process.stdout.write(HELP);
 		return 0;

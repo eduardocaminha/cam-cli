@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -701,6 +701,24 @@ describe('the project-local Resend API key file (GSHIP-653)', () => {
 });
 
 describe('browser-managed Resend files (GSHIP-688)', () => {
+	test('keeps notification files in explicit state and never creates project .gship', async () => {
+		const cwd = createTestTmpdir('gship-notification-project-');
+		const stateDir = createTestTmpdir('gship-notification-state-');
+		writeFileSync(join(stateDir, 'ntfy-url'), `${TOPIC_URL}\n`, { mode: 0o600 });
+		writeResendApiKey(cwd, RESEND_API_KEY, stateDir);
+		writeResendSettings(cwd, RESEND_FROM, RESEND_TO, stateDir);
+
+		expect(isNtfyConfigured(cwd, {}, stateDir)).toBe(true);
+		expect(resolveResendStatus(cwd, {}, stateDir).configured).toBe(true);
+		expect(existsSync(join(cwd, '.gship'))).toBe(false);
+
+		const { fetchImpl, calls } = stubFetch();
+		createRemoteNotifier({ cwd, stateDir, env: {}, fetchImpl })(
+			event('waiting-user', 'run.waiting-user'),
+		);
+		await waitFor(() => calls.length === 2);
+	});
+
 	test('writes and atomically replaces the key at mode 0600 without returning it', () => {
 		const cwd = createTestTmpdir('gship-resend-write-');
 		writeResendApiKeyFile(cwd, 'old-valid-key');

@@ -39,6 +39,10 @@ export const NTFY_URL_ENV_VAR = 'GATESHIP_NTFY_URL';
  */
 export const NTFY_URL_FILE_PATH = join('.gship', 'ntfy-url');
 
+function notificationStateDir(cwd: string, stateDir?: string): string {
+	return stateDir ?? join(cwd, '.gship');
+}
+
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 /** Reasons `run.chain-paused` carries that are chaining's default-off steady state, not a stopped queue (mirrors webui/src/App.tsx's stoppedQueuePause, GSHIP-650). */
@@ -140,8 +144,8 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
  * left to honor that decision is refusing to trust a file that arrived more
  * permissive than the contract, the same posture SSH takes on a private key.
  */
-function readNtfyUrlFile(cwd: string): string | null {
-	const path = join(cwd, NTFY_URL_FILE_PATH);
+function readNtfyUrlFile(cwd: string, stateDir?: string): string | null {
+	const path = join(notificationStateDir(cwd, stateDir), 'ntfy-url');
 	try {
 		if ((statSync(path).mode & 0o077) !== 0) return null;
 		const raw = readFileSync(path, 'utf8').trim();
@@ -156,11 +160,15 @@ function readNtfyUrlFile(cwd: string): string | null {
  * running with `GATESHIP_NTFY_URL` set sees no change. Neither present reads
  * as `null`, the channel's ordinary off state, never an error.
  */
-export function resolveNtfyUrl(cwd: string, env: Record<string, string | undefined> = process.env): string | null {
+export function resolveNtfyUrl(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
+): string | null {
 	const fromEnv = env[NTFY_URL_ENV_VAR];
 	const trimmedEnv = typeof fromEnv === 'string' ? fromEnv.trim() : '';
 	if (trimmedEnv.length > 0) return trimmedEnv;
-	return readNtfyUrlFile(cwd);
+	return readNtfyUrlFile(cwd, stateDir);
 }
 
 /**
@@ -170,8 +178,12 @@ export function resolveNtfyUrl(cwd: string, env: Record<string, string | undefin
  * raw value their own way, so a value that fails to parse reads as off
  * everywhere at once -- never "configured" on one path and refused on another.
  */
-function resolveNtfyTopicUrl(cwd: string, env: Record<string, string | undefined>): URL | null {
-	const raw = resolveNtfyUrl(cwd, env);
+function resolveNtfyTopicUrl(
+	cwd: string,
+	env: Record<string, string | undefined>,
+	stateDir?: string,
+): URL | null {
+	const raw = resolveNtfyUrl(cwd, env, stateDir);
 	if (raw === null) return null;
 	try {
 		return new URL(raw);
@@ -184,8 +196,12 @@ function resolveNtfyTopicUrl(cwd: string, env: Record<string, string | undefined
  * The only shape Settings -- or any other caller -- is allowed to read the
  * secret's presence through: a boolean, never the value it resolved (GSHIP-652).
  */
-export function isNtfyConfigured(cwd: string, env: Record<string, string | undefined> = process.env): boolean {
-	return resolveNtfyTopicUrl(cwd, env) !== null;
+export function isNtfyConfigured(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
+): boolean {
+	return resolveNtfyTopicUrl(cwd, env, stateDir) !== null;
 }
 
 export interface RemoteNotifierOptions {
@@ -197,6 +213,8 @@ export interface RemoteNotifierOptions {
 	timeoutMs?: number;
 	/** Project root the file-backed secret is read from (GSHIP-652); defaults to `process.cwd()`. */
 	cwd?: string;
+	/** Explicit project state directory; defaults to `<cwd>/.gship`. */
+	stateDir?: string;
 }
 
 /** One ntfy delivery; swallowed after being counted against the request itself (a settled, failed fetch) rather than left an unhandled rejection -- the channel is optional, so its own failure carries no further consequence. */
@@ -243,6 +261,7 @@ async function sendNtfyDelivery(
 export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (event: RunEvent) => void {
 	const env = options.env ?? process.env;
 	const cwd = options.cwd ?? process.cwd();
+	const stateDir = options.stateDir;
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -250,10 +269,10 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 		const notification = remoteNotificationForRunEvent(event);
 		if (notification === null) return;
 
-		const topicUrl = resolveNtfyTopicUrl(cwd, env);
+		const topicUrl = resolveNtfyTopicUrl(cwd, env, stateDir);
 		if (topicUrl !== null) void sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs);
 
-		const { config } = resolveResendConfig(cwd, env);
+		const { config } = resolveResendConfig(cwd, env, stateDir);
 		if (config !== null) void sendResendDelivery(config, notification, fetchImpl, timeoutMs);
 	};
 }
@@ -275,9 +294,9 @@ export async function sendRemoteServiceNotification(
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const notification = { title, body };
 	const deliveries: Promise<void>[] = [];
-	const topicUrl = resolveNtfyTopicUrl(cwd, env);
+	const topicUrl = resolveNtfyTopicUrl(cwd, env, options.stateDir);
 	if (topicUrl !== null) deliveries.push(sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs));
-	const { config } = resolveResendConfig(cwd, env);
+	const { config } = resolveResendConfig(cwd, env, options.stateDir);
 	if (config !== null) deliveries.push(sendResendDelivery(config, notification, fetchImpl, timeoutMs));
 	await Promise.all(deliveries);
 }
@@ -293,6 +312,7 @@ export interface NtfyTestResult {
 
 export interface NtfyTestOptions {
 	cwd: string;
+	stateDir?: string;
 	/** Defaults to `process.env`; a test supplies its own map instead of mutating the real process. */
 	env?: Record<string, string | undefined>;
 	/** Defaults to the global `fetch`; a test injects a stub to observe or fail a delivery. */
@@ -307,7 +327,7 @@ export interface NtfyTestOptions {
  */
 export async function sendNtfyTestNotification(options: NtfyTestOptions): Promise<NtfyTestResult> {
 	const env = options.env ?? process.env;
-	const topicUrl = resolveNtfyTopicUrl(options.cwd, env);
+	const topicUrl = resolveNtfyTopicUrl(options.cwd, env, options.stateDir);
 	if (topicUrl === null) return { outcome: 'not-configured' };
 
 	const fetchImpl = options.fetchImpl ?? fetch;
@@ -376,8 +396,8 @@ export const RESEND_FIELD_LABELS: Readonly<Record<ResendConfigField, string>> = 
 };
 
 /** Same refusal as `readNtfyUrlFile`: absent, empty, or looser than 600 all read as no file. */
-function readResendApiKeyFile(cwd: string): string | null {
-	const path = join(cwd, RESEND_API_KEY_FILE_PATH);
+function readResendApiKeyFile(cwd: string, stateDir?: string): string | null {
+	const path = join(notificationStateDir(cwd, stateDir), 'resend-api-key');
 	try {
 		if ((statSync(path).mode & 0o077) !== 0) return null;
 		const raw = readFileSync(path, 'utf8').trim();
@@ -398,9 +418,12 @@ function boundedSetting(value: unknown): string | null {
 	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
 }
 
-function readResendFileSettings(cwd: string): ResendFileSettings {
+function readResendFileSettings(cwd: string, stateDir?: string): ResendFileSettings {
 	try {
-		const parsed = JSON.parse(readFileSync(join(cwd, RESEND_SETTINGS_FILE_PATH), 'utf8')) as unknown;
+		const parsed = JSON.parse(readFileSync(
+			join(notificationStateDir(cwd, stateDir), 'resend-settings.json'),
+			'utf8',
+		)) as unknown;
 		if (parsed === null || typeof parsed !== 'object') return { from: null, to: null };
 		const record = parsed as Record<string, unknown>;
 		return { from: boundedSetting(record.from), to: boundedSetting(record.to) };
@@ -409,11 +432,11 @@ function readResendFileSettings(cwd: string): ResendFileSettings {
 	}
 }
 
-function atomicWrite(cwd: string, relativePath: string, contents: string, mode: number): void {
-	const directory = join(cwd, '.gship');
+function atomicWrite(cwd: string, filename: string, contents: string, mode: number, stateDir?: string): void {
+	const directory = notificationStateDir(cwd, stateDir);
 	mkdirSync(directory, { recursive: true });
-	const target = join(cwd, relativePath);
-	const temporary = join(directory, `.${relativePath.split('/').at(-1)}.${randomUUID()}.tmp`);
+	const target = join(directory, filename);
+	const temporary = join(directory, `.${filename}.${randomUUID()}.tmp`);
 	let descriptor: number | null = null;
 	try {
 		descriptor = openSync(temporary, 'wx', mode);
@@ -432,14 +455,14 @@ function atomicWrite(cwd: string, relativePath: string, contents: string, mode: 
 }
 
 /** Writes a replacement key without exposing it through any return value. */
-export function writeResendApiKey(cwd: string, apiKey: string): void {
+export function writeResendApiKey(cwd: string, apiKey: string, stateDir?: string): void {
 	const trimmed = apiKey.trim();
 	if (trimmed.length === 0) throw new Error('A non-empty API key is required.');
-	atomicWrite(cwd, RESEND_API_KEY_FILE_PATH, `${trimmed}\n`, 0o600);
+	atomicWrite(cwd, 'resend-api-key', `${trimmed}\n`, 0o600, stateDir);
 }
 
 /** Persists only the two non-secret fields. */
-export function writeResendSettings(cwd: string, from: string, to: string): void {
+export function writeResendSettings(cwd: string, from: string, to: string, stateDir?: string): void {
 	const normalizedFrom = boundedSetting(from);
 	const normalizedTo = boundedSetting(to);
 	if (normalizedFrom === null || normalizedTo === null) {
@@ -447,15 +470,16 @@ export function writeResendSettings(cwd: string, from: string, to: string): void
 	}
 	atomicWrite(
 		cwd,
-		RESEND_SETTINGS_FILE_PATH,
+		'resend-settings.json',
 		`${JSON.stringify({ from: normalizedFrom, to: normalizedTo }, null, 2)}\n`,
 		0o600,
+		stateDir,
 	);
 }
 
-export function removeResendApiKey(cwd: string): boolean {
+export function removeResendApiKey(cwd: string, stateDir?: string): boolean {
 	try {
-		unlinkSync(join(cwd, RESEND_API_KEY_FILE_PATH));
+		unlinkSync(join(notificationStateDir(cwd, stateDir), 'resend-api-key'));
 		return true;
 	} catch (error) {
 		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
@@ -467,11 +491,12 @@ export function removeResendApiKey(cwd: string): boolean {
 export function resolveResendApiKey(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
 ): string | null {
 	const fromEnv = env[RESEND_API_KEY_ENV_VAR];
 	const trimmedEnv = typeof fromEnv === 'string' ? fromEnv.trim() : '';
 	if (trimmedEnv.length > 0) return trimmedEnv;
-	return readResendApiKeyFile(cwd);
+	return readResendApiKeyFile(cwd, stateDir);
 }
 
 function trimmedEnvValue(env: Record<string, string | undefined>, key: string): string | null {
@@ -493,8 +518,9 @@ export interface ResendStatus {
 export function resolveResendStatus(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
 ): ResendStatus {
-	const file = readResendFileSettings(cwd);
+	const file = readResendFileSettings(cwd, stateDir);
 	const envFrom = trimmedEnvValue(env, RESEND_FROM_ENV_VAR);
 	const envTo = trimmedEnvValue(env, RESEND_TO_ENV_VAR);
 	const externallyManaged = {
@@ -504,7 +530,7 @@ export function resolveResendStatus(
 	};
 	const from = envFrom ?? file.from;
 	const to = envTo ?? file.to;
-	const apiKey = resolveResendApiKey(cwd, env);
+	const apiKey = resolveResendApiKey(cwd, env, stateDir);
 	const missing: ResendConfigField[] = [];
 	if (apiKey === null) missing.push('apiKey');
 	if (from === null) missing.push('from');
@@ -514,7 +540,7 @@ export function resolveResendStatus(
 		missing,
 		from,
 		to,
-		fileCredentialExists: existsSync(join(cwd, RESEND_API_KEY_FILE_PATH)),
+		fileCredentialExists: existsSync(join(notificationStateDir(cwd, stateDir), 'resend-api-key')),
 		externallyManaged,
 	};
 }
@@ -529,25 +555,31 @@ export function resolveResendStatus(
 function resolveResendConfig(
 	cwd: string,
 	env: Record<string, string | undefined>,
+	stateDir?: string,
 ): { config: ResendConfig | null; missing: ResendConfigField[] } {
-	const status = resolveResendStatus(cwd, env);
-	const apiKey = resolveResendApiKey(cwd, env);
+	const status = resolveResendStatus(cwd, env, stateDir);
+	const apiKey = resolveResendApiKey(cwd, env, stateDir);
 	const { from, to, missing } = status;
 	if (apiKey === null || from === null || to === null) return { config: null, missing };
 	return { config: { apiKey, from, to }, missing: [] };
 }
 
 /** Never the three values -- only whether Resend resolved all of them (GSHIP-653). */
-export function isResendConfigured(cwd: string, env: Record<string, string | undefined> = process.env): boolean {
-	return resolveResendConfig(cwd, env).config !== null;
+export function isResendConfigured(
+	cwd: string,
+	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
+): boolean {
+	return resolveResendConfig(cwd, env, stateDir).config !== null;
 }
 
 /** What Ajustes names, by field, when Resend is off because of a partial configuration. */
 export function resolveResendMissingFields(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
+	stateDir?: string,
 ): ResendConfigField[] {
-	return resolveResendConfig(cwd, env).missing;
+	return resolveResendConfig(cwd, env, stateDir).missing;
 }
 
 /** One Resend HTTP API delivery; swallowed exactly like ntfy's own -- the channel is optional, so its failure carries no further consequence. */
@@ -592,6 +624,7 @@ export interface ResendTestResult {
 
 export interface ResendTestOptions {
 	cwd: string;
+	stateDir?: string;
 	/** Defaults to `process.env`; a test supplies its own map instead of mutating the real process. */
 	env?: Record<string, string | undefined>;
 	/** Defaults to the global `fetch`; a test injects a stub to observe or fail a delivery. */
@@ -608,7 +641,7 @@ export interface ResendTestOptions {
  */
 export async function sendResendTestNotification(options: ResendTestOptions): Promise<ResendTestResult> {
 	const env = options.env ?? process.env;
-	const { config, missing } = resolveResendConfig(options.cwd, env);
+	const { config, missing } = resolveResendConfig(options.cwd, env, options.stateDir);
 	if (config === null) {
 		return { outcome: 'not-configured', detail: missing.map((field) => RESEND_FIELD_LABELS[field]).join(', ') };
 	}

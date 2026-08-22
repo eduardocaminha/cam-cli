@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { resolveWebInvocation } from '../../index.ts';
 import {
 	detectNativeInstallation,
 	executeSelfUpdateHandoff,
@@ -44,6 +45,8 @@ function fixture(options: {
 	probeVersion?: () => string;
 	client?: ReleaseClient;
 	acquireAdmission?: () => (() => void) | null;
+	stateDir?: string;
+	serverArgs?: string[];
 } = {}) {
 	const cwd = createTestTmpdir('gship-self-update-');
 	const bin = join(cwd, 'bin');
@@ -70,6 +73,7 @@ function fixture(options: {
 		store,
 		databasePath: join(cwd, 'runtime.sqlite'),
 		cwd,
+		stateDir: options.stateDir,
 		currentVersion: '1.0.0',
 		currentCommit: 'b'.repeat(40),
 		port: 7777,
@@ -82,7 +86,7 @@ function fixture(options: {
 		installation: { kind: 'native', executable: publicPaths[1]!, directory: bin, publicPaths },
 		probeVersion: options.probeVersion ?? (() => 'gateship 2.0.0'),
 		spawnHelper: (_executable, plan) => { plans.push(plan); },
-		serverArgs: ['--port', '7777'],
+		serverArgs: options.serverArgs ?? ['--port', '7777'],
 	});
 	if (options.enabled) runtime.setEnabled(true);
 	return { runtime, store, downloads, plans };
@@ -252,6 +256,45 @@ describe('native self update policy', () => {
 		expect(runtime.snapshot().applying).toBe(true);
 	});
 
+	test('writes handoff state only beneath an explicit project state directory', async () => {
+		const stateDir = createTestTmpdir('gship-self-update-state-');
+		const { runtime, plans } = fixture({ enabled: true, stateDir });
+
+		await runtime.checkIfDue();
+
+		expect(plans).toHaveLength(1);
+		expect(plans[0]?.startsWith(join(stateDir, 'self-update'))).toBe(true);
+		const written = JSON.parse(await Bun.file(plans[0]!).text()) as HandoffPlan;
+		expect(written.stateDir).toBe(stateDir);
+		expect(existsSync(join(stateDir, 'self-update'))).toBe(true);
+	});
+
+	test('keeps wrapper-launched web arguments canonical across two update plans', async () => {
+		const stateDir = createTestTmpdir('gship-self-update-state-');
+		const webArgs = ['--port', '7777'];
+		const firstInvocation = resolveWebInvocation([
+			'node', 'gship', '__self-update-serve', stateDir, ...webArgs,
+		]);
+		expect(firstInvocation).toEqual({ kind: 'web', stateDir, serverArgs: webArgs });
+		if (firstInvocation.kind !== 'web') throw new Error('wrapper invocation did not resolve to web');
+
+		const first = fixture({ enabled: true, stateDir, serverArgs: firstInvocation.serverArgs });
+		await first.runtime.checkIfDue();
+		const firstPlan = JSON.parse(await Bun.file(first.plans[0]!).text()) as HandoffPlan;
+
+		const secondInvocation = resolveWebInvocation([
+			'node', 'gship', '__self-update-serve', stateDir, ...firstPlan.serverArgs,
+		]);
+		if (secondInvocation.kind !== 'web') throw new Error('second wrapper invocation did not resolve to web');
+		const second = fixture({ enabled: true, stateDir, serverArgs: secondInvocation.serverArgs });
+		await second.runtime.checkIfDue();
+		const secondPlan = JSON.parse(await Bun.file(second.plans[0]!).text()) as HandoffPlan;
+
+		expect(firstPlan.serverArgs).toEqual(webArgs);
+		expect(secondPlan.serverArgs).toEqual(webArgs);
+		expect(secondPlan.serverArgs).not.toContain('__self-update-serve');
+	});
+
 	test('reopens admission without a handoff when work races the download', async () => {
 		let idleReads = 0;
 		let released = false;
@@ -279,10 +322,11 @@ function plan(): HandoffPlan {
 		candidatePaths: ['/bin/.gateship.candidate', '/bin/.gship.candidate'],
 		publicPaths: ['/bin/gateship', '/bin/gship'],
 		backupPaths: ['/bin/.gateship.backup', '/bin/.gship.backup'],
-		serverArgs: [],
+		serverArgs: ['--port', '7777'],
 		cwd: '/project',
+		stateDir: '/state/project',
 		healthUrl: 'http://127.0.0.1:7777/api/snapshot',
-		databasePath: '/project/.gship/runtime.sqlite',
+		databasePath: '/state/project/runtime.sqlite',
 		previousVersion: '1.0.0',
 		targetVersion: '2.0.0',
 		targetCommit: COMMIT,
@@ -294,23 +338,26 @@ function plan(): HandoffPlan {
 function handoffFixture(probes: boolean[]): {
 	deps: HandoffDependencies;
 	swaps: string[];
+	starts: Array<{ executable: string; args: string[]; cwd: string }>;
 	stops: number[];
 	results: string[];
 } {
 	const swaps: string[] = [];
+	const starts: Array<{ executable: string; args: string[]; cwd: string }> = [];
 	const stops: number[] = [];
 	const results: string[] = [];
-	let starts = 0;
 	return {
 		swaps,
+		starts,
 		stops,
 		results,
 		deps: {
 			waitForExit: async () => true,
 			swap: (from, to) => { swaps.push(`${from}->${to}`); },
-			start: () => {
-				starts += 1;
-				return { pid: starts, stop: () => stops.push(starts), unref: () => {} };
+			start: (executable, args, cwd) => {
+				const pid = starts.length + 1;
+				starts.push({ executable, args, cwd });
+				return { pid, stop: () => stops.push(pid), unref: () => {} };
 			},
 			probe: async () => probes.shift() ?? false,
 			persist: async (_plan, result) => { results.push(result.status); },
@@ -326,6 +373,28 @@ describe('transient update handoff', () => {
 		expect(result.status).toBe('success');
 		expect(fixture.swaps).toHaveLength(4);
 		expect(fixture.results).toEqual(['success']);
+		expect(fixture.starts).toEqual([{
+			executable: '/bin/gship',
+			args: ['__self-update-serve', '/state/project', '--port', '7777'],
+			cwd: '/project',
+		}]);
+	});
+
+	test('derives candidate state from the database path for a legacy plan', async () => {
+		const legacyPlan = plan();
+		delete legacyPlan.stateDir;
+		legacyPlan.databasePath = '/legacy/project/.gship/runtime.sqlite';
+		const fixture = handoffFixture([true]);
+
+		const result = await executeSelfUpdateHandoff(legacyPlan, fixture.deps);
+
+		expect(result.status).toBe('success');
+		expect(fixture.starts[0]?.args).toEqual([
+			'__self-update-serve',
+			'/legacy/project/.gship',
+			'--port',
+			'7777',
+		]);
 	});
 
 	test('does not let the helper finish before final delivery settles', async () => {
@@ -374,6 +443,25 @@ describe('transient update handoff', () => {
 		expect(fixture.stops).toHaveLength(1);
 		expect(fixture.swaps).toHaveLength(6);
 		expect(fixture.results).toEqual(['rollback']);
+		expect(fixture.starts.map((start) => start.args)).toEqual([
+			['__self-update-serve', '/state/project', '--port', '7777'],
+			['__self-update-serve', '/state/project', '--port', '7777'],
+		]);
+	});
+
+	test('restores a legacy binary with only its original server arguments', async () => {
+		const legacyPlan = plan();
+		delete legacyPlan.stateDir;
+		legacyPlan.databasePath = '/legacy/project/.gship/runtime.sqlite';
+		const fixture = handoffFixture([false, true]);
+
+		const result = await executeSelfUpdateHandoff(legacyPlan, fixture.deps);
+
+		expect(result.status).toBe('rollback');
+		expect(fixture.starts.map((start) => start.args)).toEqual([
+			['__self-update-serve', '/legacy/project/.gship', '--port', '7777'],
+			['--port', '7777'],
+		]);
 	});
 
 	test('records an explicit failure when rollback identity cannot be verified', async () => {

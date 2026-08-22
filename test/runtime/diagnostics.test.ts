@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DiagnosticDraft } from '../../src/runtime/diagnostic-finding.ts';
@@ -156,9 +157,41 @@ describe('React diagnostic adapter boundary', () => {
 			join(projectRoot, '.gship', 'diagnostics', 'cache'),
 		);
 	});
+
+	test('uses an explicit state directory for cache without consulting project .gship', async () => {
+		const projectRoot = createTestTmpdir('gship-diagnostic-project-');
+		const stateDir = createTestTmpdir('gship-diagnostic-state-');
+		const adapter = new ReactDoctorAdapter(
+			projectRoot,
+			async () => ({ exitCode: 0, stdout: report(), stderr: '' }),
+			stateDir,
+		);
+
+		await adapter.scan({ cwd: projectRoot, signal: new AbortController().signal });
+
+		expect(existsSync(join(stateDir, 'diagnostics', 'cache'))).toBe(true);
+		expect(existsSync(join(projectRoot, '.gship'))).toBe(false);
+	});
 });
 
 describe('diagnostic checkout ownership', () => {
+	test('places diagnostic worktrees under explicit state while Git stays rooted in the project', async () => {
+		const projectRoot = createTestTmpdir('gship-diagnostic-project-');
+		const stateDir = createTestTmpdir('gship-diagnostic-state-');
+		const commands: string[][] = [];
+		const workspace = new GitDiagnosticWorkspace(projectRoot, async ({ cmd }) => {
+			commands.push(cmd);
+			if (cmd.includes('rev-parse')) return { exitCode: 0, stdout: `${SOURCE_SHA}\n`, stderr: '' };
+			return { exitCode: 0, stdout: '', stderr: '' };
+		}, stateDir);
+
+		const lease = await workspace.prepare('external scan', new AbortController().signal);
+
+		expect(lease.path).toBe(join(stateDir, 'diagnostics', 'worktrees', 'external-scan'));
+		expect(commands.at(-1)?.slice(0, 3)).toEqual(['git', '-C', projectRoot]);
+		expect(existsSync(join(projectRoot, '.gship'))).toBe(false);
+	});
+
 	test('refreshes origin/main and creates a detached exact-SHA worktree without a branch', async () => {
 		const projectRoot = createTestTmpdir('gship-diagnostic-workspace-');
 		const commands: string[][] = [];

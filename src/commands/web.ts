@@ -5,7 +5,7 @@
 // Routing stays in Bun.serve's native `routes` table.
 
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
@@ -144,7 +144,11 @@ export const BIND_HOSTNAME_ENV_VAR = 'GATESHIP_BIND_HOST';
 export interface WebServerOptions {
 	port: number;
 	cwd: string;
-	/** Injectable durable run runtime. Production defaults to .gship/runtime.sqlite. */
+	/** Project-owned mutable state. Defaults exactly to `<cwd>/.gship`. */
+	stateDir?: string;
+	/** Canonical web argv, after any internal self-update wrapper was removed. */
+	serverArgs?: string[];
+	/** Injectable durable run runtime. Production defaults to `<stateDir>/runtime.sqlite`. */
 	runRuntime?: RunRuntime;
 	/** Injectable in-process diagnostic owner. Production uses the same SQLite file. */
 	diagnostics?: DiagnosticsRuntime;
@@ -476,10 +480,10 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 }
 
 /** Safe notification status; the Resend key itself is structurally absent. */
-function notificationChannelsSnapshot(cwd: string): Record<string, unknown> {
-	const resend = resolveResendStatus(cwd);
+function notificationChannelsSnapshot(cwd: string, stateDir: string): Record<string, unknown> {
+	const resend = resolveResendStatus(cwd, process.env, stateDir);
 	return {
-		ntfy: { configured: isNtfyConfigured(cwd), missing: [] },
+		ntfy: { configured: isNtfyConfigured(cwd, process.env, stateDir), missing: [] },
 		resend: {
 			configured: resend.configured,
 			missing: resend.missing.map((field) => RESEND_FIELD_LABELS[field]),
@@ -498,7 +502,7 @@ function resendSettingsValue(body: Record<string, unknown>, field: 'from' | 'to'
 	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
 }
 
-async function writeResendConfiguration(request: Request, cwd: string): Promise<Response> {
+async function writeResendConfiguration(request: Request, cwd: string, stateDir: string): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let input: unknown;
 	try {
@@ -522,12 +526,12 @@ async function writeResendConfiguration(request: Request, cwd: string): Promise<
 	}
 
 	try {
-		writeResendSettings(cwd, from, to);
-		if (apiKey.trim().length > 0) writeResendApiKey(cwd, apiKey);
+		writeResendSettings(cwd, from, to, stateDir);
+		if (apiKey.trim().length > 0) writeResendApiKey(cwd, apiKey, stateDir);
 	} catch {
 		return Response.json({ ok: false, code: 'write-failed', message: 'Resend settings could not be saved.' }, { status: 500 });
 	}
-	const status = resolveResendStatus(cwd);
+	const status = resolveResendStatus(cwd, process.env, stateDir);
 	const external = Object.entries(status.externallyManaged)
 		.filter(([, managed]) => managed)
 		.map(([field]) => RESEND_FIELD_LABELS[field as keyof typeof RESEND_FIELD_LABELS]);
@@ -536,41 +540,41 @@ async function writeResendConfiguration(request: Request, cwd: string): Promise<
 		message: external.length === 0
 			? 'Resend settings saved.'
 			: `Resend file settings saved. Environment-managed ${external.join(', ')} remain effective.`,
-		channels: notificationChannelsSnapshot(cwd),
+		channels: notificationChannelsSnapshot(cwd, stateDir),
 	});
 }
 
-function removeResendCredential(request: Request, cwd: string): Response {
+function removeResendCredential(request: Request, cwd: string, stateDir: string): Response {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let removed: boolean;
 	try {
-		removed = removeResendApiKey(cwd);
+		removed = removeResendApiKey(cwd, stateDir);
 	} catch {
 		return Response.json({ ok: false, code: 'remove-failed', message: 'The file-backed Resend credential could not be removed.' }, { status: 500 });
 	}
-	const environmentWins = resolveResendStatus(cwd).externallyManaged.apiKey;
+	const environmentWins = resolveResendStatus(cwd, process.env, stateDir).externallyManaged.apiKey;
 	const action = removed ? 'File-backed Resend credential removed.' : 'No file-backed Resend credential was present.';
 	return Response.json({
 		ok: true,
 		message: environmentWins ? `${action} The environment-managed API key remains effective.` : action,
-		channels: notificationChannelsSnapshot(cwd),
+		channels: notificationChannelsSnapshot(cwd, stateDir),
 	});
 }
 
 interface NotificationChannelTest {
-	send: (cwd: string) => Promise<{ outcome: string; detail?: string }>;
+	send: (cwd: string, stateDir: string) => Promise<{ outcome: string; detail?: string }>;
 	label: string;
 	sentMessage: string;
 }
 
 const NOTIFICATION_CHANNEL_TESTS: Readonly<Record<string, NotificationChannelTest>> = {
 	ntfy: {
-		send: (cwd) => sendNtfyTestNotification({ cwd }),
+		send: (cwd, stateDir) => sendNtfyTestNotification({ cwd, stateDir }),
 		label: 'ntfy',
 		sentMessage: 'Test message delivered to ntfy.',
 	},
 	resend: {
-		send: (cwd) => sendResendTestNotification({ cwd }),
+		send: (cwd, stateDir) => sendResendTestNotification({ cwd, stateDir }),
 		label: 'Resend',
 		sentMessage: 'Test message delivered by email.',
 	},
@@ -582,7 +586,12 @@ const NOTIFICATION_CHANNEL_TESTS: Readonly<Record<string, NotificationChannelTes
  * response, on any outcome -- a partial Resend configuration names which
  * values are missing, never their values.
  */
-async function sendNotificationChannelTest(request: Request, cwd: string, channelId: string): Promise<Response> {
+async function sendNotificationChannelTest(
+	request: Request,
+	cwd: string,
+	stateDir: string,
+	channelId: string,
+): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	// `Object.hasOwn` guards the lookup itself: `channelId` is attacker-controlled
 	// request input, and a plain `NOTIFICATION_CHANNEL_TESTS[channelId]` resolves
@@ -598,7 +607,7 @@ async function sendNotificationChannelTest(request: Request, cwd: string, channe
 			{ status: 404 },
 		);
 	}
-	const result = await test.send(cwd);
+	const result = await test.send(cwd, stateDir);
 	if (result.outcome === 'sent') {
 		return Response.json({ ok: true, outcome: result.outcome, message: test.sentMessage });
 	}
@@ -1824,8 +1833,9 @@ export function createDefaultRunRuntimeOptions(
 	cwd: string,
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
 	workflowRevision?: string,
+	stateDir = resolve(cwd, '.gship'),
 ): RunRuntimeOptions {
-	const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
+	const store = new RunStore(join(stateDir, 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
 		modelResolver(() => store.getModelSettings(), providerId, role);
 	return {
@@ -1849,7 +1859,7 @@ export function createDefaultRunRuntimeOptions(
 		shipper: new GithubShipper({ ensureIdentity }),
 		preflight: createGitRuntimePreflight(cwd),
 		evidenceCheck: new GitEvidenceChecker(),
-		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
+		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF, stateDir),
 		// Chain selection (GSHIP-638) reads the same source ref a new run is
 		// admitted against, so a just-shipped issue is never re-offered.
 		listBacklog: () => readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF),
@@ -2064,11 +2074,12 @@ interface DefaultSelfUpdateInput {
 	hostname: string;
 	port: number;
 	ownsRunRuntime: boolean;
+	stateDir: string;
 }
 
 function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
 	if (input.options.selfUpdate !== undefined) return input.options.selfUpdate;
-	const databasePath = join(input.options.cwd, '.gship', 'runtime.sqlite');
+	const databasePath = join(input.stateDir, 'runtime.sqlite');
 	const updaterStore = new RunStore(input.ownsRunRuntime ? databasePath : ':memory:');
 	const isIdle = () => input.runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state))
 		&& !input.diagnostics.isActive();
@@ -2076,6 +2087,8 @@ function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
 		store: updaterStore,
 		databasePath,
 		cwd: input.options.cwd,
+		stateDir: input.stateDir,
+		serverArgs: input.options.serverArgs,
 		currentVersion: GSHIP_VERSION,
 		currentCommit: input.workflowRevisionSha,
 		port: input.port,
@@ -2107,8 +2120,13 @@ function updateSelfUpdate(request: Request, selfUpdate: SelfUpdateAccess | undef
 		: writeSelfUpdatePolicy(request, selfUpdate);
 }
 
+function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDir'>): string {
+	return resolve(options.stateDir ?? join(options.cwd, '.gship'));
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
+	const stateDir = resolveProjectStateDir(options);
 	const ownsRunRuntime = options.runRuntime === undefined;
 	const ownsDiagnostics = options.diagnostics === undefined;
 	const ownsSelfUpdate = options.selfUpdate === undefined;
@@ -2157,18 +2175,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			options.cwd,
 			ensureGitIdentityOnce,
 			workflowRevision,
+			stateDir,
 		));
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
-		store: new RunStore(ownsRunRuntime ? join(options.cwd, '.gship', 'runtime.sqlite') : ':memory:'),
-		workspace: new GitDiagnosticWorkspace(options.cwd),
-		adapters: [new ReactDoctorAdapter(options.cwd)],
+		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
+		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
+		adapters: [new ReactDoctorAdapter(options.cwd, undefined, stateDir)],
 		isProjectIdle: () => runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state)),
 	});
 	let selfUpdate = options.selfUpdate;
 	// The same durable event log the SSE stream below reads per-connection
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
 	// makes this a no-op subscriber.
-	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd }));
+	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd, stateDir }));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(options, ensureGitIdentityOnce);
 	const issueReader = resolveIssueReader(options);
@@ -2314,16 +2333,21 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// reads. Resend's dedicated same-origin routes accept a write-only key
 			// and non-secret sender/recipient settings without involving SQLite.
 			'/api/notifications': {
-				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd) }),
+				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd, stateDir) }),
 			},
 			'/api/notifications/resend': {
-				PUT: (request) => writeResendConfiguration(request, options.cwd),
+				PUT: (request) => writeResendConfiguration(request, options.cwd, stateDir),
 			},
 			'/api/notifications/resend/credential': {
-				DELETE: (request) => removeResendCredential(request, options.cwd),
+				DELETE: (request) => removeResendCredential(request, options.cwd, stateDir),
 			},
 			'/api/notifications/:channelId/test': {
-				POST: (request) => sendNotificationChannelTest(request, options.cwd, request.params.channelId),
+				POST: (request) => sendNotificationChannelTest(
+					request,
+					options.cwd,
+					stateDir,
+					request.params.channelId,
+				),
 			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),
@@ -2438,6 +2462,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		hostname,
 		port,
 		ownsRunRuntime,
+		stateDir,
 	});
 	diagnostics.startScheduler();
 	selfUpdate.startScheduler();

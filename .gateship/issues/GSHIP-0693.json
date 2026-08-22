@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-693",
   "title": "Desacoplar estado mutável do diretório do projeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T12:05:38.376Z",
-  "updatedAt": "2026-08-22T12:12:47.778Z",
+  "updatedAt": "2026-08-22T12:41:24.962Z",
   "description": "Introduzir um diretório de estado de projeto explícito na composição do serviço, separado do project root. Por compatibilidade, sua ausência deve continuar resolvendo exatamente para <cwd>/.gship. Quando fornecido, runtime.sqlite, worktrees gerenciados de runs, cache e worktrees de diagnósticos, arquivos e configurações de notificações e estado de self-update devem usar esse diretório, sem criar nem consultar <cwd>/.gship para esses artefatos. Operações de código-fonte, Git, readiness, backlog e arquivos .gateship/issues continuam enraizados no project root. Os diretórios de autenticação de Claude, Codex e GitHub continuam definidos pelo ambiente e ficam fora desta mudança. Adicionar cobertura que prove o layout externo e preserve o layout padrão existente. Não adicionar GATESHIP_HOME, registro de projetos, projectId, migração, rotas, UI ou mudanças no container nesta etapa.",
   "specSource": "operator",
   "spec": {

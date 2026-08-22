@@ -86,6 +86,7 @@ export interface HandoffPlan {
 	backupPaths: string[];
 	serverArgs: string[];
 	cwd: string;
+	stateDir?: string;
 	healthUrl: string;
 	databasePath: string;
 	previousVersion: string;
@@ -104,6 +105,7 @@ export interface SelfUpdateRuntimeOptions {
 	store: RunStore;
 	databasePath: string;
 	cwd: string;
+	stateDir?: string;
 	currentVersion: string;
 	currentCommit: string | null;
 	port: number;
@@ -460,6 +462,7 @@ export class SelfUpdateRuntime {
 	#preparePlan(candidate: Uint8Array, release: AvailableRelease): { path: string; plan: HandoffPlan } {
 		if (this.#installation.kind !== 'native') throw new Error('native installation required');
 		const nonce = randomUUID();
+		const projectStateDir = resolve(this.#options.stateDir ?? join(this.#options.cwd, '.gship'));
 		const candidatePaths: string[] = [];
 		const backupPaths: string[] = [];
 		try {
@@ -474,7 +477,7 @@ export class SelfUpdateRuntime {
 				backupPaths.push(backupPath);
 				chmodSync(backupPath, 0o700);
 			}
-			const stateDirectory = join(this.#options.cwd, '.gship', 'self-update');
+			const stateDirectory = join(projectStateDir, 'self-update');
 			mkdirSync(stateDirectory, { recursive: true });
 			const plan: HandoffPlan = {
 				oldPid: process.pid,
@@ -484,6 +487,7 @@ export class SelfUpdateRuntime {
 				backupPaths,
 				serverArgs: this.#options.serverArgs ?? process.argv.slice(2),
 				cwd: this.#options.cwd,
+				stateDir: projectStateDir,
 				healthUrl: `http://${this.#options.hostname}:${this.#options.port}/api/snapshot`,
 				databasePath: this.#options.databasePath,
 				previousVersion: this.#options.currentVersion,
@@ -566,7 +570,9 @@ async function persistHandoff(plan: HandoffPlan, result: SelfUpdateResult): Prom
 	const title = result.status === 'success'
 		? 'Gateship updated'
 		: result.status === 'rollback' ? 'Gateship update rolled back' : 'Gateship update failed';
-	await sendRemoteServiceNotification(plan.cwd, title, result.reason);
+	await sendRemoteServiceNotification(plan.cwd, title, result.reason, {
+		stateDir: effectiveStateDir(plan),
+	});
 }
 
 const DEFAULT_HANDOFF_DEPENDENCIES: HandoffDependencies = {
@@ -607,6 +613,20 @@ function cleanupPreparedHandoff(plan: HandoffPlan, dependencies: HandoffDependen
 	for (const path of [...plan.candidatePaths, ...plan.backupPaths]) dependencies.cleanup(path);
 }
 
+function effectiveStateDir(plan: HandoffPlan): string {
+	return plan.stateDir ?? dirname(plan.databasePath);
+}
+
+function candidateServerArgs(plan: HandoffPlan): string[] {
+	return ['__self-update-serve', effectiveStateDir(plan), ...plan.serverArgs];
+}
+
+function restoredServerArgs(plan: HandoffPlan): string[] {
+	return plan.stateDir === undefined
+		? plan.serverArgs
+		: ['__self-update-serve', plan.stateDir, ...plan.serverArgs];
+}
+
 function installCandidate(
 	plan: HandoffPlan,
 	dependencies: HandoffDependencies,
@@ -628,7 +648,7 @@ async function restorePrevious(
 		dependencies.cleanup(plan.publicPaths[index]!);
 		dependencies.swap(plan.backupPaths[index]!, plan.publicPaths[index]!);
 	}
-	const previous = dependencies.start(plan.currentExecutable, plan.serverArgs, plan.cwd);
+	const previous = dependencies.start(plan.currentExecutable, restoredServerArgs(plan), plan.cwd);
 	if (await dependencies.probe(plan.healthUrl, plan.previousVersion, plan.previousCommit, plan.timeoutMs)) {
 		previous.unref();
 		return;
@@ -641,7 +661,7 @@ async function runInstalledCandidate(
 	plan: HandoffPlan,
 	dependencies: HandoffDependencies,
 ): Promise<SelfUpdateResult> {
-	const candidate = dependencies.start(plan.currentExecutable, plan.serverArgs, plan.cwd);
+	const candidate = dependencies.start(plan.currentExecutable, candidateServerArgs(plan), plan.cwd);
 	if (!await dependencies.probe(plan.healthUrl, plan.targetVersion, plan.targetCommit, plan.timeoutMs)) {
 		candidate.stop();
 		await dependencies.waitForExit(candidate.pid, plan.timeoutMs);
