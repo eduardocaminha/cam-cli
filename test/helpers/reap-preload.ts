@@ -15,7 +15,10 @@
 // file's header comment).
 
 import { afterAll } from 'bun:test';
-import { reapOwnDirectories } from './test-tmpdir';
+import { createTestTmpdir, reapOwnDirectories } from './test-tmpdir';
+
+// No test server may register fixture projects in the developer's real home.
+process.env.GATESHIP_HOME ??= createTestTmpdir('gship-test-home-');
 
 afterAll(() => {
 	reapOwnDirectories();

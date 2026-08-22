@@ -50,13 +50,30 @@ describe('canonical agent CLI', () => {
 		const result = await executeAgent(['operations']);
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
-			'project.inspect', 'status.get', 'backlog.list', 'issues.list', 'issues.get',
+			'project.inspect', 'projects.list', 'status.get', 'backlog.list', 'issues.list', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
 			'runs.cancel', 'runs.abandon', 'runs.ship',
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
+	});
+
+	test('lists projects through the compact read-only operation', async () => {
+		let requested = '';
+		const result = await executeAgent(['call', 'projects.list'], async (url, init) => {
+			requested = String(url);
+			expect(init?.method).toBe('GET');
+			return jsonResponse({ projects: [{
+				id: 'project-1', name: 'gateship', root: '/workspace', stateDir: '/state',
+				readiness: 'ready', repository: 'gateship-dev/gateship', current: true,
+			}] });
+		});
+		expect(requested).toBe('http://127.0.0.1:7777/api/projects');
+		expect(result.output).toMatchObject({
+			ok: true,
+			result: { projects: [{ id: 'project-1', current: true }] },
+		});
 	});
 
 	test('keeps default discovery pages compact and reserves detail for get operations', async () => {

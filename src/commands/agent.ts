@@ -31,6 +31,7 @@ const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
+	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'status.get': { method: 'GET', path: () => '/api/snapshot', input: '{}' },
 	'backlog.list': { method: 'GET', path: () => '/api/backlog', input: '{limit?, offset?}' },
 	'issues.list': { method: 'GET', path: () => '/api/issues', input: '{limit?, offset?}', listField: 'issues' },

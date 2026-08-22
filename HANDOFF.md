@@ -33,7 +33,8 @@ the single state volume.
 
 ## Current evidence
 
-The public beta surface includes conversation, run inspection, work and
+The public beta surface includes a global `GATESHIP_HOME` with a durable
+project registry, conversation, run inspection, work and
 proposal queues, provider/settings management, deterministic onboarding,
 optional notifications, advisory React diagnostics, revision-cohort facts,
 complete `en-US` and `pt-BR` catalogs, and bounded native self-update. The
@@ -83,8 +84,15 @@ different roadmap stage requires its own authorization.
    automatic rule mutation or approval. Use an immutable baseline, small
    evidence-backed supplemental proposals, version history, human approval and
    rollback rather than online self-modification.
-3. Add multiproject selection and parallelism only across independent
-   repositories.
+3. Continue the approved multiproject sequence from the global home and
+   automatically reconciled project registry now in place: add explicit
+   selection and project-scoped routes before allowing runtime switching, then
+   add parallelism only across independent repositories. Each registered
+   project keeps its existing runtime database, worktrees, notifications and
+   history in its resolved project `stateDir`; the global registry stores only
+   project identity and location. The current stage is registry adoption and
+   read-only discovery, with no manual registration, removal, picker, runtime
+   switching or physical state migration.
 4. Validate the external beta with real users before a broader launch push.
 
 Change this order only when product evidence supports it and an approved issue

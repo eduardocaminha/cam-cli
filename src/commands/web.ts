@@ -5,6 +5,7 @@
 // Routing stays in Bun.serve's native `routes` table.
 
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
@@ -112,6 +113,11 @@ import { isTerminalRunState } from '../runtime/run-state.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { ensureCodexHome } from '../runtime/provider-env.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
+import {
+	openProjectRegistry,
+	type ProjectRegistry,
+	resolveGateshipHome,
+} from '../runtime/project-registry.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
 import { GSHIP_VERSION } from '../version.ts';
@@ -146,6 +152,10 @@ export interface WebServerOptions {
 	cwd: string;
 	/** Project-owned mutable state. Defaults exactly to `<cwd>/.gship`. */
 	stateDir?: string;
+	/** Injectable product home. Production resolves GATESHIP_HOME or the native/container default. */
+	gateshipHome?: string;
+	/** Injectable global project registry. */
+	projectRegistry?: ProjectRegistry;
 	/** Canonical web argv, after any internal self-update wrapper was removed. */
 	serverArgs?: string[];
 	/** Injectable durable run runtime. Production defaults to `<stateDir>/runtime.sqlite`. */
@@ -2124,6 +2134,21 @@ function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDi
 	return resolve(options.stateDir ?? join(options.cwd, '.gship'));
 }
 
+function composeProjectRegistry(
+	options: Pick<WebServerOptions, 'gateshipHome' | 'projectRegistry'>,
+	stateDir: string,
+	containerBuild: boolean,
+): { registry: ProjectRegistry; close: () => void } {
+	if (options.projectRegistry !== undefined) {
+		return { registry: options.projectRegistry, close: () => undefined };
+	}
+	const home = options.gateshipHome === undefined
+		? resolveGateshipHome({ containerStateDir: containerBuild ? stateDir : undefined })
+		: resolveGateshipHome({ env: { GATESHIP_HOME: options.gateshipHome } });
+	const registry = openProjectRegistry(home);
+	return { registry, close: () => registry.close() };
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const stateDir = resolveProjectStateDir(options);
@@ -2137,6 +2162,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// container without a known build SHA falls back to the release version.
 	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
 	const containerBuild = isContainerBuild();
+	const projectRoot = realpathSync(resolve(options.cwd));
+	const { registry: projectRegistry, close: closeProjectRegistry } =
+		composeProjectRegistry(options, stateDir, containerBuild);
+	projectRegistry.reconcile({
+		root: projectRoot,
+		stateDir,
+		readiness: inspectProject(projectRoot),
+	});
 	const bootSourceSha = resolveBootSourceSha(
 		buildSha,
 		containerBuild,
@@ -2248,6 +2281,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(snapshot);
 			},
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/projects': () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),
@@ -2484,6 +2518,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			if (ownsDiagnostics) diagnostics.close();
 			if (ownsSelfUpdate) selfUpdate.close?.();
 			if (ownsRunRuntime) runRuntime.close();
+			closeProjectRegistry();
 		},
 	};
 }
