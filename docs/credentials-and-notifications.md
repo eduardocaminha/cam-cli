@@ -28,7 +28,8 @@ and [`gh auth login`](https://cli.github.com/manual/gh_auth_login).
 
 Running the [container image](../README.md#container) does not change any of
 this. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GH_CONFIG_DIR` and
-`GIT_CONFIG_GLOBAL` point at the named volume instead of `$HOME`, so
+`GIT_CONFIG_GLOBAL` point at stable subpaths of `GATESHIP_HOME` on the named
+volume at `/var/lib/gateship`, instead of `$HOME` or a project's `.gship`, so
 each tool still writes to the store it owns; Gateship never reads it.
 Authenticate inside the container on first boot:
 
@@ -72,10 +73,12 @@ Gateship never parses, copies, returns or persists the credential.
 The container narrows the host boundary without pretending to solve that
 intra-container fact. Compose uses a read-only image filesystem, an ephemeral
 `/tmp`, `no-new-privileges` and a minimal capability set. Only the mounted
-project and named `.gship` volume are durable and writable. They remain visible
-to a write-capable provider process, so this is a trusted single-operator
-boundary, not multi-tenant isolation. A stronger adversarial boundary would
-need a separate OS identity plus a credential broker; adding directory names or
+projects directory and named global-home volume are durable and writable. The
+selected project's state remains in `<repo>/.gship`; the global home contains
+the registry and CLI-owned credential stores. Both mounts remain visible to a
+write-capable provider process, so this is a trusted single-operator boundary,
+not multi-tenant isolation. A stronger adversarial boundary would need a
+separate OS identity plus a credential broker; adding directory names or
 another folder on the same volume would not provide it.
 
 ## Notification policy

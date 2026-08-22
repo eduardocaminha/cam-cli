@@ -9,7 +9,6 @@
 // block that runs real `git` (no fakes) never writes either -- both cases it
 // covers resolve on the read alone -- so it stays exactly as safe.
 
-import { join } from 'node:path';
 import process from 'node:process';
 import { describe, expect, test } from 'bun:test';
 
@@ -17,8 +16,11 @@ import { checkGitIdentity, ensureGitIdentity, type IdentityCommandRunner } from 
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const CWD = '/repo';
-/** The only shape GIT_CONFIG_GLOBAL takes when Gateship actually owns it -- the Dockerfile's own value. */
-const OWNED_ENV = { GIT_CONFIG_GLOBAL: join(CWD, '.gship', 'gitconfig') };
+/** The only shape these paths take when Gateship actually owns them -- the Dockerfile's own values. */
+const OWNED_ENV = {
+	GATESHIP_HOME: '/var/lib/gateship',
+	GIT_CONFIG_GLOBAL: '/var/lib/gateship/gitconfig',
+};
 
 function ok(stdout = ''): { exitCode: number; stdout: string; stderr: string } {
 	return { exitCode: 0, stdout, stderr: '' };
@@ -109,7 +111,7 @@ describe('ensureGitIdentity', () => {
 			expect(result.outcome).toBe('missing');
 		});
 
-		test('a GIT_CONFIG_GLOBAL for a different project\'s .gship never calls gh and never writes', () => {
+		test('a GIT_CONFIG_GLOBAL outside GATESHIP_HOME never calls gh and never writes', () => {
 			const runGh: IdentityCommandRunner = () => {
 				throw new Error('gh must not be called outside Gateship-owned global git config');
 			};
@@ -117,7 +119,7 @@ describe('ensureGitIdentity', () => {
 			const result = ensureGitIdentity(CWD, {
 				runGit: writeGuard(),
 				runGh,
-				env: { GIT_CONFIG_GLOBAL: '/other-repo/.gship/gitconfig' },
+				env: { GATESHIP_HOME: '/var/lib/gateship', GIT_CONFIG_GLOBAL: '/other/gitconfig' },
 			});
 
 			expect(result.outcome).toBe('missing');

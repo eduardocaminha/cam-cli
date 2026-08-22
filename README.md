@@ -200,13 +200,15 @@ Container Registry. Both the version tag and commit tag resolve to that
 manifest, whose images carry the same baked-in `GSHIP_BUILD_SHA`, release
 version and build provenance as the native release artifacts. Run these
 commands from a Gateship checkout containing `compose.yaml`, replacing the
-example release and project path.
+example release, projects directory and initial repository path. The repository
+path is relative to the projects directory, not an additional host path.
 
 ### POSIX shells
 
 ```bash
 export GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3
-export GATESHIP_PROJECT_DIR=/path/to/project
+export GATESHIP_PROJECTS_DIR=/path/to/projects
+export GATESHIP_PROJECT_PATH=product
 docker compose up -d
 # http://127.0.0.1:7777, published to loopback only
 ```
@@ -215,22 +217,29 @@ docker compose up -d
 
 ```powershell
 $env:GATESHIP_IMAGE = "ghcr.io/gateship-dev/gateship:v1.2.3"
-$env:GATESHIP_PROJECT_DIR = "C:\path\to\project"
+$env:GATESHIP_PROJECTS_DIR = "C:\path\to\projects"
+$env:GATESHIP_PROJECT_PATH = "product"
 docker compose up -d
 # http://127.0.0.1:7777, published to loopback only
 ```
 
 Compose uses long bind-mount syntax so an absolute Windows drive-letter path
-is accepted without a Windows-specific compatibility layer. Leaving
-`GATESHIP_IMAGE` unset keeps the local source-build path available for
-development. For that path, `GSHIP_BUILD_SHA` optionally bakes the current
-Gateship commit into the image just as `scripts/build-release.sh` does for
-native binaries; release images always receive it from the release workflow.
+is accepted without a Windows-specific compatibility layer.
+`GATESHIP_PROJECTS_DIR` is mounted at `/projects`, and
+`GATESHIP_PROJECT_PATH` chooses the startup repository below it. Leaving both
+project variables unset mounts the current directory and selects it, preserving
+the one-project default. Leaving `GATESHIP_IMAGE` unset keeps the local
+source-build path available for development. For that path, `GSHIP_BUILD_SHA`
+optionally bakes the current Gateship commit into the image just as
+`scripts/build-release.sh` does for native binaries; release images always
+receive it from the release workflow.
 
 Provider and GitHub authentication happen inside the container, on first boot,
-and persist on the named volume `compose.yaml` mounts over that project's
-`.gship/` -- never copied from the host, since on macOS the Claude CLI keeps
-its credential in the Keychain and there is no host credential file to mount:
+and persist on the single `gateship-state` volume mounted at
+`/var/lib/gateship` -- never copied from the host, since on macOS the Claude
+CLI keeps its credential in the Keychain and there is no host credential file
+to mount. The selected repository's runtime database and worktrees remain in
+`<repo>/.gship` on the projects bind:
 
 ```bash
 docker compose exec gateship claude auth login
@@ -367,8 +376,9 @@ In native mode, the selected Claude Code or Codex process therefore has the
 filesystem authority of the user running Gateship. In container mode, its host
 boundary is the container and its explicit mounts; the image root is read-only,
 privilege escalation is disabled, and Linux capabilities are minimized. The
-project and `.gship` state volume are still intentionally visible inside that
-boundary. This is process containment for a trusted single operator, not a
+projects bind and global-home volume are still intentionally visible inside
+that boundary; the selected repository keeps its own `.gship` state on the
+bind. This is process containment for a trusted single operator, not a
 multi-tenant secret sandbox.
 
 The conversational orchestrator is mechanically read-only: Claude exposes only

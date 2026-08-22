@@ -75,10 +75,10 @@ COPY --from=builder /out/gateship /usr/local/bin/gateship
 # localhost, because compose.yaml keeps the published host port restricted to
 # loopback -- see GATESHIP_BIND_HOST in src/commands/web.ts.
 #
-# CLAUDE_CONFIG_DIR, CODEX_HOME, GH_CONFIG_DIR and GIT_CONFIG_GLOBAL point
-# inside the run's own working directory rather than $HOME so all four land
-# on the same volume compose.yaml mounts over ./.gship, the same place the
-# SQLite store and managed worktrees already live. GIT_CONFIG_GLOBAL matters
+# GATESHIP_HOME, CLAUDE_CONFIG_DIR, CODEX_HOME, GH_CONFIG_DIR and
+# GIT_CONFIG_GLOBAL point at stable subpaths of the one global state volume.
+# Project-owned SQLite state and managed worktrees remain in <repo>/.gship on
+# the projects bind instead. GIT_CONFIG_GLOBAL matters
 # as much as the other three: `gh auth login`/`gh auth setup-git` wires the
 # git credential helper into the global git config, and git (unlike gh) runs
 # in the service's unfiltered environment (github-shipper.ts), so without
@@ -90,12 +90,13 @@ COPY --from=builder /out/gateship /usr/local/bin/gateship
 # pre-seeded it -- a volume kept from before the image gained the Codex CLI
 # would otherwise never get it.
 ENV GATESHIP_BIND_HOST=0.0.0.0 \
-	CLAUDE_CONFIG_DIR=/workspace/.gship/claude \
-	CODEX_HOME=/workspace/.gship/codex \
-	GH_CONFIG_DIR=/workspace/.gship/gh \
-	GIT_CONFIG_GLOBAL=/workspace/.gship/gitconfig
+	GATESHIP_HOME=/var/lib/gateship \
+	CLAUDE_CONFIG_DIR=/var/lib/gateship/claude \
+	CODEX_HOME=/var/lib/gateship/codex \
+	GH_CONFIG_DIR=/var/lib/gateship/gh \
+	GIT_CONFIG_GLOBAL=/var/lib/gateship/gitconfig
 
-WORKDIR /workspace
+WORKDIR /projects
 EXPOSE 7777
 
 ENTRYPOINT ["gateship"]

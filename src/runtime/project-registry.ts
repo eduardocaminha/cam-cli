@@ -12,8 +12,6 @@ export const PROJECT_REGISTRY_DATABASE = 'projects.sqlite';
 export interface GateshipHomeOptions {
 	env?: Record<string, string | undefined>;
 	nativeHome?: string;
-	/** The existing project state volume is also the product home in today's container composition. */
-	containerStateDir?: string;
 }
 
 export function resolveGateshipHome(options: GateshipHomeOptions = {}): string {
@@ -24,7 +22,6 @@ export function resolveGateshipHome(options: GateshipHomeOptions = {}): string {
 		}
 		return resolve(configured);
 	}
-	if (options.containerStateDir !== undefined) return resolve(options.containerStateDir);
 	return resolve(options.nativeHome ?? homedir(), '.gateship');
 }
 
