@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T14:04:25.629Z",
-  "updatedAt": "2026-08-22T14:04:25.629Z",
+  "updatedAt": "2026-08-22T14:05:49.830Z",
   "description": "Fazer do container Linux o caminho oficialmente suportado e funcional em Docker Desktop no Windows e macOS e Docker Engine no Linux, sem criar binario nativo Windows nem uma camada propria de compatibilidade. Publicar a imagem GHCR de cada release como manifest multi-arquitetura linux/amd64 e linux/arm64, mantendo as tags de versao e commit e a proveniencia. Tornar os bind mounts do compose portaveis por meio da sintaxe longa e documentar comandos equivalentes para shells POSIX e PowerShell. Substituir a ressalva de login Codex quebrado no container pelo fluxo subscription headless oficialmente suportado `docker compose exec gateship codex login --device-auth`, persistindo o CODEX_HOME no volume atual; manter Claude e GitHub CLI no mesmo limite de credenciais. Declarar Docker como instalacao recomendada quando portabilidade de host for necessaria e os binarios macOS/Linux como conveniencia. Nao adicionar Docker socket, daemon, WSL obrigatorio, API key, copia automatica de token, binario Windows, novo servico, nova base de dados, mudanca multiprojeto dos mounts ou auto-update de container.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/compose-config.test.ts test/release-workflow.test.ts test/build-release-smoke.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "08c19c2d98c339547ab794f68ea31d4b304860a8e807fddb6fb4840d36ebff09",
+    "approvedAt": "2026-08-22T14:05:49.830Z"
   }
 }
