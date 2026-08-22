@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
  */
 export interface EvidenceItem {
 	command: string;
+	/** Empty only in intake payloads; the server replaces it with observed output. */
 	output: string;
 }
 
@@ -25,7 +26,7 @@ export const EVIDENCE_LIMITS = {
 export interface Spec {
 	scope: string;
 	verify?: string[];
-	/** Executable premise, checked in the run's own workspace before any provider runs; never at intake. */
+	/** Executable premise, captured at intake and checked again before any provider runs. */
 	evidence?: EvidenceItem[];
 }
 

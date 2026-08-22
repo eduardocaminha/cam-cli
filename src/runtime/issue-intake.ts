@@ -4,18 +4,36 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
-import { type EvidenceItem, fingerprintSpec, type Spec, validateSpec } from '../issues/spec.ts';
+import {
+	type EvidenceItem,
+	EVIDENCE_LIMITS,
+	fingerprintSpec,
+	type Spec,
+	validateSpec,
+} from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
-import { defaultRunGit } from './git-runtime.ts';
+import {
+	defaultRunGit,
+	evidenceOutputText,
+	runVerificationCommand,
+	type CommandResult,
+	type VerificationCommandRunner,
+	VERIFICATION_COMMAND_TIMEOUT_MS,
+} from './git-runtime.ts';
 import { ensureGitIdentity, type GitIdentityResult } from './git-identity.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 const MAX_PUBLISH_ATTEMPTS = 3;
+export interface IssueEvidenceExecutionOptions {
+	evidenceTimeoutMs?: number;
+	runCommand?: VerificationCommandRunner;
+	signal?: AbortSignal;
+}
 
 export interface OperatorSpecInput {
 	scope: string;
 	verificationCommand: string;
-	/** Executable premise recorded at specify time; never run here (GSHIP-629). */
+	/** Executable premise captured against the fresh remote snapshot at intake. */
 	evidence?: EvidenceItem[];
 }
 
@@ -63,8 +81,7 @@ function requiredString(value: unknown, label: string): string {
 }
 
 /**
- * Shape-coerce the optional evidence payload without executing or judging its
- * contents: `validateSpec` (called from `buildSpec`) is the single place that
+ * Shape-coerce the optional evidence payload. `validateSpec` is the single place that
  * enforces item count and size, so a malformed field surfaces one consistent
  * error instead of two different messages for the same contract.
  */
@@ -79,9 +96,10 @@ function optionalEvidence(value: unknown): EvidenceItem[] | undefined {
 			throw new IssueIntakeError('invalid-request', `Evidence ${index + 1} must be an object.`, 400);
 		}
 		const record = item as Record<string, unknown>;
+		const output = record['output'] === undefined ? '' : record['output'];
 		return {
 			command: typeof record['command'] === 'string' ? record['command'] : '',
-			output: typeof record['output'] === 'string' ? record['output'] : '',
+			output: output as string,
 		};
 	});
 }
@@ -159,6 +177,110 @@ function buildSpec(input: OperatorSpecInput): Spec {
 	return spec;
 }
 
+/** Validate intake shape and limits while empty output still means “capture it”. */
+function validateIntakeSpecInput(input: OperatorSpecInput): void {
+	buildSpec({
+		...input,
+		...(input.evidence === undefined
+			? {}
+			: {
+				evidence: input.evidence.map((item) => ({
+					...item,
+					output: typeof item.output === 'string'
+						&& item.output.length <= EVIDENCE_LIMITS.output
+						&& item.output.trim().length === 0
+						? '(validate intake output)'
+						: item.output,
+				})),
+			}),
+	});
+}
+
+function boundedEvidenceOutput(output: string): string {
+	if (output.length <= EVIDENCE_LIMITS.output) return output;
+	return `${output.slice(0, EVIDENCE_LIMITS.output)}…`;
+}
+
+async function runEvidenceCommand(
+	cwd: string,
+	item: EvidenceItem,
+	options: IssueEvidenceExecutionOptions,
+): Promise<CommandResult> {
+	const runCommand = options.runCommand ?? runVerificationCommand;
+	const signal = options.signal ?? new AbortController().signal;
+
+	try {
+		const result = await runCommand({
+			cwd,
+			command: item.command,
+			signal,
+			timeoutMs: options.evidenceTimeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_MS,
+		});
+		if (result.timedOut === true) {
+			throw new IssueIntakeError(
+				'invalid-request',
+				`Evidence command \`${item.command}\` was timed out before it completed.`,
+				400,
+			);
+		}
+		return result;
+	} catch (error) {
+		if (error instanceof IssueIntakeError) throw error;
+		if (!signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) {
+			throw error;
+		}
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Evidence command \`${item.command}\` was cancelled before it completed.`,
+			400,
+		);
+	}
+}
+
+function confirmEvidence(item: EvidenceItem, result: CommandResult): EvidenceItem {
+	const observed = evidenceOutputText(result);
+	const expected = item.output;
+	if (result.exitCode !== 0) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Evidence command \`${item.command}\` exited ${result.exitCode}; observed output: `
+				+ `\`${boundedEvidenceOutput(observed) || '(no output)'}\`.`,
+			400,
+		);
+	}
+	if (observed.length > EVIDENCE_LIMITS.output) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Evidence command \`${item.command}\` produced more than ${EVIDENCE_LIMITS.output}`
+				+ ` characters; observed output: \`${boundedEvidenceOutput(observed)}\`.`,
+			400,
+		);
+	}
+	if (expected.length > 0 && observed !== expected) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Evidence command \`${item.command}\` did not match. Expected: \`${expected}\`.`
+				+ ` Observed: \`${observed || '(no output)'}\`.`,
+			400,
+		);
+	}
+	return { command: item.command, output: observed };
+}
+
+async function captureEvidence(
+	cwd: string,
+	input: OperatorSpecInput,
+	options: IssueEvidenceExecutionOptions,
+): Promise<OperatorSpecInput> {
+	if (input.evidence === undefined) return input;
+	const captured: EvidenceItem[] = [];
+	for (const item of input.evidence) {
+		captured.push(confirmEvidence(item, await runEvidenceCommand(cwd, item, options)));
+	}
+
+	return { ...input, evidence: captured };
+}
+
 function buildIssue(
 	input: OperatorIssueInput,
 	id: string,
@@ -185,13 +307,13 @@ function isPushRace(stderr: string): boolean {
 	return /non-fast-forward|fetch first/i.test(stderr);
 }
 
-function publishEntryAttempt(
+async function publishEntryAttempt(
 	cwd: string,
 	sourceSha: string,
-	entry: IssueEntry,
+	buildEntry: (worktree: string) => Promise<IssueEntry>,
 	commitMessage: string,
 	ensureIdentity: () => GitIdentityResult,
-): { kind: 'published'; issue: CreatedOperatorIssue } | { kind: 'retry' } {
+): Promise<{ kind: 'published'; issue: CreatedOperatorIssue } | { kind: 'retry' }> {
 	// Right before the first write this attempt makes, not merely displayed
 	// (GSHIP-654): a missing identity fails clearly here, before any worktree
 	// is even prepared, instead of surfacing later as git's own opaque
@@ -201,13 +323,14 @@ function publishEntryAttempt(
 		throw commandFailure('Could not create the commit', identity.detail);
 	}
 
-	const path = issueFilePath(entry.id);
 	const tempRoot = mkdtempSync(join(tmpdir(), 'gship-intake-'));
 	const worktree = join(tempRoot, 'checkout');
 
 	try {
 		const added = git(cwd, ['worktree', 'add', '--quiet', '--detach', worktree, sourceSha]);
 		if (added.exitCode !== 0) throw commandFailure('Could not stage the intake', added.stderr);
+		const entry = await buildEntry(worktree);
+		const path = issueFilePath(entry.id);
 
 		const target = join(worktree, path);
 		mkdirSync(dirname(target), { recursive: true });
@@ -250,22 +373,33 @@ function refreshRuntimeSource(cwd: string): string {
  * local main ref or touching the host working tree. A non-fast-forward push
  * refreshes origin/main and re-allocates the id from the new immutable base.
  */
-export function createOperatorIssue(
+export async function createOperatorIssue(
 	cwd: string,
 	rawInput: unknown,
-	options: { approve?: boolean } = {},
+	options: { approve?: boolean } & IssueEvidenceExecutionOptions = {},
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
-): CreatedOperatorIssue {
+): Promise<CreatedOperatorIssue> {
 	const input = parseOperatorIssueInput(rawInput);
+	validateIntakeSpecInput(input);
 	const createdAt = now();
 
 	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
 		const sourceSha = refreshRuntimeSource(cwd);
 		const number = nextIssueNumber(cwd, sourceSha);
 		const id = `GSHIP-${number}`;
-		const entry = buildIssue(input, id, createdAt, options.approve ?? false);
-		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`, ensureIdentity);
+		const result = await publishEntryAttempt(
+			cwd,
+			sourceSha,
+			async (worktree) => buildIssue(
+				await captureEvidence(worktree, input, options) as OperatorIssueInput,
+				id,
+				createdAt,
+				options.approve ?? false,
+			),
+			`chore(gship): file ${id}`,
+			ensureIdentity,
+		);
 		if (result.kind === 'published') {
 			// The push is already durable. A transient second fetch must not turn
 			// success into a retry that could file a duplicate issue.
@@ -282,15 +416,17 @@ export function createOperatorIssue(
 }
 
 /** Promote one existing idea with the same operator contract used for new tasks. */
-export function specifyOperatorIssue(
+export async function specifyOperatorIssue(
 	cwd: string,
 	id: string,
 	rawInput: unknown,
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
-): CreatedOperatorIssue {
+	options: IssueEvidenceExecutionOptions = {},
+): Promise<CreatedOperatorIssue> {
 	const issueId = requiredString(id, 'Issue');
 	const input = parseOperatorSpecInput(rawInput);
+	validateIntakeSpecInput(input);
 	const updatedAt = now();
 
 	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
@@ -307,18 +443,20 @@ export function specifyOperatorIssue(
 				409,
 			);
 		}
-		const specified: IssueEntry = {
-			...entry,
-			stage: 'specified',
-			updatedAt,
-			specSource: 'operator',
-			spec: buildSpec(input),
-		};
-		delete specified.approval;
-		const result = publishEntryAttempt(
+		const result = await publishEntryAttempt(
 			cwd,
 			sourceSha,
-			specified,
+			async (worktree) => {
+				const specified: IssueEntry = {
+					...entry,
+					stage: 'specified',
+					updatedAt,
+					specSource: 'operator',
+					spec: buildSpec(await captureEvidence(worktree, input, options)),
+				};
+				delete specified.approval;
+				return specified;
+			},
 			`chore(gship): specify ${issueId}`,
 			ensureIdentity,
 		);
@@ -336,12 +474,12 @@ export function specifyOperatorIssue(
 }
 
 /** Approve the currently published executable spec without starting a run. */
-export function approveOperatorIssue(
+export async function approveOperatorIssue(
 	cwd: string,
 	id: string,
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
-): CreatedOperatorIssue {
+): Promise<CreatedOperatorIssue> {
 	const issueId = requiredString(id, 'Issue');
 	const approvedAt = now();
 
@@ -372,10 +510,10 @@ export function approveOperatorIssue(
 			updatedAt: approvedAt,
 			approval: { fingerprint, approvedAt },
 		};
-		const result = publishEntryAttempt(
+		const result = await publishEntryAttempt(
 			cwd,
 			sourceSha,
-			approved,
+			async () => approved,
 			`chore(gship): approve ${issueId}`,
 			ensureIdentity,
 		);
@@ -396,13 +534,13 @@ export function approveOperatorIssue(
  * Close one open issue without shipping it, keeping the justification durable
  * in the record. Every other field of the entry is preserved as published.
  */
-export function abandonOperatorIssue(
+export async function abandonOperatorIssue(
 	cwd: string,
 	id: string,
 	rawInput: unknown,
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
-): CreatedOperatorIssue {
+): Promise<CreatedOperatorIssue> {
 	const issueId = requiredString(id, 'Issue');
 	const input = parseOperatorAbandonInput(rawInput);
 	const updatedAt = now();
@@ -427,10 +565,10 @@ export function abandonOperatorIssue(
 			updatedAt,
 			abandonedReason: input.reason,
 		};
-		const result = publishEntryAttempt(
+		const result = await publishEntryAttempt(
 			cwd,
 			sourceSha,
-			abandoned,
+			async () => abandoned,
 			`chore(gship): abandon ${issueId}`,
 			ensureIdentity,
 		);
