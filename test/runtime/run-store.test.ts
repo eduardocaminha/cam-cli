@@ -1,11 +1,16 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { emptyModelSettings } from '../../src/runtime/model-settings.ts';
 import { selectPullRequestDelivery } from '../../src/runtime/pull-request-delivery.ts';
 import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
-import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
+import {
+	PROJECT_BRIEF_LIMITS,
+	readPersistedRunStatuses,
+	RunStore,
+} from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const EMPTY_BRIEF = { objective: '', decisions: [], constraints: [], openItems: [] };
@@ -22,6 +27,49 @@ function storeWithRun(id: string, issueId: string): RunStore {
 	});
 	return store;
 }
+
+describe('read-only persisted run status', () => {
+	test('reads a bounded newest-first projection without changing the database', () => {
+		const stateDir = createTestTmpdir('gship-run-store-readonly-');
+		const dbPath = join(stateDir, 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		for (let index = 0; index < 3; index += 1) {
+			store.createRun({
+				id: `run-${index}`,
+				issueId: `GSHIP-${index}`,
+				sessionId: `session-${index}`,
+				workspacePath: `/workspace/run-${index}`,
+				createdAt: `2026-08-22T10:00:0${index}.000Z`,
+			});
+		}
+		store.close();
+		const before = statSync(dbPath);
+		const walExistedBefore = existsSync(`${dbPath}-wal`);
+
+		expect(readPersistedRunStatuses(dbPath, 2)).toEqual([
+			{
+				id: 'run-2', issueId: 'GSHIP-2', state: 'queued',
+				createdAt: '2026-08-22T10:00:02.000Z', updatedAt: '2026-08-22T10:00:02.000Z',
+			},
+			{
+				id: 'run-1', issueId: 'GSHIP-1', state: 'queued',
+				createdAt: '2026-08-22T10:00:01.000Z', updatedAt: '2026-08-22T10:00:01.000Z',
+			},
+		]);
+		const after = statSync(dbPath);
+		expect({ size: after.size, mtimeMs: after.mtimeMs }).toEqual({
+			size: before.size,
+			mtimeMs: before.mtimeMs,
+		});
+		expect(existsSync(`${dbPath}-wal`)).toBe(walExistedBefore);
+	});
+
+	test('does not create a missing database', () => {
+		const dbPath = join(createTestTmpdir('gship-run-store-readonly-missing-'), 'runtime.sqlite');
+		expect(() => readPersistedRunStatuses(dbPath)).toThrow();
+		expect(existsSync(dbPath)).toBe(false);
+	});
+});
 
 describe('run store workspace migration', () => {
 	test('adds workspace_path to a CAM-574 database without losing existing runs', () => {

@@ -74,4 +74,16 @@ describe('global project registry', () => {
 		expect(existsSync(join(home, PROJECT_REGISTRY_DATABASE))).toBe(true);
 		expect(existsSync(resolve(home, 'runtime.sqlite'))).toBe(false);
 	});
+
+	test('resolves registration-owned locations by opaque project id', () => {
+		const home = createTestTmpdir('gship-project-registry-resolve-home-');
+		const root = createTestTmpdir('gship-project-registry-resolve-root-');
+		const stateDir = createTestTmpdir('gship-project-registry-resolve-state-');
+		const registry = openProjectRegistry(home);
+		const registered = registry.reconcile({ root, stateDir, readiness: ready });
+
+		expect(registry.get(registered.id, root)).toEqual(registered);
+		expect(registry.get('unknown-project', root)).toBeNull();
+		registry.close();
+	});
 });

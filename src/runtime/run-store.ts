@@ -59,6 +59,45 @@ export interface RunRecord {
 	error: string | null;
 }
 
+export type PersistedRunStatus = Pick<
+	RunRecord,
+	'id' | 'issueId' | 'state' | 'createdAt' | 'updatedAt'
+>;
+
+interface PersistedRunStatusRow {
+	id: string;
+	issue_id: string;
+	state: string;
+	created_at: string;
+	updated_at: string;
+}
+
+/**
+ * Opens an existing runtime database strictly read-only and returns only the
+ * bounded operational run projection. This deliberately bypasses RunStore's
+ * schema creation, migrations and recovery-capable runtime composition.
+ */
+export function readPersistedRunStatuses(path: string, limit = 20): PersistedRunStatus[] {
+	const db = new Database(path, { readonly: true, strict: true });
+	try {
+		const rows = db.query(`
+			SELECT id, issue_id, state, created_at, updated_at
+			FROM runs
+			ORDER BY created_at DESC, id DESC
+			LIMIT $limit
+		`).all({ limit }) as PersistedRunStatusRow[];
+		return rows.map((row) => ({
+			id: row.id,
+			issueId: row.issue_id,
+			state: decodeState(row.state),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}));
+	} finally {
+		db.close();
+	}
+}
+
 /**
  * Ephemeral provider/review stream chatter versus a durable decision the run
  * made (GSHIP-627). Written once at emission and never re-derived at read
