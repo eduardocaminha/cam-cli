@@ -2718,6 +2718,15 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					(context) => shipDurableRun(request, context.runtime, request.params.runId),
 				),
 			},
+			// The browser's subscription for a selected project (GSHIP-707). The
+			// registry guard runs first, so an unknown or not-ready project gets
+			// the same typed refusal as every other scoped route and no stream is
+			// opened at all; a stream that does open is bound to that project's
+			// own RunRuntime and unsubscribes from it when the connection closes.
+			'/api/projects/:projectId/events': (request, requestServer) => projectOperation(
+				request.params.projectId,
+				(context) => createRunEventStream(context.runtime, request, requestServer),
+			),
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),

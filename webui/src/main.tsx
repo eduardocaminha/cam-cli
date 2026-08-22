@@ -5,13 +5,14 @@
 // general polling loop -- /api/events pushes run transitions. The one bounded
 // exception polls only while an external diagnostic process is active.
 //
-// Which surface to show is read from the browser path once, at mount: every
-// link in the shell is a real navigation, so the document is rebuilt whenever
-// the path changes and there is no navigation state to keep.
+// Which surface to show, and which project it is about, are read from the
+// browser path once, at mount: every link in the shell is a real navigation, so
+// the document -- and with it the event subscription -- is rebuilt whenever the
+// path changes and there is no navigation state to keep.
 
 import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App, routeOf } from './App.tsx';
+import { App, projectIdOf, routeOf } from './App.tsx';
 import {
 	abandonIssue,
 	approveIssue,
@@ -26,7 +27,7 @@ import {
 	disconnectClaudeCredential,
 	dismissDiagnosticFinding,
 	dismissProposal,
-	EVENTS_PATH,
+	eventsPathOf,
 	emptyDiagnostics,
 	emptyModelSettings,
 	emptyNotificationChannels,
@@ -119,6 +120,14 @@ const CHECKING_PROJECT: ProjectStatusView = {
 
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
 
+/**
+ * The selected project, derived from the browser path alone (GSHIP-707): no
+ * localStorage, no hidden state, and nothing to reconcile when the operator
+ * navigates, since that rebuilds this module. `null` on the overview and on the
+ * legacy paths the service redirects, which keeps the boot project's routes.
+ */
+const SELECTED_PROJECT_ID = projectIdOf(window.location.pathname);
+
 function browserTimeZone(): string {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
@@ -203,8 +212,8 @@ function useOperationalRun(): {
 
 	const refresh = useCallback(() => {
 		void Promise.all([
-			fetchRuns(),
-			fetchBacklog(),
+			fetchRuns(SELECTED_PROJECT_ID),
+			fetchBacklog(SELECTED_PROJECT_ID),
 			fetchProviders(),
 			fetchChat(),
 			fetchBrief(),
@@ -237,7 +246,9 @@ function useOperationalRun(): {
 				selfUpdateSnapshot,
 			]) => {
 				const latest = runSnapshot[0] ?? null;
-				const history = latest === null ? [] : await fetchRunEvents(latest.id);
+				const history = latest === null
+					? []
+					: await fetchRunEvents(SELECTED_PROJECT_ID, latest.id);
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
@@ -317,7 +328,25 @@ function useOperationalRun(): {
 
 	useEffect(() => {
 		refresh();
-		const source = new EventSource(EVENTS_PATH);
+	}, [refresh]);
+
+	// One subscription, bound to the project this document is about. A selection
+	// the registry does not report ready has no runtime to stream, and opening it
+	// would only make EventSource reconnect against a typed refusal, so the
+	// document reads that project's snapshot alone until the registry says
+	// otherwise. The boot project is the exception the service already makes: its
+	// runtime exists from boot, so it streams while it is still in onboarding,
+	// exactly as it did before this document named it. Without a selection --
+	// the overview -- the boot stream is kept.
+	const subscribable = SELECTED_PROJECT_ID === null
+		|| projects.some((candidate) =>
+			candidate.id === SELECTED_PROJECT_ID
+			&& (candidate.current || candidate.readiness === 'ready'));
+	const streamPath = subscribable ? eventsPathOf(SELECTED_PROJECT_ID) : null;
+
+	useEffect(() => {
+		if (streamPath === null) return;
+		const source = new EventSource(streamPath);
 		source.addEventListener('run-event', (message) => {
 			try {
 				const data = (message as unknown as { data: string }).data;
@@ -334,7 +363,7 @@ function useOperationalRun(): {
 			}
 		});
 		return () => source.close();
-	}, [refresh]);
+	}, [refresh, streamPath]);
 
 	useEffect(() => {
 		const state = diagnostics.scan?.state;
@@ -443,8 +472,10 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		);
 		setLocale(selectedLocale);
 	};
+	// Every run command names the same project the screen is reading, so resume,
+	// cancel, abandon and ship all reach the selected project's runtime.
 	const command = (action: RunAction) => () => {
-		if (run !== null) send(() => commandRun(run.id, action));
+		if (run !== null) send(() => commandRun(SELECTED_PROJECT_ID, run.id, action));
 	};
 
 	return (
@@ -506,7 +537,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSaveResendSettings={(input) => send(() => saveResendSettings(input))}
 			onSendNotificationTest={(channelId) => send(() => sendNotificationTest(channelId))}
 			onResume={(operatorGuidance) => {
-				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
+				if (run !== null) {
+					send(() => commandRun(SELECTED_PROJECT_ID, run.id, 'resume', operatorGuidance));
+				}
 			}}
 			onSaveBrief={(draft) => send(() => saveBrief(draft))}
 			onSaveDiagnosticSchedule={(enabled, cadence) =>

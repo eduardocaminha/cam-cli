@@ -34,6 +34,32 @@ export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
 
 /**
+ * Which project a run-facing read or write names (GSHIP-707). A project id is
+ * the selection the browser path carries, and every such call goes to that
+ * project's own scoped route. `null` is the absence of a selection -- the
+ * overview, and the legacy paths the service redirects to the boot project --
+ * and keeps the unscoped routes the boot runtime already answers.
+ */
+export type ProjectScope = string | null;
+
+function projectApiPath(projectId: string, suffix = ''): string {
+	return `${PROJECTS_PATH}/${encodeURIComponent(projectId)}${suffix}`;
+}
+
+/** The SSE endpoint a document subscribes to for its selected project. */
+export function eventsPathOf(scope: ProjectScope): string {
+	return scope === null ? EVENTS_PATH : projectApiPath(scope, '/events');
+}
+
+function snapshotPathOf(scope: ProjectScope): string {
+	return scope === null ? SNAPSHOT_PATH : projectApiPath(scope, '/snapshot');
+}
+
+function runsPathOf(scope: ProjectScope): string {
+	return scope === null ? RUNS_PATH : projectApiPath(scope, '/runs');
+}
+
+/**
  * One command run while specifying, and the output observed then -- the
  * spec's executable premise (GSHIP-629). Read-only here: this screen never
  * edits it, and a revision that omits it drops it, the same as any other
@@ -489,6 +515,23 @@ async function readJson<T>(response: Response, what: string): Promise<T> {
 }
 
 /**
+ * The typed refusal a scoped route answers with -- `project-not-found` or
+ * `project-not-ready` -- is a statement about the selection, not a transport
+ * failure. The shell already renders the typed unavailable surface for it from
+ * the registry it reads separately, so the read resolves as no data and leaves
+ * the rest of the refresh intact instead of failing all of it.
+ */
+async function readScopedJson<T>(response: Response, what: string): Promise<T | null> {
+	if (response.status === 404 || response.status === 409) {
+		const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
+		const code = refusal?.code;
+		if (code === 'project-not-found' || code === 'project-not-ready') return null;
+		throw new Error(`${what} responded with ${response.status}`);
+	}
+	return await readJson<T>(response, what);
+}
+
+/**
  * The absent field is the ordinary case -- the service is current -- so a
  * payload without it, or with an incomplete one, reads as no divergence.
  */
@@ -508,8 +551,11 @@ function gitIdentityRecord(record: Partial<GitIdentityView> | undefined): GitIde
 }
 
 /** Read the executable queue and the ideas that can be specified while idle. */
-export async function fetchBacklog(): Promise<BacklogSnapshot> {
-	const payload = await readJson<SnapshotPayload>(await fetch(SNAPSHOT_PATH), 'Snapshot');
+export async function fetchBacklog(scope: ProjectScope): Promise<BacklogSnapshot> {
+	const payload: SnapshotPayload = await readScopedJson<SnapshotPayload>(
+		await fetch(snapshotPathOf(scope)),
+		'Snapshot',
+	) ?? {};
 	return {
 		plannable: payload.idleState?.backlog?.plannable ?? [],
 		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
@@ -709,9 +755,9 @@ export async function promoteDiagnosticFinding(
  * Newest run first. The first entry is the only one the screen commands; the
  * rest are the history the operator reads to pick a session back up.
  */
-export async function fetchRuns(): Promise<RunView[]> {
-	const payload = await readJson<RunsPayload>(await fetch(RUNS_PATH), 'Runs');
-	return payload.runs ?? [];
+export async function fetchRuns(scope: ProjectScope): Promise<RunView[]> {
+	const payload = await readScopedJson<RunsPayload>(await fetch(runsPathOf(scope)), 'Runs');
+	return payload?.runs ?? [];
 }
 
 export interface ProvidersSnapshot {
@@ -1152,12 +1198,12 @@ export async function disconnectClaudeCredential(): Promise<string> {
 		: 'No dedicated Claude credential was present.';
 }
 
-export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {
-	const payload = await readJson<RunEventsPayload>(
-		await fetch(`${RUNS_PATH}/${runId}/events`),
+export async function fetchRunEvents(scope: ProjectScope, runId: string): Promise<RunEventView[]> {
+	const payload = await readScopedJson<RunEventsPayload>(
+		await fetch(`${runsPathOf(scope)}/${runId}/events`),
 		'Activity',
 	);
-	return payload.events;
+	return payload?.events ?? [];
 }
 
 /** Resolves to the operator-facing outcome message for either verdict. */
@@ -1268,13 +1314,19 @@ export function abandonIssue(id: string, reason: string): Promise<string> {
 	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/abandon`, { reason });
 }
 
+/**
+ * Resume, cancel, abandon and ship, all addressed to the same project the
+ * screen is reading (GSHIP-707): the command never falls back to the boot
+ * runtime when another project is selected.
+ */
 export function commandRun(
+	scope: ProjectScope,
 	runId: string,
 	action: RunAction,
 	operatorGuidance?: string,
 ): Promise<string> {
 	return postCommand(
-		`${RUNS_PATH}/${runId}/${action}`,
+		`${runsPathOf(scope)}/${runId}/${action}`,
 		action === 'resume' && operatorGuidance !== undefined
 			? { message: operatorGuidance }
 			: undefined,

@@ -84,6 +84,43 @@ describe('ProjectRuntimeManager', () => {
 		registry.close();
 	});
 
+	test('serves a registered context whatever its readiness, and still refuses composition', () => {
+		const currentRoot = createTestTmpdir('gship-runtime-manager-owned-current-');
+		const registry = openProjectRegistry(createTestTmpdir('gship-runtime-manager-owned-home-'));
+		const boot = registry.reconcile({
+			root: currentRoot,
+			stateDir: createTestTmpdir('gship-runtime-manager-owned-state-'),
+			readiness: {
+				state: 'needs-attention',
+				name: 'boot',
+				reason: 'origin-missing',
+				detail: 'no origin yet',
+			},
+		});
+		const uncomposed = registry.reconcile({
+			root: createTestTmpdir('gship-runtime-manager-owned-other-'),
+			stateDir: createTestTmpdir('gship-runtime-manager-owned-other-state-'),
+			readiness: { state: 'empty', name: 'other', detail: 'empty' },
+		});
+		const context = { runtime: { listRuns: (): RunRecord[] => [] }, close: () => undefined };
+		const manager = new ProjectRuntimeManager<typeof context>(registry, currentRoot, () => {
+			throw new Error('must not compose');
+		});
+
+		// The boot context is registered, never composed here, so readiness is not
+		// what decides whether it can be read.
+		manager.register(boot.id, context);
+		expect(manager.get(boot.id).context).toBe(context);
+		// A registration this manager would have to compose keeps the refusal.
+		try {
+			manager.get(uncomposed.id);
+			throw new Error('expected project-not-ready');
+		} catch (error) {
+			expect(error).toMatchObject({ code: 'project-not-ready', status: 409 });
+		}
+		registry.close();
+	});
+
 	test('admits only the sole global non-terminal run for resume', () => {
 		const firstRoot = createTestTmpdir('gship-runtime-manager-first-');
 		const secondRoot = createTestTmpdir('gship-runtime-manager-second-');

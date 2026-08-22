@@ -138,6 +138,17 @@ interface RouteSelection {
 	surface: ProjectSurface | 'overview';
 }
 
+/**
+ * The project this document is about, read from the browser path alone
+ * (GSHIP-707) so the transport can address the scoped routes before anything
+ * is fetched. `null` is the absence of a selection -- the overview, and the
+ * legacy paths the service redirects -- which keeps the boot project's own
+ * unscoped routes.
+ */
+export function projectIdOf(pathname: string): string | null {
+	return routeSelection(routeOf(pathname), null).projectId;
+}
+
 function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
 	if (route === '/overview') return { projectId: null, surface: 'overview' };
 	const legacy = route === '/' ? 'conversation' : route.slice(1);
@@ -2692,8 +2703,13 @@ function ShellSidebar({
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const currentId = projects.find((project) => project.current)?.id ?? null;
 	const selection = routeSelection(route, currentId);
-	const operational = selection.projectId !== null && selection.projectId === currentId;
-	const queuePause = operational ? visibleQueuePause(chainRuns) : null;
+	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
+	// Run state, preserved workspaces and the two callouts all describe the
+	// selected project, whose own scoped snapshot is what this document loaded
+	// (GSHIP-707). A queue pause is the one exception: run chaining is the boot
+	// runtime's switch, so it is only ever stated for the current project.
+	const operational = selected !== null && (selected.current || selected.readiness === 'ready');
+	const queuePause = selected?.current === true ? visibleQueuePause(chainRuns) : null;
 	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
 	const attention = attentionOf(operational ? run : null, operational ? workspaceNotices : [], stoppedQueue);
 	const humanVersion = humanVersionOf(version);
@@ -3877,7 +3893,14 @@ function SelectedRouteSurface({
 		);
 	}
 	if (!selectedProject.current) {
-		return <UnavailableProjectSurface locale={props.locale} project={selectedProject} status={props.status} />;
+		// GSHIP-707: runs is the first surface operational for any registered
+		// ready project, reading and commanding that project's own runtime. The
+		// other three still belong to the boot project alone, and a project the
+		// registry does not report ready keeps the same typed answer it had.
+		if (selection.surface !== 'runs' || selectedProject.readiness !== 'ready') {
+			return <UnavailableProjectSurface locale={props.locale} project={selectedProject} status={props.status} />;
+		}
+		return <RunsSurface {...props} />;
 	}
 	if (props.project.state !== 'ready' && selection.surface !== 'settings') {
 		return (
