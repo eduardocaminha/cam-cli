@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-695",
   "title": "Adicionar seleção explícita e rotas por projeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T13:04:24.277Z",
-  "updatedAt": "2026-08-22T13:06:54.587Z",
+  "updatedAt": "2026-08-22T13:17:58.793Z",
   "description": "Introduzir a primeira superfície multiprojeto navegável sobre o registro global já publicado. Carregar /api/projects no cliente e tornar /overview a visão “All projects”, somente leitura, com uma lista legível de projetos registrados, readiness, repositório quando conhecido e indicação do projeto servido pela instância. Colocar no topo da sidebar um seletor por links reais, contendo All projects e os projetos registrados; a URL, não localStorage nem estado oculto, deve ser a fonte da seleção. Adicionar rotas /projects/:projectId, /projects/:projectId/runs, /projects/:projectId/work e /projects/:projectId/settings. As superfícies operacionais existentes podem aparecer nessas rotas somente quando o ID é o projeto current; para um projeto não corrente, mostrar identidade/readiness e explicar de forma concisa que seu runtime ainda não está carregado nesta instância, sem exibir dados ou permitir ações do projeto corrente. Fazer / redirecionar para /overview e manter /runs, /work e /settings apenas como redirecionamentos para as rotas equivalentes do projeto corrente, evitando duas árvores de navegação. Responder as novas rotas pelo servidor, atualizar todos os links internos e cobrir en-US e pt-BR. Não adicionar cadastro ou remoção de projetos, runtime switching, leitura de runtime não corrente, agregação de runs/custos, credenciais globais, mudanças no container ou paralelismo.",
   "specSource": "operator",
   "spec": {

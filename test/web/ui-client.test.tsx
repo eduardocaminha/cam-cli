@@ -48,6 +48,7 @@ import {
 	fetchNotificationChannels,
 	fetchOperatorProfile,
 	fetchProjectStatus,
+	fetchProjects,
 	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
@@ -62,10 +63,12 @@ import {
 	OPERATOR_PROFILE_PATH,
 	type OperatorProfileView,
 	PROJECT_PATH,
+	PROJECTS_PATH,
 	PROPOSALS_PATH,
 	PROVIDERS_PATH,
 	type ProjectBriefView,
 	type ProjectStatusView,
+	type RegisteredProjectView,
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
@@ -123,7 +126,12 @@ const BACKLOG = [
 	{ id: 'CAM-901', title: 'segunda issue plannable' },
 ];
 
-const SURFACE_PATHS: readonly OperatorRoute[] = ['/', '/runs', '/work', '/settings'];
+const SURFACE_PATHS: readonly OperatorRoute[] = [
+	'/projects/project-current',
+	'/projects/project-current/runs',
+	'/projects/project-current/work',
+	'/projects/project-current/settings',
+];
 
 const NOTICES: AppProps['workspaceNotices'] = [{
 	kind: 'dirty',
@@ -204,6 +212,26 @@ const READY_PROJECT: ProjectStatusView = {
 	sourceRef: 'origin/main',
 };
 
+const CURRENT_PROJECT: RegisteredProjectView = {
+	id: 'project-current',
+	name: 'gateship',
+	root: '/project',
+	stateDir: '/project/.gship',
+	readiness: 'ready',
+	repository: 'acme/gateship',
+	current: true,
+};
+
+const OTHER_PROJECT: RegisteredProjectView = {
+	id: 'project-other',
+	name: 'other-product',
+	root: '/other-product',
+	stateDir: '/other-product/.gship',
+	readiness: 'ready',
+	repository: 'acme/other-product',
+	current: false,
+};
+
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
 
 function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
@@ -258,6 +286,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			pending={false}
 			proposals={[]}
 			project={READY_PROJECT}
+			projects={[CURRENT_PROJECT]}
 			operatorProfile={EMPTY_OPERATOR_PROFILE}
 			providers={[]}
 			resolvedProposals={[]}
@@ -276,10 +305,10 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 	);
 }
 
-const home = (overrides: Partial<AppProps> = {}): string => renderAt('/', overrides);
-const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/runs', overrides);
-const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/work', overrides);
-const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
+const home = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current', overrides);
+const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
+const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/work', overrides);
+const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/settings', overrides);
 
 function conversationAt(
 	locale: Locale,
@@ -425,7 +454,7 @@ describe('project onboarding', () => {
 				expect(html).toContain('gh repo create OWNER/REPO --private --add-readme --clone');
 				expect(html).toContain('cd REPO &amp;&amp; gship');
 				expect(html).toContain(expected.settingsGuidance);
-				expect(html).toContain(`href="/settings">${expected.settingsLabel}</a>`);
+				expect(html).toContain(`href="/projects/project-current/settings">${expected.settingsLabel}</a>`);
 				expect(html).not.toContain('Conversation with the orchestrator');
 				expect(html).not.toContain('Backlog plannable');
 				expect(html).not.toContain('Latest run');
@@ -461,7 +490,7 @@ describe('project onboarding', () => {
 					expect(html).toContain(command);
 					expect(html).toContain(expected.recoveryGuidance);
 					expect(html).toContain(expected.settingsGuidance);
-					expect(html).toContain(`href="/settings">${expected.settingsLabel}</a>`);
+					expect(html).toContain(`href="/projects/project-current/settings">${expected.settingsLabel}</a>`);
 				}
 			}
 		}
@@ -617,7 +646,7 @@ describe('conversation surface', () => {
 		expect(html).toContain('CAM-900');
 		expect(html).toContain('done');
 		expect(html).toContain('100%');
-		expect(html).toContain('href="/runs"');
+		expect(html).toContain('href="/projects/project-current/runs"');
 		// Telemetry, configuration, history and planning are other surfaces.
 		expect(html).not.toContain('run-1');
 		expect(html).not.toContain('Relatório longo do runtime.');
@@ -2707,6 +2736,40 @@ describe('settings surface', () => {
 });
 
 describe('operator shell', () => {
+	test('overview and the project selector expose the global registry in both locales', () => {
+		for (const expected of [
+			{ locale: 'en-US' as const, all: 'All projects', current: 'served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, all: 'Todos os projetos', current: 'servido por esta instância', readiness: 'Prontidão' },
+		]) {
+			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
+			expect(html).toContain(`>${expected.all}</h2>`);
+			expect(html).toContain(`>${expected.current}</span>`);
+			expect(html).toContain(`>${expected.readiness}:</span>`);
+			expect(html).toContain('acme/gateship');
+			expect(html).toContain('acme/other-product');
+			expect(html).toContain('href="/overview"');
+			expect(html).toContain('href="/projects/project-current"');
+			expect(html).toContain('href="/projects/project-other"');
+		}
+	});
+
+	test('a non-current project route never renders or operates on current runtime data', () => {
+		for (const suffix of ['', '/runs', '/work', '/settings']) {
+			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
+				projects: [CURRENT_PROJECT, OTHER_PROJECT],
+				runs: [runIn('interrupted')],
+			});
+			expect(html).toContain('other-product');
+			expect(html).toContain('acme/other-product');
+			expect(html).toContain('Project runtime not loaded');
+			expect(html).not.toContain('CAM-900');
+			expect(html).not.toContain('acme/gateship');
+			expect(html).not.toContain('>Resume<');
+			expect(html).not.toContain('>Start<');
+			expect(html).not.toContain('Operator profile');
+		}
+	});
+
 	test('the persistent language control renders both self-named choices and marks the locale on every surface', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			for (const route of SURFACE_PATHS) {
@@ -2758,7 +2821,8 @@ describe('operator shell', () => {
 	test('navigation is four real paths, with the active one marked', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
-			const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
+			const start = html.indexOf('<nav aria-label="Operator surfaces"');
+			const nav = html.slice(start, html.indexOf('</nav>', start));
 			const active = openingTags(nav).find((tag) => tag.includes(`href="${route}"`));
 
 			expect(nav).toContain('aria-label="Operator surfaces"');
@@ -2776,7 +2840,8 @@ describe('operator shell', () => {
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
 		const html = runsPage({ locale: 'pt-BR' });
-		const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
+		const start = html.indexOf('<nav aria-label="Superfícies do operador"');
+		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Superfícies do operador"');
 		for (const label of ['Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
@@ -2811,14 +2876,14 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('an unserved path reads as the conversation surface', () => {
-		expect(routeOf('/')).toBe('/');
-		expect(routeOf('/runs')).toBe('/runs');
-		expect(routeOf('/runs/')).toBe('/runs');
-		expect(routeOf('/work')).toBe('/work');
-		expect(routeOf('/settings')).toBe('/settings');
-		expect(routeOf('/runs/run-1')).toBe('/');
-		expect(routeOf('/qualquer-coisa')).toBe('/');
+	test('reads canonical project routes and falls unknown paths back to overview', () => {
+		expect(routeOf('/overview')).toBe('/overview');
+		expect(routeOf('/projects/project-current')).toBe('/projects/project-current');
+		expect(routeOf('/projects/project-current/runs/')).toBe('/projects/project-current/runs');
+		expect(routeOf('/projects/project-current/work')).toBe('/projects/project-current/work');
+		expect(routeOf('/projects/project-current/settings')).toBe('/projects/project-current/settings');
+		expect(routeOf('/projects/project-current/unknown')).toBe('/overview');
+		expect(routeOf('/qualquer-coisa')).toBe('/overview');
 	});
 
 	test('the shell reports one human state and the version it is serving', () => {
@@ -3224,8 +3289,9 @@ describe('conversation transcript', () => {
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 
 			expect(horizontal).toHaveLength(1);
-			expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(html.indexOf('<nav'));
-			expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>'));
+			const operatorNav = html.indexOf('<nav aria-label="Operator surfaces"');
+			expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(operatorNav);
+			expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>', operatorNav));
 		}
 	});
 });
@@ -3354,6 +3420,7 @@ describe('same-origin transport', () => {
 	test('reads and writes stay on the routes the server already exposes', () => {
 		expect(SNAPSHOT_PATH).toBe('/api/snapshot');
 		expect(PROJECT_PATH).toBe('/api/project');
+		expect(PROJECTS_PATH).toBe('/api/projects');
 		expect(OPERATOR_PROFILE_PATH).toBe('/api/operator-profile');
 		expect(RUNS_PATH).toBe('/api/runs');
 		expect(EVENTS_PATH).toBe('/api/events');
@@ -3367,6 +3434,16 @@ describe('same-origin transport', () => {
 		expect(DIAGNOSTIC_SCHEDULE_PATH).toBe('/api/diagnostics/schedule');
 		expect(NOTIFICATIONS_PATH).toBe('/api/notifications');
 		expect(UPDATE_PATH).toBe('/api/update');
+	});
+
+	test('reads the global project registry defensively from its same-origin route', async () => {
+		await withRecordedFetch({ projects: [CURRENT_PROJECT, { id: false }, OTHER_PROJECT] }, 200, async (calls) => {
+			expect(await fetchProjects()).toEqual([CURRENT_PROJECT, OTHER_PROJECT]);
+			expect(calls).toEqual([{ url: PROJECTS_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchProjects()).toEqual([]);
+		});
 	});
 
 	test('native update policy reads and writes only its same-origin route', async () => {

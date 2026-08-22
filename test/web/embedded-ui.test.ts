@@ -63,19 +63,44 @@ describe('embedded web bundle', () => {
 		}
 	});
 
-	test('every operator surface is the same document, and nothing else is', async () => {
+	test('canonical project surfaces share one document and legacy paths redirect to them', async () => {
 		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
 		try {
-			const home = await (await get(handle, '/')).text();
+			const overview = await get(handle, '/overview');
+			const home = await overview.text();
+			expect(overview.status).toBe(200);
+			const projects = await (await get(handle, '/api/projects')).json() as {
+				projects: Array<{ id: string; current: boolean }>;
+			};
+			const currentId = projects.projects.find((project) => project.current)?.id;
+			expect(currentId).toBeString();
 
-			for (const path of ['/runs', '/work', '/settings']) {
+			for (const path of [
+				`/projects/${currentId}`,
+				`/projects/${currentId}/runs`,
+				`/projects/${currentId}/work`,
+				`/projects/${currentId}/settings`,
+			]) {
 				const surface = await get(handle, path);
 				expect(surface.status).toBe(200);
 				expect(surface.headers.get('content-type')).toContain('text/html');
 				expect(await surface.text()).toBe(home);
 			}
+			for (const [legacy, canonical] of [
+				['/', '/overview'],
+				['/runs', `/projects/${currentId}/runs`],
+				['/work', `/projects/${currentId}/work`],
+				['/settings', `/projects/${currentId}/settings`],
+			] as const) {
+				const response = await fetch(
+					`http://${handle.hostname}:${handle.port}${legacy}`,
+					{ redirect: 'manual' },
+				);
+				expect(response.status).toBe(302);
+				expect(new URL(response.headers.get('location')!).pathname).toBe(canonical);
+			}
 			// Enumerated paths, not a universal fallback: anything else is a 404.
-			expect((await get(handle, '/runs/run-1')).status).toBe(404);
+			expect((await get(handle, `/projects/${currentId}/runs/run-1`)).status).toBe(404);
 			expect((await get(handle, '/qualquer-coisa')).status).toBe(404);
 		} finally {
 			await handle.stop();

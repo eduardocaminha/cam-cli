@@ -37,6 +37,7 @@ import {
 	fetchNotificationChannels,
 	fetchOperatorProfile,
 	fetchProjectStatus,
+	fetchProjects,
 	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
@@ -50,6 +51,7 @@ import {
 	type OperatorProfileView,
 	type ProjectBriefView,
 	type ProjectStatusView,
+	type RegisteredProjectView,
 	type ProposalView,
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
@@ -144,6 +146,7 @@ function useOperationalRun(): {
 	chainRuns: ChainRunsView;
 	notificationChannels: NotificationChannelsView;
 	project: ProjectStatusView;
+	projects: RegisteredProjectView[];
 	operatorProfile: OperatorProfileView;
 	diagnostics: DiagnosticsView;
 	selfUpdate: SelfUpdateView;
@@ -178,6 +181,7 @@ function useOperationalRun(): {
 		emptyNotificationChannels,
 	);
 	const [project, setProject] = useState<ProjectStatusView>(CHECKING_PROJECT);
+	const [projects, setProjects] = useState<RegisteredProjectView[]>([]);
 	const [operatorProfile, setOperatorProfile] = useState<OperatorProfileView>(
 		EMPTY_OPERATOR_PROFILE,
 	);
@@ -200,6 +204,7 @@ function useOperationalRun(): {
 			fetchChainRuns(),
 			fetchNotificationChannels(),
 			fetchProjectStatus(),
+			fetchProjects(),
 			fetchOperatorProfile(),
 			fetchDiagnostics(),
 			fetchSelfUpdate(),
@@ -216,6 +221,7 @@ function useOperationalRun(): {
 				chainRunsSnapshot,
 				notificationChannelsSnapshot,
 				projectSnapshot,
+				projectsSnapshot,
 				operatorProfileSnapshot,
 				diagnosticsSnapshot,
 				selfUpdateSnapshot,
@@ -242,6 +248,7 @@ function useOperationalRun(): {
 				setChainRuns(chainRunsSnapshot);
 				setNotificationChannels(notificationChannelsSnapshot);
 				setProject(projectSnapshot);
+				setProjects(projectsSnapshot);
 				setOperatorProfile(operatorProfileSnapshot);
 				setDiagnostics(diagnosticsSnapshot);
 				setSelfUpdate(selfUpdateSnapshot);
@@ -338,6 +345,7 @@ function useOperationalRun(): {
 		chainRuns,
 		notificationChannels,
 		project,
+		projects,
 		operatorProfile,
 		diagnostics,
 		selfUpdate,
@@ -372,6 +380,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		chainRuns,
 		notificationChannels,
 		project,
+		projects,
 		operatorProfile,
 		diagnostics,
 		selfUpdate,
@@ -482,6 +491,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			pending={pending}
 			proposals={proposals}
 			project={project}
+			projects={projects}
 			operatorProfile={operatorProfile}
 			providers={providers}
 			resolvedProposals={resolvedProposals}
