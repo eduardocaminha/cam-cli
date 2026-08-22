@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
+import { fingerprintSpec } from '../issues/spec.ts';
+import type { IssueEntry } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 import { ProviderCallError, type AgentProviderId } from '../runtime/agent-session.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
@@ -145,6 +147,8 @@ export interface WebServerOptions {
 	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for approving an existing specified issue. */
 	issueApprover?: (id: string) => CreatedOperatorIssue;
+	/** Test seam for reading the currently published issue during agent approval. */
+	issueReader?: (id: string) => IssueEntry | null;
 	/** Test seam for closing an open issue with a durable justification. */
 	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for credential-blind provider status and managed Codex login. */
@@ -617,6 +621,14 @@ async function writeProjectBrief(
 	projectBrief: ProjectBriefAccess,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	const authorization = request.headers.get('x-gateship-operator-authorization');
+	if (commandSource(request) === 'agent-cli'
+		&& (authorization === null || authorization.trim().length === 0)) {
+		return Response.json(
+			{ ok: false, code: 'authorization-required', message: 'Explicit operator authorization is required to update the project brief.' },
+			{ status: 403 },
+		);
+	}
 	let body: unknown;
 	try {
 		body = await request.json();
@@ -875,9 +887,11 @@ async function approveIssueFromOperator(
 	id: string,
 	runtime: RunRuntime,
 	issueApprover: (id: string) => CreatedOperatorIssue,
+	issueReader: (id: string) => IssueEntry | null,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	try {
+		if (commandSource(request) === 'agent-cli') await assertAgentApproval(request, id, issueReader);
 		assertIssueFileIsFree(runtime, id);
 		return Response.json({ ok: true, issue: issueApprover(id) });
 	} catch (error) {
@@ -885,6 +899,77 @@ async function approveIssueFromOperator(
 		return Response.json(
 			{ ok: false, code: error.code, message: error.message },
 			{ status: error.status },
+		);
+	}
+}
+
+async function assertAgentApproval(
+	request: Request,
+	id: string,
+	issueReader: (id: string) => IssueEntry | null,
+): Promise<void> {
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		throw new IssueIntakeError('authorization-required', 'Fingerprint and explicit operator authorization are required.', 403);
+	}
+	const input = body !== null && typeof body === 'object' && !Array.isArray(body)
+		? body as Record<string, unknown> : {};
+	const authorization = input['authorization'];
+	if (typeof authorization !== 'string' || authorization.trim().length === 0) {
+		throw new IssueIntakeError('authorization-required', 'Explicit operator authorization is required to approve an issue.', 403);
+	}
+	const current = issueReader(id);
+	if (current === null || current.spec === undefined) {
+		throw new IssueIntakeError('issue-not-found', `${id} does not have a current executable specification.`, 404);
+	}
+	if (input['fingerprint'] !== fingerprintSpec(current.spec)) {
+		throw new IssueIntakeError('fingerprint-mismatch', 'The issue specification changed; read the issue again before approval.', 409);
+	}
+}
+
+function commandSource(request: Request): 'agent-cli' | undefined {
+	return request.headers.get('x-gateship-command-source') === 'agent-cli' ? 'agent-cli' : undefined;
+}
+
+function readPublishedIssues(cwd: string): IssueEntry[] {
+	return readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF);
+}
+
+function readPublishedIssue(cwd: string, id: string): IssueEntry | null {
+	return readPublishedIssues(cwd).find((issue) => issue.id === id) ?? null;
+}
+
+function resolveIssueReader(options: WebServerOptions): (id: string) => IssueEntry | null {
+	return options.issueReader ?? ((id: string) => readPublishedIssue(options.cwd, id));
+}
+
+function listPublishedIssues(cwd: string): Response {
+	try {
+		return Response.json({ issues: readPublishedIssues(cwd) });
+	} catch (error) {
+		return Response.json(
+			{ ok: false, code: 'backlog-unavailable', message: error instanceof Error ? error.message : String(error) },
+			{ status: 503 },
+		);
+	}
+}
+
+function readPublishedIssueResponse(issueReader: (id: string) => IssueEntry | null, id: string): Response {
+	try {
+		const issue = issueReader(id);
+		if (issue === null) {
+			return Response.json({ ok: false, code: 'issue-not-found', message: 'Issue not found.' }, { status: 404 });
+		}
+		return Response.json({
+			issue,
+			...(issue.spec === undefined ? {} : { fingerprint: fingerprintSpec(issue.spec) }),
+		});
+	} catch (error) {
+		return Response.json(
+			{ ok: false, code: 'backlog-unavailable', message: error instanceof Error ? error.message : String(error) },
+			{ status: 503 },
 		);
 	}
 }
@@ -1267,7 +1352,7 @@ async function startDurableRun(
 	const issueId = await readIssueId(request);
 	if (issueId instanceof Response) return issueId;
 	try {
-		return Response.json({ ok: true, run: runtime.startRun(issueId) }, { status: 202 });
+		return Response.json({ ok: true, run: runtime.startRun(issueId, commandSource(request)) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
 		const rejected = error instanceof RuntimePreflightError
@@ -1291,7 +1376,7 @@ async function cancelDurableRun(
 	runId: string,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
-	const run = await runtime.cancelRun(runId);
+	const run = await runtime.cancelRun(runId, commandSource(request));
 	if (run === null) {
 		return Response.json(
 			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
@@ -1342,7 +1427,7 @@ async function resumeDurableRun(
 	if (operatorGuidance instanceof Response) return operatorGuidance;
 	try {
 		return Response.json(
-			{ ok: true, run: runtime.resumeRun(runId, operatorGuidance) },
+			{ ok: true, run: runtime.resumeRun(runId, operatorGuidance, commandSource(request)) },
 			{ status: 202 },
 		);
 	} catch (error) {
@@ -1376,7 +1461,7 @@ function abandonDurableRun(
 		);
 	}
 	try {
-		return Response.json({ ok: true, run: runtime.abandonRun(runId) });
+		return Response.json({ ok: true, run: runtime.abandonRun(runId, commandSource(request)) });
 	} catch (error) {
 		return Response.json(
 			{
@@ -1433,7 +1518,7 @@ async function shipDurableRun(
 		);
 	}
 	try {
-		return Response.json({ ok: true, run: runtime.shipRun(runId) }, { status: 202 });
+		return Response.json({ ok: true, run: runtime.shipRun(runId, commandSource(request)) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
 		return Response.json(
@@ -2062,6 +2147,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd }));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(options, ensureGitIdentityOnce);
+	const issueReader = resolveIssueReader(options);
 	// Only for the real NativeProviderAuth this process owns: an injected fake
 	// in tests has no reason to touch the filesystem, and CODEX_HOME is unset
 	// outside the container image anyway.
@@ -2119,6 +2205,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(snapshot);
 			},
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),
 				PUT: (request) => updateSelfUpdate(request, selfUpdate),
@@ -2230,7 +2317,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => startCodexLogin(request, providerAuth),
 			},
 			'/api/issues': {
+				GET: () => listPublishedIssues(options.cwd),
 				POST: (request) => createIssueFromOperator(request, issueIntake),
+			},
+			'/api/issues/:issueId': {
+				GET: (request) => readPublishedIssueResponse(issueReader, request.params.issueId),
 			},
 			'/api/issues/:issueId/spec': {
 				POST: (request) => specifyIssueFromOperator(
@@ -2246,6 +2337,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request.params.issueId,
 					runRuntime,
 					issueApprover,
+					issueReader,
 				),
 			},
 			'/api/issues/:issueId/abandon': {

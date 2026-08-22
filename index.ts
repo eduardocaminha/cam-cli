@@ -4,6 +4,7 @@ import process from 'node:process';
 import { readFileSync, rmSync } from 'node:fs';
 
 import { DEFAULT_WEB_PORT, runWeb } from './src/commands/web.ts';
+import { runAgent } from './src/commands/agent.ts';
 import { printError, printFatalHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { GSHIP_VERSION } from './src/version.ts';
@@ -12,8 +13,14 @@ import { executeSelfUpdateHandoff, type HandoffPlan } from './src/runtime/self-u
 const HELP = renderHelp({
 	title: 'gship',
 	tagline: 'Gateship: a local web runtime for coding agents',
-	usage: 'gship [--port N]',
+	usage: 'gship [--port N]\n    gship agent <guide|operations|call>',
 	sections: [
+		{
+			heading: 'Commands',
+			entries: [
+				{ name: 'agent', description: 'Machine-readable interface for shell-capable agents' },
+			],
+		},
 		{
 			heading: 'Options',
 			entries: [
@@ -86,6 +93,7 @@ export async function main(argv: string[]): Promise<number> {
 		process.stdout.write(`gateship ${GSHIP_VERSION}\n`);
 		return 0;
 	}
+	if (command === 'agent') return runAgent(argv.slice(3));
 	printError(`unknown command: ${command}`);
 	printFatalHint('run `gship --help` for usage');
 	return 1;

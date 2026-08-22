@@ -221,7 +221,11 @@ describe('durable web run API', () => {
 
 			const resumed = await fetch(`${origin}/api/runs/run-answer/resume`, {
 				method: 'POST',
-				headers: { origin, 'content-type': 'application/json' },
+				headers: {
+					origin,
+					'content-type': 'application/json',
+					'x-gateship-command-source': 'agent-cli',
+				},
 				body: JSON.stringify({ message: 'Use the smaller seam.' }),
 			});
 			expect(resumed.status).toBe(202);
@@ -229,7 +233,7 @@ describe('durable web run API', () => {
 			expect(guidance).toEqual([undefined, 'Use the smaller seam.']);
 			expect(runtime.listRunEvents('run-answer')[3]).toMatchObject({
 				kind: 'run.operator-guidance',
-				payload: { text: 'Use the smaller seam.' },
+				payload: { text: 'Use the smaller seam.', source: 'agent-cli' },
 			});
 		} finally {
 			await handle.stop();

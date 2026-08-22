@@ -39,6 +39,8 @@ export type IssueIntakeErrorCode =
 	| 'issue-not-eligible'
 	/** A non-terminal run owns the issue file; main must not be written now. */
 	| 'issue-run-active'
+	| 'authorization-required'
+	| 'fingerprint-mismatch'
 	| 'source-unavailable'
 	| 'publish-conflict';
 

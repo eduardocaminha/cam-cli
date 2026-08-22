@@ -38,6 +38,10 @@ import {
 	RunStore,
 } from './run-store.ts';
 
+function commandPayload(payload: Record<string, unknown>, source?: string): Record<string, unknown> {
+	return { ...payload, ...(source === undefined ? {} : { source }) };
+}
+
 export interface RuntimeExecutionInput {
 	runId: string;
 	issueId: string;
@@ -389,7 +393,7 @@ export class RunRuntime {
 		this.#refreshWorkspaceNotices();
 	}
 
-	startRun(issueId: string): RunRecord {
+	startRun(issueId: string, source?: string): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -416,6 +420,7 @@ export class RunRuntime {
 			sessionId: this.#newSessionId(),
 			providerId: this.#store.getSelectedProvider(),
 			workflowRevision: this.#workflowRevision,
+			...(source === undefined ? {} : { source }),
 			workspacePath,
 			createdAt: this.#now(),
 		});
@@ -429,7 +434,7 @@ export class RunRuntime {
 		this.#admissionBlockedReason = reason;
 	}
 
-	resumeRun(runId: string, operatorGuidance?: string): RunRecord {
+	resumeRun(runId: string, operatorGuidance?: string, source?: string): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -449,7 +454,7 @@ export class RunRuntime {
 			throw new Error('operator guidance is required to resume a waiting-user run');
 		}
 		if (guidance !== undefined && guidance.length > 0) {
-			this.#emit(run.id, 'run.operator-guidance', { text: guidance });
+			this.#emit(run.id, 'run.operator-guidance', commandPayload({ text: guidance }, source));
 		}
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		this.#launch(run, {
@@ -469,14 +474,16 @@ export class RunRuntime {
 	 * run's own clean workspace and branch are released; a dirty leftover is
 	 * preserved and surfaced, exactly as it is for a merged run.
 	 */
-	abandonRun(runId: string): RunRecord {
+	abandonRun(runId: string, source?: string): RunRecord {
 		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
 		const run = this.#store.getRun(runId);
 		if (run === null) throw new Error(`run not found: ${runId}`);
 		if (run.state !== 'interrupted') {
 			throw new Error(`run cannot be abandoned from state ${run.state}`);
 		}
-		const abandoned = this.#transition(runId, 'cancelled', 'run.abandoned').run;
+		const abandoned = this.#transition(runId, 'cancelled', 'run.abandoned', {
+			...(source === undefined ? {} : { payload: { source } }),
+		}).run;
 		this.#releaseFinishedWorkspace(abandoned, false);
 		return abandoned;
 	}
@@ -487,7 +494,7 @@ export class RunRuntime {
 	 * is back in ready-to-ship can be shipped, and only one operation at a time
 	 * owns a run, so a second request never opens a second pull request.
 	 */
-	shipRun(runId: string): RunRecord {
+	shipRun(runId: string, source?: string): RunRecord {
 		const shipper = this.#shipper;
 		if (shipper === undefined) {
 			throw new RuntimeUnavailableError('No runtime shipper is configured yet.');
@@ -498,6 +505,7 @@ export class RunRuntime {
 		if (run.state !== 'ready-to-ship') {
 			throw new Error(`run cannot ship from state ${run.state}`);
 		}
+		if (source !== undefined) this.#emit(run.id, 'run.ship-requested', { source });
 		const controller = new AbortController();
 		const promise = this.#driveShip(shipper, run, controller.signal)
 			.finally(() => this.#active.delete(run.id));
@@ -783,9 +791,10 @@ export class RunRuntime {
 		return () => this.#listeners.delete(listener);
 	}
 
-	async cancelRun(runId: string): Promise<RunRecord | null> {
+	async cancelRun(runId: string, source?: string): Promise<RunRecord | null> {
 		const active = this.#active.get(runId);
 		if (active !== undefined) {
+			if (source !== undefined) this.#emit(runId, 'run.cancel-requested', { source });
 			active.controller.abort();
 			await active.promise;
 			return this.#store.getRun(runId);
@@ -794,7 +803,9 @@ export class RunRuntime {
 		const current = this.#store.getRun(runId);
 		if (current === null || isTerminalRunState(current.state)) return current;
 		if (canTransition(current.state, 'interrupted')) {
-			return this.#transition(runId, 'interrupted', 'run.cancelled').run;
+			return this.#transition(runId, 'interrupted', 'run.cancelled', {
+				...(source === undefined ? {} : { payload: { source } }),
+			}).run;
 		}
 		return current;
 	}
