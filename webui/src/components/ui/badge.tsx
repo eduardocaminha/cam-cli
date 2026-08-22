@@ -17,6 +17,7 @@ export type BadgeVariant =
 	| 'secondary'
 	| 'outline'
 	| 'info'
+	| 'merged'
 	| 'success'
 	| 'warning'
 	| 'error';
@@ -36,6 +37,7 @@ const VARIANT: Readonly<Record<BadgeVariant, string>> = {
 	default: 'bg-primary text-primary-foreground',
 	error: 'bg-destructive/8 text-destructive-foreground dark:bg-destructive/16',
 	info: 'bg-info/8 text-info-foreground dark:bg-info/16',
+	merged: 'bg-merged/8 text-merged-foreground dark:bg-merged/16',
 	outline: 'border-input bg-background text-foreground dark:bg-input/32',
 	secondary: 'bg-secondary text-secondary-foreground',
 	success: 'bg-success/8 text-success-foreground dark:bg-success/16',

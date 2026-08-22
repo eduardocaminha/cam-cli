@@ -58,6 +58,12 @@ function payloadText(event: RunEvent, key: string): string | null {
 function chainPauseNotification(event: RunEvent): RemoteNotification | null {
 	const reason = event.payload['reason'];
 	if (typeof reason !== 'string' || SILENT_CHAIN_PAUSE_REASONS.has(reason)) return null;
+	if (reason === 'no-admissible-issue') {
+		return {
+			title: 'Queue complete',
+			body: 'The run queue is complete. No eligible work remains.',
+		};
+	}
 	const issueId = payloadText(event, 'issueId');
 	return {
 		title: 'Queue stopped',
