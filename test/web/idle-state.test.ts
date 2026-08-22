@@ -6,7 +6,7 @@
 // deriving issue state from working-tree files.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -253,6 +253,22 @@ function deleteLooseObject(cwd: string, sha: string): void {
 }
 
 describe('GET /api/snapshot idle state', () => {
+	test('external project state owns runtime.sqlite while backlog remains rooted in the project', async () => {
+		const cwd = seedIdleRepo();
+		const stateDir = createTestTmpdir('gship-web-external-state-');
+		const handle = startWebServer({ port: 0, cwd, stateDir });
+		try {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
+			const snapshot = await response.json() as Record<string, unknown>;
+			expect(response.status).toBe(200);
+			expect(snapshot.idleState).toMatchObject({ backlog: { counts: { specified: 2 } } });
+			expect(existsSync(join(stateDir, 'runtime.sqlite'))).toBe(true);
+			expect(existsSync(join(cwd, '.gship'))).toBe(false);
+		} finally {
+			await handle.stop();
+		}
+	});
+
 	test('returns the source-ref-backed backlog', async () => {
 		const cwd = seedIdleRepo();
 		const payload = await getSnapshot(cwd);

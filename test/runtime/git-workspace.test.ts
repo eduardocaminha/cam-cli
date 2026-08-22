@@ -74,6 +74,27 @@ describe('git workspace manager', () => {
 		expect(git(workspacePath, ['rev-parse', 'HEAD'])).toBe(git(root, ['rev-parse', 'main']));
 	});
 
+	test('places managed worktrees in an explicit state directory without touching project .gship', () => {
+		const root = seedRepository();
+		const stateDir = createTestTmpdir('gship-external-workspace-state-');
+		const manager = new GitWorkspaceManager(
+			root,
+			undefined,
+			recordingInstall([]),
+			'main',
+			stateDir,
+		);
+
+		const workspacePath = manager.prepare({
+			runId: 'run-external-state',
+			issueId: 'GSHIP-693',
+		});
+
+		expect(workspacePath).toBe(join(stateDir, 'worktrees', 'run-external-state'));
+		expect(existsSync(join(root, '.gship'))).toBe(false);
+		expect(git(workspacePath, ['rev-parse', '--show-toplevel'])).toBe(workspacePath);
+	});
+
 	test('installs locked dependencies in the isolated workspace before returning', () => {
 		const root = seedRepository();
 		const calls: Array<{ cwd: string; args: string[]; hostNodeModules: boolean }> = [];

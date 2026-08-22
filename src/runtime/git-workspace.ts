@@ -179,6 +179,7 @@ function branchNotice(
 
 export class GitWorkspaceManager implements RuntimeWorkspace {
 	readonly #projectRoot: string;
+	readonly #stateDir: string;
 	readonly #runGit: WorkspaceGitRunner;
 	readonly #runInstall: WorkspaceInstallRunner;
 	readonly #baseRef: string;
@@ -194,8 +195,10 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		runGit: WorkspaceGitRunner = defaultRunGit,
 		runInstall: WorkspaceInstallRunner = defaultRunInstall,
 		baseRef = 'main',
+		stateDir = resolve(projectRoot, '.gship'),
 	) {
 		this.#projectRoot = resolve(projectRoot);
+		this.#stateDir = resolve(stateDir);
 		this.#runGit = runGit;
 		this.#runInstall = runInstall;
 		this.#baseRef = baseRef;
@@ -400,7 +403,7 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 	}
 
 	#worktreesRoot(): string {
-		return resolve(this.#projectRoot, '.gship', 'worktrees');
+		return resolve(this.#stateDir, 'worktrees');
 	}
 
 	#workspacePath(runId: string): string {

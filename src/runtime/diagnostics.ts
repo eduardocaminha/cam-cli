@@ -101,10 +101,16 @@ function safeScanSegment(scanId: string): string {
 /** A detached exact-SHA checkout. No branch is created and no project dependency is installed. */
 export class GitDiagnosticWorkspace implements DiagnosticWorkspace {
 	readonly #projectRoot: string;
+	readonly #stateDir: string;
 	readonly #run: DiagnosticCommandRunner;
 
-	constructor(projectRoot: string, run: DiagnosticCommandRunner = runOwnedCommand) {
+	constructor(
+		projectRoot: string,
+		run: DiagnosticCommandRunner = runOwnedCommand,
+		stateDir = resolve(projectRoot, '.gship'),
+	) {
 		this.#projectRoot = resolve(projectRoot);
+		this.#stateDir = resolve(stateDir);
 		this.#run = run;
 	}
 
@@ -193,7 +199,7 @@ export class GitDiagnosticWorkspace implements DiagnosticWorkspace {
 	}
 
 	#worktreesRoot(): string {
-		return resolve(this.#projectRoot, '.gship', 'diagnostics', 'worktrees');
+		return resolve(this.#stateDir, 'diagnostics', 'worktrees');
 	}
 
 	#workspacePath(scanId: string): string {
@@ -332,8 +338,12 @@ export class ReactDoctorAdapter implements DiagnosticAdapter {
 	readonly #cacheDir: string;
 	readonly #run: DiagnosticCommandRunner;
 
-	constructor(projectRoot: string, run: DiagnosticCommandRunner = runOwnedCommand) {
-		this.#cacheDir = resolve(projectRoot, '.gship', 'diagnostics', 'cache');
+	constructor(
+		projectRoot: string,
+		run: DiagnosticCommandRunner = runOwnedCommand,
+		stateDir = resolve(projectRoot, '.gship'),
+	) {
+		this.#cacheDir = resolve(stateDir, 'diagnostics', 'cache');
 		this.#run = run;
 	}
 
