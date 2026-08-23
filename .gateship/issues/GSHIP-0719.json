@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T05:15:35.873Z",
-  "updatedAt": "2026-08-23T05:15:35.873Z",
+  "updatedAt": "2026-08-23T05:15:55.227Z",
   "description": "Adicionar um unico seam de onboarding para criar um projeto novo, com repositorio GitHub e checkout gerenciado, compondo os contratos multiprojeto existentes.\n\nContrato:\n1. Aceitar repository em owner/name, visibility private ou public e description opcional curta. Normalizar repository com o mesmo parser estrito da importacao. Private e o default visual. Nao aceitar internal, template, license, gitignore, team ou homepage neste seam.\n2. A UI exige confirmacao humana explicita que nomeia o repositorio e a visibilidade antes de habilitar Create. O agent CLI recebe authorization e recusa valor vazio; a resposta registra apenas a autorizacao necessaria para a operacao, nunca credencial.\n3. Criar o checkout em <GATESHIP_HOME>/projects/<owner>/<repo>, sem permitir path customizado. Se o destino ou o repositorio remoto ja existirem antes da operacao, recusar com conflito e orientar usar import; nunca adotar ou sobrescrever conteudo existente.\n4. Inicializar localmente um repositorio Git main com um README.md minimo baseado no nome, criar um unico commit inicial usando a identidade Git ja validada pelo Gateship e chamar gh repo create por argv, nao shell, com --source, --remote origin, --push e a visibilidade escolhida. Usar apenas o login gh existente; nao aceitar nem persistir PAT/token.\n5. Depois do push, reutilizar inspectProject e registerExistingCheckout. Sucesso exige origin GitHub, origin/main e registro ready; retornar {ok:true,project}.\n6. Falha antes de qualquer repositorio remoto existir nao cria registro e limpa somente os arquivos/diretorios que esta tentativa criou sob a raiz gerenciada.\n7. Se a chamada puder ter criado o repositorio remoto, nunca o delete automaticamente. Inspecionar o checkout: se ja estiver ready, registrar e concluir idempotentemente; se nao, preservar o checkout gerenciado e retornar erro parcial tipado com repository e root para recuperacao, sem afirmar rollback.\n8. Expor POST /api/projects/create, trusted-origin e sem timeout HTTP curto; erros tipados para entrada/autorizacao invalida, conflito local/remoto, identidade Git, criacao/push e estado parcial.\n9. Adicionar agent operation projects.create {repository, visibility, description?, authorization} usando exatamente o mesmo endpoint e servico.\n10. Na Overview, adicionar formulario localizado en-US/pt-BR separado de Register path e Import GitHub. Mostrar private como default, alerta adicional para public, destino gerenciado, uso do login GitHub existente, pending/erro parcial e navegar ao projeto em sucesso.\n11. Testar parser compartilhado, argv sem shell, main/README/commit, private/public, confirmacao, conflito sem escrita, cleanup pre-remoto, preservacao pos-remoto, registro ready, timeout HTTP desativado, API/origin, agent CLI e UI. Nenhum teste cria repositorio ou usa rede real.\n12. Nao adicionar scaffold por stack, agente de onboarding, PAT UI, credential store, delecao remota, fila, retry daemon, tabela, discovery, paralelismo ou dependencia.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/project-create.test.ts test/runtime/project-import.test.ts test/web/project-status-api.test.ts test/commands/agent.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "ed0b2d568b5be66824fd7b32f4e36cf79f6b64b7bb522491194e426cd51a471d",
+    "approvedAt": "2026-08-23T05:15:55.227Z"
   }
 }
