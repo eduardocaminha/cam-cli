@@ -3166,6 +3166,10 @@ describe('operator shell', () => {
 		// accessible name now comes from the mark's own role="img" label.
 		expect(title).toContain('role="img"');
 		expect(title).toContain('aria-label="Gateship"');
+		// The lockup carries no intrinsic size, so the box only holds the art
+		// when the viewBox and the reserved ratio agree on the wordmark's canvas.
+		expect(title).toContain('viewBox="0 0 15635 3035"');
+		expect(title).toContain('aspect-[15635/3035]');
 		// The badge moved off the title's row, so its longest label is never
 		// squeezed for space.
 		expect(html).toContain('>Needs you<');

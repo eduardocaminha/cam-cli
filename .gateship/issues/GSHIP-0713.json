@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-713",
   "title": "Substituir a marca visível pelo wordmark definitivo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T01:29:26.886Z",
-  "updatedAt": "2026-08-23T01:29:44.722Z",
+  "updatedAt": "2026-08-23T01:34:38.584Z",
   "description": "Use /Users/eduardo/Documents/Projects/gateship/webui/src/components/gateship-logo-wordmark.svg como a fonte visual exata para a marca completa exibida no cabeçalho.\nIncorpore o vetor no componente React existente webui/src/components/gateship-logo.tsx, sem referência em runtime a um arquivo SVG externo e mantendo currentColor para respeitar a polaridade do tema.\nAtualize o viewBox e a proporção usados pelo GateshipLockup e pelo ponto de uso no shell para 15635 por 3035.\nPreserve o contrato acessível role=img e aria-label=Gateship.\nNão altere o favicon nem metadados e não substitua o GateshipMark compacto fora do necessário para manter consistência com o novo símbolo.\nAtualize apenas testes observáveis relevantes. O arquivo de entrada gateship-logo-wordmark.svg deve ser removido pelo operador após a validação, portanto não o adicione ao commit.",
   "specSource": "operator",
   "spec": {
