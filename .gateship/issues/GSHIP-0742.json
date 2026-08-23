@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-742",
+  "title": "Provar cadência e agenda isoladas por projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T18:16:11.232Z",
+  "updatedAt": "2026-08-23T18:16:11.232Z",
+  "description": "Adicionar somente as provas automatizadas ausentes da GSHIP-740, sem alterar produção. Em ProjectRuntimeManager, registrar dois projetos ready e um não ready com DiagnosticsRuntime espiões; uma chamada a reconcileScheduledDiagnostics deve executar cada ready exatamente uma vez, ignorar o não ready e continuar o segundo mesmo quando o primeiro retorna busy. Provar também que startDiagnosticScheduler é idempotente e close remove seu único timer sem deixar trabalho pendente.\n\nNa API, usar dois projetos e SQLite distintos para fazer PUT apenas em /api/projects/:foreignId/diagnostics/schedule com enabled, cadence e analyzer; confirmar que o snapshot e a persistência do projeto estrangeiro mudam e o projeto de boot permanece igual. Reutilizar fixtures existentes. Não testar novamente o diagnóstico ad hoc, a UI ou todas as combinações de cadence.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar somente as provas automatizadas ausentes da GSHIP-740, sem alterar produção. Em ProjectRuntimeManager, registrar dois projetos ready e um não ready com DiagnosticsRuntime espiões; uma chamada a reconcileScheduledDiagnostics deve executar cada ready exatamente uma vez, ignorar o não ready e continuar o segundo mesmo quando o primeiro retorna busy. Provar também que startDiagnosticScheduler é idempotente e close remove seu único timer sem deixar trabalho pendente.\n\nNa API, usar dois projetos e SQLite distintos para fazer PUT apenas em /api/projects/:foreignId/diagnostics/schedule com enabled, cadence e analyzer; confirmar que o snapshot e a persistência do projeto estrangeiro mudam e o projeto de boot permanece igual. Reutilizar fixtures existentes. Não testar novamente o diagnóstico ad hoc, a UI ou todas as combinações de cadence.",
+    "verify": [
+      "bun test test/runtime/project-runtime-manager.test.ts test/web/diagnostics-api.test.ts && bun run typecheck"
+    ]
+  }
+}
