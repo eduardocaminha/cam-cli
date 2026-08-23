@@ -41,6 +41,15 @@ export interface RegisteredProject {
 	current: boolean;
 }
 
+/**
+ * The result of removing one registration (GSHIP-717). Not-found is a typed
+ * outcome rather than a throw, so a caller reads the same shape whether the id
+ * named a row or nothing at all.
+ */
+export type ProjectUnregistration =
+	| { outcome: 'unregistered'; project: RegisteredProject }
+	| { outcome: 'not-found' };
+
 interface ProjectRow {
 	id: string;
 	name: string;
@@ -132,6 +141,19 @@ export class ProjectRegistry {
 			...(row.repository === null ? {} : { repository: row.repository }),
 			current: row.root === canonicalCurrent,
 		};
+	}
+
+	/**
+	 * Remove one registration by id. Deleting the row is the whole operation:
+	 * the checkout, its `.gship` state directory, its runtime database and its
+	 * Git metadata are never read, moved or removed, so the same path can be
+	 * registered again later and come back with its history intact.
+	 */
+	unregister(projectId: string): ProjectUnregistration {
+		const project = this.get(projectId);
+		if (project === null) return { outcome: 'not-found' };
+		this.#db.query('DELETE FROM projects WHERE id = $projectId').run({ projectId });
+		return { outcome: 'unregistered', project };
 	}
 
 	close(): void {

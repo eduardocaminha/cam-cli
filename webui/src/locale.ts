@@ -67,6 +67,14 @@ export interface ProjectsCatalog {
 		containerGuidance: string;
 		submit: string;
 	};
+	/** Dropping a registration, which is the whole operation: nothing is deleted. */
+	remove: {
+		title: string;
+		description: string;
+		filesRemain: string;
+		confirm: (name: string) => string;
+		submit: string;
+	};
 }
 
 export interface ConversationCatalog {
@@ -492,6 +500,14 @@ export const LOCALE_CATALOG = {
 				containerGuidance: 'In Docker the path must exist inside the container, so mount the checkout first.',
 				submit: 'Register project',
 			},
+			remove: {
+				title: 'Remove this project from Gateship',
+				description: 'Removal only drops the registration from this Gateship installation.',
+				filesRemain:
+					'Nothing is deleted: the checkout, its .gship state, worktrees, branches, runs, issues and its GitHub repository all stay on disk, and the project can be registered again later.',
+				confirm: (name) => `Remove ${name} from the registry and keep every file it has.`,
+				submit: 'Remove project',
+			},
 		},
 		conversation: {
 			transcriptLabel: 'Conversation transcript',
@@ -872,6 +888,14 @@ export const LOCALE_CATALOG = {
 				rootGuidance: 'Qualquer diretório dentro do repositório serve; o Gateship registra o top-level real.',
 				containerGuidance: 'No Docker o caminho precisa existir dentro do contêiner, então monte o checkout antes.',
 				submit: 'Registrar projeto',
+			},
+			remove: {
+				title: 'Remover este projeto do Gateship',
+				description: 'A remoção só tira o registro desta instalação do Gateship.',
+				filesRemain:
+					'Nada é apagado: o checkout, o estado em .gship, worktrees, branches, runs, issues e o repositório no GitHub continuam no disco, e o projeto pode ser registrado de novo depois.',
+				confirm: (name) => `Remover ${name} do registro e manter todos os seus arquivos.`,
+				submit: 'Remover projeto',
 			},
 		},
 		conversation: {

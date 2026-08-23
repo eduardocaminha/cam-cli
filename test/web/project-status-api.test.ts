@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
@@ -194,6 +194,145 @@ describe('POST /api/projects', () => {
 			expect(listed.projects[0]?.current).toBe(true);
 		} finally {
 			await handle.stop();
+		}
+	});
+});
+
+// GSHIP-717: the reverse route, and only a registry write. Its refusals are
+// what the operator has to act on, so each one is typed and leaves the row.
+describe('DELETE /api/projects/:projectId', () => {
+	test('removes a registered non-current project and leaves its checkout on disk', async () => {
+		const cwd = createTestTmpdir('gship-unregister-api-current-');
+		const gateshipHome = createTestTmpdir('gship-unregister-api-home-');
+		const target = realpathSync(createTestTmpdir('gship-unregister-api-target-'));
+		readyCheckout(target);
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const registered = await fetch(`${origin}/api/projects`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin },
+				body: JSON.stringify({ root: target }),
+			}).then((response) => response.json()) as { project: { id: string; name: string } };
+
+			const removed = await fetch(`${origin}/api/projects/${registered.project.id}`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(removed.status).toBe(200);
+			expect(await removed.json()).toEqual({
+				ok: true,
+				project: {
+					id: registered.project.id,
+					name: registered.project.name,
+					root: target,
+					stateDir: join(target, '.gship'),
+					readiness: 'ready',
+					repository: 'acme/product',
+					current: false,
+				},
+			});
+
+			// Only the boot project is left, and the checkout is untouched.
+			const listed = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ current: boolean }> };
+			expect(listed.projects).toHaveLength(1);
+			expect(listed.projects[0]?.current).toBe(true);
+			expect(existsSync(join(target, 'README.md'))).toBe(true);
+			expect(existsSync(join(target, '.git'))).toBe(true);
+
+			// The registration is gone for every project-scoped read too.
+			const status = await fetch(`${origin}/api/projects/${registered.project.id}/status`);
+			expect(status.status).toBe(404);
+			expect(await status.json()).toMatchObject({ ok: false, code: 'project-not-found' });
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('refuses an untrusted origin, an unknown id and the checkout it serves', async () => {
+		const cwd = realpathSync(createTestTmpdir('gship-unregister-api-refusal-current-'));
+		const gateshipHome = createTestTmpdir('gship-unregister-api-refusal-home-');
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const listed = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ id: string }> };
+			const currentId = listed.projects[0]!.id;
+
+			const untrusted = await fetch(`${origin}/api/projects/${currentId}`, {
+				method: 'DELETE',
+				headers: { origin: 'http://evil.example' },
+			});
+			expect(untrusted.status).toBe(403);
+			expect(await untrusted.json()).toMatchObject({ ok: false, code: 'forbidden-origin' });
+
+			const unknown = await fetch(`${origin}/api/projects/unknown`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(unknown.status).toBe(404);
+			expect(await unknown.json()).toMatchObject({ ok: false, code: 'project-not-found' });
+
+			const current = await fetch(`${origin}/api/projects/${currentId}`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(current.status).toBe(409);
+			expect(await current.json()).toMatchObject({
+				ok: false,
+				code: 'project-is-current',
+				message: expect.stringContaining('another checkout'),
+			});
+
+			const kept = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ id: string }> };
+			expect(kept.projects.map((project) => project.id)).toEqual([currentId]);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('refuses a project whose run has not finished and keeps the registration', async () => {
+		const cwd = createTestTmpdir('gship-unregister-api-active-current-');
+		const targetRoot = createTestTmpdir('gship-unregister-api-active-target-');
+		const targetState = createTestTmpdir('gship-unregister-api-active-state-');
+		const store = new RunStore(join(targetState, 'runtime.sqlite'));
+		store.createRun({
+			id: 'run-active',
+			issueId: 'GSHIP-1',
+			sessionId: 'session-active',
+			workspacePath: '/managed/run-active',
+			createdAt: '2026-08-23T10:00:00.000Z',
+		});
+		store.close();
+		const registry = openProjectRegistry(createTestTmpdir('gship-unregister-api-active-home-'));
+		const target = registry.reconcile({
+			root: targetRoot,
+			stateDir: targetState,
+			readiness: {
+				state: 'ready', name: 'target', repository: 'acme/target',
+				remoteUrl: 'git@github.com:acme/target.git', sourceRef: 'origin/main',
+			},
+		});
+		const handle = startWebServer({ port: 0, cwd, projectRegistry: registry });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const refused = await fetch(`${origin}/api/projects/${target.id}`, {
+				method: 'DELETE',
+				headers: { origin },
+			});
+			expect(refused.status).toBe(409);
+			expect(await refused.json()).toMatchObject({
+				ok: false,
+				code: 'project-has-active-run',
+				message: expect.stringContaining('run-active'),
+			});
+			expect(registry.get(target.id)).not.toBeNull();
+			expect(existsSync(join(targetState, 'runtime.sqlite'))).toBe(true);
+		} finally {
+			await handle.stop();
+			registry.close();
 		}
 	});
 });

@@ -231,4 +231,55 @@ describe('global project registry', () => {
 		expect(registry.get('unknown-project', root)).toBeNull();
 		registry.close();
 	});
+
+	// GSHIP-717: the reverse of registering, and only that. The row goes; the
+	// checkout, its own state directory and its runtime database do not.
+	test('unregisters one row by id, leaves every other row and the project files alone', () => {
+		const home = createTestTmpdir('gship-unregister-home-');
+		const root = scratchRoot('gship-unregister-root-');
+		const stateDir = join(root, '.gship');
+		mkdirSync(stateDir, { recursive: true });
+		const runtime = join(stateDir, 'runtime.sqlite');
+		writeFileSync(runtime, 'existing runtime bytes');
+		writeFileSync(join(root, 'README.md'), '# product\n');
+		const kept = scratchRoot('gship-unregister-kept-');
+
+		const registry = openProjectRegistry(home);
+		const removable = registry.reconcile({ root, stateDir, readiness: ready });
+		const other = registry.reconcile({
+			root: kept,
+			stateDir: join(kept, '.gship'),
+			readiness: ready,
+		});
+
+		expect(registry.unregister(removable.id)).toEqual({
+			outcome: 'unregistered',
+			project: { ...removable, current: false },
+		});
+		expect(registry.get(removable.id)).toBeNull();
+		expect(registry.list().map((project) => project.id)).toEqual([other.id]);
+		// Nothing on disk was read, moved or removed by dropping the row.
+		expect(readFileSync(runtime, 'utf8')).toBe('existing runtime bytes');
+		expect(existsSync(join(root, 'README.md'))).toBe(true);
+		expect(existsSync(stateDir)).toBe(true);
+		registry.close();
+
+		// The removal is durable, and the same checkout can be registered again.
+		const restarted = openProjectRegistry(home);
+		expect(restarted.list().map((project) => project.id)).toEqual([other.id]);
+		expect(restarted.reconcile({ root, stateDir, readiness: ready }).root).toBe(root);
+		restarted.close();
+	});
+
+	test('reports an unknown id as a typed not-found instead of throwing', () => {
+		const registry = openProjectRegistry(createTestTmpdir('gship-unregister-unknown-home-'));
+		const root = createTestTmpdir('gship-unregister-unknown-root-');
+		const registered = registry.reconcile({ root, stateDir: join(root, '.gship'), readiness: ready });
+
+		expect(registry.unregister('unknown-project')).toEqual({ outcome: 'not-found' });
+		expect(registry.unregister('')).toEqual({ outcome: 'not-found' });
+		// A refused removal leaves the registry exactly as it was.
+		expect(registry.list().map((project) => project.id)).toEqual([registered.id]);
+		registry.close();
+	});
 });

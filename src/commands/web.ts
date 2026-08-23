@@ -132,6 +132,10 @@ import {
 	resolveGateshipHome,
 } from '../runtime/project-registry.ts';
 import {
+	ProjectUnregistrationError,
+	unregisterProject,
+} from '../runtime/project-unregistration.ts';
+import {
 	ProjectRuntimeLookupError,
 	ProjectRuntimeManager,
 } from '../runtime/project-runtime-manager.ts';
@@ -800,6 +804,33 @@ async function registerProjectFromOperator(
 				message: error.message,
 				...(error.readiness === undefined ? {} : { readiness: error.readiness }),
 			},
+			{ status: error.status },
+		);
+	}
+}
+
+/**
+ * Remove a project from the global registry (GSHIP-717). Registry-only: the
+ * checkout, its `.gship` state, its worktrees, branches, runs, issues and its
+ * GitHub repository are all left exactly as they are, so the refusals are the
+ * only thing this route has to state clearly.
+ */
+function unregisterProjectFromOperator(
+	request: Request,
+	projectId: string,
+	registry: ProjectRegistry,
+	currentRoot: string,
+): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({
+			ok: true,
+			project: unregisterProject(projectId, registry, currentRoot),
+		});
+	} catch (error) {
+		if (!(error instanceof ProjectUnregistrationError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
 			{ status: error.status },
 		);
 	}
@@ -2624,6 +2655,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/projects': {
 				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),
+			},
+			'/api/projects/:projectId': {
+				DELETE: (request) => unregisterProjectFromOperator(
+					request,
+					request.params.projectId,
+					projectRegistry,
+					projectRoot,
+				),
 			},
 			'/api/projects/:projectId/status': (request) => {
 				const project = projectRegistry.get(request.params.projectId, projectRoot);

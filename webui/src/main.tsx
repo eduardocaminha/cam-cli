@@ -80,6 +80,7 @@ import {
 	startCodexLogin,
 	startDiagnostic,
 	startRun,
+	unregisterProject,
 	type WorkspaceNoticeView,
 } from './client.ts';
 import {
@@ -557,6 +558,15 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => registerProject(root).then((registered) => {
 					window.location.assign(`/projects/${encodeURIComponent(registered.id)}`);
 					return `${registered.name} registered.`;
+				}));
+			}}
+			// GSHIP-717: removing a project only drops its registration. The
+			// overview is the surface that still exists afterwards, and loading it
+			// rebuilds the project navigation from the registry.
+			onUnregisterProject={(projectId) => {
+				send(() => unregisterProject(projectId).then((removed) => {
+					window.location.assign('/overview');
+					return `${removed.name} removed from Gateship. Its files stay on disk.`;
 				}));
 			}}
 			onSelectIssue={setSelectedIssueId}

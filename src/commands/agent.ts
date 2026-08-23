@@ -10,7 +10,7 @@ export const AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES = 12 * 1024;
 export const AGENT_MAX_OUTPUT_BYTES = 64 * 1024;
 
 interface AgentOperation {
-	readonly method: 'GET' | 'POST' | 'PUT';
+	readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
 	readonly path: (input: Record<string, unknown>) => string;
 	readonly input: string;
 	readonly listField?: string;
@@ -38,6 +38,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },
+	'projects.unregister': { method: 'DELETE', path: projectRootPath, input: '{projectId}' },
 	'status.get': { method: 'GET', path: projectPath('/snapshot'), input: '{projectId}' },
 	'backlog.list': { method: 'GET', path: projectPath('/backlog'), input: '{projectId, limit?, offset?}' },
 	'issues.list': { method: 'GET', path: projectPath('/issues'), input: '{projectId, limit?, offset?}', listField: 'issues' },
@@ -63,6 +64,7 @@ const GUIDE = [
 	'Use issues.list and runs.list for discovery, then issues.get or runs.get for detail.',
 	'Use projects.list to select a projectId, then pass it to every project lifecycle operation.',
 	'Use projects.register with an absolute root to add a checkout that already exists on disk.',
+	'Use projects.unregister to drop a registration; it deletes no file and no project history.',
 	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
 	'Never invent operator approval or authorization; pass only explicit operator text.',
@@ -360,6 +362,19 @@ function httpError(payload: unknown, status: number): Record<string, unknown> {
 	});
 }
 
+/**
+ * The JSON an operation sends, or nothing at all. A read and a removal both
+ * name their whole target in the path, so neither carries a body.
+ */
+function requestBodyJson(
+	operation: AgentOperation,
+	name: string,
+	input: Record<string, unknown>,
+): string | undefined {
+	if (operation.method === 'GET' || operation.method === 'DELETE') return undefined;
+	return JSON.stringify(requestBody(name, input));
+}
+
 function requestBody(operation: string, input: Record<string, unknown>): Record<string, unknown> {
 	const { projectId: _projectId, ...projectInput } = input;
 	if (operation === 'brief.update') {
@@ -432,7 +447,7 @@ export async function executeAgent(
 		if (operationName === 'brief.update') {
 			headers['x-gateship-operator-authorization'] = requiredString(parsed.input, 'authorization');
 		}
-		const body = operation.method === 'GET' ? undefined : JSON.stringify(requestBody(operationName, parsed.input));
+		const body = requestBodyJson(operation, operationName, parsed.input);
 		if (body !== undefined) headers['content-type'] = 'application/json';
 		const { response, payload } = await readJsonResponse(
 			`${parsed.url}${operation.path(parsed.input)}`,
