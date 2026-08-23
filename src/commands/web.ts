@@ -275,6 +275,7 @@ interface ProjectCycleContext {
 	issueApprover: IssueApprover;
 	issueAbandoner: IssueAbandoner;
 	issueReader: (id: string) => IssueEntry | null;
+	orchestrator: OrchestratorRuntime;
 	close(): Promise<void>;
 }
 
@@ -2587,7 +2588,6 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsDiagnostics = options.diagnostics === undefined;
 	const ownsSelfUpdate = options.selfUpdate === undefined;
 	const ownsProviderAuth = options.providerAuth === undefined;
-	const ownsOrchestrator = options.orchestrator === undefined;
 	// Read once before constructing the runtime: every run this process creates
 	// records the same Gateship revision its stale-service notice uses. A
 	// container without a known build SHA falls back to the release version.
@@ -2674,7 +2674,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		get: () => runRuntime.getProjectBrief(),
 		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
 	};
-	const bootContext: ProjectCycleContext = {
+	const bootContext = {
 		root: projectRoot,
 		stateDir,
 		runtime: runRuntime,
@@ -2684,7 +2684,39 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		issueApprover,
 		issueAbandoner,
 		issueReader,
-		close: async () => undefined,
+	} as ProjectCycleContext;
+	bootContext.orchestrator = options.orchestrator?.((command) =>
+		executeOrchestratorCommand(
+			command,
+			bootContext.runtime,
+			bootContext.issueIntake,
+			bootContext.issueSpecifier,
+			bootContext.issueApprover,
+			bootContext.issueAbandoner,
+			{
+				start: () => { projectRuntimes.admitStart(currentProject.id); },
+				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
+			},
+		),
+	) ?? createDefaultOrchestrator(
+		projectRoot,
+		bootContext.runtime,
+		(command) => executeOrchestratorCommand(
+			command,
+			bootContext.runtime,
+			bootContext.issueIntake,
+			bootContext.issueSpecifier,
+			bootContext.issueApprover,
+			bootContext.issueAbandoner,
+			{
+				start: () => { projectRuntimes.admitStart(currentProject.id); },
+				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
+			},
+		),
+		resolveClaudeCredentialForSpawn,
+	);
+	bootContext.close = async () => {
+		if (options.orchestrator === undefined) await bootContext.orchestrator.stop();
 	};
 	const composeProjectRuntime = (project: RegisteredProject): ProjectCycleContext => {
 		const ensureIdentity = cachedGitIdentity(() => ensureGitIdentity(project.root));
@@ -2700,7 +2732,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			cwd: project.root,
 			stateDir: project.stateDir,
 		}));
-		return {
+		const context = {
 			root: project.root,
 			stateDir: project.stateDir,
 			runtime,
@@ -2710,12 +2742,44 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			...writers,
 			issueReader: (id) => readPublishedIssue(project.root, id),
-			close: async () => {
-				unsubscribe();
-				await runtime.stop();
-				runtime.close();
-			},
+		} as ProjectCycleContext;
+		context.orchestrator = options.orchestrator?.((command) =>
+			executeOrchestratorCommand(
+				command,
+				context.runtime,
+				context.issueIntake,
+				context.issueSpecifier,
+				context.issueApprover,
+				context.issueAbandoner,
+				{
+					start: () => { projectRuntimes.admitStart(project.id); },
+					resume: (runId) => { projectRuntimes.admitResume(project.id, runId); },
+				},
+			),
+		) ?? createDefaultOrchestrator(
+			project.root,
+			context.runtime,
+			(command) => executeOrchestratorCommand(
+				command,
+				context.runtime,
+				context.issueIntake,
+				context.issueSpecifier,
+				context.issueApprover,
+				context.issueAbandoner,
+				{
+					start: () => { projectRuntimes.admitStart(project.id); },
+					resume: (runId) => { projectRuntimes.admitResume(project.id, runId); },
+				},
+			),
+			resolveClaudeCredentialForSpawn,
+		);
+		context.close = async () => {
+			unsubscribe();
+			if (options.orchestrator === undefined) await context.orchestrator.stop();
+			await runtime.stop();
+			runtime.close();
 		};
+		return context;
 	};
 	const projectRuntimes = new ProjectRuntimeManager(
 		projectRegistry,
@@ -2723,16 +2787,6 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		composeProjectRuntime,
 	);
 	projectRuntimes.register(currentProject.id, bootContext);
-	const execute = (command: OrchestratorCommand): Promise<string> =>
-		executeOrchestratorCommand(
-			command, runRuntime, issueIntake, issueSpecifier, issueApprover, issueAbandoner,
-			{
-				start: () => { projectRuntimes.admitStart(currentProject.id); },
-				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
-			},
-		);
-	const orchestrator = options.orchestrator?.(execute)
-		?? createDefaultOrchestrator(options.cwd, runRuntime, execute, resolveClaudeCredentialForSpawn);
 	const assets = resolveWebAssets();
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
@@ -2875,6 +2929,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				PUT: (request) => projectOperation(
 					request.params.projectId,
 					(context) => writeProjectBrief(request, context.projectBrief),
+				),
+			},
+			'/api/projects/:projectId/chat': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json({ messages: context.orchestrator.listMessages() }),
+				),
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => converse(request, context.orchestrator),
 				),
 			},
 			'/api/projects/:projectId/issues': {
@@ -3090,8 +3154,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				),
 			},
 			'/api/chat': {
-				GET: () => Response.json({ messages: orchestrator.listMessages() }),
-				POST: (request) => converse(request, orchestrator),
+				GET: () => Response.json({ messages: bootContext.orchestrator.listMessages() }),
+				POST: (request) => converse(request, bootContext.orchestrator),
 			},
 			'/api/providers/:providerId/select': {
 				POST: (request) => selectProvider(
@@ -3231,7 +3295,6 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			await projectRuntimes.close();
 			unsubscribeRemoteNotifier();
 			await selfUpdate.stop();
-			if (ownsOrchestrator) await orchestrator.stop();
 			await diagnostics.stop();
 			await runRuntime.stop();
 			if (ownsProviderAuth) await providerAuth.close();

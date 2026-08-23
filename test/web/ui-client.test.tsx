@@ -3256,21 +3256,27 @@ describe('operator shell', () => {
 		})).toContain('That repository is already a checkout of a different one.');
 	});
 
-	test('a non-current project keeps conversation and settings unavailable', () => {
-		for (const suffix of ['', '/settings']) {
-			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
-				projects: [CURRENT_PROJECT, OTHER_PROJECT],
-				runs: [runIn('interrupted')],
-			});
-			expect(html).toContain('other-product');
-			expect(html).toContain('acme/other-product');
-			expect(html).toContain('Project runtime not loaded');
-			expect(html).not.toContain('CAM-900');
-			expect(html).not.toContain('acme/gateship');
-			expect(html).not.toContain('>Resume<');
-			expect(html).not.toContain('>Start<');
-			expect(html).not.toContain('Operator profile');
-		}
+	test('a ready non-current project has conversation while settings stay unavailable', () => {
+		const conversation = renderAt('/projects/project-other', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+		});
+		expect(conversation).toContain('Conversation with the orchestrator');
+		expect(conversation).toContain('/projects/project-other/runs');
+		expect(conversation).not.toContain('Project runtime not loaded');
+
+		const settings = renderAt('/projects/project-other/settings', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+		});
+		expect(settings).toContain('other-product');
+		expect(settings).toContain('acme/other-product');
+		expect(settings).toContain('Project runtime not loaded');
+		expect(settings).not.toContain('CAM-900');
+		expect(settings).not.toContain('acme/gateship');
+		expect(settings).not.toContain('>Resume<');
+		expect(settings).not.toContain('>Start<');
+		expect(settings).not.toContain('Operator profile');
 	});
 
 	// GSHIP-717: removal is offered on the selected non-current project, states
@@ -3294,7 +3300,7 @@ describe('operator shell', () => {
 				submit: 'Remover projeto',
 			},
 		]) {
-			const html = renderAt('/projects/project-other', {
+			const html = renderAt('/projects/project-other/settings', {
 				locale: expected.locale,
 				projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			});
@@ -3307,7 +3313,7 @@ describe('operator shell', () => {
 			expect(buttonIsEnabled(html, expected.submit)).toBe(false);
 		}
 		// A typed refusal reaches the operator on the surface that asked for it.
-		expect(renderAt('/projects/project-other', {
+		expect(renderAt('/projects/project-other/settings', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			status: 'Run run-1 is still working. Finish, cancel or abandon it before removing this project.',
 		})).toContain('Finish, cancel or abandon it before removing this project.');

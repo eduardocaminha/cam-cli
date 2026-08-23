@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-723",
   "title": "Isolar conversa e brief por projeto selecionado",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T12:25:37.089Z",
-  "updatedAt": "2026-08-23T12:29:05.638Z",
+  "updatedAt": "2026-08-23T12:34:54.981Z",
   "description": "Fazer cada projeto registrado e pronto possuir uma instância conversacional própria, composta sobre seu ProjectCycleContext e seu runtime.sqlite, de modo que sessão nativa por provider, transcript, handoff, brief, snapshot e comandos nunca atravessem projetos. Adicionar GET/POST /api/projects/:projectId/chat sob o mesmo guard tipado das demais rotas; o POST deve executar comandos somente nos writers e runtime do projeto solicitado e usar a admissão existente para start/resume. Manter /api/chat e /api/brief como aliases compatíveis apenas do projeto de boot, sem duplicar estado. Tornar fetchChat, sendChat, fetchBrief e saveBrief explicitamente escopados pelo projectId da rota; habilitar a superfície de conversa para qualquer projeto registrado ready e garantir que links e run inspector permaneçam no projeto selecionado, não no projeto marcado current. Permitir conversas simultâneas em projetos distintos, mas preservar a serialização global atual para runs. Projeto desconhecido ou não pronto deve receber a recusa tipada existente sem criar sessão, mensagem ou contexto. Preservar provider auth, modelo, effort, notificações, diagnósticos e demais ajustes como estão; separar padrões globais de políticas por projeto fica fora do escopo. Não migrar nem copiar transcript, sessão, handoff ou brief entre projetos e não remover rotas legadas.",
   "specSource": "operator",
   "spec": {

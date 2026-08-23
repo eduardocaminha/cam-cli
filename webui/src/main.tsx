@@ -227,8 +227,8 @@ function useOperationalRun(): {
 			fetchRuns(SELECTED_PROJECT_ID),
 			fetchBacklog(SELECTED_PROJECT_ID),
 			fetchProviders(),
-			fetchChat(),
-			fetchBrief(),
+			fetchChat(SELECTED_PROJECT_ID),
+			fetchBrief(SELECTED_PROJECT_ID),
 			fetchProposals(),
 			fetchResolvedProposals(),
 			fetchModelSettings(),
@@ -539,7 +539,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => promoteProposal(proposalId, draft).then((created) =>
 					`${created.id} created from the proposal.`));
 			}}
-			onSendMessage={(message) => send(() => sendChat(message))}
+			onSendMessage={(message) => send(() => sendChat(message, SELECTED_PROJECT_ID))}
 			onConnectCodex={() => {
 				const loginWindow = window.open('about:blank', 'gateship-codex-login');
 				send(() => startCodexLogin().then((authUrl) => {
@@ -564,7 +564,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 					send(() => commandRun(SELECTED_PROJECT_ID, run.id, 'resume', operatorGuidance));
 				}
 			}}
-			onSaveBrief={(draft) => send(() => saveBrief(draft))}
+			onSaveBrief={(draft) => send(() => saveBrief(draft, SELECTED_PROJECT_ID))}
 			onSaveDiagnosticSchedule={(enabled, cadence) =>
 				send(() => saveDiagnosticSchedule(enabled, cadence))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
