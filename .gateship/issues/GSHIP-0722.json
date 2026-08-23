@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T07:53:29.058Z",
-  "updatedAt": "2026-08-23T07:53:29.058Z",
+  "updatedAt": "2026-08-23T11:24:28.963Z",
   "description": "Adicionar uma política explícita e opt-in para transferir somente o papel executor entre Claude e Codex quando a chamada primária terminar em usage-limit ou rate-limited. O padrão permanece desabilitado; o operador escolhe nas configurações se admite uma única alternativa por run. A transferência preserva issue, worktree, branch, PR, decisões e evidências, mas abre uma sessão nativa nova no provider alternativo com um handoff derivado do estado durável e do diff atual; nunca reutiliza sessionId de outro provider nem reexecuta cegamente o prompt inicial. Persistir sessões por provider de modo recuperável após reinício, manter providerId histórico como origem e registrar em evento durável o provider primário, alternativo, papel, motivo, modelo, effort, tentativa, sessão e resultado. Derivar custo e configuração do papel executor do provider realmente invocado. Permitir no máximo uma transferência, sem ping-pong; se a alternativa falhar, preservar o hold original e obedecer retryAt ou pedir decisão conforme a política existente. Não transferir em auth-required, model-refused, transport-unavailable, protocol-invalid, cancelled ou unknown. Expor na UI que houve handoff de executor e sua origem, sem apresentar saldo inventado. Fora do escopo: balanceamento preditivo da janela semanal, modelos locais, barramento universal e seleção estatística automática de modelo.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/agent-executor-router.test.ts test/runtime/run-runtime.test.ts test/runtime/run-evaluation.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "f850aac881eb7f60824c143af211d1deb8a0a064dae22401f480106b4b19419d",
+    "approvedAt": "2026-08-23T11:24:28.963Z"
   }
 }
