@@ -44,7 +44,13 @@ import {
 	ProposalTransitionError,
 	type RunProposal,
 } from './run-proposal.ts';
-import { isRunState, nextFixRounds, type RunState } from './run-state.ts';
+import {
+	isRunState,
+	isTerminalRunState,
+	nextFixRounds,
+	RUN_STATES,
+	type RunState,
+} from './run-state.ts';
 
 export interface RunRecord {
 	id: string;
@@ -106,6 +112,38 @@ export function readPersistedRunStatuses(path: string, limit = 20): PersistedRun
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
 		}));
+	} finally {
+		db.close();
+	}
+}
+
+const NON_TERMINAL_RUN_STATES = RUN_STATES.filter((state) => !isTerminalRunState(state));
+
+/**
+ * The newest run a project has not finished, read the same strictly read-only
+ * way the status projection above is. Unregistering a project (GSHIP-717) asks
+ * exactly this of a checkout whose runtime this process may never have opened,
+ * so the question is answered from the durable file instead of from a runtime
+ * that would have to be composed to ask it.
+ */
+export function readActivePersistedRun(path: string): PersistedRunStatus | null {
+	const db = openReadOnlyDatabase(path);
+	try {
+		const row = db.query(`
+			SELECT id, issue_id, state, created_at, updated_at
+			FROM runs
+			WHERE state IN (${NON_TERMINAL_RUN_STATES.map(() => '?').join(', ')})
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1
+		`).get(...NON_TERMINAL_RUN_STATES) as PersistedRunStatusRow | null;
+		if (row === null) return null;
+		return {
+			id: row.id,
+			issueId: row.issue_id,
+			state: decodeState(row.state),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		};
 	} finally {
 		db.close();
 	}

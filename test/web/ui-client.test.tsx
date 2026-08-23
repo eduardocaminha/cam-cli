@@ -94,6 +94,7 @@ import {
 	startCodexLogin,
 	startDiagnostic,
 	startRun,
+	unregisterProject,
 	UPDATE_PATH,
 } from '../../webui/src/client.ts';
 import {
@@ -314,6 +315,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onPromoteProposal={() => {}}
 			onPromoteDiagnosticFinding={() => {}}
 			onRegisterProject={() => {}}
+			onUnregisterProject={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
 			onSaveDiagnosticSchedule={() => {}}
@@ -3070,6 +3072,54 @@ describe('operator shell', () => {
 		}
 	});
 
+	// GSHIP-717: removal is offered on the selected non-current project, states
+	// that nothing on disk goes, and stays behind an explicit confirmation.
+	test('a non-current project offers a confirmed removal that keeps its files, in both locales', () => {
+		for (const expected of [
+			{
+				locale: 'en-US' as const,
+				title: 'Remove this project from Gateship',
+				description: 'Removal only drops the registration',
+				filesRemain: 'Nothing is deleted: the checkout, its .gship state, worktrees, branches, runs, issues and its GitHub repository all stay on disk',
+				confirm: 'Remove other-product from the registry and keep every file it has.',
+				submit: 'Remove project',
+			},
+			{
+				locale: 'pt-BR' as const,
+				title: 'Remover este projeto do Gateship',
+				description: 'A remoção só tira o registro',
+				filesRemain: 'Nada é apagado: o checkout, o estado em .gship, worktrees, branches, runs, issues e o repositório no GitHub continuam no disco',
+				confirm: 'Remover other-product do registro e manter todos os seus arquivos.',
+				submit: 'Remover projeto',
+			},
+		]) {
+			const html = renderAt('/projects/project-other', {
+				locale: expected.locale,
+				projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			});
+			expect(html).toContain(`>${expected.title}</h2>`);
+			expect(html).toContain(expected.description);
+			expect(html).toContain(expected.filesRemain);
+			expect(html).toContain(`>${expected.confirm}</span>`);
+			expect(html).toContain('name="project-unregister-confirm"');
+			// The action is offered, and refused until the operator confirms it.
+			expect(buttonIsEnabled(html, expected.submit)).toBe(false);
+		}
+		// A typed refusal reaches the operator on the surface that asked for it.
+		expect(renderAt('/projects/project-other', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			status: 'Run run-1 is still working. Finish, cancel or abandon it before removing this project.',
+		})).toContain('Finish, cancel or abandon it before removing this project.');
+	});
+
+	test('removal is never offered for the project this instance serves', () => {
+		for (const route of ['/overview', '/projects/project-current', '/projects/project-current/settings'] as const) {
+			const html = renderAt(route, { projects: [CURRENT_PROJECT, OTHER_PROJECT] });
+			expect(html).not.toContain('Remove this project from Gateship');
+			expect(html).not.toContain('name="project-unregister-confirm"');
+		}
+	});
+
 	test('runs is operational for a ready non-current project and commands it', () => {
 		const html = renderAt('/projects/project-other/runs', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
@@ -3872,6 +3922,29 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
 			await expect(registerProject('/other-product'))
 				.rejects.toThrow('unreadable project registration');
+		});
+	});
+
+	test('removes a registration through the same route, and keeps its refusal typed', async () => {
+		await withRecordedFetch({ ok: true, project: OTHER_PROJECT }, 200, async (calls) => {
+			expect(await unregisterProject('project / other')).toEqual(OTHER_PROJECT);
+			expect(calls).toEqual([{
+				url: `${PROJECTS_PATH}/project%20%2F%20other`,
+				method: 'DELETE',
+				body: null,
+			}]);
+		});
+		await withRecordedFetch(
+			{ ok: false, code: 'project-has-active-run', message: 'Run run-1 is still working.' },
+			409,
+			async () => {
+				await expect(unregisterProject('project-other'))
+					.rejects.toThrow('Run run-1 is still working.');
+			},
+		);
+		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
+			await expect(unregisterProject('project-other'))
+				.rejects.toThrow('unreadable project removal');
 		});
 	});
 

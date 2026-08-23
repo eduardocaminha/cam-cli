@@ -281,6 +281,12 @@ export interface AppProps {
 	 * adds a project to them.
 	 */
 	onRegisterProject: (root: string) => void;
+	/**
+	 * Drop a project's registration (GSHIP-717). Offered for a selected project
+	 * this process does not serve, and it removes nothing but the registry row:
+	 * the checkout and everything it owns stay on disk.
+	 */
+	onUnregisterProject: (projectId: string) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -2872,6 +2878,57 @@ function RegisterProjectPanel({
 	);
 }
 
+/**
+ * Removing a project is a registry write and nothing else, so the copy says
+ * exactly that and the explicit confirmation is the same checkbox gate the
+ * approve and abandon actions already use -- no second dialog, no new
+ * confirmation surface.
+ */
+function UnregisterProjectPanel({
+	catalog,
+	pending,
+	project,
+	onUnregisterProject,
+}: Pick<AppProps, 'pending' | 'onUnregisterProject'> & {
+	catalog: ProjectsCatalog;
+	project: RegisteredProjectView;
+}): React.ReactElement {
+	const [confirmed, setConfirmed] = useState(false);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{catalog.remove.title}</CardTitle>
+				<CardDescription>{catalog.remove.description}</CardDescription>
+			</CardHeader>
+			<CardPanel className="flex flex-col gap-3">
+				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
+				<label className="flex items-start gap-2 text-sm">
+					<input
+						checked={confirmed}
+						disabled={pending}
+						name="project-unregister-confirm"
+						onChange={(event) =>
+							setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)}
+						type="checkbox"
+					/>
+					<span>{catalog.remove.confirm(project.name)}</span>
+				</label>
+				<button
+					className={BUTTON_CLASS}
+					disabled={pending || !confirmed}
+					onClick={() => {
+						setConfirmed(false);
+						onUnregisterProject(project.id);
+					}}
+					type="button"
+				>
+					{catalog.remove.submit}
+				</button>
+			</CardPanel>
+		</Card>
+	);
+}
+
 function OverviewSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].projects;
 	return (
@@ -2907,7 +2964,13 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 	);
 }
 
-function UnavailableProjectSurface({ project, locale, status }: {
+function UnavailableProjectSurface({
+	project,
+	locale,
+	pending,
+	status,
+	onUnregisterProject,
+}: Pick<AppProps, 'pending' | 'onUnregisterProject'> & {
 	project: RegisteredProjectView;
 	locale: Locale;
 	status: string | null;
@@ -2926,6 +2989,12 @@ function UnavailableProjectSurface({ project, locale, status }: {
 					<p className="text-muted-foreground text-sm">{catalog.unavailableDescription}</p>
 				</CardPanel>
 			</Card>
+			<UnregisterProjectPanel
+				catalog={catalog}
+				onUnregisterProject={onUnregisterProject}
+				pending={pending}
+				project={project}
+			/>
 		</SurfaceColumn>
 	);
 }
@@ -3977,6 +4046,8 @@ function NonCurrentProjectSurface({
 	return (
 		<UnavailableProjectSurface
 			locale={props.locale}
+			onUnregisterProject={props.onUnregisterProject}
+			pending={props.pending}
 			project={selectedProject}
 			status={props.status}
 		/>

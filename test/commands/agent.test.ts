@@ -65,7 +65,8 @@ describe('canonical agent CLI', () => {
 		const result = await executeAgent(['operations']);
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
-			'project.inspect', 'projects.list', 'projects.status', 'projects.register', 'status.get',
+			'project.inspect', 'projects.list', 'projects.status', 'projects.register',
+			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
@@ -75,6 +76,8 @@ describe('canonical agent CLI', () => {
 			.toContain('fingerprint');
 		// Onboarding names a location, never a project that does not exist yet.
 		expect(operations.find(({ name }) => name === 'projects.register')?.input).toBe('{root}');
+		// Removing one names the registration, never a location on disk.
+		expect(operations.find(({ name }) => name === 'projects.unregister')?.input).toBe('{projectId}');
 		for (const operation of operations.filter(({ name }) =>
 			!['project.inspect', 'projects.list', 'projects.status', 'projects.register'].includes(name))) {
 			expect(operation.input).toContain('projectId');
@@ -149,6 +152,55 @@ describe('canonical agent CLI', () => {
 				result: { project: { id: 'project-2', root: '/workspace/product', current: false } },
 			},
 		});
+	});
+
+	// GSHIP-717: the CLI and the screen call the same service function through
+	// the same route, so the operation carries no body and no path of its own.
+	test('unregisters a project through the registry route the screen deletes', async () => {
+		let requested = '';
+		let sent: { method?: string; body?: unknown } = {};
+		const result = await executeAgent([
+			'call', 'projects.unregister', '--input', '{"projectId":"project / 2"}',
+		], async (url, init) => {
+			requested = String(url);
+			sent = { method: init?.method, body: init?.body ?? null };
+			return jsonResponse({ ok: true, project: {
+				id: 'project / 2', name: 'product', root: '/workspace/product',
+				stateDir: '/workspace/product/.gship', readiness: 'ready',
+				repository: 'acme/product', current: false,
+			} });
+		});
+		expect(requested).toBe('http://127.0.0.1:7777/api/projects/project%20%2F%202');
+		expect(sent).toEqual({ method: 'DELETE', body: null });
+		expect(result).toMatchObject({
+			exitCode: 0,
+			output: {
+				ok: true,
+				operation: 'projects.unregister',
+				result: { project: { id: 'project / 2', root: '/workspace/product' } },
+			},
+		});
+	});
+
+	test('surfaces the typed removal refusals without retrying or deleting anything', async () => {
+		for (const refusal of [
+			{ code: 'project-is-current', status: 409, message: 'Run Gateship from another checkout to remove this one.' },
+			{ code: 'project-has-active-run', status: 409, message: 'Run run-1 is still working.' },
+			{ code: 'project-not-found', status: 404, message: 'Project not found.' },
+		]) {
+			let calls = 0;
+			const result = await executeAgent([
+				'call', 'projects.unregister', '--input', '{"projectId":"project-2"}',
+			], async () => {
+				calls += 1;
+				return jsonResponse({ ok: false, code: refusal.code, message: refusal.message }, refusal.status);
+			});
+			expect(calls).toBe(1);
+			expect(result).toMatchObject({
+				exitCode: 1,
+				output: { ok: false, code: refusal.code, message: refusal.message, httpStatus: refusal.status },
+			});
+		}
 	});
 
 	test('surfaces a typed registration refusal with the readiness detail behind it', async () => {

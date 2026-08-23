@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-717",
   "title": "Remover registro de projeto sem apagar dados",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T04:13:36.632Z",
-  "updatedAt": "2026-08-23T04:13:49.985Z",
+  "updatedAt": "2026-08-23T04:30:58.731Z",
   "description": "Add one reversible multi-project seam: unregister a project from the global Gateship registry without deleting or mutating its checkout, .gship state, worktrees, branches, runs, issues, Git metadata, or GitHub repository.\n\nAcceptance criteria:\n1. ProjectRegistry exposes a deterministic unregister operation by project ID and returns a typed not-found result when the ID is unknown.\n2. The checkout used to boot the running Gateship process cannot be unregistered; return a clear typed conflict because startup reconciliation would immediately restore it.\n3. A non-current project with a non-terminal active run cannot be unregistered; return a clear typed conflict and leave the registry unchanged.\n4. Successful unregister removes only the row from the global projects registry. It performs no filesystem deletion and no git, gh, network, provider, or process command.\n5. Add trusted-origin DELETE /api/projects/:projectId with stable JSON success and typed error responses.\n6. Add agent operation projects.unregister with input {projectId}; CLI and HTTP use the same service function.\n7. Add a localized en-US/pt-BR removal action and explicit confirmation in the selected non-current project's UI. Copy must state that files and project history remain on disk. After success navigate to Overview and refresh project navigation.\n8. Do not add a deletion queue, tombstones, soft-delete schema, cascade, daemon, dependency, or extra confirmation framework.\n9. Cover registry/service behavior, current-project refusal, active-run refusal, API origin/error mapping, agent CLI mapping, UI confirmation/copy/navigation, and the invariant that project files are untouched.",
   "specSource": "operator",
   "spec": {

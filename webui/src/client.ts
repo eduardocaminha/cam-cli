@@ -459,7 +459,7 @@ interface ProjectsPayload {
 	projects?: unknown[];
 }
 
-interface RegisterProjectPayload extends CommandPayload {
+interface ProjectCommandPayload extends CommandPayload {
 	project?: unknown;
 }
 
@@ -662,12 +662,30 @@ export async function registerProject(root: string): Promise<RegisteredProjectVi
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ root }),
 	});
-	const payload = (await response.json()) as RegisterProjectPayload;
+	const payload = (await response.json()) as ProjectCommandPayload;
 	if (!response.ok) {
 		throw new Error(payload.message ?? `Project registration rejected (${response.status}).`);
 	}
 	const project = registeredProjectRecord(payload.project);
 	if (project === null) throw new Error('Gateship returned an unreadable project registration.');
+	return project;
+}
+
+/**
+ * Remove a project from the global registry (GSHIP-717). The service deletes
+ * nothing on disk, so the only failure the operator has to act on is a typed
+ * refusal: the current checkout, or a project with a run still going.
+ */
+export async function unregisterProject(projectId: string): Promise<RegisteredProjectView> {
+	const response = await fetch(`${PROJECTS_PATH}/${encodeURIComponent(projectId)}`, {
+		method: 'DELETE',
+	});
+	const payload = (await response.json()) as ProjectCommandPayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Project removal rejected (${response.status}).`);
+	}
+	const project = registeredProjectRecord(payload.project);
+	if (project === null) throw new Error('Gateship returned an unreadable project removal.');
 	return project;
 }
 
