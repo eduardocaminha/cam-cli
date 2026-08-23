@@ -307,14 +307,16 @@ describe('Claude CLI runtime executor', () => {
 	});
 
 	test('accepts only the two structured executor outcomes', () => {
-		expect(parseExecutionResult({ status: 'completed', summary: 'done', proposals: [] })).toEqual({
+		expect(parseExecutionResult({ status: 'completed', summary: 'done', proposals: [], reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toEqual({
 			outcome: 'completed',
 			summary: 'done',
 			proposals: [],
+			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
 		});
-		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B' })).toEqual({
+		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B', reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } })).toEqual({
 			outcome: 'waiting-user',
 			summary: 'choose A or B',
+			reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' },
 		});
 		expect(() => parseExecutionResult({ status: 'unknown', summary: 'no' })).toThrow(
 			'invalid structured run status',
@@ -412,6 +414,7 @@ describe('Claude CLI runtime executor', () => {
 		expect(parseExecutionResult({
 			status: 'completed',
 			summary: 'done',
+			reconciliation: { outcome: 'adapted', summary: 'mechanical drift only' },
 			proposals: [
 				{ title: '  Extrair o parser  ', evidence: '  Duplicado em dois adaptadores.  ' },
 				{ title: '', evidence: 'sem título' },
@@ -422,6 +425,7 @@ describe('Claude CLI runtime executor', () => {
 		})).toEqual({
 			outcome: 'completed',
 			summary: 'done',
+			reconciliation: { outcome: 'adapted', summary: 'mechanical drift only' },
 			proposals: [
 				{ title: 'Extrair o parser', evidence: 'Duplicado em dois adaptadores.' },
 				{ title: 'Ideia 2', evidence: 'Evidência 2.' },
@@ -429,17 +433,30 @@ describe('Claude CLI runtime executor', () => {
 			],
 		});
 		// A missing or malformed array never fails an otherwise valid result.
-		expect(parseExecutionResult({ status: 'completed', summary: 'done' })).toEqual({
+		expect(parseExecutionResult({ status: 'completed', summary: 'done', reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toEqual({
 			outcome: 'completed',
 			summary: 'done',
+			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
 			proposals: [],
 		});
 		// This slice captures nothing from a paused turn.
 		expect(parseExecutionResult({
 			status: 'waiting-user',
 			summary: 'choose A or B',
+			reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' },
 			proposals: [{ title: 'Ideia', evidence: 'Evidência.' }],
-		})).toEqual({ outcome: 'waiting-user', summary: 'choose A or B' });
+		})).toEqual({ outcome: 'waiting-user', summary: 'choose A or B', reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } });
+		expect(() => parseExecutionResult({
+			status: 'completed',
+			summary: 'done',
+			proposals: [],
+			reconciliation: { outcome: 'contract-change-required', summary: 'needs approval' },
+		})).toThrow('invalid structured run status');
+		expect(() => parseExecutionResult({
+			status: 'waiting-user',
+			summary: 'choose',
+			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
+		})).toThrow('invalid structured run status');
 	});
 
 	// GSHIP-623: the cost and usage the CLI already reports on the result event,
@@ -761,6 +778,10 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 			'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 			'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 			`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+			'The fresh worktree and the current main are the sources of truth. Before editing, compare the current code with the approved contract below.',
+			'Adapt autonomously only files, seams, dependencies and mechanical details changed by earlier deliveries. Never ask the operator about purely technical drift.',
+			'Report reconciliation as unchanged when the approved contract still maps directly to the current code, adapted when only that technical drift was incorporated, or contract-change-required when the objective, observable acceptance, risk, exclusions, evidence or verify commands must change.',
+			'Use status completed only with reconciliation outcome unchanged or adapted. Use status waiting-user only with contract-change-required, and summarize the exact decision required.',
 			'',
 			...OPERATOR_LANGUAGE_CONTRACT,
 			'',

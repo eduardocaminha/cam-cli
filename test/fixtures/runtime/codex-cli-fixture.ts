@@ -52,6 +52,10 @@ if (mode === 'wait') {
 			proposals: proposal === undefined
 				? []
 				: [{ title: proposal, evidence: 'fixture evidence' }],
+			reconciliation: {
+				outcome: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
+				summary: 'fixture reconciliation',
+			},
 		};
 	process.stdout.write(`${JSON.stringify({
 		type: 'item.completed',
