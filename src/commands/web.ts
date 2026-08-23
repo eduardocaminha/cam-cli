@@ -115,7 +115,10 @@ import {
 	ProjectRuntimeManager,
 	type ManagedProjectRuntime,
 } from '../runtime/project-runtime-manager.ts';
-import { readProjectOperationalStatus } from '../runtime/project-status.ts';
+import {
+	readProjectOperationalOverview,
+	readProjectOperationalStatus,
+} from '../runtime/project-status.ts';
 import {
 	ProjectUnregistrationError,
 	unregisterProject,
@@ -2864,6 +2867,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/overview': () => Response.json(readProjectOperationalOverview(projectRegistry.list(projectRoot))),
 			'/api/projects': {
 				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),

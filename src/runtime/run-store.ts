@@ -119,6 +119,45 @@ export function readPersistedRunStatuses(path: string, limit = 20): PersistedRun
 
 const NON_TERMINAL_RUN_STATES = RUN_STATES.filter((state) => !isTerminalRunState(state));
 
+export interface PersistedRunOverview {
+	activeRun: PersistedRunStatus | null;
+	nonTerminalRuns: number;
+}
+
+/**
+ * Reads the unbounded operational run facts without composing a runtime.
+ * The recent-run window remains separately bounded by readPersistedRunStatuses.
+ */
+export function readPersistedRunOverview(path: string): PersistedRunOverview {
+	const db = openReadOnlyDatabase(path);
+	try {
+		const activeRow = db.query(`
+			SELECT id, issue_id, state, created_at, updated_at
+			FROM runs
+			WHERE state IN (${NON_TERMINAL_RUN_STATES.map(() => '?').join(', ')})
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1
+		`).get(...NON_TERMINAL_RUN_STATES) as PersistedRunStatusRow | null;
+		const countRow = db.query(`
+			SELECT COUNT(*) AS count
+			FROM runs
+			WHERE state IN (${NON_TERMINAL_RUN_STATES.map(() => '?').join(', ')})
+		`).get(...NON_TERMINAL_RUN_STATES) as { count: number };
+		return {
+			activeRun: activeRow === null ? null : {
+				id: activeRow.id,
+				issueId: activeRow.issue_id,
+				state: decodeState(activeRow.state),
+				createdAt: activeRow.created_at,
+				updatedAt: activeRow.updated_at,
+			},
+			nonTerminalRuns: countRow.count,
+		};
+	} finally {
+		db.close();
+	}
+}
+
 /**
  * The newest run a project has not finished, read the same strictly read-only
  * way the status projection above is. Unregistering a project (GSHIP-717) asks
