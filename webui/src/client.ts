@@ -68,6 +68,26 @@ function briefPathOf(scope: ProjectScope): string {
 	return scope === null ? BRIEF_PATH : projectApiPath(scope, '/brief');
 }
 
+function providersPathOf(scope: ProjectScope): string {
+	return scope === null ? PROVIDERS_PATH : projectApiPath(scope, '/providers');
+}
+
+function modelSettingsPathOf(scope: ProjectScope): string {
+	return scope === null ? MODEL_SETTINGS_PATH : projectApiPath(scope, '/model-settings');
+}
+
+function chainRunsPathOf(scope: ProjectScope): string {
+	return scope === null ? CHAIN_RUNS_PATH : projectApiPath(scope, '/chain-runs');
+}
+
+function executorHandoffPathOf(scope: ProjectScope): string {
+	return scope === null ? EXECUTOR_HANDOFF_PATH : projectApiPath(scope, '/executor-handoff');
+}
+
+function projectStatusPathOf(scope: ProjectScope): string {
+	return scope === null ? PROJECT_PATH : projectApiPath(scope, '/status');
+}
+
 /**
  * The issue collection of the selected project (GSHIP-712), derived from the
  * same scope runs already use so intake, specification, approval and abandon
@@ -607,6 +627,22 @@ export async function fetchBacklog(scope: ProjectScope): Promise<BacklogSnapshot
  */
 function projectRecord(record: Record<string, unknown> | undefined): ProjectStatusView {
 	const name = typeof record?.['name'] === 'string' ? record['name'] : '';
+	// Project-scoped status is served by the registry's operational-status
+	// route, whose nested project keeps `readiness` rather than the boot
+	// project's inspect shape. The selected project is already registry-owned;
+	// preserve that ready identity without treating it as an invalid payload.
+	if (record?.['readiness'] === 'ready') {
+		const repository = record['repository'];
+		if (typeof repository === 'string') {
+			return {
+				state: 'ready',
+				name,
+				repository,
+				remoteUrl: '',
+				sourceRef: 'origin/main',
+			};
+		}
+	}
 	const detail = typeof record?.['detail'] === 'string'
 		? record['detail']
 		: 'The service did not report a valid project state.';
@@ -631,8 +667,8 @@ function projectRecord(record: Record<string, unknown> | undefined): ProjectStat
 	return { state: 'needs-attention', name, reason: 'not-repository', detail };
 }
 
-export async function fetchProjectStatus(): Promise<ProjectStatusView> {
-	const payload = await readJson<ProjectPayload>(await fetch(PROJECT_PATH), 'Project');
+export async function fetchProjectStatus(scope: ProjectScope = null): Promise<ProjectStatusView> {
+	const payload = await readJson<ProjectPayload>(await fetch(projectStatusPathOf(scope)), 'Project');
 	return projectRecord(payload.project);
 }
 
@@ -875,8 +911,8 @@ export interface ProvidersSnapshot {
 	selected: ProviderStatusView['id'];
 }
 
-export async function fetchProviders(): Promise<ProvidersSnapshot> {
-	const payload = await readJson<ProvidersPayload>(await fetch(PROVIDERS_PATH), 'Providers');
+export async function fetchProviders(scope: ProjectScope = null): Promise<ProvidersSnapshot> {
+	const payload = await readJson<ProvidersPayload>(await fetch(providersPathOf(scope)), 'Providers');
 	return { providers: payload.providers ?? [], selected: payload.selected ?? 'claude' };
 }
 
@@ -958,9 +994,9 @@ function modelSettingsRecord(value: unknown): ModelSettingsView {
 	return settings;
 }
 
-export async function fetchModelSettings(): Promise<ModelSettingsView> {
+export async function fetchModelSettings(scope: ProjectScope = null): Promise<ModelSettingsView> {
 	const payload = await readJson<ModelSettingsPayload>(
-		await fetch(MODEL_SETTINGS_PATH),
+		await fetch(modelSettingsPathOf(scope)),
 		'Models',
 	);
 	return modelSettingsRecord(payload.settings);
@@ -1000,8 +1036,8 @@ function describeModelProbes(value: unknown): string {
  * message. A slot the CLI probed comes back with its own outcome, folded into
  * the same status line every other command already reports through.
  */
-export async function saveModelSettings(settings: ModelSettingsView): Promise<string> {
-	const response = await fetch(MODEL_SETTINGS_PATH, {
+export async function saveModelSettings(settings: ModelSettingsView, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(modelSettingsPathOf(scope), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(settings),
@@ -1112,13 +1148,13 @@ function chainPauseRecord(value: Partial<ChainPauseView> | null | undefined): Ch
 	};
 }
 
-export async function fetchChainRuns(): Promise<ChainRunsView> {
-	const payload = await readJson<ChainRunsPayload>(await fetch(CHAIN_RUNS_PATH), 'Run chaining');
+export async function fetchChainRuns(scope: ProjectScope = null): Promise<ChainRunsView> {
+	const payload = await readJson<ChainRunsPayload>(await fetch(chainRunsPathOf(scope)), 'Run chaining');
 	return { enabled: payload.enabled === true, pause: chainPauseRecord(payload.pause) };
 }
 
-export async function saveChainRuns(enabled: boolean): Promise<string> {
-	const response = await fetch(CHAIN_RUNS_PATH, {
+export async function saveChainRuns(enabled: boolean, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(chainRunsPathOf(scope), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ enabled }),
@@ -1137,13 +1173,13 @@ interface ExecutorHandoffPayload extends CommandPayload {
 	enabled?: boolean;
 }
 
-export async function fetchExecutorHandoff(): Promise<ExecutorHandoffSettingView> {
-	const payload = await readJson<ExecutorHandoffPayload>(await fetch(EXECUTOR_HANDOFF_PATH), 'Executor handoff');
+export async function fetchExecutorHandoff(scope: ProjectScope = null): Promise<ExecutorHandoffSettingView> {
+	const payload = await readJson<ExecutorHandoffPayload>(await fetch(executorHandoffPathOf(scope)), 'Executor handoff');
 	return { enabled: payload.enabled === true };
 }
 
-export async function saveExecutorHandoff(enabled: boolean): Promise<string> {
-	const response = await fetch(EXECUTOR_HANDOFF_PATH, {
+export async function saveExecutorHandoff(enabled: boolean, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(executorHandoffPathOf(scope), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ enabled }),
@@ -1262,8 +1298,8 @@ export async function startCodexLogin(): Promise<string> {
 	return payload.login.authUrl;
 }
 
-export function selectProvider(providerId: ProviderStatusView['id']): Promise<string> {
-	return postCommand(`${PROVIDERS_PATH}/${providerId}/select`);
+export function selectProvider(providerId: ProviderStatusView['id'], scope: ProjectScope = null): Promise<string> {
+	return postCommand(`${providersPathOf(scope)}/${providerId}/select`);
 }
 
 /**
