@@ -918,8 +918,9 @@ export async function fetchDiagnostics(scope: ProjectScope = null): Promise<Diag
 export async function saveDiagnosticSchedule(
 	enabled: boolean,
 	cadence: DiagnosticCadenceView,
+	scope: ProjectScope = null,
 ): Promise<string> {
-	const response = await fetch(DIAGNOSTIC_SCHEDULE_PATH, {
+	const response = await fetch(scope === null ? DIAGNOSTIC_SCHEDULE_PATH : projectApiPath(scope, '/diagnostics/schedule'), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ enabled, cadence }),

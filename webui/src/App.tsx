@@ -4159,6 +4159,73 @@ function OperatorProfilePanel({
 	);
 }
 
+function DiagnosticSchedulePanel({
+	catalog,
+	diagnostics,
+	locale,
+	pending,
+	onSave,
+}: {
+	catalog: SettingsCatalog;
+	diagnostics: DiagnosticsView;
+	locale: Locale;
+	pending: boolean;
+	onSave: AppProps['onSaveDiagnosticSchedule'];
+}): React.ReactElement {
+	const active = diagnostics.scan?.state === 'queued' || diagnostics.scan?.state === 'running';
+	const schedule = diagnostics.schedule;
+	return (
+		<ContextPanel
+			actionLabels={catalog.disclosure}
+			description={catalog.diagnostics.description}
+			title={catalog.diagnostics.title}
+		>
+			<form
+				aria-busy={active}
+				className="flex flex-col gap-4"
+				key={JSON.stringify(schedule)}
+				onSubmit={(event) => {
+					event.preventDefault();
+					const fields = (event.currentTarget as unknown as {
+						elements: { namedItem: (name: string) => unknown };
+					}).elements;
+					const enabled = (fields.namedItem('diagnostic-enabled') as { checked: boolean }).checked;
+					const cadence = (fields.namedItem('diagnostic-cadence') as { value: string }).value as DiagnosticCadenceView;
+					onSave(enabled, cadence);
+				}}
+			>
+				<label className="flex items-center gap-2 text-sm" htmlFor="diagnostic-enabled">
+					<input defaultChecked={schedule.enabled} id="diagnostic-enabled" name="diagnostic-enabled" type="checkbox" />
+					<span className="font-medium">{catalog.diagnostics.label}</span>
+				</label>
+				<label className="flex flex-col gap-1 text-sm" htmlFor="diagnostic-cadence">
+					<span className="font-medium">{catalog.diagnostics.cadence}</span>
+					<select className={FIELD_CLASS} defaultValue={schedule.cadence} id="diagnostic-cadence" name="diagnostic-cadence">
+						<option value="daily">{catalog.diagnostics.cadenceLabels.daily}</option>
+						<option value="weekly">{catalog.diagnostics.cadenceLabels.weekly}</option>
+					</select>
+				</label>
+				<p className="text-muted-foreground text-xs">
+					{active
+						? catalog.diagnostics.calculating
+						: !schedule.enabled
+							? catalog.diagnostics.disabled
+							: schedule.overdue
+								? catalog.diagnostics.overdue
+								: schedule.nextRunAt === null
+									? catalog.diagnostics.calculating
+									: catalog.diagnostics.nextRun(formatRunTimestamp(schedule.nextRunAt, locale))}
+
+				</p>
+				<p className="text-muted-foreground text-xs">{catalog.diagnostics.guidance}</p>
+				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					{catalog.diagnostics.save}
+				</button>
+			</form>
+		</ContextPanel>
+	);
+}
+
 const PROJECT_RECOVERY_COMMAND: Readonly<Record<
 	Exclude<ProjectStatusView, { state: 'ready' | 'empty' | 'checking' }>['reason'],
 	string
@@ -4281,6 +4348,15 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				onSetExecutorHandoff={props.onSetExecutorHandoff}
 				pending={props.pending}
 			/>
+			{props.project.state === 'ready' ? (
+				<DiagnosticSchedulePanel
+					catalog={catalog}
+					diagnostics={props.diagnostics}
+					locale={props.locale}
+					onSave={props.onSaveDiagnosticSchedule}
+					pending={props.pending}
+				/>
+			) : null}
 			<ProjectBriefPanel
 				brief={props.brief}
 				catalog={catalog}
