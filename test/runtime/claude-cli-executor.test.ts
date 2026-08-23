@@ -826,3 +826,44 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 		expect(prompt).not.toContain('3. Use the smaller migration.');
 	});
 });
+
+// GSHIP-720: the CI evidence the runtime persists is shared verbatim by the
+// executor and the read-only reviewer, so the ephemeral diagnosis command
+// cannot live in it. It belongs to the executors' own prompt section, which
+// buildWorkPrompt builds for both the Claude and the Codex executor.
+describe('buildWorkPrompt CI correction guidance (GSHIP-720)', () => {
+	const issueId = 'CAM-720';
+	const issue = '{"id":"CAM-720"}';
+	const ciFeedback = [
+		'PR: #581',
+		'Head: aaaa',
+		'Required check: ci/build',
+		'Check URL: https://github.com/acme/repo/actions/runs/7',
+	].join('\n');
+
+	function ciPrompt(): string {
+		return buildWorkPrompt(issueId, issue, true, undefined, undefined, [], undefined, ciFeedback);
+	}
+
+	test('a CI correction round tells the executor how to read the failed log ephemerally', () => {
+		const prompt = ciPrompt();
+		expect(prompt).toContain('A required CI check failed on the current pull request head.');
+		expect(prompt).toContain('`gh run view <check-url> --log-failed`');
+		expect(prompt).toContain('Check URL: https://github.com/acme/repo/actions/runs/7');
+	});
+
+	test('the guidance forbids copying log output into any durable or operator-visible field', () => {
+		const prompt = ciPrompt();
+		expect(prompt).toContain(
+			'Do not copy log output into run events, summaries, proposals, metrics or any operator-visible field; keep it in this session only.',
+		);
+	});
+
+	// The guidance is attached to the CI round, not to the role: a run with no
+	// failed check must not be told to go looking at CI logs at all.
+	test('without CI feedback the prompt carries no diagnosis guidance', () => {
+		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, []);
+		expect(prompt).not.toContain('--log-failed');
+		expect(prompt).not.toContain('A required CI check failed');
+	});
+});

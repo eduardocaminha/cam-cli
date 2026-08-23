@@ -157,6 +157,7 @@ export function buildWorkPrompt(
 	// working unchanged: only the two executors that actually reach the
 	// full-verify gate (GSHIP-649) pass it.
 	fullVerifyFeedback: string | undefined = undefined,
+	ciFeedback: string | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -178,6 +179,21 @@ export function buildWorkPrompt(
 		'',
 		'Full verification output:',
 		fullVerifyFeedback,
+	];
+	// The evidence the runtime persists is durable and role-neutral: PR, head,
+	// check name and check URL. How to turn it into a diagnosis is
+	// role-specific, so it lives here, in the executors' prompt, and not in the
+	// shared evidence the read-only reviewer also receives (GSHIP-720).
+	const ciSection = ciFeedback === undefined ? [] : [
+		'',
+		'A required CI check failed on the current pull request head.',
+		'Fix only this mechanical CI failure in the current worktree. Do not commit, open another issue, branch, or pull request.',
+		'The original issue specification remains binding and the current diff is the change being corrected.',
+		'If the diagnosis requires the failed output, read it ephemerally from this worktree with `gh run view <check-url> --log-failed`, using the Check URL below.',
+		'Do not copy log output into run events, summaries, proposals, metrics or any operator-visible field; keep it in this session only.',
+		'',
+		'CI failure evidence:',
+		ciFeedback,
 	];
 	const guidanceSection = operatorGuidance === undefined ? [] : [
 		'',
@@ -210,6 +226,7 @@ export function buildWorkPrompt(
 		...guidanceSection,
 		...reviewSection,
 		...fullVerifySection,
+		...ciSection,
 		'',
 		// GSHIP-708: the contract names the Issue record as the source of the
 		// operator's language, so it sits directly above it. Kept below the
@@ -367,6 +384,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.operatorGuidance,
 			input.operatorDecisions ?? [],
 			input.fullVerifyFeedback,
+			input.ciFeedback,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

@@ -11,6 +11,7 @@ const ROUND_START_KINDS: ReadonlySet<string> = new Set([
 	'run.started',
 	'run.review-fix-requested',
 	'run.full-verify-fix-requested',
+	'run.ci-fix-requested',
 ]);
 
 /**
@@ -20,6 +21,7 @@ const ROUND_START_KINDS: ReadonlySet<string> = new Set([
  */
 export interface RunRoundOrigins {
 	executor: number;
+	ci?: number;
 	decision: number;
 	orchestrator?: number;
 	indeterminate: number;
@@ -31,6 +33,10 @@ function recordRound(
 	previousKind: string | null,
 ): void {
 	const { kind } = event;
+	if (kind === 'run.ci-fix-requested') {
+		origins.ci = (origins.ci ?? 0) + 1;
+		return;
+	}
 	if (kind === 'run.started') {
 		if (previousKind === 'run.operator-guidance') origins.decision += 1;
 		else origins.indeterminate += 1;
@@ -65,7 +71,7 @@ function recordRound(
  * not a second origin, with or without recovery guidance.
  */
 export function selectRunRoundOrigins(events: readonly RunEvent[]): RunRoundOrigins {
-	const origins: RunRoundOrigins = { executor: 0, decision: 0, orchestrator: 0, indeterminate: 0 };
+	const origins: RunRoundOrigins = { executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 };
 	let seenFirstRound = false;
 	let previousKind: string | null = null;
 	let unconsumedCycleContinue = false;

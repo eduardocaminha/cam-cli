@@ -384,7 +384,7 @@ function formatRunTimestamp(value: string, locale: Locale): string {
 
 /** No correction round yet: nothing to report, not a fabricated zero line. */
 function hasNoRounds(origins: RunView['roundOrigins']): boolean {
-	return origins.executor + origins.decision + (origins.orchestrator ?? 0) + origins.indeterminate === 0;
+	return origins.executor + (origins.ci ?? 0) + origins.decision + (origins.orchestrator ?? 0) + origins.indeterminate === 0;
 }
 
 /** Compact token-count line for one breakdown entry; omits a count the CLI never reported. */
@@ -564,15 +564,27 @@ function PullRequestDelivery({
 	run,
 }: { catalog: RunInspectorCatalog; run: RunView }): React.ReactElement | null {
 	const delivery = run.pullRequest;
-	if (delivery === null) return null;
+	const correction = run.ciCorrection ?? null;
+	if (delivery === null && correction === null) return null;
 	return (
 		<div className="flex flex-wrap items-center gap-2 text-sm">
-			<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
-				{catalog.pullRequestLabel(delivery.prNumber)}
-			</a>
-			{run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
-			<Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>
-			{delivery.failedChecks.map((check) => check.url === undefined ? (
+			{delivery === null ? null : <>
+				<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
+					{catalog.pullRequestLabel(delivery.prNumber)}
+				</a>
+				{run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
+				<Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>
+			</>}
+			{correction === null ? null : correction.check.url === undefined ? (
+				<span className="text-warning-foreground text-xs">
+					{catalog.ciCorrectionLabel(correction.check.name)}
+				</span>
+			) : (
+				<a className={TEXT_LINK_CLASS} href={correction.check.url} rel="noreferrer" target="_blank">
+					{catalog.ciCorrectionLabel(correction.check.name)}
+				</a>
+			)}
+			{delivery?.failedChecks.map((check) => check.url === undefined ? (
 				<span className="text-destructive-foreground text-xs" key={check.name}>{check.name}</span>
 			) : (
 				<a className={TEXT_LINK_CLASS} href={check.url} key={check.name} rel="noreferrer" target="_blank">
@@ -761,6 +773,7 @@ function RunCardContent({
 				<p className="text-muted-foreground text-sm">
 					{catalog.correctionRounds(
 						run.roundOrigins.executor,
+						run.roundOrigins.ci ?? 0,
 						run.roundOrigins.decision,
 						run.roundOrigins.orchestrator ?? 0,
 						run.roundOrigins.indeterminate,
@@ -963,6 +976,7 @@ function WorkflowInsightsPanel({
 	if (runs.length === 0) return null;
 	const insights = summarizeWorkflow(runs);
 	const correctionRounds = insights.corrections.executor
+		+ (insights.corrections.ci ?? 0)
 		+ insights.corrections.decision
 		+ (insights.corrections.orchestrator ?? 0)
 		+ insights.corrections.indeterminate;
@@ -984,6 +998,7 @@ function WorkflowInsightsPanel({
 					correctionRounds,
 					insights.corrections.runCount,
 					insights.corrections.executor,
+					insights.corrections.ci ?? 0,
 					insights.corrections.decision,
 					insights.corrections.orchestrator ?? 0,
 					insights.corrections.indeterminate,
@@ -1058,6 +1073,7 @@ function WorkflowCohortCard({
 }): React.ReactElement {
 	const card = catalog.benchmarks.card;
 	const correctionCount = cohort.corrections.executor
+		+ (cohort.corrections.ci ?? 0)
 		+ cohort.corrections.decision
 		+ (cohort.corrections.orchestrator ?? 0)
 		+ cohort.corrections.indeterminate;

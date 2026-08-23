@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-720",
   "title": "Retomar ciclo automaticamente apos falha de CI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T05:46:34.656Z",
-  "updatedAt": "2026-08-23T05:46:49.411Z",
+  "updatedAt": "2026-08-23T07:43:52.903Z",
   "description": "Evidencia real: na GSHIP-719, a PR #581 chegou a ready-to-ship, o CI falhou por identidade Git global ausente e a run nao tinha transicao admissivel para correcao; foi necessario o bypass manual dc0cdd95 e um novo ship apenas reconciliou a PR. Quando um required check falhar no head da PR pertencente a uma run, distinguir essa decisao de indisponibilidade do GitHub, divergencia externa e outros erros de ship. Persistir evidencia duravel e sanitizada com PR, head, nome e URL do check e um extrato limitado do log falho quando disponivel. Desarmar o automerge e devolver a mesma run, worktree, branch e PR a uma unica rodada limitada de correcao de CI; o executor recebe a especificacao original, o diff atual e a evidencia do check, sem abrir nova issue ou pedir ao operador por falhas mecanicas. Uma mudanca produzida deve passar pela verificacao da issue, nova revisao material e full verify antes de atualizar a PR existente e aguardar CI novamente. Persistir a origem ci separada das rodadas de executor, review e decisao, mantendo provider, modelo, effort, tempo, custo e intervencoes nas metricas da run; exibir no historico e na UI um sinal claro de Correcao de CI com link para o check. Repeticao do mesmo check no novo head, ausencia de mudanca ou esgotamento do limite termina em waiting-user com toda a evidencia; limite de provider usa o waiting-provider e a retomada ja existentes. Erros de transporte, politicas de merge e divergencia externa preservam o comportamento atual. Proibir loop infinito, commit manual fora do ciclo e criacao de outra PR.",
   "specSource": "operator",
   "spec": {

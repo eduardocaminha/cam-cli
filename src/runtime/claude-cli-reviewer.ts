@@ -195,6 +195,7 @@ export function buildReviewPrompt(
 	issue: string,
 	change: { status: string; diff: string },
 	decisions: readonly string[],
+	ciFeedback?: string,
 ): string {
 	return [
 		`Review the uncommitted change in this worktree for Gateship issue ${issueId}.`,
@@ -212,6 +213,11 @@ export function buildReviewPrompt(
 			'You may disagree with one of these. If you do, say so explicitly: report',
 			'that you disagree with a decision already made, not as a pending defect',
 			'the change still needs to fix.',
+			'',
+		]),
+		...(ciFeedback === undefined ? [] : [
+			'This review belongs to a bounded CI correction round. The durable failed-check evidence is:',
+			ciFeedback,
 			'',
 		]),
 		'End your reply with a single JSON object on the last line and nothing after it:',
@@ -313,7 +319,9 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			argv,
 			cwd: input.cwd,
 			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env, this.#options.resolveClaudeCredential?.()),
-			prompt: buildReviewPrompt(input.issueId, issue, change, input.operatorDecisions ?? []),
+			prompt: buildReviewPrompt(
+				input.issueId, issue, change, input.operatorDecisions ?? [], input.ciFeedback,
+			),
 			signal: input.signal,
 			emit: input.emit,
 			eventPrefix: 'review',

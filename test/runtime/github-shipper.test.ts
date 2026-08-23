@@ -100,7 +100,7 @@ interface FakeRepo {
 	viewUnavailableFromView: number;
 	armAttempts: number;
 	/** What `gh pr checks --required` reports while the pull request is BLOCKED (GSHIP-646). */
-	requiredChecks: Array<{ name: string; bucket: string }>;
+	requiredChecks: Array<{ name: string; bucket: string; link?: string }>;
 	/** Times `gh pr checks --required` reports HTTP 503 before succeeding (GSHIP-646). */
 	requiredChecksUnavailableRemaining: number;
 	/** Times `gh pr checks --required` has been called. */
@@ -904,7 +904,7 @@ describe('the GitHub shipper', () => {
 		const cwd = createWorkspace();
 		const repo = createRepo({
 			mergedOnView: Number.MAX_SAFE_INTEGER,
-			requiredChecks: [{ name: 'ci/build', bucket: 'fail' }],
+			requiredChecks: [{ name: 'ci/build', bucket: 'fail', link: 'https://github.com/acme/repo/actions/runs/7' }],
 		});
 		const calls: RecordedCall[] = [];
 		const events: string[] = [];
@@ -919,9 +919,15 @@ describe('the GitHub shipper', () => {
 		);
 
 		expect(failed).toEqual({
-			outcome: 'failed',
-			detail: 'pull request #385 is blocked: required check "ci/build" completed in failure',
+			outcome: 'ci-failed',
+			evidence: {
+				prNumber: 385,
+				headSha: HEAD_SHA,
+				check: { name: 'ci/build', url: 'https://github.com/acme/repo/actions/runs/7' },
+			},
 		});
+		if (failed.outcome !== 'ci-failed') throw new Error('expected a typed CI failure');
+		expect(failed.evidence).not.toHaveProperty('logExcerpt');
 		// Ends on the very first poll, not after waiting out the merge timeout.
 		expect(repo.views).toBe(1);
 		expect(repo.requiredChecksCalls).toBe(1);
@@ -930,11 +936,14 @@ describe('the GitHub shipper', () => {
 		expect(disarmCalls(calls)[0]?.args).toEqual(['pr', 'merge', '385', '--disable-auto']);
 		expect(repo.disarms).toBe(1);
 		expect(events.slice(-2)).toEqual(['ship.automerge-disarmed', 'ship.required-check-failed']);
-		expect(payloads.get('ship.required-check-failed')).toEqual({
+		const failedPayload = payloads.get('ship.required-check-failed');
+		expect(failedPayload).toEqual({
 			prNumber: 385,
 			headSha: HEAD_SHA,
-			check: 'ci/build',
+			check: { name: 'ci/build', url: 'https://github.com/acme/repo/actions/runs/7' },
 		});
+		expect(failedPayload).not.toHaveProperty('logExcerpt');
+		expect(calls).not.toContainEqual(expect.objectContaining({ command: 'gh', args: expect.arrayContaining(['run']) }));
 		expect(events).not.toContain('ship.merged');
 		expect(armCalls(calls)).toHaveLength(1);
 	});

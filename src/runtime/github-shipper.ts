@@ -249,6 +249,7 @@ interface CiAggregate {
 interface RequiredCheck {
 	name: string;
 	bucket: string;
+	url?: string;
 }
 
 function errorMessage(error: unknown): string {
@@ -431,9 +432,14 @@ function parseRequiredChecks(json: string): RequiredCheck[] | null {
 	if (!Array.isArray(parsed)) return null;
 	const checks: RequiredCheck[] = [];
 	for (const entry of parsed) {
-		const check = entry as { name?: unknown; bucket?: unknown };
+		const check = entry as { name?: unknown; bucket?: unknown; link?: unknown };
 		if (typeof check?.name === 'string' && typeof check?.bucket === 'string') {
-			checks.push({ name: check.name, bucket: check.bucket });
+			checks.push({
+				name: check.name,
+				bucket: check.bucket,
+				...(typeof check.link === 'string' && /^https?:\/\//.test(check.link)
+					? { url: check.link } : {}),
+			});
 		}
 	}
 	return checks;
@@ -930,13 +936,18 @@ export class GithubShipper implements RuntimeShipper {
 		input: RuntimeShipInput,
 		prNumber: number,
 		headSha: string,
-		checkName: string,
+		check: RequiredCheck,
 	): Promise<RuntimeShipResult> {
 		await this.#disarmAutoMerge(input, prNumber);
-		input.emit('ship.required-check-failed', { prNumber, headSha, check: checkName });
+		const evidence = {
+			prNumber,
+			headSha,
+			check: { name: check.name, ...(check.url === undefined ? {} : { url: check.url }) },
+		};
+		input.emit('ship.required-check-failed', evidence);
 		return {
-			outcome: 'failed',
-			detail: `pull request #${prNumber} is blocked: required check "${checkName}" completed in failure`,
+			outcome: 'ci-failed',
+			evidence,
 		};
 	}
 
@@ -959,13 +970,13 @@ export class GithubShipper implements RuntimeShipper {
 	 * decision: unlike reading the merge state itself, this is a second
 	 * opinion, and the next poll simply asks again.
 	 */
-	async #failedRequiredCheck(input: RuntimeShipInput, prNumber: number): Promise<string | null> {
+	async #failedRequiredCheck(input: RuntimeShipInput, prNumber: number): Promise<RequiredCheck | null> {
 		for (let attempt = 0; ; attempt++) {
 			const checked = await this.#run(input, 'gh', [
-				'pr', 'checks', String(prNumber), '--required', '--json', 'name,state,bucket',
+				'pr', 'checks', String(prNumber), '--required', '--json', 'name,state,bucket,link',
 			]);
 			const checks = parseRequiredChecks(checked.stdout);
-			if (checks !== null) return checks.find((check) => check.bucket === 'fail')?.name ?? null;
+			if (checks !== null) return checks.find((check) => check.bucket === 'fail') ?? null;
 			if (checked.exitCode === 0) return null;
 			const detail = failureDetail(checked);
 			if (!isGithubUnavailable(detail) || attempt >= this.#unavailableRetryDelaysMs.length) return null;

@@ -76,6 +76,7 @@ export interface RunCostView {
  */
 export interface RunRoundOriginsView {
 	executor: number;
+	ci?: number;
 	decision: number;
 	orchestrator?: number;
 	indeterminate: number;
@@ -103,6 +104,12 @@ export interface PullRequestDeliveryView {
 	url: string;
 	ciStatus: 'not-reported' | 'pending' | 'passed' | 'failed';
 	failedChecks: Array<{ name: string; url?: string }>;
+}
+
+export interface CiCorrectionView {
+	prNumber: number;
+	headSha: string;
+	check: { name: string; url?: string };
 }
 
 /**
@@ -168,6 +175,7 @@ export interface RunView {
 	updatedAt: string;
 	cost: RunCostView;
 	roundOrigins: RunRoundOriginsView;
+	ciCorrection?: CiCorrectionView | null;
 	evaluation?: RunEvaluationView | null;
 	providerWait: RunProviderWaitView | null;
 	pullRequest: PullRequestDeliveryView | null;
@@ -217,10 +225,26 @@ export interface WorkflowInsights {
 	};
 }
 
+type CorrectionTotals = Required<RunRoundOriginsView> & { runCount: number };
+
+/** Adds one run's rounds to the totals, counting the run once if it had any. */
+function addCorrections(totals: CorrectionTotals, origins: RunRoundOriginsView): void {
+	const ci = origins.ci ?? 0;
+	const orchestrator = origins.orchestrator ?? 0;
+	const rounds = origins.executor + ci + origins.decision + orchestrator + origins.indeterminate;
+	if (rounds > 0) totals.runCount += 1;
+	totals.executor += origins.executor;
+	totals.ci += ci;
+	totals.decision += origins.decision;
+	totals.orchestrator += orchestrator;
+	totals.indeterminate += origins.indeterminate;
+}
+
 export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
 	const outcomes = { done: 0, failed: 0, cancelled: 0, active: 0 };
 	const corrections = {
 		executor: 0,
+		ci: 0,
 		decision: 0,
 		orchestrator: 0,
 		indeterminate: 0,
@@ -233,15 +257,7 @@ export function summarizeWorkflow(runs: readonly RunView[]): WorkflowInsights {
 		else if (run.state === 'cancelled') outcomes.cancelled += 1;
 		else outcomes.active += 1;
 
-		const rounds = run.roundOrigins.executor
-			+ run.roundOrigins.decision
-			+ (run.roundOrigins.orchestrator ?? 0)
-			+ run.roundOrigins.indeterminate;
-		if (rounds > 0) corrections.runCount += 1;
-		corrections.executor += run.roundOrigins.executor;
-		corrections.decision += run.roundOrigins.decision;
-		corrections.orchestrator += run.roundOrigins.orchestrator ?? 0;
-		corrections.indeterminate += run.roundOrigins.indeterminate;
+		addCorrections(corrections, run.roundOrigins);
 		const responseCount = run.evaluation?.resolvedCycleQuestions ?? 0;
 		cycleResponses.count += responseCount;
 		if (responseCount > 0) cycleResponses.runCount += 1;
@@ -323,7 +339,7 @@ function observationsOf(runs: readonly RecordedRun[]): Pick<
 	const attention = { requests: 0, interventions: 0, runCount: 0 };
 	const cycleResponses = { count: 0, runCount: 0 };
 	const providerHolds = { count: 0, runCount: 0 };
-	const corrections = { executor: 0, decision: 0, orchestrator: 0, indeterminate: 0, runCount: 0 };
+	const corrections = { executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0, runCount: 0 };
 	for (const run of runs) {
 		const { evaluation } = run;
 		if (evaluation.outcome === 'incomplete') continue;
@@ -335,15 +351,7 @@ function observationsOf(runs: readonly RecordedRun[]): Pick<
 		if ((evaluation.resolvedCycleQuestions ?? 0) > 0) cycleResponses.runCount += 1;
 		providerHolds.count += evaluation.providerHolds;
 		if (evaluation.providerHolds > 0) providerHolds.runCount += 1;
-		const correctionCount = run.roundOrigins.executor
-			+ run.roundOrigins.decision
-			+ (run.roundOrigins.orchestrator ?? 0)
-			+ run.roundOrigins.indeterminate;
-		if (correctionCount > 0) corrections.runCount += 1;
-		corrections.executor += run.roundOrigins.executor;
-		corrections.decision += run.roundOrigins.decision;
-		corrections.orchestrator += run.roundOrigins.orchestrator ?? 0;
-		corrections.indeterminate += run.roundOrigins.indeterminate;
+		addCorrections(corrections, run.roundOrigins);
 	}
 	return { outcomes, attention, cycleResponses, providerHolds, corrections };
 }

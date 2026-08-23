@@ -1821,7 +1821,7 @@ describe('releasing a failed run workspace', () => {
 		const run = runtime.startRun('CAM-71');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
-		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, decision: 0, orchestrator: 0, indeterminate: 0 });
+		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 		await runtime.stop();
 		runtime.close();
 	});
@@ -2024,7 +2024,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(1, 'run.created', null),
 			roundEvent(2, 'run.started', 'queued'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a round with no guidance -- born of a review or full-verify fix request -- counts as executor', () => {
@@ -2034,7 +2034,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(3, 'run.review-fix-requested', 'review'),
 			roundEvent(4, 'run.full-verify-fix-requested', 'full-verify'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, decision: 0, orchestrator: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a round that starts right after operator guidance counts as decision', () => {
@@ -2045,7 +2045,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(4, 'run.operator-guidance', 'waiting-user'),
 			roundEvent(5, 'run.started', 'waiting-user'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a resume with no guidance before it -- e.g. recovering an interrupted run -- is reported indeterminate, never attributed by guess', () => {
@@ -2055,7 +2055,7 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(3, 'run.cancelled', 'working'),
 			roundEvent(4, 'run.started', 'interrupted'),
 		];
-		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, decision: 0, orchestrator: 0, indeterminate: 1 });
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 1 });
 	});
 });
 
@@ -2259,6 +2259,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
 		expect(runtime.getRunRoundOrigins('run-cycle-restart')).toEqual({
 			executor: 1,
+			ci: 0,
 			orchestrator: 1,
 			decision: 0,
 			indeterminate: 0,

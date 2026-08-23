@@ -42,7 +42,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	'ready-to-ship': ['shipping', 'failed', 'interrupted'],
 	// A ship attempt is a phase of its own, so a merge is the only way out to
 	// done and every other end returns the same diff to ready-to-ship.
-	shipping: ['done', 'ready-to-ship', 'interrupted'],
+	shipping: ['done', 'working', 'waiting-user', 'ready-to-ship', 'interrupted'],
 	done: [],
 	'waiting-user': ['working', 'interrupted'],
 	// Availability is a resting condition, not a terminal outcome. A retry of
@@ -51,7 +51,9 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	failed: [],
 	// An interrupted run is the only one the operator can still end instead of
 	// resume: abandoning it is the explicit way out of the provider session.
-	interrupted: ['working', 'cancelled'],
+	// A crash recovered out of `review` resumes in the reviewer, so the diff
+	// already verified is reviewed again instead of re-executed.
+	interrupted: ['working', 'review', 'cancelled'],
 	cancelled: [],
 };
 
