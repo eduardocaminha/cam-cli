@@ -39,7 +39,31 @@ function publishableProject(prefix: string): { local: string; remote: string } {
 	return { local, remote };
 }
 
-function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'daily' | 'weekly' } } = {}) {
+function diagnosticHarness(options: {
+	ready?: boolean;
+	schedule?: { enabled: boolean; cadence: 'daily' | 'weekly' };
+} = {}) {
+	const project = options.ready === true ? publishableProject('gship-diagnostics-api-ready-') : undefined;
+	const cwd = project?.local ?? createTestTmpdir('gship-diagnostics-api-');
+	const stateDir = createTestTmpdir('gship-diagnostics-api-state-');
+	const projectRegistry = project === undefined
+		? undefined
+		: openProjectRegistry(createTestTmpdir('gship-diagnostics-api-home-'));
+	if (project !== undefined) {
+		const readyRemote = 'git@github.com:acme/ready-diagnostics.git';
+		execFileSync('git', ['remote', 'set-url', 'origin', readyRemote], { cwd });
+		projectRegistry!.reconcile({
+			root: cwd,
+			stateDir,
+			readiness: {
+				state: 'ready',
+				name: 'ready diagnostics project',
+				repository: 'acme/ready-diagnostics',
+				remoteUrl: readyRemote,
+				sourceRef: 'origin/main',
+			},
+		});
+	}
 	const runRuntime = new RunRuntime({
 		cwd: '/project',
 		store: new RunStore(':memory:'),
@@ -74,7 +98,7 @@ function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'd
 		}),
 	};
 	const diagnostics = new DiagnosticsRuntime({
-		store: new RunStore(':memory:'),
+		store: new RunStore(options.ready === true ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace,
 		adapters: [adapter],
 		isProjectIdle: () => true,
@@ -85,7 +109,9 @@ function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'd
 	const intakeCalls: Array<{ input: unknown; approve: boolean | undefined }> = [];
 	const handle = startWebServer({
 		port: 0,
-		cwd: createTestTmpdir('gship-diagnostics-api-'),
+		cwd,
+		stateDir,
+		projectRegistry,
 		runRuntime,
 		diagnostics,
 		issueIntake: (input, options) => {
@@ -104,6 +130,7 @@ function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'd
 			await handle.stop();
 			diagnostics.close();
 			runRuntime.close();
+			projectRegistry?.close();
 		},
 	};
 }
@@ -233,6 +260,27 @@ describe('diagnostics web API', () => {
 			);
 			expect(invalid.status).toBe(400);
 
+			const beforeUnknownAnalyzer = await fetchDiagnostics(harness.origin);
+			let scheduledCalls = 0;
+			const originalRunScheduled = harness.diagnostics.runScheduledIfDue;
+			harness.diagnostics.runScheduledIfDue = () => {
+				scheduledCalls += 1;
+				return 'disabled';
+			};
+			try {
+				const unknownAnalyzer = await put(
+					harness.origin,
+					'/api/diagnostics/schedule',
+					{ enabled: true, cadence: 'daily', analyzer: 'missing' },
+				);
+				expect(unknownAnalyzer.status).toBe(404);
+				expect(await unknownAnalyzer.json()).toMatchObject({ code: 'analyzer-not-found' });
+				expect((await fetchDiagnostics(harness.origin)).schedule).toEqual(beforeUnknownAnalyzer.schedule);
+				expect(scheduledCalls).toBe(0);
+			} finally {
+				harness.diagnostics.runScheduledIfDue = originalRunScheduled;
+			}
+
 			const enabled = await put(
 				harness.origin,
 				'/api/diagnostics/schedule',
@@ -275,8 +323,21 @@ describe('diagnostics web API', () => {
 		}
 	});
 
-	test('activates an already persisted overdue schedule when the service starts', async () => {
+	test('does not schedule an unready boot project when the service starts', async () => {
 		const harness = diagnosticHarness({ schedule: { enabled: true, cadence: 'weekly' } });
+		try {
+			const snapshot = await fetchDiagnostics(harness.origin);
+			expect(snapshot.scan).toBeNull();
+		} finally {
+			await harness.stop();
+		}
+	});
+
+	test('activates a persisted overdue schedule for a ready boot project at startup', async () => {
+		const harness = diagnosticHarness({
+			ready: true,
+			schedule: { enabled: true, cadence: 'weekly' },
+		});
 		try {
 			const completed = await waitForCompleted(harness.origin);
 			expect(completed).toMatchObject({
@@ -291,6 +352,91 @@ describe('diagnostics web API', () => {
 			});
 		} finally {
 			await harness.stop();
+		}
+	});
+
+	test('reconciles two ready project schedules independently', async () => {
+		const firstProject = publishableProject('gship-diagnostics-schedule-first-');
+		const secondProject = publishableProject('gship-diagnostics-schedule-second-');
+		const firstState = createTestTmpdir('gship-diagnostics-schedule-first-state-');
+		const secondState = createTestTmpdir('gship-diagnostics-schedule-second-state-');
+		const registry = openProjectRegistry(createTestTmpdir('gship-diagnostics-schedule-home-'));
+		const first = registry.reconcile({
+			root: firstProject.local,
+			stateDir: firstState,
+			readiness: {
+				state: 'ready', name: 'first', repository: 'acme/first',
+				remoteUrl: firstProject.remote, sourceRef: 'origin/main',
+			},
+		});
+		const second = registry.reconcile({
+			root: secondProject.local,
+			stateDir: secondState,
+			readiness: {
+				state: 'ready', name: 'second', repository: 'acme/second',
+				remoteUrl: secondProject.remote, sourceRef: 'origin/main',
+			},
+		});
+		for (const stateDir of [firstState, secondState]) {
+			const store = new RunStore(join(stateDir, 'runtime.sqlite'));
+			store.setDiagnosticSchedule({ enabled: true, cadence: 'daily', analyzer: 'react' });
+			store.close();
+		}
+		const calls: string[] = [];
+		const outcomes = new Map<string, string>();
+		const manager = new ProjectRuntimeManager<any>(registry, firstProject.local, (project) => {
+			const diagnostics = new DiagnosticsRuntime({
+				store: new RunStore(join(project.stateDir, 'runtime.sqlite')),
+				workspace: {
+					prepare: async () => ({ path: `/tmp/${project.id}-diagnostic`, sourceSha: SOURCE_SHA }),
+					release: async () => ({ outcome: 'released' as const }),
+					listNotices: () => [],
+				},
+				adapters: [{
+					id: 'react', label: 'React', version: '0.9.12', description: 'React diagnostics',
+					scan: async () => ({ version: '0.9.12', coverageComplete: true, findings: [] }),
+				}],
+				isProjectIdle: () => project.id !== first.id,
+				now: () => '2026-08-20T00:00:00.000Z',
+				newId: () => `${project.id}-scheduled`,
+			});
+			const runScheduledIfDue = diagnostics.runScheduledIfDue.bind(diagnostics);
+			diagnostics.runScheduledIfDue = () => {
+				calls.push(project.id);
+				const outcome = runScheduledIfDue();
+				outcomes.set(project.id, outcome);
+				return outcome;
+			};
+			return {
+				runtime: { listRuns: () => [], acquireAdmissionFence: () => () => undefined },
+				diagnostics,
+				close: async () => {
+					await diagnostics.stop();
+					diagnostics.close();
+				},
+			};
+		});
+		try {
+			manager.reconcileScheduledDiagnostics();
+			expect(new Set(calls)).toEqual(new Set([first.id, second.id]));
+			expect(outcomes).toEqual(new Map([[first.id, 'project-busy'], [second.id, 'started']]));
+			expect(manager.get(first.id).context.diagnostics.getSchedule()).toMatchObject({ overdue: true });
+			expect(manager.get(second.id).context.diagnostics.getSchedule()).toMatchObject({ overdue: false });
+			await Bun.sleep(20);
+			const firstStore = new RunStore(join(firstState, 'runtime.sqlite'));
+			const secondStore = new RunStore(join(secondState, 'runtime.sqlite'));
+			try {
+				expect(firstStore.listDiagnosticScans()).toEqual([]);
+				expect(secondStore.listDiagnosticScans()).toHaveLength(1);
+				expect(firstStore.getDiagnosticSchedule()).toMatchObject({ enabled: true, cadence: 'daily', analyzer: 'react' });
+				expect(secondStore.getDiagnosticSchedule()).toMatchObject({ enabled: true, cadence: 'daily', analyzer: 'react' });
+			} finally {
+				firstStore.close();
+				secondStore.close();
+			}
+		} finally {
+			await manager.close();
+			registry.close();
 		}
 	});
 
@@ -386,6 +532,60 @@ describe('diagnostics web API', () => {
 			expect(foreignSnapshot.findings.map((finding) => finding.rule)).toEqual(['foreign-dismiss-rule', 'foreign-promote-rule']);
 			const currentContext = serverProjectRuntimes.get(current.id).context;
 			const foreignContext = serverProjectRuntimes.get(foreign.id).context;
+			const currentScheduleBefore = currentSnapshot.schedule;
+			const foreignScheduleBefore = foreignSnapshot.schedule;
+			const scheduledCalls: string[] = [];
+			const originalCurrentScheduled = currentContext.diagnostics.runScheduledIfDue;
+			const originalForeignScheduled = foreignContext.diagnostics.runScheduledIfDue;
+			currentContext.diagnostics.runScheduledIfDue = () => {
+				scheduledCalls.push(current.id);
+				return 'disabled';
+			};
+			foreignContext.diagnostics.runScheduledIfDue = () => {
+				scheduledCalls.push(foreign.id);
+				return 'disabled';
+			};
+			try {
+				const unknownAnalyzer = await put(origin, new URL(`${base(current.id)}/diagnostics/schedule`).pathname, {
+					enabled: true, cadence: 'daily', analyzer: 'missing',
+				});
+				expect(unknownAnalyzer.status).toBe(404);
+				expect(await unknownAnalyzer.json()).toMatchObject({ code: 'analyzer-not-found' });
+				expect(scheduledCalls).toEqual([]);
+				expect((await fetch(`${base(current.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toEqual(currentScheduleBefore);
+				expect((await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toEqual(foreignScheduleBefore);
+
+				const currentSchedule = await put(origin, new URL(`${base(current.id)}/diagnostics/schedule`).pathname, {
+					enabled: false, cadence: 'daily', analyzer: 'react',
+				});
+				expect(currentSchedule.status).toBe(200);
+				expect(await currentSchedule.json()).toMatchObject({
+					schedule: { enabled: false, cadence: 'daily', analyzer: 'react' },
+				});
+				expect(scheduledCalls).toEqual([current.id]);
+				expect((await fetch(`${base(current.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toMatchObject({
+					enabled: false, cadence: 'daily', analyzer: 'react',
+				});
+				expect((await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toEqual(foreignScheduleBefore);
+
+				const foreignSchedule = await put(origin, new URL(`${base(foreign.id)}/diagnostics/schedule`).pathname, {
+					enabled: false, cadence: 'daily', analyzer: 'react',
+				});
+				expect(foreignSchedule.status).toBe(200);
+				expect(await foreignSchedule.json()).toMatchObject({
+					schedule: { enabled: false, cadence: 'daily', analyzer: 'react' },
+				});
+				expect(scheduledCalls).toEqual([current.id, foreign.id]);
+				expect((await fetch(`${base(current.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toMatchObject({
+					enabled: false, cadence: 'daily', analyzer: 'react',
+				});
+				expect((await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).schedule).toMatchObject({
+					enabled: false, cadence: 'daily', analyzer: 'react',
+				});
+			} finally {
+				currentContext.diagnostics.runScheduledIfDue = originalCurrentScheduled;
+				foreignContext.diagnostics.runScheduledIfDue = originalForeignScheduled;
+			}
 			const originalForeignStartRun = foreignContext.runtime.startRun;
 			const foreignRunIssueIds: string[] = [];
 			foreignContext.runtime.startRun = (issueId: string): RunRecord => {

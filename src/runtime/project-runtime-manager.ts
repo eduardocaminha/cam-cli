@@ -1,7 +1,12 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { RegisteredProject, ProjectRegistry } from './project-registry.ts';
 import { RuntimeConflictError } from './run-runtime.ts';
-import type { RunRecord } from './run-store.ts';
+import { RunStore, type RunRecord } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
+
+const DIAGNOSTIC_SCHEDULE_CHECK_MS = 60_000;
 
 export interface ManagedProjectRuntime {
 	runtime: {
@@ -11,6 +16,7 @@ export interface ManagedProjectRuntime {
 	diagnostics?: {
 		isActive(): boolean;
 		setAdmissionBlocked(reason: string | null): void;
+		runScheduledIfDue(): string;
 	};
 	close(): Promise<void> | void;
 }
@@ -35,6 +41,7 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	readonly #contexts = new Map<string, T>();
 	#admissionFence: { token: symbol; reason: string } | null = null;
 	readonly #contextFenceReleases = new Map<T, () => void>();
+	#diagnosticScheduleTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(
 		private readonly registry: ProjectRegistry,
@@ -126,9 +133,49 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	}
 
 	async close(): Promise<void> {
+		this.stopDiagnosticScheduler();
 		const contexts = [...this.#contexts.values()];
 		this.#contexts.clear();
 		await Promise.all(contexts.map((context) => context.close()));
+	}
+
+	/** The sole process-wide cadence owner. Each ready project gets at most one due scan per tick. */
+	startDiagnosticScheduler(): void {
+		if (this.#diagnosticScheduleTimer !== null) return;
+		this.reconcileScheduledDiagnostics();
+		this.#diagnosticScheduleTimer = setInterval(
+			() => this.reconcileScheduledDiagnostics(),
+			DIAGNOSTIC_SCHEDULE_CHECK_MS,
+		);
+	}
+
+	stopDiagnosticScheduler(): void {
+		if (this.#diagnosticScheduleTimer === null) return;
+		clearInterval(this.#diagnosticScheduleTimer);
+		this.#diagnosticScheduleTimer = null;
+	}
+
+	reconcileScheduledDiagnostics(): void {
+		for (const project of this.registry.list(this.currentRoot)) {
+			if (project.readiness !== 'ready') continue;
+			let context = this.#contexts.get(project.id);
+			if (context === undefined) {
+				if (!this.#hasEnabledDiagnosticSchedule(project.stateDir)) continue;
+				context = this.get(project.id).context;
+			}
+			context.diagnostics?.runScheduledIfDue();
+		}
+	}
+
+	#hasEnabledDiagnosticSchedule(stateDir: string): boolean {
+		const databasePath = join(stateDir, 'runtime.sqlite');
+		if (!existsSync(databasePath)) return false;
+		const store = new RunStore(databasePath);
+		try {
+			return store.getDiagnosticSchedule().enabled;
+		} finally {
+			store.close();
+		}
 	}
 
 	#firstBlockingRun(projectId?: string, exceptRunId?: string): {
