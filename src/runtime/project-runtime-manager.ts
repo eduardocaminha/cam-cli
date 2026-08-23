@@ -6,6 +6,7 @@ import { isTerminalRunState } from './run-state.ts';
 export interface ManagedProjectRuntime {
 	runtime: {
 		listRuns(limit?: number): RunRecord[];
+		acquireAdmissionFence(reason: string): () => void;
 	};
 	close(): Promise<void> | void;
 }
@@ -28,6 +29,8 @@ export class ProjectRuntimeLookupError extends Error {
  */
 export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	readonly #contexts = new Map<string, T>();
+	#admissionFence: { token: symbol; reason: string } | null = null;
+	readonly #contextFenceReleases = new Map<T, () => void>();
 
 	constructor(
 		private readonly registry: ProjectRegistry,
@@ -37,6 +40,7 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 
 	register(projectId: string, context: T): void {
 		this.#contexts.set(projectId, context);
+		this.#applyAdmissionFence(context);
 	}
 
 	/**
@@ -67,7 +71,27 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 		}
 		const context = this.compose(project);
 		this.#contexts.set(project.id, context);
+		this.#applyAdmissionFence(context);
 		return { project, context };
+	}
+
+	/** Read every ready project's durable runs, composing unopened runtimes as needed. */
+	isIdle(): boolean {
+		return this.#firstBlockingRun() === null;
+	}
+
+	/** Close one product-wide admission fence and only the fence it created. */
+	acquireAdmission(reason: string): (() => void) | null {
+		if (this.#admissionFence !== null) return null;
+		const fence = { token: Symbol('project-runtime-admission'), reason };
+		this.#admissionFence = fence;
+		for (const context of this.#contexts.values()) this.#applyAdmissionFence(context);
+		return () => {
+			if (this.#admissionFence?.token !== fence.token) return;
+			for (const release of this.#contextFenceReleases.values()) release();
+			this.#contextFenceReleases.clear();
+			this.#admissionFence = null;
+		};
 	}
 
 	/** Admit a new run only when the whole registered project set is idle. */
@@ -116,6 +140,14 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 			if (run !== undefined) return { project, run };
 		}
 		return null;
+	}
+
+	#applyAdmissionFence(context: T): void {
+		if (this.#admissionFence === null || this.#contextFenceReleases.has(context)) return;
+		this.#contextFenceReleases.set(
+			context,
+			context.runtime.acquireAdmissionFence(this.#admissionFence.reason),
+		);
 	}
 }
 

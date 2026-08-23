@@ -479,6 +479,7 @@ export class RunRuntime {
 	#armedProviderRetry: ArmedProviderRetry | null = null;
 	#workspaceNotices: WorkspaceNotice[] = [];
 	#admissionBlockedReason: string | null = null;
+	readonly #admissionFences = new Map<symbol, string>();
 
 	constructor(options: RunRuntimeOptions) {
 		this.#cwd = options.cwd;
@@ -515,8 +516,9 @@ export class RunRuntime {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
-		if (this.#admissionBlockedReason !== null) {
-			throw new RuntimeConflictError(this.#admissionBlockedReason);
+		const admissionBlock = this.#admissionBlockedReason ?? this.#firstAdmissionFenceReason();
+		if (admissionBlock !== null) {
+			throw new RuntimeConflictError(admissionBlock);
 		}
 		const normalizedIssueId = issueId.trim();
 		if (normalizedIssueId.length === 0) throw new Error('issueId is required');
@@ -552,6 +554,13 @@ export class RunRuntime {
 		this.#admissionBlockedReason = reason;
 	}
 
+	/** A releasable fence owned by one caller; independent admission stays intact. */
+	acquireAdmissionFence(reason: string): () => void {
+		const token = Symbol('run-admission-fence');
+		this.#admissionFences.set(token, reason);
+		return () => { this.#admissionFences.delete(token); };
+	}
+
 	resumeRun(runId: string, operatorGuidance?: string, source?: string): RunRecord {
 		const guidance = operatorGuidance?.trim();
 		const run = this.#resumableRun(runId, guidance);
@@ -576,8 +585,9 @@ export class RunRuntime {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
-		if (this.#admissionBlockedReason !== null) {
-			throw new RuntimeConflictError(this.#admissionBlockedReason);
+		const admissionBlock = this.#admissionBlockedReason ?? this.#firstAdmissionFenceReason();
+		if (admissionBlock !== null) {
+			throw new RuntimeConflictError(admissionBlock);
 		}
 		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
 		const run = this.#store.getRun(runId);
@@ -591,6 +601,10 @@ export class RunRuntime {
 			throw new Error('operator guidance is required to resume a waiting-user run');
 		}
 		return run;
+	}
+
+	#firstAdmissionFenceReason(): string | null {
+		return this.#admissionFences.values().next().value ?? null;
 	}
 
 	/**
