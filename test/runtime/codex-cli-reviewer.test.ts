@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { buildReviewPrompt, collectChange } from '../../src/runtime/claude-cli-reviewer.ts';
+import {
+	buildReviewPrompt,
+	collectChange,
+	REVIEW_MATERIALITY_CONTRACT,
+} from '../../src/runtime/claude-cli-reviewer.ts';
 import { CodexCliReviewer } from '../../src/runtime/codex-cli-reviewer.ts';
 import { buildCodexReviewArgv } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
@@ -121,5 +125,8 @@ describe('independent Codex reviewer', () => {
 		// GSHIP-703: same shared builder, so this reviewer's findings carry the
 		// one operator language contract, not a Codex-specific copy of it.
 		expect(capturedPrompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
+		// GSHIP-714: and the same materiality contract, so a stale internal
+		// comment is not a finding for this provider either.
+		expect(capturedPrompt).toContain(REVIEW_MATERIALITY_CONTRACT.join('\n'));
 	});
 });

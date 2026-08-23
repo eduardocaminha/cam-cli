@@ -70,6 +70,40 @@ export const REVIEWER_MCP_CONFIG = '{"mcpServers":{}}';
 
 const DIFF_LIMIT = 60_000;
 
+/**
+ * What separates CLEAN from FINDINGS, for both providers.
+ *
+ * GSHIP-714: GSHIP-712 was reviewed as FINDINGS over a stale comment inside a
+ * test -- no executable or observable effect -- which resumed the Opus
+ * executor and paid for a second full review. The old wording ruled out only
+ * "style preference and speculation", so any true-but-immaterial remark still
+ * qualified as "a defect you can point at in a specific file". CLEAN is now
+ * defined as the absence of a material defect, not the absence of every
+ * possible improvement, and the material axes are named. Comments and docs
+ * stay in scope exactly when they are public, contractual, operational, or
+ * able to mislead execution or verification.
+ *
+ * It is a prompt contract, not a filter: no severity field, no score, no
+ * post-hoc pruning of what the reviewer returned.
+ */
+export const REVIEW_MATERIALITY_CONTRACT = [
+	'Judge only whether the change is correct and limited to the issue.',
+	'CLEAN means the change carries no material defect. It does not mean the',
+	'change is beyond every possible improvement: a change you would have',
+	'written differently, but that is correct, is CLEAN.',
+	'Report a finding only for a concrete defect you can point at in a specific',
+	'file, and only when it can alter executable behaviour, security, data',
+	'integrity, the approved contract, the validity of the verification, a',
+	'public interface, or the information the operator can observe. Work',
+	'outside the issue is such a defect.',
+	'Omit style preferences, optional refactors, naming, stale internal',
+	'comments, internal prose and requests for extra tests when they do not',
+	'reveal a real gap in behaviour. Comments and documentation stay material',
+	'when they are public, contractual, used to operate the system, or able to',
+	'induce incorrect execution or verification.',
+	'Speculation is not a finding.',
+] as const;
+
 export interface ClaudeCliReviewerOptions {
 	command?: string[];
 	model?: string;
@@ -169,10 +203,7 @@ export function buildReviewPrompt(
 		'Read the files around the diff before judging. Entries marked ?? in the',
 		'status below are new files that the diff does not contain; open them with Read.',
 		'',
-		'Judge only whether the change is correct and limited to the issue.',
-		'Report a finding only for a defect you can point at in a specific file:',
-		'a real bug, a broken contract, or work outside the issue. Style preference',
-		'and speculation are not findings.',
+		...REVIEW_MATERIALITY_CONTRACT,
 		'',
 		...(decisions.length === 0 ? [] : [
 			'Decisions the operator has already made for this run, oldest first:',

@@ -16,6 +16,7 @@ import {
 	ClaudeCliReviewer,
 	collectChange,
 	parseReviewVerdict,
+	REVIEW_MATERIALITY_CONTRACT,
 	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
@@ -348,9 +349,20 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			'status below are new files that the diff does not contain; open them with Read.',
 			'',
 			'Judge only whether the change is correct and limited to the issue.',
-			'Report a finding only for a defect you can point at in a specific file:',
-			'a real bug, a broken contract, or work outside the issue. Style preference',
-			'and speculation are not findings.',
+			'CLEAN means the change carries no material defect. It does not mean the',
+			'change is beyond every possible improvement: a change you would have',
+			'written differently, but that is correct, is CLEAN.',
+			'Report a finding only for a concrete defect you can point at in a specific',
+			'file, and only when it can alter executable behaviour, security, data',
+			'integrity, the approved contract, the validity of the verification, a',
+			'public interface, or the information the operator can observe. Work',
+			'outside the issue is such a defect.',
+			'Omit style preferences, optional refactors, naming, stale internal',
+			'comments, internal prose and requests for extra tests when they do not',
+			'reveal a real gap in behaviour. Comments and documentation stay material',
+			'when they are public, contractual, used to operate the system, or able to',
+			'induce incorrect execution or verification.',
+			'Speculation is not a finding.',
 			'',
 			'End your reply with a single JSON object on the last line and nothing after it:',
 			'{"verdict":"CLEAN","findings":[]}',
@@ -411,6 +423,59 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 				.toBeLessThan(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]));
 			expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))
 				.toBeLessThan(prompt.indexOf('Issue record:'));
+		}
+	});
+
+	// GSHIP-714: GSHIP-712 was reviewed as FINDINGS over a stale comment inside
+	// a test, with no executable or observable effect, which resumed the Opus
+	// executor for a second full review. The materiality contract is what keeps
+	// that out, so it is asserted line by line and not only by its presence.
+	test('defines CLEAN as the absence of a material defect and names what is material', () => {
+		for (const decisions of [[], ['Keep the smaller seam.']]) {
+			const prompt = buildReviewPrompt(issueId, issue, change, decisions);
+			expect(prompt).toContain(REVIEW_MATERIALITY_CONTRACT.join('\n'));
+			// CLEAN is the absence of a material defect, not of every improvement.
+			expect(prompt).toContain('CLEAN means the change carries no material defect');
+			expect(prompt).toContain('beyond every possible improvement');
+			// The axes a finding has to be able to alter.
+			for (const axis of [
+				'executable behaviour',
+				'security',
+				'data',
+				'integrity',
+				'the approved contract',
+				'the validity of the verification',
+				'public interface',
+				'the information the operator can observe',
+				'Work',
+				'outside the issue is such a defect',
+			]) {
+				expect(prompt).toContain(axis);
+			}
+			// What the reviewer omits when it reveals no gap in behaviour.
+			for (const omitted of [
+				'style preferences',
+				'optional refactors',
+				'naming',
+				'stale internal',
+				'comments',
+				'internal prose',
+				'requests for extra tests',
+			]) {
+				expect(prompt).toContain(omitted);
+			}
+			// Comments and docs are not blanket-immaterial.
+			expect(prompt).toContain('Comments and documentation stay material');
+			expect(prompt).toContain('used to operate the system');
+			expect(prompt).toContain('induce incorrect execution or verification');
+			expect(prompt).toContain('Speculation is not a finding.');
+			// It stays above the verdict format, which stays the same two shapes:
+			// no severity, no score, no suggestion backlog.
+			expect(prompt.indexOf('CLEAN means the change carries no material defect'))
+				.toBeLessThan(prompt.indexOf('End your reply'));
+			expect(prompt).toContain('{"verdict":"CLEAN","findings":[]}');
+			expect(prompt).not.toContain('severity');
+			expect(prompt).not.toContain('score');
 		}
 	});
 
