@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T16:30:35.092Z",
-  "updatedAt": "2026-08-23T16:30:35.092Z",
+  "updatedAt": "2026-08-23T16:30:51.993Z",
   "description": "Objetivo\nImpedir que commits de metadados do backlog cancelem o CI de um merge já entregue e suprimam sua release. Evidência real: o CI push do merge GSHIP-732, run 32651295935 no SHA 11d17adf, foi cancelado pelos commits diretos que criaram e aprovaram GSHIP-733; os CIs seguintes concluíram em SHAs chore sem PR associado e o resolver de release pulou a publicação. Foi necessário rerun manual do CI do merge para gerar v0.362.0.\n\nContrato\n- Preservar o desenho existente: CI valida o SHA exato; Release observa um CI push main bem-sucedido e só publica quando o SHA é merge commit de PR. Não criar tag manual, serviço, bot, fila ou workflow adicional.\n- Mudar a concorrência do CI para que atualizações novas do mesmo PR possam cancelar execuções antigas desse PR, mas pushes distintos em main nunca cancelem o CI de um merge anterior. A identidade de concorrência de push deve incluir o SHA; a de pull_request deve incluir o número do PR.\n- Commits diretos que alterem exclusivamente .gateship/issues/** não devem disparar o CI completo de main. Um commit que misture código e metadados continua sujeito ao CI normal.\n- A release continua idempotente por SHA/tag e continua ignorando commits diretos que não são merges de PR.\n- Não reduzir check:all, build da imagem, smoke dos dois CLIs, provenance, binários multiarch ou verificações de PR.\n- Não alterar branch protection nem exigir que issues/specs sejam PRs.\n- Adicionar uma guarda estática clara para a configuração de ci.yml e preservar as guardas existentes de release.yml.\n\nAceite observável\n- Teste lê ci.yml e prova paths-ignore somente para .gateship/issues/** no push main.\n- Teste prova que a chave de concorrência separa push por github.sha e agrupa pull_request por número, sem cancelamento cruzado entre pushes main.\n- Testes existentes de release confirmam que apenas CI bem-sucedido do merge commit cria/reusa tag.\n- check:all e build continuam inalterados no job CI.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/release-workflow.test.ts test/ci-workflow.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "bfa1088976a4c9664f3799e2dbdd123d6b6c3b93afe931e5728ea6a4a2894a7d",
+    "approvedAt": "2026-08-23T16:30:51.993Z"
   }
 }
