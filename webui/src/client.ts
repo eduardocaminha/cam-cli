@@ -48,6 +48,19 @@ function projectApiPath(projectId: string, suffix = ''): string {
 	return `${PROJECTS_PATH}/${encodeURIComponent(projectId)}${suffix}`;
 }
 
+function diagnosticsPathOf(scope: ProjectScope): string {
+	return scope === null ? DIAGNOSTICS_PATH : projectApiPath(scope, '/diagnostics');
+}
+
+function diagnosticCancelPathOf(scope: ProjectScope, scanId: string): string {
+	return `${diagnosticsPathOf(scope)}/${encodeURIComponent(scanId)}/cancel`;
+}
+
+function diagnosticFindingPathOf(scope: ProjectScope, id: string, action: 'dismiss' | 'promote'): string {
+	const base = scope === null ? DIAGNOSTIC_FINDINGS_PATH : projectApiPath(scope, '/diagnostic-findings');
+	return `${base}/${encodeURIComponent(id)}/${action}`;
+}
+
 /** The SSE endpoint a document subscribes to for its selected project. */
 export function eventsPathOf(scope: ProjectScope): string {
 	return scope === null ? EVENTS_PATH : projectApiPath(scope, '/events');
@@ -881,8 +894,8 @@ export async function saveOperatorProfile(profile: OperatorProfileView): Promise
 	return 'Operator profile updated.';
 }
 
-export async function fetchDiagnostics(): Promise<DiagnosticsView> {
-	const payload = await readJson<DiagnosticsPayload>(await fetch(DIAGNOSTICS_PATH), 'Diagnostics');
+export async function fetchDiagnostics(scope: ProjectScope = null): Promise<DiagnosticsView> {
+	const payload = await readJson<DiagnosticsPayload>(await fetch(diagnosticsPathOf(scope)), 'Diagnostics');
 	return {
 		analyzers: payload.analyzers ?? [],
 		scan: payload.scan ?? null,
@@ -921,8 +934,8 @@ export async function saveDiagnosticSchedule(
 	return 'Diagnostic schedule saved.';
 }
 
-export async function startDiagnostic(analyzer: string): Promise<string> {
-	const response = await fetch(DIAGNOSTICS_PATH, {
+export async function startDiagnostic(analyzer: string, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(diagnosticsPathOf(scope), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ analyzer }),
@@ -932,8 +945,8 @@ export async function startDiagnostic(analyzer: string): Promise<string> {
 	return 'Diagnostic started in an isolated checkout.';
 }
 
-export async function cancelDiagnostic(scanId: string): Promise<string> {
-	const response = await fetch(`${DIAGNOSTICS_PATH}/${encodeURIComponent(scanId)}/cancel`, {
+export async function cancelDiagnostic(scanId: string, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(diagnosticCancelPathOf(scope, scanId), {
 		method: 'POST',
 	});
 	const payload = (await response.json()) as DiagnosticsPayload;
@@ -941,9 +954,9 @@ export async function cancelDiagnostic(scanId: string): Promise<string> {
 	return 'Diagnostic cancelled.';
 }
 
-export async function dismissDiagnosticFinding(id: string): Promise<string> {
+export async function dismissDiagnosticFinding(id: string, scope: ProjectScope = null): Promise<string> {
 	const response = await fetch(
-		`${DIAGNOSTIC_FINDINGS_PATH}/${encodeURIComponent(id)}/dismiss`,
+		diagnosticFindingPathOf(scope, id, 'dismiss'),
 		{ method: 'POST' },
 	);
 	const payload = (await response.json()) as CommandPayload;
@@ -954,9 +967,10 @@ export async function dismissDiagnosticFinding(id: string): Promise<string> {
 export async function promoteDiagnosticFinding(
 	id: string,
 	input: OperatorIssueDraft,
+	scope: ProjectScope = null,
 ): Promise<CreatedIssue> {
 	const response = await fetch(
-		`${DIAGNOSTIC_FINDINGS_PATH}/${encodeURIComponent(id)}/promote`,
+		diagnosticFindingPathOf(scope, id, 'promote'),
 		{
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
