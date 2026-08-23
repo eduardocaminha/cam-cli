@@ -50,7 +50,7 @@ describe('ProjectRuntimeManager', () => {
 		const manager = new ProjectRuntimeManager(registry, currentRoot, () => {
 			composed += 1;
 			return {
-				runtime: { listRuns: () => [] },
+				runtime: { listRuns: () => [], acquireAdmissionFence: () => () => {} },
 				close: () => { closed += 1; },
 			};
 		});
@@ -102,7 +102,10 @@ describe('ProjectRuntimeManager', () => {
 			stateDir: createTestTmpdir('gship-runtime-manager-owned-other-state-'),
 			readiness: { state: 'empty', name: 'other', detail: 'empty' },
 		});
-		const context = { runtime: { listRuns: (): RunRecord[] => [] }, close: () => undefined };
+		const context = {
+			runtime: { listRuns: (): RunRecord[] => [], acquireAdmissionFence: () => () => {} },
+		close: () => undefined,
+		};
 		const manager = new ProjectRuntimeManager<typeof context>(registry, currentRoot, () => {
 			throw new Error('must not compose');
 		});
@@ -137,13 +140,63 @@ describe('ProjectRuntimeManager', () => {
 		});
 		const runs = new Map<string, RunRecord[]>([[first.id, [run('run-first')]], [second.id, []]]);
 		const manager = new ProjectRuntimeManager(registry, firstRoot, (project) => ({
-			runtime: { listRuns: () => runs.get(project.id) ?? [] },
+			runtime: { listRuns: () => runs.get(project.id) ?? [], acquireAdmissionFence: () => () => {} },
 			close: () => undefined,
 		}));
 
 		expect(() => manager.admitStart(second.id)).toThrow(RuntimeConflictError);
 		expect(manager.admitResume(first.id, 'run-first')).toBeDefined();
 		expect(() => manager.admitResume(second.id, 'run-second')).toThrow(RuntimeConflictError);
+		registry.close();
+	});
+
+	test('reads idle state from unopened ready projects and fences future contexts', () => {
+		const firstRoot = createTestTmpdir('gship-runtime-manager-idle-first-');
+		const secondRoot = createTestTmpdir('gship-runtime-manager-idle-second-');
+		const registry = openProjectRegistry(createTestTmpdir('gship-runtime-manager-idle-home-'));
+		const first = registry.reconcile({
+			root: firstRoot,
+			stateDir: createTestTmpdir('gship-runtime-manager-idle-first-state-'),
+			readiness: ready('first'),
+		});
+		const second = registry.reconcile({
+			root: secondRoot,
+			stateDir: createTestTmpdir('gship-runtime-manager-idle-second-state-'),
+			readiness: ready('second'),
+		});
+		const runs = new Map<string, RunRecord[]>([[first.id, []], [second.id, [run('run-second')]]]);
+		const fences: string[] = [];
+		let activeFences = 0;
+		const manager = new ProjectRuntimeManager(registry, firstRoot, (project) => ({
+			runtime: {
+				listRuns: () => runs.get(project.id) ?? [],
+				acquireAdmissionFence: (reason) => {
+					fences.push(reason);
+					activeFences += 1;
+					return () => { activeFences -= 1; };
+				},
+			},
+			close: () => undefined,
+		}));
+
+		expect(manager.isIdle()).toBe(false);
+		const release = manager.acquireAdmission('update in progress');
+		expect(release).not.toBeNull();
+		const thirdRoot = createTestTmpdir('gship-runtime-manager-idle-third-');
+		const third = registry.reconcile({
+			root: thirdRoot,
+			stateDir: createTestTmpdir('gship-runtime-manager-idle-third-state-'),
+			readiness: ready('third'),
+		});
+		manager.get(third.id);
+		expect(fences).toEqual([
+			'update in progress',
+			'update in progress',
+			'update in progress',
+		]);
+		expect(activeFences).toBe(3);
+		release!();
+		expect(activeFences).toBe(0);
 		registry.close();
 	});
 });

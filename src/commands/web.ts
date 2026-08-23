@@ -113,6 +113,7 @@ import {
 import {
 	ProjectRuntimeLookupError,
 	ProjectRuntimeManager,
+	type ManagedProjectRuntime,
 } from '../runtime/project-runtime-manager.ts';
 import { readProjectOperationalStatus } from '../runtime/project-status.ts';
 import {
@@ -141,7 +142,6 @@ import {
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
-import { isTerminalRunState } from '../runtime/run-state.ts';
 import {
 	type OrchestratorMessage,
 	PROJECT_BRIEF_LIMITS,
@@ -2516,14 +2516,14 @@ interface DefaultSelfUpdateInput {
 	 * ever provisioned at boot -- this stays a plain pass-through either way.
 	 */
 	bootClaudeEnv: Record<string, string | undefined>;
+	projectRuntimes: Pick<ProjectRuntimeManager<ManagedProjectRuntime>, 'isIdle' | 'acquireAdmission'>;
 }
 
 function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
 	if (input.options.selfUpdate !== undefined) return input.options.selfUpdate;
 	const databasePath = join(input.stateDir, 'runtime.sqlite');
 	const updaterStore = new RunStore(input.ownsRunRuntime ? databasePath : ':memory:');
-	const isIdle = () => input.runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state))
-		&& !input.diagnostics.isActive();
+	const isIdle = () => input.projectRuntimes.isIdle() && !input.diagnostics.isActive();
 	return new SelfUpdateRuntime({
 		store: updaterStore,
 		databasePath,
@@ -2539,10 +2539,11 @@ function resolveSelfUpdate(input: DefaultSelfUpdateInput): SelfUpdateAccess {
 		handoffEnv: input.bootClaudeEnv,
 		acquireAdmission: () => {
 			const reason = 'Gateship is handing off a native update; new work is temporarily unavailable.';
-			input.runRuntime.setAdmissionBlocked(reason);
+			const releaseProjectAdmission = input.projectRuntimes.acquireAdmission(reason);
+			if (releaseProjectAdmission === null) return null;
 			input.diagnostics.setAdmissionBlocked(reason);
 			return () => {
-				input.runRuntime.setAdmissionBlocked(null);
+				releaseProjectAdmission();
 				input.diagnostics.setAdmissionBlocked(null);
 			};
 		},
@@ -2663,7 +2664,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
 		adapters: [new ReactDoctorAdapter(options.cwd, undefined, stateDir)],
-		isProjectIdle: () => runRuntime.listRuns(1).every((run) => isTerminalRunState(run.state)),
+		isProjectIdle: () => projectRuntimes.isIdle(),
 	});
 	let selfUpdate = options.selfUpdate;
 	// The same durable event log the SSE stream below reads per-connection
@@ -3338,6 +3339,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		ownsRunRuntime,
 		stateDir,
 		bootClaudeEnv,
+		projectRuntimes,
 	});
 	diagnostics.startScheduler();
 	selfUpdate.startScheduler();

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-727",
   "title": "Cercar atualização nativa pela atividade de todos os projetos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T13:53:03.512Z",
-  "updatedAt": "2026-08-23T13:54:58.473Z",
+  "updatedAt": "2026-08-23T14:02:15.355Z",
   "description": "Preparar a concorrência multiprojeto sem ainda alterar a regra atual de admissão de runs. Fazer ProjectRuntimeManager expor uma leitura determinística de ociosidade que considere toda inscrição ready, compondo runtimes ainda não abertos quando necessário para não ignorar runs não terminais persistidas após restart. Fazer o manager possuir uma cerca de admissão product-wide: aplicar o mesmo motivo a todos os contextos já compostos, aplicar também a contextos compostos enquanto a cerca estiver ativa e liberar exatamente essa cerca ao final. Integrar o SelfUpdateRuntime a essa leitura e cerca do manager, além do DiagnosticsRuntime, para que atualização nativa seja adiada se qualquer projeto tiver run ativa e para que nenhum projeto possa iniciar ou retomar entre a segunda checagem de ociosidade e o handoff. Preservar a política atual de uma run global por enquanto, as rotas existentes, os bancos por projeto e o comportamento de container e development. Não criar scheduler, lock distribuído, tabela, processo ou configuração nova.",
   "specSource": "operator",
   "spec": {
