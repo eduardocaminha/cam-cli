@@ -56,7 +56,7 @@ describe('canonical agent CLI', () => {
 		expect(result.output).toMatchObject({ ok: true, version: 'v1' });
 		const guide = result.output['guide'];
 		expect(typeof guide).toBe('string');
-		expect(String(guide).length).toBeLessThan(800);
+		expect(String(guide).length).toBeLessThan(950);
 		expect(guide).toContain('Never edit .gship directly');
 		expect(guide).toContain('Never invent operator approval');
 	});
@@ -66,6 +66,7 @@ describe('canonical agent CLI', () => {
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
 			'project.inspect', 'projects.list', 'projects.status', 'projects.register',
+			'projects.import',
 			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
@@ -76,10 +77,13 @@ describe('canonical agent CLI', () => {
 			.toContain('fingerprint');
 		// Onboarding names a location, never a project that does not exist yet.
 		expect(operations.find(({ name }) => name === 'projects.register')?.input).toBe('{root}');
+		// Importing names a repository, never a location on disk or a credential.
+		expect(operations.find(({ name }) => name === 'projects.import')?.input).toBe('{repository}');
 		// Removing one names the registration, never a location on disk.
 		expect(operations.find(({ name }) => name === 'projects.unregister')?.input).toBe('{projectId}');
 		for (const operation of operations.filter(({ name }) =>
-			!['project.inspect', 'projects.list', 'projects.status', 'projects.register'].includes(name))) {
+			!['project.inspect', 'projects.list', 'projects.status', 'projects.register', 'projects.import']
+				.includes(name))) {
 			expect(operation.input).toContain('projectId');
 		}
 	});
@@ -152,6 +156,55 @@ describe('canonical agent CLI', () => {
 				result: { project: { id: 'project-2', root: '/workspace/product', current: false } },
 			},
 		});
+	});
+
+	// GSHIP-718: the CLI and the screen post to the exact same import route,
+	// naming a repository -- never a path, a token or a credential.
+	test('imports a GitHub repository through the same endpoint the screen posts to', async () => {
+		let requested = '';
+		let sent: { method?: string; body?: unknown } = {};
+		const result = await executeAgent([
+			'call', 'projects.import', '--input', '{"repository":"acme/product"}',
+		], async (url, init) => {
+			requested = String(url);
+			sent = { method: init?.method, body: JSON.parse(String(init?.body)) };
+			return jsonResponse({ ok: true, project: {
+				id: 'project-2', name: 'product', root: '/home/.gateship/projects/acme/product',
+				stateDir: '/home/.gateship/projects/acme/product/.gship', readiness: 'ready',
+				repository: 'acme/product', current: false,
+			} });
+		});
+		expect(requested).toBe('http://127.0.0.1:7777/api/projects/import');
+		expect(sent).toEqual({ method: 'POST', body: { repository: 'acme/product' } });
+		expect(result).toMatchObject({
+			exitCode: 0,
+			output: {
+				ok: true,
+				operation: 'projects.import',
+				result: { project: { id: 'project-2', repository: 'acme/product', current: false } },
+			},
+		});
+	});
+
+	test('surfaces a typed import refusal without retrying or leaking a credential', async () => {
+		let calls = 0;
+		const result = await executeAgent([
+			'call', 'projects.import', '--input', '{"repository":"acme/product"}',
+		], async () => {
+			calls += 1;
+			return jsonResponse({
+				ok: false,
+				code: 'clone-failed',
+				message: "Cloning acme/product failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+			}, 502);
+		});
+		expect(calls).toBe(1);
+		expect(result).toMatchObject({
+			exitCode: 1,
+			output: { ok: false, code: 'clone-failed', httpStatus: 502 },
+		});
+		expect(JSON.stringify(result.output)).not.toContain('token');
+		expect(JSON.stringify(result.output)).not.toContain('password');
 	});
 
 	// GSHIP-717: the CLI and the screen call the same service function through

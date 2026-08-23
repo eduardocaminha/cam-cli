@@ -57,6 +57,7 @@ import {
 	fetchRunEvents,
 	fetchRuns,
 	fetchSelfUpdate,
+	importProject,
 	ISSUES_PATH,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
@@ -314,6 +315,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSendNotificationTest={() => {}}
 			onPromoteProposal={() => {}}
 			onPromoteDiagnosticFinding={() => {}}
+			onImportProject={() => {}}
 			onRegisterProject={() => {}}
 			onUnregisterProject={() => {}}
 			onResume={() => {}}
@@ -3055,6 +3057,48 @@ describe('operator shell', () => {
 		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Register project')).toBe(false);
 	});
 
+	// GSHIP-718: the other onboarding write is a GitHub repository, never a
+	// path -- Gateship owns the destination and clones with the operator's
+	// existing GitHub login, so no token or credential field is ever offered.
+	test('the overview offers importing a GitHub repository in both locales', () => {
+		for (const expected of [
+			{
+				locale: 'en-US' as const,
+				title: 'Import a GitHub repository',
+				label: 'GitHub repository',
+				submit: 'Import repository',
+				pending: 'Cloning the repository',
+				destination: 'Gateship stores the clone under its own managed directory',
+				credential: 'uses your existing GitHub login',
+			},
+			{
+				locale: 'pt-BR' as const,
+				title: 'Importar um repositório do GitHub',
+				label: 'Repositório do GitHub',
+				submit: 'Importar repositório',
+				pending: 'Clonando o repositório',
+				destination: 'O Gateship guarda o clone no seu próprio diretório gerenciado',
+				credential: 'usa o seu login do GitHub já existente',
+			},
+		]) {
+			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT] });
+			expect(html).toContain(`>${expected.title}</h2>`);
+			expect(html).toContain(`>${expected.label}</span>`);
+			expect(html).toContain(expected.destination);
+			expect(html).toContain(expected.credential);
+			expect(html).toContain('name="project-import-repository"');
+			expect(buttonIsEnabled(html, expected.submit)).toBe(true);
+			expect(html).not.toContain('type="password"');
+			expect(html).not.toContain(expected.pending);
+		}
+		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Import repository')).toBe(false);
+		expect(renderAt('/overview', { pending: true })).toContain('Cloning the repository');
+		// A typed refusal reaches the operator on the surface that asked for it.
+		expect(renderAt('/overview', {
+			status: 'That repository is already a checkout of a different one.',
+		})).toContain('That repository is already a checkout of a different one.');
+	});
+
 	test('a non-current project keeps conversation and settings unavailable', () => {
 		for (const suffix of ['', '/settings']) {
 			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
@@ -3922,6 +3966,29 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
 			await expect(registerProject('/other-product'))
 				.rejects.toThrow('unreadable project registration');
+		});
+	});
+
+	test('imports a GitHub repository through its own route, and keeps its refusal typed', async () => {
+		await withRecordedFetch({ ok: true, project: OTHER_PROJECT }, 200, async (calls) => {
+			expect(await importProject('acme/other-product')).toEqual(OTHER_PROJECT);
+			expect(calls).toEqual([{
+				url: `${PROJECTS_PATH}/import`,
+				method: 'POST',
+				body: JSON.stringify({ repository: 'acme/other-product' }),
+			}]);
+		});
+		await withRecordedFetch(
+			{ ok: false, code: 'clone-failed', message: 'Cloning acme/other-product failed: fatal: could not read Username.' },
+			502,
+			async () => {
+				await expect(importProject('acme/other-product'))
+					.rejects.toThrow('Cloning acme/other-product failed');
+			},
+		);
+		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
+			await expect(importProject('acme/other-product'))
+				.rejects.toThrow('unreadable project import');
 		});
 	});
 
