@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T16:19:17.246Z",
-  "updatedAt": "2026-08-23T16:19:17.246Z",
+  "updatedAt": "2026-08-23T16:19:42.559Z",
   "description": "Objetivo\nFazer a fila automática acordar quando uma issue recém-aprovada se torna admissível enquanto o projeto está ocioso. Evidência real em v0.361.0: chain-runs estava enabled com pause no-admissible-issue; GSHIP-732 foi aprovada e apareceu como plannable, mas activeRun permaneceu null até runs.start manual.\n\nContrato\n- Reutilizar RunRuntime, ProjectRuntimeManager e o scheduler/admission existentes. Não adicionar polling, fila, daemon, worker, tabela, evento periódico ou segundo caminho de start.\n- Depois de uma aprovação bem-sucedida, reavaliar o encadeamento do mesmo projeto. Se chain-runs estiver habilitado, não houver run não terminal nesse projeto, a cerca global permitir admissão e existir uma issue plannable, iniciar exatamente a primeira issue admissível pela ordem determinística já usada pelo chain.\n- Centralizar o efeito para que aprovação via UI, agent CLI e orquestrador usem a mesma operação; não duplicar regras nos transports.\n- Aprovar uma spec ainda bloqueada, stale, não plannable ou durante run ativa não inicia nada. Quando a run ativa terminar, o chain existente continua dono da próxima admissão.\n- Chamadas concorrentes ou repetidas devem ser idempotentes do ponto de vista de admissão: no máximo uma run ativa por projeto e nenhum start duplicado.\n- O pause no-admissible-issue deixa de ser o estado atual assim que uma nova run começa. Não reescrever o histórico do evento antigo.\n- Preservar serialização no mesmo projeto, paralelismo entre projetos independentes e a cerca product-wide de atualização.\n- Não alterar aprovação humana, fingerprint, ordem do backlog ou comportamento quando chain-runs estiver desligado.\n\nAceite observável\n- Teste de integração reproduz: chain habilitado, projeto idle, pause no-admissible-issue, aprovação torna issue plannable e a run começa sem chamada manual de runs.start.\n- Testes cobrem chain desligado, issue bloqueada, run ativa e duas aprovações próximas sem duplicação.\n- O mesmo teste passa pela rota project-scoped usada pelo agent CLI e pela UI.\n- Nenhum timer ou polling novo é criado.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/project-scoped-agent-api.test.ts test/web/run-api.test.ts test/runtime/run-runtime.test.ts test/runtime/project-runtime-manager.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "166a7243d8d5f2dc157e749bf69cdc4c7d01cb16e38ebdd6041174b5620b0372",
+    "approvedAt": "2026-08-23T16:19:42.559Z"
   }
 }
