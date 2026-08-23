@@ -123,8 +123,15 @@ export interface RuntimeExecutorHandoff {
 
 export type RuntimeExecutionResult =
 	/** `proposals` are ideas found outside the issue, never work done for it. */
-	| { outcome: 'completed'; summary?: string; proposals?: readonly ProposalDraft[] }
-	| { outcome: 'waiting-user'; summary: string };
+	| { outcome: 'completed'; summary?: string; proposals?: readonly ProposalDraft[]; reconciliation?: RuntimeExecutionReconciliation }
+	| { outcome: 'waiting-user'; summary: string; reconciliation?: RuntimeExecutionReconciliation };
+
+export type RuntimeReconciliationOutcome = 'unchanged' | 'adapted' | 'contract-change-required';
+
+export interface RuntimeExecutionReconciliation {
+	outcome: RuntimeReconciliationOutcome;
+	summary: string;
+}
 
 export interface RuntimeExecutor {
 	execute: (input: RuntimeExecutionInput) => Promise<RuntimeExecutionResult>;
@@ -1424,6 +1431,14 @@ export class RunRuntime {
 		if (signal.aborted) {
 			this.#interrupt(run.id);
 			return false;
+		}
+		if (execution.reconciliation !== undefined
+			&& ((!executionInput.resume && executionInput.executorHandoff === undefined)
+				|| executionInput.operatorGuidance !== undefined)) {
+			this.#emit(run.id, 'run.plan-reconciled', {
+				outcome: execution.reconciliation.outcome,
+				summary: execution.reconciliation.summary,
+			});
 		}
 		if (execution?.outcome === 'waiting-user') {
 			this.#transition(run.id, 'waiting-user', 'run.waiting-user', {

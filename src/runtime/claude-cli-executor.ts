@@ -28,6 +28,7 @@ import type {
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 	RuntimeExecutorHandoff,
+	RuntimeReconciliationOutcome,
 } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
@@ -115,8 +116,17 @@ export const EXECUTION_RESULT_SCHEMA = {
 				additionalProperties: false,
 			},
 		},
+		reconciliation: {
+			type: 'object',
+			properties: {
+				outcome: { type: 'string', enum: ['unchanged', 'adapted', 'contract-change-required'] },
+				summary: { type: 'string', minLength: 1 },
+			},
+			required: ['outcome', 'summary'],
+			additionalProperties: false,
+		},
 	},
-	required: ['status', 'summary', 'proposals'],
+	required: ['status', 'summary', 'proposals', 'reconciliation'],
 	additionalProperties: false,
 } as const;
 
@@ -244,6 +254,10 @@ export function buildWorkPrompt(
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+		'The fresh worktree and the current main are the sources of truth. Before editing, compare the current code with the approved contract below.',
+		'Adapt autonomously only files, seams, dependencies and mechanical details changed by earlier deliveries. Never ask the operator about purely technical drift.',
+		'Report reconciliation as unchanged when the approved contract still maps directly to the current code, adapted when only that technical drift was incorporated, or contract-change-required when the objective, observable acceptance, risk, exclusions, evidence or verify commands must change.',
+		'Use status completed only with reconciliation outcome unchanged or adapted. Use status waiting-user only with contract-change-required, and summarize the exact decision required.',
 		...handoffSection,
 		...decisionsSection,
 		...guidanceSection,
@@ -271,17 +285,35 @@ export function parseExecutionResult(
 	const result = structuredOutput as Record<string, unknown>;
 	const status = result['status'];
 	const summary = result['summary'];
+	const reconciliation = result['reconciliation'];
+	const reconciliationRecord = reconciliation !== null && typeof reconciliation === 'object' && !Array.isArray(reconciliation)
+		? reconciliation as Record<string, unknown>
+		: null;
+	const reconciliationOutcome = reconciliationRecord?.['outcome'];
+	const reconciliationSummary = reconciliationRecord?.['summary'];
 	if ((status !== 'completed' && status !== 'waiting-user')
 		|| typeof summary !== 'string'
-		|| summary.trim().length === 0) {
+		|| summary.trim().length === 0
+		|| (reconciliationOutcome !== 'unchanged'
+			&& reconciliationOutcome !== 'adapted'
+			&& reconciliationOutcome !== 'contract-change-required')
+		|| typeof reconciliationSummary !== 'string'
+		|| reconciliationSummary.trim().length === 0
+		|| (status === 'completed' && reconciliationOutcome === 'contract-change-required')
+		|| (status === 'waiting-user' && reconciliationOutcome !== 'contract-change-required')) {
 		throw new Error('executor returned an invalid structured run status');
 	}
+	const parsedReconciliation = {
+		outcome: reconciliationOutcome as RuntimeReconciliationOutcome,
+		summary: reconciliationSummary.trim(),
+	};
 	// A paused turn reports a question, not a finding: only a completed result
 	// carries ideas worth keeping.
-	if (status === 'waiting-user') return { outcome: status, summary: summary.trim() };
+	if (status === 'waiting-user') return { outcome: status, summary: summary.trim(), reconciliation: parsedReconciliation };
 	return {
 		outcome: status,
 		summary: summary.trim(),
+		reconciliation: parsedReconciliation,
 		proposals: normalizeProposalDrafts(result['proposals']),
 	};
 }

@@ -122,6 +122,10 @@ if (mode === 'wait') {
 			proposals: proposal === undefined
 				? []
 				: [{ title: proposal, evidence: 'fixture evidence' }],
+			reconciliation: {
+				outcome: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
+				summary: 'fixture reconciliation',
+			},
 		},
 		...(cost === 'full' ? {
 			total_cost_usd: 0.1234,

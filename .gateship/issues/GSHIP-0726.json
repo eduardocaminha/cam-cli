@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-726",
   "title": "Reconciliar plano tecnico no inicio de cada execucao",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T13:36:58.187Z",
-  "updatedAt": "2026-08-23T13:39:23.426Z",
+  "updatedAt": "2026-08-23T13:45:02.638Z",
   "description": "Manter Spec, fingerprint e aprovação existentes como o contrato imutável, sem adicionar campo de plano nem reescrever issues pendentes. Estender o resultado estruturado compartilhado pelos executores Claude e Codex com um objeto obrigatório reconciliation contendo outcome unchanged, adapted ou contract-change-required e summary não vazio. No prompt compartilhado, declarar que o worktree fresco e a main atual são a fonte de verdade; antes de editar, o executor compara o código atual com o contrato aprovado, adapta autonomamente somente arquivos, seams, dependências e detalhes mecânicos alterados por entregas anteriores, e nunca pede ao operador por drift puramente técnico. completed só aceita unchanged ou adapted; waiting-user só aceita contract-change-required, reservado para mudança necessária de objetivo, aceite observável, risco, exclusões, evidence ou comandos verify. Rejeitar combinações inválidas no parser. Em tentativas iniciais e resumes orientados pelo operador, persistir antes da transição seguinte um evento de decisão run.plan-reconciled com outcome e summary; não emitir esse evento nos rounds automáticos de review, full verify ou CI. O inspector existente deve exibir o evento e seus campos pelo transporte genérico atual, sem criar painel. Preservar compatibilidade dos fakes internos que retornam RuntimeExecutionResult diretamente, mas toda resposta real dos dois CLIs deve passar pelo novo schema. Não criar planner, auditor, chamada adicional de modelo, tabela, estado, score, reordenação de fila, mutação ou aprovação automática de spec; não contornar evidence, verify, review, full verify, CI ou o gate humano.",
   "specSource": "operator",
   "spec": {
