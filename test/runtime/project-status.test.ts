@@ -1,9 +1,13 @@
+import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
+import { join } from 'node:path';
 
 import {
 	readProjectOperationalOverview,
 	type ProjectOperationalStatus,
 } from '../../src/runtime/project-status.ts';
+import { readPersistedRunHistory, RunStore } from '../../src/runtime/run-store.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const project = {
 	id: 'project-1',
@@ -50,4 +54,36 @@ test('marks a project unavailable when its second database read fails', () => {
 		unavailableProjects: 1,
 		nonTerminalRuns: 0,
 	});
+});
+
+test('ignores malformed activity events when reading historical decisions', () => {
+	const databasePath = join(createTestTmpdir('gship-project-history-'), 'runtime.sqlite');
+	const store = new RunStore(databasePath);
+	store.createRun({
+		id: 'run-history',
+		issueId: 'GSHIP-730',
+		sessionId: 'session-history',
+		workspacePath: '/workspaces/history',
+		createdAt: '2026-08-23T10:00:00.000Z',
+	});
+	store.appendEvent({
+		runId: 'run-history',
+		kind: 'provider.activity',
+		createdAt: '2026-08-23T10:01:00.000Z',
+		eventClass: 'activity',
+	});
+	store.close();
+
+	const database = new Database(databasePath, { strict: true });
+	database.query(`
+		UPDATE run_events
+		SET to_state = 'invalid-state', payload_json = '{malformed'
+		WHERE event_class = 'activity'
+	`).run();
+	database.close();
+
+	const history = readPersistedRunHistory(databasePath);
+	expect(history).toHaveLength(1);
+	expect(history[0]?.events.map((event) => event.kind)).toEqual(['run.created']);
+	expect(history[0]?.evaluation.outcome).toBe('incomplete');
 });

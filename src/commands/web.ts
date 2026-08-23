@@ -118,6 +118,7 @@ import {
 import {
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
+	type OverviewWindow,
 } from '../runtime/project-status.ts';
 import {
 	ProjectUnregistrationError,
@@ -2867,7 +2868,15 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
-			'/api/overview': () => Response.json(readProjectOperationalOverview(projectRegistry.list(projectRoot))),
+			'/api/overview': (request) => {
+				const rawWindow = new URL(request.url).searchParams.get('window') ?? '7d';
+				if (rawWindow !== '7d' && rawWindow !== '30d' && rawWindow !== 'all') {
+					return Response.json({ ok: false, code: 'invalid-window', message: 'window must be 7d, 30d, or all.' }, { status: 400 });
+				}
+				return Response.json(readProjectOperationalOverview(
+					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
+				));
+			},
 			'/api/projects': {
 				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),
