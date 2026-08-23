@@ -2718,7 +2718,7 @@ function ShellSidebar({
 			<div className="flex flex-col items-start gap-3">
 				<div className="flex flex-col gap-1">
 					<h1>
-						<GateshipLockup className="block aspect-[15665/3068] h-7 w-auto" />
+						<GateshipLockup className="block aspect-[15635/3035] h-7 w-auto" />
 					</h1>
 					{version === '' ? null : (
 						<span className="font-mono text-muted-foreground text-xs">v{humanVersion}</span>
