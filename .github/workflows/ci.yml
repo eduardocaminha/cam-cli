@@ -3,11 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '.gateship/issues/**'
   pull_request:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
