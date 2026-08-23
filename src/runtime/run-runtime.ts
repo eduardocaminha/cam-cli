@@ -1477,6 +1477,7 @@ export class RunRuntime {
 		if (execution?.outcome === 'waiting-user') {
 			this.#transition(run.id, 'waiting-user', 'run.waiting-user', {
 				summary: execution.summary,
+				payload: { summary: execution.summary },
 			});
 			return false;
 		}

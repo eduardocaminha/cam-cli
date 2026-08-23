@@ -372,6 +372,7 @@ const home = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/
 const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
 const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/work', overrides);
 const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/settings', overrides);
+const globalSettingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
 
 function conversationAt(
 	locale: Locale,
@@ -460,6 +461,14 @@ function channelRow(html: string, label: string): string {
 	const start = html.indexOf(label);
 	if (start < 0) throw new Error(`channel row ${label} is not on the screen`);
 	return html.slice(start);
+}
+
+function expectContainsAll(html: string, values: readonly string[]): void {
+	for (const value of values) expect(html).toContain(value);
+}
+
+function expectNotContainsAll(html: string, values: readonly string[]): void {
+	for (const value of values) expect(html).not.toContain(value);
 }
 
 describe('project onboarding', () => {
@@ -2307,15 +2316,26 @@ describe('settings surface', () => {
 		};
 		const english = settingsPage({ ...overrides, locale: 'en-US' });
 		const portuguese = settingsPage({ ...overrides, locale: 'pt-BR' });
+		const globalEnglish = globalSettingsPage({ ...overrides, locale: 'en-US' });
+		const globalPortuguese = globalSettingsPage({ ...overrides, locale: 'pt-BR' });
 
 		for (const [html, labels] of [
-			[english, ['Settings', 'Project', 'Operator', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Gateship updates', 'Diagnostic schedule', 'Notifications', 'Project brief', 'Automatic handoff', 'Save profile', 'Save models', 'Save schedule', 'Save brief', 'Disabled.', 'Nothing recorded yet.', 'open', 'close']],
-			[portuguese, ['Ajustes', 'Projeto', 'Operador', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Atualizações do Gateship', 'Agenda de diagnósticos', 'Notificações', 'Brief do projeto', 'Handoff automático', 'Salvar perfil', 'Salvar modelos', 'Salvar agenda', 'Salvar brief', 'Desativada.', 'Nada registrado ainda.', 'abrir', 'fechar']],
+			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Project brief', 'Automatic handoff', 'open', 'close']],
+			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Brief do projeto', 'Handoff automático', 'abrir', 'fechar']],
 		] as const) {
-			for (const label of labels) expect(html).toContain(label);
-			for (const factual of ['acme/gateship', 'origin/main', 'Eduardo', 'America/Sao_Paulo', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'react', 'Objetivo escrito pelo operador.', 'Keep authored text.']) {
-				expect(html).toContain(factual);
-			}
+			expectContainsAll(html, labels);
+			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
+		}
+		for (const [html, labels] of [
+			[globalEnglish, ['Settings', 'Operator', 'Gateship updates', 'Diagnostic schedule', 'Notifications', 'Save profile', 'Save schedule', 'Disabled.']],
+			[globalPortuguese, ['Ajustes', 'Operador', 'Atualizações do Gateship', 'Agenda de diagnósticos', 'Notificações', 'Salvar perfil', 'Salvar agenda', 'Desativada.']],
+		] as const) {
+			expectContainsAll(html, labels);
+			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo', 'react']);
+			expectNotContainsAll(html, ['Project runtime', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Automatic handoff', 'Project brief']);
+		}
+		for (const html of [english, portuguese]) {
+			expectNotContainsAll(html, ['Operator profile', 'Notifications', 'Gateship updates', 'Diagnostic schedule']);
 		}
 		expect(english).toContain('78% used');
 		expect(portuguese).toContain('78% usados');
@@ -2324,28 +2344,28 @@ describe('settings surface', () => {
 		const observed = new Date('2026-08-20T09:05:00.000Z');
 		expect(english).toContain(observed.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }));
 		expect(portuguese).toContain(observed.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
-		expect(english).toContain('ntfy: configured');
-		expect(portuguese).toContain('ntfy: configurado');
-		expect(buttonIsEnabled(english, 'Send test')).toBe(true);
-		expect(buttonIsEnabled(portuguese, 'Enviar teste')).toBe(true);
+		expect(globalEnglish).toContain('ntfy: configured');
+		expect(globalPortuguese).toContain('ntfy: configurado');
+		expect(buttonIsEnabled(globalEnglish, 'Send test')).toBe(true);
+		expect(buttonIsEnabled(globalPortuguese, 'Enviar teste')).toBe(true);
 		expect(portuguese).not.toContain('Settings');
 	});
 
 	test('edits the operator identity and suggests browser timezone without silently saving it', () => {
-		const empty = panel(settingsPage(), 'Operator');
+		const empty = panel(globalSettingsPage(), 'Operator');
 		expect(empty).toContain('name="operator-name"');
 		expect(empty).toContain('name="operator-timezone"');
 		expect(empty).toContain('value="America/Sao_Paulo"');
 		expect(empty).toContain('is saved only when you confirm');
 		expect(buttonIsEnabled(empty, 'Save profile')).toBe(true);
 
-		const stored = panel(settingsPage({
+		const stored = panel(globalSettingsPage({
 			operatorProfile: { name: 'Eduardo', timezone: 'Europe/Lisbon' },
 		}), 'Operator');
 		expect(stored).toContain('value="Eduardo"');
 		expect(stored).toContain('value="Europe/Lisbon"');
 		expect(stored).not.toContain('value="America/Sao_Paulo"');
-		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Save profile')).toBe(false);
+		expect(buttonIsEnabled(globalSettingsPage({ pending: true }), 'Save profile')).toBe(false);
 	});
 
 	test('shows subscription state without any credential field', () => {
@@ -2727,9 +2747,9 @@ describe('settings surface', () => {
 	});
 
 	test('local notifications show the browser permission state without a secret field', () => {
-		expect(buttonIsEnabled(settingsPage(), 'Enable notifications')).toBe(true);
+		expect(buttonIsEnabled(globalSettingsPage(), 'Enable notifications')).toBe(true);
 
-		const granted = settingsPage({ notificationPermission: 'granted' });
+		const granted = globalSettingsPage({ notificationPermission: 'granted' });
 		expect(granted).toContain('Active in this browser.');
 		expect(buttonIsEnabled(granted, 'Notifications active')).toBe(false);
 		const localNotificationRow = granted.slice(
@@ -2737,19 +2757,23 @@ describe('settings surface', () => {
 			granted.indexOf('ntfy:'),
 		);
 		expect(localNotificationRow).not.toContain('type="password"');
-		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
+		expect(globalSettingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
 	});
 
 	// GSHIP-652: the remote ntfy channel shows only whether it is configured,
 	// a real test-send action, and setup instructions -- never the secret,
 	// which the read-only `configured` boolean makes structurally impossible.
 	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
-		const unconfigured = panel(settingsPage(), 'Notifications');
+		const unconfigured = panel(globalSettingsPage(), 'Notifications');
 		expect(unconfigured).toContain('ntfy: not configured');
 		expect(buttonIsEnabled(unconfigured, 'Send test')).toBe(false);
-		expect(unconfigured).toContain('.gship/ntfy-url');
+		expect(unconfigured).toContain('GATESHIP_HOME/.gship/ntfy-url');
+		expect(unconfigured).not.toContain('at the project root');
 		expect(unconfigured).toContain('mode 600');
 		expect(unconfigured).toContain('GATESHIP_NTFY_URL');
+		const portuguese = panel(globalSettingsPage({ locale: 'pt-BR' }), 'Notificações');
+		expect(portuguese).toContain('GATESHIP_HOME/.gship/ntfy-url');
+		expect(portuguese).not.toContain('na raiz do projeto');
 		const docLink = openingTags(unconfigured).find((tag) => tag.includes('docs.ntfy.sh'));
 		expect(docLink).toBeDefined();
 		expect(docLink).toContain('<a');
@@ -2757,7 +2781,7 @@ describe('settings surface', () => {
 		expect(docLink).toContain('rel="noreferrer noopener"');
 
 		const configured = panel(
-			settingsPage({
+			globalSettingsPage({
 				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true } },
 			}),
 			'Notifications',
@@ -2773,7 +2797,7 @@ describe('settings surface', () => {
 	// is the part an operator following this panel actually gets stuck on.
 	test('the Resend channel names which values are missing, shows setup instructions and both doc links, never a secret', () => {
 		const partial = panel(
-			settingsPage({
+			globalSettingsPage({
 				notificationChannels: {
 					...EMPTY_NOTIFICATION_CHANNELS,
 					resend: { ...EMPTY_NOTIFICATION_CHANNELS.resend, missing: ['API key', 'recipient'] },
@@ -2783,7 +2807,8 @@ describe('settings surface', () => {
 		);
 		expect(partial).toContain('email (Resend): not configured (missing: API key, recipient)');
 		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Send test')).toBe(false);
-		expect(partial).toContain('.gship/resend-api-key');
+		expect(partial).toContain('GATESHIP_HOME/.gship/resend-api-key');
+		expect(partial).not.toContain('to .gship/resend-api-key');
 		expect(partial).toContain('mode 600');
 		expect(partial).toContain('GATESHIP_RESEND_API_KEY');
 		expect(partial).toContain('GATESHIP_RESEND_FROM');
@@ -2805,7 +2830,7 @@ describe('settings surface', () => {
 		expect(domainsLink).toContain('rel="noreferrer noopener"');
 
 		const configured = panel(
-			settingsPage({
+			globalSettingsPage({
 				notificationChannels: {
 					...EMPTY_NOTIFICATION_CHANNELS,
 					resend: {
@@ -2825,17 +2850,26 @@ describe('settings surface', () => {
 		expect(configured).not.toContain('resend-secret');
 		expect(buttonIsEnabled(configured, 'Remove credential')).toBe(true);
 
-		const portuguese = panel(settingsPage({ locale: 'pt-BR' }), 'Notificações');
+		const portuguese = panel(globalSettingsPage({ locale: 'pt-BR' }), 'Notificações');
 		expect(portuguese).toContain('Remetente');
 		expect(portuguese).toContain('Destinatário');
 		expect(portuguese).toContain('Chave de API substituta (opcional)');
 		expect(portuguese).toContain('Salvar configurações do Resend');
 		expect(portuguese).toContain('Remover credencial');
+		const portuguesePartial = panel(globalSettingsPage({
+			locale: 'pt-BR',
+			notificationChannels: {
+				...EMPTY_NOTIFICATION_CHANNELS,
+				resend: { ...EMPTY_NOTIFICATION_CHANNELS.resend, missing: ['API key', 'recipient'] },
+			},
+		}), 'Notificações');
+		expect(portuguesePartial).toContain('GATESHIP_HOME/.gship/resend-api-key');
+		expect(portuguesePartial).not.toContain('em .gship/resend-api-key');
 	});
 
 	test('the remote channel test action is held while a command is in flight, like every other', () => {
 		const html = panel(
-			settingsPage({
+			globalSettingsPage({
 				notificationChannels: { ...EMPTY_NOTIFICATION_CHANNELS, ntfy: { ...EMPTY_NOTIFICATION_CHANNELS.ntfy, configured: true } },
 				pending: true,
 			}),
@@ -3037,7 +3071,7 @@ describe('settings surface', () => {
 	});
 
 	test('native self update is off by default with one fixed daily policy', () => {
-		const updates = panel(settingsPage({
+		const updates = panel(globalSettingsPage({
 			selfUpdate: {
 				...emptySelfUpdate(),
 				availability: { kind: 'native' },
@@ -3050,7 +3084,7 @@ describe('settings surface', () => {
 	});
 
 	test('container apply is disabled and a rollback remains explicit', () => {
-		const updates = panel(settingsPage({
+		const updates = panel(globalSettingsPage({
 			selfUpdate: {
 				...emptySelfUpdate(),
 				enabled: true,
@@ -3071,7 +3105,7 @@ describe('settings surface', () => {
 	});
 
 	test('the diagnostic schedule is bounded, off by default and closed by default', () => {
-		const html = settingsPage();
+		const html = globalSettingsPage();
 		const schedule = panel(html, 'Diagnostic schedule');
 
 		expect(panelIsOpen(html, 'Diagnostic schedule')).toBe(false);
@@ -3094,12 +3128,12 @@ describe('settings surface', () => {
 			nextRunAt: '2026-08-20T12:00:00.000Z',
 			overdue: true,
 		};
-		const due = panel(settingsPage({ diagnostics }), 'Diagnostic schedule');
+		const due = panel(globalSettingsPage({ diagnostics }), 'Diagnostic schedule');
 		expect(due).toContain('checked=""');
 		expect(due).toContain('<option value="daily" selected="">Daily</option>');
 		expect(due).toContain('overdue');
 
-		const held = panel(settingsPage({ diagnostics, pending: true }), 'Diagnostic schedule');
+		const held = panel(globalSettingsPage({ diagnostics, pending: true }), 'Diagnostic schedule');
 		expect(elementWith(held, 'name="diagnostic-schedule-enabled"')).toContain('disabled=""');
 		expect(elementWith(held, 'name="diagnostic-schedule-cadence"')).toContain('disabled=""');
 		expect(buttonIsEnabled(held, 'Save schedule')).toBe(false);
@@ -3897,7 +3931,7 @@ describe('operator shell', () => {
 		};
 		for (const [reason, label] of Object.entries(labels)) {
 			const pause = { reason: reason as ChainPauseReason, createdAt: '2026-08-18T00:00:00.000Z' };
-			const header = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
+			const header = shellHeader(renderAt('/projects/project-current/settings', { chainRuns: { enabled: true, pause } }));
 			expect(header).toContain('Needs you');
 			expect(header).toContain(`Queue stopped`);
 			expect(header).toContain(label);
@@ -3929,7 +3963,7 @@ describe('operator shell', () => {
 	// chaining on.
 	test('the switch simply being off never escalates the header or shows the callout', () => {
 		const pause: ChainPauseView = { reason: 'chain-disabled', createdAt: '2026-08-18T00:00:00.000Z' };
-		const header = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
+		const header = shellHeader(renderAt('/projects/project-current/settings', { chainRuns: { enabled: false, pause } }));
 
 		expect(header).toContain('Idle');
 		expect(header).not.toContain('Needs you');
@@ -3949,11 +3983,11 @@ describe('operator shell', () => {
 			issue: { id: 'GSHIP-9', title: 'Última issue encadeada' },
 		};
 
-		const on = shellHeader(settingsPage({ chainRuns: { enabled: true, pause } }));
+		const on = shellHeader(renderAt('/projects/project-current/settings', { chainRuns: { enabled: true, pause } }));
 		expect(on).toContain('Idle');
 		expect(on).toContain('Queue complete');
 
-		const off = shellHeader(settingsPage({ chainRuns: { enabled: false, pause } }));
+		const off = shellHeader(renderAt('/projects/project-current/settings', { chainRuns: { enabled: false, pause } }));
 		expect(off).toContain('Idle');
 		expect(off).not.toContain('Needs you');
 		expect(off).not.toContain('Queue stopped');

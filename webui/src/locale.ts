@@ -43,6 +43,7 @@ export interface ShellCatalog {
 		runs: string;
 		work: string;
 		settings: string;
+		globalSettings: string;
 	};
 }
 
@@ -557,6 +558,7 @@ export const LOCALE_CATALOG = {
 				runs: 'Runs',
 				work: 'Work',
 				settings: 'Settings',
+				globalSettings: 'Global settings',
 			},
 		},
 		projects: {
@@ -970,7 +972,7 @@ export const LOCALE_CATALOG = {
 				resendFields: { from: 'Sender', to: 'Recipient', apiKey: 'Replacement API key (optional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operator@example.com', apiKey: 'Blank keeps the current credential' },
 				saveResend: 'Save Resend settings', removeResendCredential: 'Remove credential', externallyManaged: 'Managed by the environment', fileCredentialPresent: 'A file-backed credential is present.', fileCredentialAbsent: 'No file credential is present.',
-				instructions: { ntfy: 'Save the topic URL in {file} at the project root with mode 600, or set {url}, which takes precedence over the file. ', resend: 'Settings saves non-secret sender and recipient locally and writes an optional replacement key to {file} with mode 600. {key}, {from}, and {to} each override the corresponding file value. ' },
+				instructions: { ntfy: 'Save the topic URL in {file} with mode 600, or set {url}, which takes precedence over the file. ', resend: 'Settings saves non-secret sender and recipient locally and writes an optional replacement key to {file} with mode 600. {key}, {from}, and {to} each override the corresponding file value. ' },
 				docLabels: { ntfy: 'ntfy documentation', resendApiKeys: 'Resend API keys', resendDomain: 'Resend domain verification' },
 			},
 			brief: { title: 'Project brief', description: 'Authoritative human context. Save it here or explicitly confirm a conversational update; a successful write clears the automatic handoff.', fieldLabels: { objective: 'Objective', decisions: 'Decisions', constraints: 'Constraints', openItems: 'Open items' }, linePlaceholder: 'One item per line', save: 'Save brief' },
@@ -999,6 +1001,7 @@ export const LOCALE_CATALOG = {
 				runs: 'Runs',
 				work: 'Trabalho',
 				settings: 'Ajustes',
+				globalSettings: 'Ajustes globais',
 			},
 		},
 		projects: {
@@ -1412,7 +1415,7 @@ export const LOCALE_CATALOG = {
 				resendFields: { from: 'Remetente', to: 'Destinatário', apiKey: 'Chave de API substituta (opcional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operador@example.com', apiKey: 'Em branco mantém a credencial atual' },
 				saveResend: 'Salvar configurações do Resend', removeResendCredential: 'Remover credencial', externallyManaged: 'Gerenciado pelo ambiente', fileCredentialPresent: 'Há uma credencial armazenada em arquivo.', fileCredentialAbsent: 'Não há credencial em arquivo.',
-				instructions: { ntfy: 'Salve a URL do tópico em {file} na raiz do projeto com modo 600 ou defina {url}, que tem precedência sobre o arquivo. ', resend: 'As Configurações salvam localmente o remetente e destinatário não secretos e gravam uma chave substituta opcional em {file} com modo 600. {key}, {from} e {to} substituem individualmente o valor correspondente do arquivo. ' },
+				instructions: { ntfy: 'Salve a URL do tópico em {file} com modo 600 ou defina {url}, que tem precedência sobre o arquivo. ', resend: 'As Configurações salvam localmente o remetente e destinatário não secretos e gravam uma chave substituta opcional em {file} com modo 600. {key}, {from} e {to} substituem individualmente o valor correspondente do arquivo. ' },
 				docLabels: { ntfy: 'documentação do ntfy', resendApiKeys: 'chaves de API do Resend', resendDomain: 'verificação de domínio do Resend' },
 			},
 			brief: { title: 'Brief do projeto', description: 'Contexto humano autoritativo. Salve-o aqui ou confirme explicitamente uma atualização na conversa; uma gravação bem-sucedida limpa o handoff automático.', fieldLabels: { objective: 'Objetivo', decisions: 'Decisões', constraints: 'Restrições', openItems: 'Itens em aberto' }, linePlaceholder: 'Um item por linha', save: 'Salvar brief' },

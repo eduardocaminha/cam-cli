@@ -93,14 +93,19 @@ describe('embedded web bundle', () => {
 				['/', '/overview'],
 				['/runs', `/projects/${currentId}/runs`],
 				['/work', `/projects/${currentId}/work`],
-				['/settings', `/projects/${currentId}/settings`],
+				['/settings', '/settings'],
 			] as const) {
 				const response = await fetch(
 					`http://${handle.hostname}:${handle.port}${legacy}`,
 					{ redirect: 'manual' },
 				);
-				expect(response.status).toBe(302);
-				expect(new URL(response.headers.get('location')!).pathname).toBe(canonical);
+				if (legacy === '/settings') {
+					expect(response.status).toBe(200);
+					expect(response.headers.get('location')).toBeNull();
+				} else {
+					expect(response.status).toBe(302);
+					expect(new URL(response.headers.get('location')!).pathname).toBe(canonical);
+				}
 			}
 			// Enumerated paths, not a universal fallback: anything else is a 404.
 			expect((await get(handle, `/projects/${currentId}/runs/run-1`)).status).toBe(404);

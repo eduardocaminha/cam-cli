@@ -21,6 +21,7 @@ import {
 	RESEND_FROM_ENV_VAR,
 	RESEND_SETTINGS_FILE_PATH,
 	RESEND_TO_ENV_VAR,
+	writeResendApiKey,
 } from '../../src/runtime/remote-notifier.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -28,6 +29,7 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 interface Harness {
 	cwd: string;
+	home: string;
 	origin: string;
 	stop: () => Promise<void>;
 }
@@ -54,6 +56,7 @@ function startHarness(name: string): Harness {
 	) as ResendEnvironment;
 	replaceResendEnvironment({});
 	const cwd = createTestTmpdir(`gship-${name}-`);
+	const home = createTestTmpdir(`gship-${name}-home-`);
 	const runtime = new RunRuntime({
 		cwd: createTestTmpdir(`gship-${name}-runtime-`),
 		store: new RunStore(':memory:'),
@@ -61,6 +64,7 @@ function startHarness(name: string): Harness {
 	const handle = startWebServer({
 		port: 0,
 		cwd,
+		gateshipHome: home,
 		runRuntime: runtime,
 		providerAuth: {
 			list: async () => [],
@@ -71,6 +75,7 @@ function startHarness(name: string): Harness {
 	});
 	return {
 		cwd,
+		home,
 		origin: `http://${handle.hostname}:${handle.port}`,
 		stop: async () => {
 			try {
@@ -118,6 +123,28 @@ describe('POST /api/notifications/:channelId/test', () => {
 });
 
 describe('Resend Settings API (GSHIP-688)', () => {
+	test('DELETE removes a boot-project credential that is still in legacy fallback', async () => {
+		const harness = startHarness('resend-remove-legacy');
+		try {
+			writeResendApiKey(harness.cwd, 'legacy-key', join(harness.cwd, '.gship'));
+			const removed = await fetch(`${harness.origin}/api/notifications/resend/credential`, {
+				method: 'DELETE', headers: { origin: harness.origin },
+			});
+			expect(removed.status).toBe(200);
+			const removedText = await removed.text();
+			expect(removedText).toContain('File-backed Resend credential removed.');
+			expect(removedText).not.toContain('No file-backed Resend credential was present.');
+			expect(() => readFileSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toThrow();
+			const status = await (await fetch(`${harness.origin}/api/notifications`)).json() as {
+				channels: { resend: { fileCredentialExists: boolean; missing: string[] } };
+			};
+			expect(status.channels.resend.fileCredentialExists).toBe(false);
+			expect(status.channels.resend.missing).toContain('API key');
+		} finally {
+			await harness.stop();
+		}
+	});
+
 	test('same-origin save persists non-secrets and a mode-0600 write-only key', async () => {
 		const harness = startHarness('resend-save');
 		const apiKey = 'secret-never-returned';
@@ -134,9 +161,9 @@ describe('Resend Settings API (GSHIP-688)', () => {
 			expect(response.status).toBe(200);
 			const responseText = await response.text();
 			expect(responseText).not.toContain(apiKey);
-			expect(statSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH)).mode & 0o777).toBe(0o600);
-			expect(readFileSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe(`${apiKey}\n`);
-			expect(JSON.parse(readFileSync(join(harness.cwd, RESEND_SETTINGS_FILE_PATH), 'utf8'))).toEqual({
+			expect(statSync(join(harness.home, RESEND_API_KEY_FILE_PATH)).mode & 0o777).toBe(0o600);
+			expect(readFileSync(join(harness.home, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe(`${apiKey}\n`);
+			expect(JSON.parse(readFileSync(join(harness.home, RESEND_SETTINGS_FILE_PATH), 'utf8'))).toEqual({
 				from: 'Gateship <ops@example.com>',
 				to: 'operator@example.com',
 			});
@@ -216,17 +243,17 @@ describe('Resend Settings API (GSHIP-688)', () => {
 			});
 			expect((await save('first-key')).status).toBe(200);
 			expect((await save('')).status).toBe(200);
-			expect(readFileSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe('first-key\n');
+			expect(readFileSync(join(harness.home, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe('first-key\n');
 			expect((await save('stolen', 'https://evil.example')).status).toBe(403);
-			expect(readFileSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe('first-key\n');
+			expect(readFileSync(join(harness.home, RESEND_API_KEY_FILE_PATH), 'utf8')).toBe('first-key\n');
 
 			const removed = await fetch(`${harness.origin}/api/notifications/resend/credential`, {
 				method: 'DELETE', headers: { origin: harness.origin },
 			});
 			expect(removed.status).toBe(200);
 			expect(await removed.text()).not.toContain('first-key');
-			expect(() => readFileSync(join(harness.cwd, RESEND_API_KEY_FILE_PATH), 'utf8')).toThrow();
-			expect(JSON.parse(readFileSync(join(harness.cwd, RESEND_SETTINGS_FILE_PATH), 'utf8'))).toEqual({
+			expect(() => readFileSync(join(harness.home, RESEND_API_KEY_FILE_PATH), 'utf8')).toThrow();
+			expect(JSON.parse(readFileSync(join(harness.home, RESEND_SETTINGS_FILE_PATH), 'utf8'))).toEqual({
 				from: 'sender', to: 'recipient',
 			});
 		} finally {

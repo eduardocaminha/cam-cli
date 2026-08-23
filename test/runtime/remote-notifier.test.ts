@@ -232,6 +232,57 @@ describe('createRemoteNotifier', () => {
 		runtime.close();
 	});
 
+	test('two project RunRuntimes use the same global ntfy configuration', async () => {
+		const projectA = createTestTmpdir('gship-global-notify-project-a-');
+		const projectB = createTestTmpdir('gship-global-notify-project-b-');
+		const globalStateDir = createTestTmpdir('gship-global-notify-state-');
+		const legacyStateDirA = createTestTmpdir('gship-global-notify-legacy-a-');
+		const legacyStateDirB = createTestTmpdir('gship-global-notify-legacy-b-');
+		const globalTopic = 'https://ntfy.sh/gateship-global-topic';
+		const legacyTopicA = 'https://ntfy.sh/gateship-legacy-topic-a';
+		const legacyTopicB = 'https://ntfy.sh/gateship-legacy-topic-b';
+		writeFileSync(join(globalStateDir, 'ntfy-url'), `${globalTopic}\n`, { mode: 0o600 });
+		writeFileSync(join(legacyStateDirA, 'ntfy-url'), `${legacyTopicA}\n`, { mode: 0o600 });
+		writeFileSync(join(legacyStateDirB, 'ntfy-url'), `${legacyTopicB}\n`, { mode: 0o600 });
+
+		const storeA = new RunStore(':memory:');
+		const storeB = new RunStore(':memory:');
+		const runtimeA = new RunRuntime({
+			cwd: projectA,
+			store: storeA,
+			newId: () => 'run-global-notify-a',
+			executor: { execute: async () => ({ outcome: 'waiting-user' as const, summary: 'Projeto A precisa de você.' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const runtimeB = new RunRuntime({
+			cwd: projectB,
+			store: storeB,
+			newId: () => 'run-global-notify-b',
+			executor: { execute: async () => ({ outcome: 'waiting-user' as const, summary: 'Projeto B precisa de você.' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const { fetchImpl, calls } = stubFetch();
+		runtimeA.subscribe(createRemoteNotifier({ cwd: projectA, stateDir: globalStateDir, legacyStateDir: legacyStateDirA, env: {}, fetchImpl }));
+		runtimeB.subscribe(createRemoteNotifier({ cwd: projectB, stateDir: globalStateDir, legacyStateDir: legacyStateDirB, env: {}, fetchImpl }));
+
+		try {
+			const runA = runtimeA.startRun('GSHIP-735-A');
+			const runB = runtimeB.startRun('GSHIP-735-B');
+			await waitFor(() => runtimeA.getRun(runA.id)?.state === 'waiting-user' && runtimeB.getRun(runB.id)?.state === 'waiting-user');
+			await waitFor(() => calls.length === 2);
+
+			expect(calls).toHaveLength(2);
+			expect(calls.map(({ url }) => `${new URL(url).origin}${new URL(url).pathname}`)).toEqual([globalTopic, globalTopic]);
+			expect(calls.map(({ init }) => init?.body)).toEqual(['Projeto A precisa de você.', 'Projeto B precisa de você.']);
+			expect(calls.some(({ url }) => url.includes(legacyTopicA) || url.includes(legacyTopicB))).toBe(false);
+		} finally {
+			await runtimeA.stop();
+			await runtimeB.stop();
+			runtimeA.close();
+			runtimeB.close();
+		}
+	});
+
 	test('does not notify RunRuntime.cancelRun recording the operator\'s own cancellation', async () => {
 		const store = new RunStore(':memory:');
 		const runtime = new RunRuntime({

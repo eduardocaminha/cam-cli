@@ -604,10 +604,10 @@ async function writeExecutorHandoff(request: Request, runtime: RunRuntime): Prom
 }
 
 /** Safe notification status; the Resend key itself is structurally absent. */
-function notificationChannelsSnapshot(cwd: string, stateDir: string): Record<string, unknown> {
-	const resend = resolveResendStatus(cwd, process.env, stateDir);
+function notificationChannelsSnapshot(cwd: string, stateDir: string, legacyStateDir?: string): Record<string, unknown> {
+	const resend = resolveResendStatus(cwd, process.env, stateDir, legacyStateDir);
 	return {
-		ntfy: { configured: isNtfyConfigured(cwd, process.env, stateDir), missing: [] },
+		ntfy: { configured: isNtfyConfigured(cwd, process.env, stateDir, legacyStateDir), missing: [] },
 		resend: {
 			configured: resend.configured,
 			missing: resend.missing.map((field) => RESEND_FIELD_LABELS[field]),
@@ -626,7 +626,7 @@ function resendSettingsValue(body: Record<string, unknown>, field: 'from' | 'to'
 	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
 }
 
-async function writeResendConfiguration(request: Request, cwd: string, stateDir: string): Promise<Response> {
+async function writeResendConfiguration(request: Request, cwd: string, stateDir: string, legacyStateDir?: string): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let input: unknown;
 	try {
@@ -655,7 +655,7 @@ async function writeResendConfiguration(request: Request, cwd: string, stateDir:
 	} catch {
 		return Response.json({ ok: false, code: 'write-failed', message: 'Resend settings could not be saved.' }, { status: 500 });
 	}
-	const status = resolveResendStatus(cwd, process.env, stateDir);
+	const status = resolveResendStatus(cwd, process.env, stateDir, legacyStateDir);
 	const external = Object.entries(status.externallyManaged)
 		.filter(([, managed]) => managed)
 		.map(([field]) => RESEND_FIELD_LABELS[field as keyof typeof RESEND_FIELD_LABELS]);
@@ -664,41 +664,43 @@ async function writeResendConfiguration(request: Request, cwd: string, stateDir:
 		message: external.length === 0
 			? 'Resend settings saved.'
 			: `Resend file settings saved. Environment-managed ${external.join(', ')} remain effective.`,
-		channels: notificationChannelsSnapshot(cwd, stateDir),
+		channels: notificationChannelsSnapshot(cwd, stateDir, legacyStateDir),
 	});
 }
 
-function removeResendCredential(request: Request, cwd: string, stateDir: string): Response {
+function removeResendCredential(request: Request, cwd: string, stateDir: string, legacyStateDir?: string): Response {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let removed: boolean;
 	try {
-		removed = removeResendApiKey(cwd, stateDir);
+		const globalRemoved = removeResendApiKey(cwd, stateDir);
+		const legacyRemoved = legacyStateDir === undefined ? false : removeResendApiKey(cwd, legacyStateDir);
+		removed = globalRemoved || legacyRemoved;
 	} catch {
 		return Response.json({ ok: false, code: 'remove-failed', message: 'The file-backed Resend credential could not be removed.' }, { status: 500 });
 	}
-	const environmentWins = resolveResendStatus(cwd, process.env, stateDir).externallyManaged.apiKey;
+	const environmentWins = resolveResendStatus(cwd, process.env, stateDir, legacyStateDir).externallyManaged.apiKey;
 	const action = removed ? 'File-backed Resend credential removed.' : 'No file-backed Resend credential was present.';
 	return Response.json({
 		ok: true,
 		message: environmentWins ? `${action} The environment-managed API key remains effective.` : action,
-		channels: notificationChannelsSnapshot(cwd, stateDir),
+		channels: notificationChannelsSnapshot(cwd, stateDir, legacyStateDir),
 	});
 }
 
 interface NotificationChannelTest {
-	send: (cwd: string, stateDir: string) => Promise<{ outcome: string; detail?: string }>;
+	send: (cwd: string, stateDir: string, legacyStateDir?: string) => Promise<{ outcome: string; detail?: string }>;
 	label: string;
 	sentMessage: string;
 }
 
 const NOTIFICATION_CHANNEL_TESTS: Readonly<Record<string, NotificationChannelTest>> = {
 	ntfy: {
-		send: (cwd, stateDir) => sendNtfyTestNotification({ cwd, stateDir }),
+		send: (cwd, stateDir, legacyStateDir) => sendNtfyTestNotification({ cwd, stateDir, legacyStateDir }),
 		label: 'ntfy',
 		sentMessage: 'Test message delivered to ntfy.',
 	},
 	resend: {
-		send: (cwd, stateDir) => sendResendTestNotification({ cwd, stateDir }),
+		send: (cwd, stateDir, legacyStateDir) => sendResendTestNotification({ cwd, stateDir, legacyStateDir }),
 		label: 'Resend',
 		sentMessage: 'Test message delivered by email.',
 	},
@@ -714,6 +716,7 @@ async function sendNotificationChannelTest(
 	request: Request,
 	cwd: string,
 	stateDir: string,
+	legacyStateDir: string | undefined,
 	channelId: string,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
@@ -731,7 +734,7 @@ async function sendNotificationChannelTest(
 			{ status: 404 },
 		);
 	}
-	const result = await test.send(cwd, stateDir);
+	const result = await test.send(cwd, stateDir, legacyStateDir);
 	if (result.outcome === 'sent') {
 		return Response.json({ ok: true, outcome: result.outcome, message: test.sentMessage });
 	}
@@ -2630,6 +2633,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// fresh on every spawn so connecting, rotating or disconnecting it in
 	// Settings needs no service restart.
 	const gateshipHome = resolveGateshipHomeOption(options);
+	const globalNotificationStateDir = join(gateshipHome, PROJECT_STATE_DIRECTORY);
 	// Captured once, here, before anything else reads `process.env`: a token
 	// provisioned through the service's own boot environment must not stay
 	// ambient for `runOwnedCommand`'s `env: input.env ?? process.env` default
@@ -2691,7 +2695,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// The same durable event log the SSE stream below reads per-connection
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
 	// makes this a no-op subscriber.
-	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({ cwd: options.cwd, stateDir }));
+	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({
+		cwd: options.cwd,
+		stateDir: globalNotificationStateDir,
+		legacyStateDir: stateDir,
+	}));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(options, ensureGitIdentityOnce);
 	const issueReader = resolveIssueReader(options);
@@ -2769,7 +2777,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		const writers = defaultIssueWriters(project.root, ensureIdentity);
 		const unsubscribe = runtime.subscribe(createRemoteNotifier({
 			cwd: project.root,
-			stateDir: project.stateDir,
+			stateDir: globalNotificationStateDir,
+			legacyStateDir: stateDir,
 		}));
 		const context = {
 			root: project.root,
@@ -2883,7 +2892,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/overview': () => serveWebAsset(assets.indexHtml),
 			'/runs': redirect(`${projectPath}/runs`),
 			'/work': redirect(`${projectPath}/work`),
-			'/settings': redirect(`${projectPath}/settings`),
+			'/settings': () => serveWebAsset(assets.indexHtml),
 			'/projects/:projectId': () => serveWebAsset(assets.indexHtml),
 			'/projects/:projectId/runs': () => serveWebAsset(assets.indexHtml),
 			'/projects/:projectId/work': () => serveWebAsset(assets.indexHtml),
@@ -3237,18 +3246,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// reads. Resend's dedicated same-origin routes accept a write-only key
 			// and non-secret sender/recipient settings without involving SQLite.
 			'/api/notifications': {
-				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd, stateDir) }),
+				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd, globalNotificationStateDir, stateDir) }),
 			},
 			'/api/notifications/resend': {
-				PUT: (request) => writeResendConfiguration(request, options.cwd, stateDir),
+				PUT: (request) => writeResendConfiguration(request, options.cwd, globalNotificationStateDir, stateDir),
 			},
 			'/api/notifications/resend/credential': {
-				DELETE: (request) => removeResendCredential(request, options.cwd, stateDir),
+				DELETE: (request) => removeResendCredential(request, options.cwd, globalNotificationStateDir, stateDir),
 			},
 			'/api/notifications/:channelId/test': {
 				POST: (request) => sendNotificationChannelTest(
 					request,
 					options.cwd,
+					globalNotificationStateDir,
 					stateDir,
 					request.params.channelId,
 				),
