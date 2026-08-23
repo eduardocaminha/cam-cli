@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-715",
+  "title": "Corrigir referencia do Forge no radar",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T03:34:32.913Z",
+  "updatedAt": "2026-08-23T03:34:32.913Z",
+  "description": "Corrigir somente a entrada Forge em docs/product-radar.md. O produto avaliado pelo operador foi https://github.com/LucasDuys/forge, licença MIT, e nao o homonimo nxtg-ai/forge-orchestrator. Remover a referencia ao homonimo e qualquer afirmacao especifica dele, inclusive file locking e drift detection. Descrever apenas propriedades conferiveis no README de LucasDuys/forge: pipeline de cinco fases, tarefas com dependencias em worktrees paralelas, TDD como regra e backprop que pode propor ou aplicar criterio novo. Manter as decisoes Gateship ja registradas: mesma-repository continua serial, TDD nao e universal, cerimonia deve ser proporcional ao risco e uma spec aprovada nao se reescreve silenciosamente. Usar link direto e registrar MIT. Nao alterar HANDOFF.md, outras entradas do radar, runtime, UI, dependencias, banco ou workflow.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir somente a entrada Forge em docs/product-radar.md. O produto avaliado pelo operador foi https://github.com/LucasDuys/forge, licença MIT, e nao o homonimo nxtg-ai/forge-orchestrator. Remover a referencia ao homonimo e qualquer afirmacao especifica dele, inclusive file locking e drift detection. Descrever apenas propriedades conferiveis no README de LucasDuys/forge: pipeline de cinco fases, tarefas com dependencias em worktrees paralelas, TDD como regra e backprop que pode propor ou aplicar criterio novo. Manter as decisoes Gateship ja registradas: mesma-repository continua serial, TDD nao e universal, cerimonia deve ser proporcional ao risco e uma spec aprovada nao se reescreve silenciosamente. Usar link direto e registrar MIT. Nao alterar HANDOFF.md, outras entradas do radar, runtime, UI, dependencias, banco ou workflow.",
+    "verify": [
+      "rg -q 'https://github.com/LucasDuys/forge' docs/product-radar.md && ! rg -q 'nxtg-ai/forge-orchestrator' docs/product-radar.md"
+    ],
+    "evidence": [
+      {
+        "command": "gh api repos/LucasDuys/forge --jq '[.full_name,.license.spdx_id] | @tsv'",
+        "output": "LucasDuys/forge\tMIT"
+      }
+    ]
+  }
+}
