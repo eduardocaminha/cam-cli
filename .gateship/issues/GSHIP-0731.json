@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-731",
+  "title": "Construir central visual de controle multiprojeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T14:14:15.056Z",
+  "updatedAt": "2026-08-23T14:14:15.056Z",
+  "description": "Transformar /overview na central de controle solicitada usando o contrato agregado das GSHIP-729 e GSHIP-730. No topo mostrar poucos indicadores operacionais: projetos ativos, atenção necessária, backlog aprovado e runs concluídas na janela; custo conhecido deve sempre exibir sua cobertura e nunca sugerir custo zero quando desconhecido. Mostrar uma série temporal compacta de outcomes e atividade sem nova dependência de charts, com SVG ou CSS acessível. Cada projeto deve ter um card legível com readiness, activeRun atual, issue, fase, provider, atualização, backlog e último outcome, com link para a conversa ou run correspondente; múltiplas runs de projetos diferentes devem aparecer simultaneamente. Atualizar o overview de forma abortável e limitada enquanto a rota estiver visível, sem abrir um socket por projeto e sem continuar polling fora dela. Manter criação, importação e registro de projeto, mas colocá-los numa seção secundária para não competir com operação diária. Cobrir en-US e pt-BR, estados loading, vazio, parcial e erro. Não criar dashboard configurável, drag and drop, score, gamificação ou dependência COSS.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Transformar /overview na central de controle solicitada usando o contrato agregado das GSHIP-729 e GSHIP-730. No topo mostrar poucos indicadores operacionais: projetos ativos, atenção necessária, backlog aprovado e runs concluídas na janela; custo conhecido deve sempre exibir sua cobertura e nunca sugerir custo zero quando desconhecido. Mostrar uma série temporal compacta de outcomes e atividade sem nova dependência de charts, com SVG ou CSS acessível. Cada projeto deve ter um card legível com readiness, activeRun atual, issue, fase, provider, atualização, backlog e último outcome, com link para a conversa ou run correspondente; múltiplas runs de projetos diferentes devem aparecer simultaneamente. Atualizar o overview de forma abortável e limitada enquanto a rota estiver visível, sem abrir um socket por projeto e sem continuar polling fora dela. Manter criação, importação e registro de projeto, mas colocá-los numa seção secundária para não competir com operação diária. Cobrir en-US e pt-BR, estados loading, vazio, parcial e erro. Não criar dashboard configurável, drag and drop, score, gamificação ou dependência COSS.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/project-status-api.test.ts && bun run typecheck"
+    ]
+  }
+}
