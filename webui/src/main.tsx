@@ -238,8 +238,8 @@ function useOperationalRun(): {
 			fetchProviders(SELECTED_PROJECT_ID),
 			fetchChat(SELECTED_PROJECT_ID),
 			fetchBrief(SELECTED_PROJECT_ID),
-			fetchProposals(),
-			fetchResolvedProposals(),
+			fetchProposals(SELECTED_PROJECT_ID),
+			fetchResolvedProposals(SELECTED_PROJECT_ID),
 			fetchModelSettings(SELECTED_PROJECT_ID),
 			fetchChainRuns(SELECTED_PROJECT_ID),
 			fetchExecutorHandoff(SELECTED_PROJECT_ID),
@@ -589,7 +589,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 					return `${created.id} created and selected.`;
 				}));
 			}}
-			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId))}
+			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, SELECTED_PROJECT_ID))}
 			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId))}
 			onDismissDiagnosticFinding={(findingId) =>
 				send(() => dismissDiagnosticFinding(findingId))}
@@ -601,7 +601,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onPromoteProposal={(proposalId, draft) => {
 				// The created issue is a draft to review, not the next run: it is
 				// filed unapproved, so it is not selected to start either.
-				send(() => promoteProposal(proposalId, draft).then((created) =>
+				send(() => promoteProposal(proposalId, draft, SELECTED_PROJECT_ID).then((created) =>
 					`${created.id} created from the proposal.`));
 			}}
 			onSendMessage={(message) => send(() => sendChat(message, SELECTED_PROJECT_ID))}

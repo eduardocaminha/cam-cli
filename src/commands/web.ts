@@ -3100,6 +3100,38 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					),
 				),
 			},
+			'/api/projects/:projectId/proposals': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json({ proposals: context.runtime.listPendingProposals() }),
+				),
+			},
+			'/api/projects/:projectId/proposals/resolved': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => {
+						const { proposals, omittedCount } = context.runtime.listResolvedProposals();
+						return Response.json({ proposals, omittedCount });
+					},
+				),
+			},
+			'/api/projects/:projectId/proposals/:proposalId/dismiss': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => dismissProposalFromOperator(request, context.runtime, request.params.proposalId),
+				),
+			},
+			'/api/projects/:projectId/proposals/:proposalId/promote': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => promoteProposalFromOperator(
+						request,
+						context.runtime,
+						request.params.proposalId,
+						context.issueIntake,
+					),
+				),
+			},
 			'/api/projects/:projectId/runs/:runId/cancel': {
 				POST: (request) => projectOperation(
 					request.params.projectId,

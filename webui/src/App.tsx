@@ -4086,8 +4086,8 @@ function ResolvedProposalsPanel({
  * ideas to specify and intake -- every panel of which reads and commands the
  * project the browser path names. Below it are the extras that still belong to
  * the boot runtime alone: diagnostics, and the proposal inbox with its resolved
- * history. `bootRuntimeExtras` is false for any other project, so those extras
- * are absent rather than showing the boot project's data under another name.
+ * history. Diagnostics remain boot-runtime-only. Proposals are project-scoped
+ * and are shown for every ready project selected in the browser.
  */
 function WorkSurface({
 	bootRuntimeExtras,
@@ -4128,22 +4128,22 @@ function WorkSurface({
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
 					/>
-					<ProposalsPanel
-						catalog={catalog}
-						locale={props.locale}
-						onDismissProposal={props.onDismissProposal}
-						onPromoteProposal={props.onPromoteProposal}
-						pending={props.pending}
-						proposals={props.proposals}
-					/>
-					<ResolvedProposalsPanel
-						catalog={catalog}
-						locale={props.locale}
-						resolvedProposals={props.resolvedProposals}
-						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
-					/>
 				</>
 			) : null}
+			<ProposalsPanel
+				catalog={catalog}
+				locale={props.locale}
+				onDismissProposal={props.onDismissProposal}
+				onPromoteProposal={props.onPromoteProposal}
+				pending={props.pending}
+				proposals={props.proposals}
+			/>
+			<ResolvedProposalsPanel
+				catalog={catalog}
+				locale={props.locale}
+				resolvedProposals={props.resolvedProposals}
+				resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
+			/>
 		</SurfaceColumn>
 	);
 }
