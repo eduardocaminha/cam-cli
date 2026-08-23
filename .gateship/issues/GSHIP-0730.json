@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-730",
+  "title": "Derivar métricas honestas para a central multiprojeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T14:14:11.668Z",
+  "updatedAt": "2026-08-23T14:14:11.668Z",
+  "description": "Sobre o snapshot da GSHIP-729, adicionar uma projeção histórica read-only para janelas explícitas 7d, 30d e all, com 7d como padrão e relógio injetável nos testes. Reutilizar evaluateRun e a semântica de custos e uso já existente, lendo somente runs e decision events dos runtime.sqlite registrados. Agregar por produto e por projeto: runs por outcome, runs ativas, wall time de runs terminais, fix rounds, attentionRequests, operatorInterventions, providerHolds e resolvedCycleQuestions; configurações realmente usadas por provider, role, model e effort; custo reportado, tokens reportados e séries diárias. Nunca converter subscription em dólares, nunca tratar custo ausente como zero e nunca produzir score composto: retornar knownCostUsd separado de runsWithKnownCost e totalRuns, com null quando não houver custo conhecido. Um database indisponível reduz cobertura e não derruba os demais projetos. Expor os dados em GET /api/overview?window= e projects.overview. Não adicionar tabela, cron, evaluator por modelo ou persistência derivada.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Sobre o snapshot da GSHIP-729, adicionar uma projeção histórica read-only para janelas explícitas 7d, 30d e all, com 7d como padrão e relógio injetável nos testes. Reutilizar evaluateRun e a semântica de custos e uso já existente, lendo somente runs e decision events dos runtime.sqlite registrados. Agregar por produto e por projeto: runs por outcome, runs ativas, wall time de runs terminais, fix rounds, attentionRequests, operatorInterventions, providerHolds e resolvedCycleQuestions; configurações realmente usadas por provider, role, model e effort; custo reportado, tokens reportados e séries diárias. Nunca converter subscription em dólares, nunca tratar custo ausente como zero e nunca produzir score composto: retornar knownCostUsd separado de runsWithKnownCost e totalRuns, com null quando não houver custo conhecido. Um database indisponível reduz cobertura e não derruba os demais projetos. Expor os dados em GET /api/overview?window= e projects.overview. Não adicionar tabela, cron, evaluator por modelo ou persistência derivada.",
+    "verify": [
+      "bun test test/runtime/project-status.test.ts test/web/project-status-api.test.ts test/commands/agent.test.ts && bun run typecheck"
+    ]
+  }
+}
