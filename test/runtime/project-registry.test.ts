@@ -7,6 +7,7 @@ import {
 	PROJECT_REGISTRY_DATABASE,
 	resolveGateshipHome,
 } from '../../src/runtime/project-registry.ts';
+import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 /** A scratch directory whose own path carries no symlink of its own. */
@@ -23,6 +24,27 @@ const ready = {
 };
 
 describe('global project registry', () => {
+	test('stores the operator profile globally and imports a legacy value only once', () => {
+		const home = createTestTmpdir('gship-project-registry-profile-home-');
+		const runtime = new RunStore(':memory:');
+		runtime.setOperatorProfile({ name: 'Eduardo', timezone: 'America/Sao_Paulo' });
+		const registry = openProjectRegistry(home);
+
+		registry.initializeOperatorProfile(runtime.getOperatorProfile());
+		expect(registry.getOperatorProfile()).toEqual({
+			name: 'Eduardo', timezone: 'America/Sao_Paulo',
+		});
+		runtime.setOperatorProfile({ name: 'Outro projeto', timezone: 'UTC' });
+		registry.initializeOperatorProfile(runtime.getOperatorProfile());
+		expect(registry.getOperatorProfile()).toEqual({
+			name: 'Eduardo', timezone: 'America/Sao_Paulo',
+		});
+
+		registry.setOperatorProfile({ name: 'Global', timezone: 'UTC' });
+		expect(registry.getOperatorProfile()).toEqual({ name: 'Global', timezone: 'UTC' });
+		registry.close();
+		runtime.close();
+	});
 	test('requires an explicit GATESHIP_HOME to be absolute and defaults native mode to ~/.gateship', () => {
 		expect(() => resolveGateshipHome({ env: { GATESHIP_HOME: 'relative/home' } }))
 			.toThrow('GATESHIP_HOME must be an absolute path');

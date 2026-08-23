@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { OPERATOR_PROFILE_LIMITS } from '../../src/runtime/operator-profile.ts';
+import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 function startHarness() {
+	const gateshipHome = createTestTmpdir('gship-operator-profile-home-');
+	const registry = openProjectRegistry(gateshipHome);
 	const runtime = new RunRuntime({
 		cwd: createTestTmpdir('gship-operator-profile-runtime-'),
 		store: new RunStore(':memory:'),
@@ -14,6 +17,7 @@ function startHarness() {
 	const handle = startWebServer({
 		port: 0,
 		cwd: createTestTmpdir('gship-operator-profile-api-'),
+		projectRegistry: registry,
 		runRuntime: runtime,
 		providerAuth: {
 			list: async () => [],
@@ -26,9 +30,11 @@ function startHarness() {
 	return {
 		origin,
 		runtime,
+		registry,
 		stop: async () => {
 			await handle.stop();
 			runtime.close();
+			registry.close();
 		},
 	};
 }
@@ -57,7 +63,7 @@ describe('operator profile web API', () => {
 				ok: true,
 				profile: { name: 'Eduardo', timezone: 'America/Sao_Paulo' },
 			});
-			expect(harness.runtime.getOperatorProfile()).toEqual({
+			expect(harness.registry.getOperatorProfile()).toEqual({
 				name: 'Eduardo',
 				timezone: 'America/Sao_Paulo',
 			});
@@ -80,7 +86,7 @@ describe('operator profile web API', () => {
 				expect(response.status).toBe(400);
 				expect(await response.json()).toMatchObject({ ok: false, code: 'invalid-request' });
 			}
-			expect(harness.runtime.getOperatorProfile()).toEqual({ name: '', timezone: '' });
+			expect(harness.registry.getOperatorProfile()).toEqual({ name: '', timezone: '' });
 		} finally {
 			await harness.stop();
 		}
@@ -95,7 +101,7 @@ describe('operator profile web API', () => {
 				'http://evil.example',
 			);
 			expect(response.status).toBe(403);
-			expect(harness.runtime.getOperatorProfile()).toEqual({ name: '', timezone: '' });
+			expect(harness.registry.getOperatorProfile()).toEqual({ name: '', timezone: '' });
 		} finally {
 			await harness.stop();
 		}
