@@ -4,9 +4,11 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
-import { type ProjectBrief, RunStore } from '../../src/runtime/run-store.ts';
+import { type ProjectBrief, RunStore, type RunRecord } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 interface ProjectList {
@@ -24,7 +26,148 @@ function readyProject(root: string): void {
 	execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root });
 }
 
+const APPROVED_SPEC = { scope: 'Scoped approval', verify: ['bun test'] };
+
+function approvedIssue(id: string, blockedBy: string[] = []): IssueEntry {
+	return {
+		id,
+		title: id,
+		stage: 'specified',
+		status: 'open',
+		blockedBy,
+		createdAt: '2026-08-23T00:00:00.000Z',
+		updatedAt: '2026-08-23T00:00:00.000Z',
+		spec: APPROVED_SPEC,
+		approval: {
+			fingerprint: fingerprintSpec(APPROVED_SPEC),
+			approvedAt: '2026-08-23T00:00:00.000Z',
+		},
+	};
+}
+
+async function approveProjectIssue(options: {
+	backlog: IssueEntry[];
+	chainRuns: boolean;
+	activeRun?: RunRecord;
+}): Promise<{ starts: string[]; approveAgain: () => Promise<Response>; cleanup: () => Promise<void> }> {
+	const cwd = createTestTmpdir('gship-project-agent-approve-');
+	readyProject(cwd);
+	const store = new RunStore(':memory:');
+	const runtime = new RunRuntime({ cwd, store, listBacklog: () => options.backlog });
+	runtime.setChainRuns(options.chainRuns);
+	if (options.activeRun !== undefined) {
+		store.createRun({
+			id: options.activeRun.id,
+			issueId: options.activeRun.issueId,
+			sessionId: options.activeRun.sessionId,
+			workspacePath: options.activeRun.workspacePath,
+			createdAt: options.activeRun.createdAt,
+		});
+	}
+	const starts: string[] = [];
+	runtime.startRun = (issueId: string) => {
+		starts.push(issueId);
+		const created = store.createRun({
+			id: `run-${starts.length}`,
+			issueId,
+			sessionId: `session-${starts.length}`,
+			workspacePath: cwd,
+			createdAt: '2026-08-23T00:00:01.000Z',
+		});
+		return created.run;
+	};
+	const issue = options.backlog[0]!;
+	const nextApproval = options.backlog[1] ?? issue;
+	const handle = startWebServer({
+		port: 0,
+		cwd,
+		runRuntime: runtime,
+		issueReader: (id) => options.backlog.find((entry) => entry.id === id) ?? null,
+		issueApprover: (id) => ({ id, title: id, sha: 'approved-sha' }),
+	});
+	const listed = await fetch(`http://${handle.hostname}:${handle.port}/api/projects`)
+		.then((response) => response.json()) as ProjectList;
+	const projectId = listed.projects.find((project) => project.current)!.id;
+	const origin = `http://${handle.hostname}:${handle.port}`;
+	const approveAgain = () => fetch(`${origin}/api/projects/${projectId}/issues/${nextApproval.id}/approve`, {
+		method: 'POST',
+		headers: {
+			origin,
+			'content-type': 'application/json',
+			'x-gateship-command-source': 'agent-cli',
+		},
+		body: JSON.stringify({
+			fingerprint: fingerprintSpec(nextApproval.spec!),
+			authorization: 'I approve this issue.',
+		}),
+	});
+	const response = await approveAgain();
+	expect(response.status).toBe(200);
+	return {
+		starts,
+		approveAgain,
+		cleanup: async () => {
+			await handle.stop();
+			runtime.close();
+		},
+	};
+}
+
 describe('project-scoped agent API', () => {
+	test('approval wakes the idle project chain through the project-scoped route', async () => {
+		const result = await approveProjectIssue({ backlog: [approvedIssue('GSHIP-733')], chainRuns: true });
+		try {
+			expect(result.starts).toEqual(['GSHIP-733']);
+		} finally {
+			await result.cleanup();
+		}
+	});
+
+	test('approval does not start when chain is disabled or the issue is blocked', async () => {
+		const disabled = await approveProjectIssue({ backlog: [approvedIssue('GSHIP-734')], chainRuns: false });
+		const blocked = await approveProjectIssue({
+			backlog: [
+				approvedIssue('GSHIP-735', ['GSHIP-1']),
+				{ ...approvedIssue('GSHIP-1'), stage: 'planned' },
+			],
+			chainRuns: true,
+		});
+		try {
+			expect(disabled.starts).toEqual([]);
+			expect(blocked.starts).toEqual([]);
+		} finally {
+			await disabled.cleanup();
+			await blocked.cleanup();
+		}
+	});
+
+	test('approval does not start during an active project run and repeated approvals do not duplicate starts', async () => {
+		const active = await approveProjectIssue({
+			backlog: [approvedIssue('GSHIP-736')],
+			chainRuns: true,
+			activeRun: {
+				id: 'run-active', issueId: 'GSHIP-700', sessionId: 'session-active', providerId: 'claude',
+				state: 'queued', fixRounds: 0, createdAt: '2026-08-23T00:00:00.000Z',
+				updatedAt: '2026-08-23T00:00:00.000Z', workspacePath: '/project', summary: null, error: null,
+			},
+		});
+		try {
+			expect(active.starts).toEqual([]);
+		} finally {
+			await active.cleanup();
+		}
+
+		const repeated = await approveProjectIssue({
+			backlog: [approvedIssue('GSHIP-737'), approvedIssue('GSHIP-738')],
+			chainRuns: true,
+		});
+		try {
+			expect((await repeated.approveAgain()).status).toBe(200);
+			expect(repeated.starts).toEqual(['GSHIP-737']);
+		} finally {
+			await repeated.cleanup();
+		}
+	});
 	test('delegates current-project routes to the existing runtime and collaborators', async () => {
 		const cwd = createTestTmpdir('gship-project-agent-current-');
 		readyProject(cwd);
