@@ -566,7 +566,7 @@ describe('canonical agent CLI', () => {
 			expect(captured?.init?.method).toBe(method);
 			expect(new Headers(captured?.init?.headers).get('x-gateship-command-source')).toBe('agent-cli');
 			if (operation === 'brief.update') {
-				expect(new Headers(captured?.init?.headers).get('x-gateship-operator-authorization')).toBe('Operator authorizes.');
+				expect(new Headers(captured?.init?.headers).get('x-gateship-operator-authorization')).toBe('explicit-operator-authorization');
 				expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('authorization');
 			}
 			expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('projectId');
@@ -610,7 +610,7 @@ describe('canonical agent CLI', () => {
 					decisions: [],
 					constraints: [],
 					openItems: [],
-					authorization: 'The operator explicitly authorizes this brief.',
+					authorization: 'A operadora autoriza explicitamente esta atualização do brief: ação válida em pt-BR, não expor autorização.',
 				}),
 			]);
 			expect(updated.exitCode).toBe(0);

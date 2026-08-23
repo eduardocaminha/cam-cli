@@ -8,6 +8,7 @@ export const AGENT_MAX_LIST_LIMIT = 100;
 export const AGENT_DEFAULT_LIST_LIMIT = 20;
 export const AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES = 12 * 1024;
 export const AGENT_MAX_OUTPUT_BYTES = 64 * 1024;
+const EXPLICIT_OPERATOR_AUTHORIZATION_MARKER = 'explicit-operator-authorization';
 
 interface AgentOperation {
 	readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -451,7 +452,8 @@ export async function executeAgent(
 			'x-gateship-command-source': 'agent-cli',
 		};
 		if (operationName === 'brief.update') {
-			headers['x-gateship-operator-authorization'] = requiredString(parsed.input, 'authorization');
+			requiredString(parsed.input, 'authorization');
+			headers['x-gateship-operator-authorization'] = EXPLICIT_OPERATOR_AUTHORIZATION_MARKER;
 		}
 		const body = requestBodyJson(operation, operationName, parsed.input);
 		if (body !== undefined) headers['content-type'] = 'application/json';
