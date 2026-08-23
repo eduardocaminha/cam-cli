@@ -145,10 +145,15 @@ Rejecting these is a design decision, not a quality judgment of the sources.
   reversible work does not pay for. The approved verification contract is the
   gate, and it can require tests when the change warrants them.
 - **Parallelism inside the same repository.**
-  [Forge Orchestrator](https://github.com/nxtg-ai/forge-orchestrator)
-  (FSL-1.1-ALv2; reference only) adds file locking and drift detection so
-  several agents can share one checkout. Gateship keeps same-repository runs
-  serial; parallelism belongs only across independent repositories.
+  [Forge](https://github.com/LucasDuys/forge) (MIT) runs a five-phase pipeline
+  in which dependency-ordered tasks execute in parallel git worktrees,
+  test-first is the rule for every task, and a backprop phase turns a runtime
+  failure into a new acceptance criterion before the loop resumes. Gateship
+  keeps same-repository runs serial; parallelism belongs only across independent
+  repositories. The other three properties are rejected as well: TDD is not
+  universal, ceremony stays proportional to risk instead of paying for a fixed
+  phase count, and an approved specification is never rewritten silently, so a
+  gap found at runtime returns to the operator as a proposal.
 - **Fixed pipelines of many phases.**
   [Claude Lights Out](https://github.com/DreamChaserEric/claude-lights-out)
   (MIT) runs a fixed nine-phase pipeline where every phase runs; Tenet
