@@ -1,17 +1,43 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import { readBacklogFromMain } from '../../src/issues/backlog.ts';
 import type {
 	DiagnosticAdapter,
 	DiagnosticsSnapshot,
 	DiagnosticWorkspace,
 } from '../../src/runtime/diagnostics.ts';
 import { DiagnosticsRuntime } from '../../src/runtime/diagnostics.ts';
+import { ProjectRuntimeManager } from '../../src/runtime/project-runtime-manager.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
-import { RunStore } from '../../src/runtime/run-store.ts';
+import { RunStore, type RunRecord } from '../../src/runtime/run-store.ts';
+import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
+import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const SOURCE_SHA = 'b'.repeat(40);
+
+function publishableProject(prefix: string): { local: string; remote: string } {
+	const root = createTestTmpdir(prefix);
+	const seed = join(root, 'seed');
+	mkdirSync(seed, { recursive: true });
+	execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: seed });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: seed });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: seed });
+	writeFileSync(join(seed, 'README.md'), '# Test\n');
+	execFileSync('git', ['add', '.'], { cwd: seed });
+	execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: seed });
+	const remote = join(root, 'remote.git');
+	execFileSync('git', ['clone', '-q', '--bare', seed, remote], { cwd: root });
+	const local = join(root, 'local');
+	execFileSync('git', ['clone', '-q', remote, local], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: local });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: local });
+	return { local, remote };
+}
 
 function diagnosticHarness(options: { schedule?: { enabled: boolean; cadence: 'daily' | 'weekly' } } = {}) {
 	const runRuntime = new RunRuntime({
@@ -265,6 +291,230 @@ describe('diagnostics web API', () => {
 			});
 		} finally {
 			await harness.stop();
+		}
+	});
+
+	test('keeps diagnostics and run admission isolated across ready projects', async () => {
+		const currentProject = publishableProject('gship-diagnostics-project-current-');
+		const foreignProject = publishableProject('gship-diagnostics-project-foreign-');
+		const cwd = currentProject.local;
+		const foreignRoot = foreignProject.local;
+		const currentState = createTestTmpdir('gship-diagnostics-project-current-state-');
+		const foreignState = createTestTmpdir('gship-diagnostics-project-foreign-state-');
+
+		const registry = openProjectRegistry(createTestTmpdir('gship-diagnostics-project-home-'));
+		const foreign = registry.reconcile({
+			root: foreignRoot,
+			stateDir: foreignState,
+			readiness: {
+				state: 'ready',
+				name: 'foreign',
+				repository: 'acme/foreign',
+				remoteUrl: foreignProject.remote,
+				sourceRef: 'origin/main',
+			},
+		});
+		const current = registry.reconcile({
+			root: cwd,
+			stateDir: currentState,
+			readiness: {
+				state: 'ready',
+				name: 'current',
+				repository: 'acme/current',
+				remoteUrl: currentProject.remote,
+				sourceRef: 'origin/main',
+			},
+		});
+
+		const currentStore = new RunStore(join(currentState, 'runtime.sqlite'));
+		const foreignStore = new RunStore(join(foreignState, 'runtime.sqlite'));
+		for (const [store, prefix] of [[currentStore, 'current'], [foreignStore, 'foreign']] as const) {
+			store.createDiagnosticScan({ id: `${prefix}-seed-scan`, analyzer: 'react', createdAt: '2026-08-20T12:00:00.000Z' });
+			store.beginDiagnosticScan({ id: `${prefix}-seed-scan`, analyzerVersion: '0.9.12', sourceSha: SOURCE_SHA, updatedAt: '2026-08-20T12:00:00.000Z' });
+			store.completeDiagnosticScan({
+				id: `${prefix}-seed-scan`, analyzerVersion: '0.9.12', sourceSha: SOURCE_SHA,
+				coverageComplete: true, updatedAt: '2026-08-20T12:00:00.000Z',
+				findings: prefix === 'foreign'
+					? [
+						{ rule: 'foreign-dismiss-rule', severity: 'error', file: 'foreign-dismiss.tsx', evidence: 'foreign dismiss evidence' },
+						{ rule: 'foreign-promote-rule', severity: 'warning', file: 'foreign-promote.tsx', evidence: 'foreign promote evidence' },
+					]
+					: [{ rule: 'current-rule', severity: 'error', file: 'current.tsx', evidence: 'current evidence' }],
+			});
+		}
+
+		const runRuntime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
+		const currentDiagnostics = new DiagnosticsRuntime({
+			store: currentStore,
+			workspace: {
+				prepare: async () => ({ path: '/tmp/current-diagnostic-checkout', sourceSha: SOURCE_SHA }),
+				release: async () => ({ outcome: 'released' }),
+				listNotices: () => [],
+			},
+			adapters: [{
+				id: 'react', label: 'React', version: '0.9.12', description: 'React diagnostics',
+				scan: async ({ signal }) => await new Promise((_, reject) => {
+					signal.addEventListener('abort', () => reject(new Error('cancelled by test')), { once: true });
+				}),
+			}],
+			isProjectIdle: () => true,
+			newId: () => 'current-active-scan',
+		});
+		let serverProjectRuntimes: ProjectRuntimeManager<any> | undefined;
+		const originalRegister = ProjectRuntimeManager.prototype.register;
+		ProjectRuntimeManager.prototype.register = function (projectId, context) {
+			serverProjectRuntimes = this;
+			return originalRegister.call(this, projectId, context);
+		};
+		let handle;
+		try {
+			handle = startWebServer({
+				port: 0, cwd, stateDir: currentState, projectRegistry: registry, runRuntime, diagnostics: currentDiagnostics,
+				issueIntake: () => { throw new Error('boot issue intake must not be called'); },
+			});
+		} finally {
+			ProjectRuntimeManager.prototype.register = originalRegister;
+		}
+		if (serverProjectRuntimes === undefined) throw new Error('server did not register a project runtime manager');
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const base = (projectId: string) => `${origin}/api/projects/${projectId}`;
+		const command = (path: string, body?: unknown) => post(origin, new URL(path).pathname, body);
+		try {
+			const currentSnapshot = await fetch(`${base(current.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot;
+			const foreignSnapshot = await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot;
+			expect(currentSnapshot.findings.map((finding) => finding.rule)).toEqual(['current-rule']);
+			expect(foreignSnapshot.findings.map((finding) => finding.rule)).toEqual(['foreign-dismiss-rule', 'foreign-promote-rule']);
+			const currentContext = serverProjectRuntimes.get(current.id).context;
+			const foreignContext = serverProjectRuntimes.get(foreign.id).context;
+			const originalForeignStartRun = foreignContext.runtime.startRun;
+			const foreignRunIssueIds: string[] = [];
+			foreignContext.runtime.startRun = (issueId: string): RunRecord => {
+				foreignRunIssueIds.push(issueId);
+				return {
+					id: 'foreign-diagnostic-independent-run',
+					issueId,
+					sessionId: 'foreign-diagnostic-independent-session',
+					providerId: 'codex',
+					workspacePath: foreignRoot,
+					state: 'queued',
+					fixRounds: 0,
+					createdAt: '2026-08-23T00:00:00.000Z',
+					updatedAt: '2026-08-23T00:00:00.000Z',
+					summary: null,
+					error: null,
+				};
+			};
+
+			try {
+				const started = await command(`${base(current.id)}/diagnostics`, { analyzer: 'react' });
+				expect(started.status).toBe(202);
+				const active = await command(`${base(current.id)}/runs`, { issueId: 'GSHIP-739' });
+				expect(active.status).toBe(409);
+				expect(await active.json()).toMatchObject({ code: 'run-preflight-failed', message: expect.stringContaining('diagnostic') });
+				expect(currentContext.diagnostics.isActive()).toBe(true);
+				const foreignRun = await command(`${base(foreign.id)}/runs`, { issueId: 'GSHIP-739' });
+				expect(foreignRun.status).toBe(202);
+				expect(await foreignRun.json()).toMatchObject({
+					ok: true,
+					run: { id: 'foreign-diagnostic-independent-run', issueId: 'GSHIP-739' },
+				});
+				expect(foreignRunIssueIds).toEqual(['GSHIP-739']);
+			} finally {
+				foreignContext.runtime.startRun = originalForeignStartRun;
+			}
+
+			const originalForeignDiagnosticStart = foreignContext.diagnostics.start;
+			const originalForeignDiagnosticCancel = foreignContext.diagnostics.cancel;
+			const foreignStartAnalyzers: string[] = [];
+			const foreignCancelScanIds: string[] = [];
+			const foreignActiveScan = {
+				id: 'foreign-active-scan',
+				analyzer: 'react',
+				analyzerVersion: '0.9.12',
+				sourceSha: SOURCE_SHA,
+				state: 'running',
+				coverageComplete: false,
+				findingCount: 0,
+				error: null,
+				createdAt: '2026-08-23T00:00:00.000Z',
+				updatedAt: '2026-08-23T00:00:00.000Z',
+			};
+			foreignContext.diagnostics.start = (analyzer = 'react') => {
+				foreignStartAnalyzers.push(analyzer);
+				return foreignActiveScan;
+			};
+			foreignContext.diagnostics.cancel = async (scanId: string) => {
+				foreignCancelScanIds.push(scanId);
+				return { ...foreignActiveScan, state: 'cancelled', updatedAt: '2026-08-23T00:00:01.000Z' };
+			};
+			try {
+				const cancelled = await command(`${base(current.id)}/diagnostics/current-active-scan/cancel`);
+				expect(cancelled.status).toBe(200);
+				expect(currentContext.diagnostics.isActive()).toBe(false);
+				expect(foreignStartAnalyzers).toEqual([]);
+				expect(foreignCancelScanIds).toEqual([]);
+
+				const foreignStarted = await command(`${base(foreign.id)}/diagnostics`, { analyzer: 'react' });
+				expect(foreignStarted.status).toBe(202);
+				expect(await foreignStarted.json()).toMatchObject({ ok: true, scan: { id: 'foreign-active-scan' } });
+				const foreignCancelled = await command(`${base(foreign.id)}/diagnostics/foreign-active-scan/cancel`);
+				expect(foreignCancelled.status).toBe(200);
+				expect(foreignStartAnalyzers).toEqual(['react']);
+				expect(foreignCancelScanIds).toEqual(['foreign-active-scan']);
+			} finally {
+				foreignContext.diagnostics.start = originalForeignDiagnosticStart;
+				foreignContext.diagnostics.cancel = originalForeignDiagnosticCancel;
+			}
+
+			serverProjectRuntimes.get(foreign.id);
+			const releaseFence = serverProjectRuntimes.acquireAdmission('global diagnostic fence');
+			expect(releaseFence).not.toBeNull();
+			try {
+				for (const projectId of [current.id, foreign.id]) {
+					const fenced = await command(`${base(projectId)}/diagnostics`, { analyzer: 'react' });
+					expect(fenced.status).toBe(409);
+					expect(await fenced.json()).toMatchObject({
+						code: 'project-busy',
+						message: expect.stringContaining('global diagnostic fence'),
+					});
+				}
+			} finally {
+				releaseFence!();
+			}
+			const foreignFinding = foreignSnapshot.findings.find((finding) => finding.rule === 'foreign-dismiss-rule')!;
+			expect((await command(`${base(foreign.id)}/diagnostic-findings/${foreignFinding.id}/dismiss`)).status).toBe(200);
+			const foreignPromoteFinding = foreignSnapshot.findings.find((finding) => finding.rule === 'foreign-promote-rule')!;
+			const promoted = await command(`${base(foreign.id)}/diagnostic-findings/${foreignPromoteFinding.id}/promote`, {
+				title: 'Foreign draft', scope: 'Foreign scope', verificationCommand: 'bun test',
+			});
+			expect(promoted.status).toBe(200);
+			const promotedResult = await promoted.json() as {
+				issue: { id: string; title: string };
+				finding: { status: string; promotedIssueId: string | null };
+			};
+			expect(promotedResult.issue.title).toBe('Foreign draft');
+			expect(promotedResult.finding).toEqual({
+				...promotedResult.finding,
+				status: 'promoted',
+				promotedIssueId: promotedResult.issue.id,
+			});
+			expect((await fetch(`${base(current.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).findings.map((finding) => ({
+				rule: finding.rule,
+				status: finding.status,
+			}))).toEqual([{ rule: 'current-rule', status: 'pending' }]);
+			expect((await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot).findings).toEqual([]);
+			expect(readBacklogFromMain(cwd, undefined, RUNTIME_SOURCE_REF)).toEqual([]);
+			const foreignBacklog = readBacklogFromMain(foreignRoot, undefined, RUNTIME_SOURCE_REF);
+			expect(foreignBacklog).toHaveLength(1);
+			expect(foreignBacklog).toMatchObject([{
+				title: 'Foreign draft',
+				description: 'Foreign scope',
+			}]);
+		} finally {
+			await handle.stop();
+			currentStore.close();
+			foreignStore.close();
+			registry.close();
 		}
 	});
 });
