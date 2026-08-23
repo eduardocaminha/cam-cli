@@ -36,6 +36,7 @@ const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
+	'projects.overview': { method: 'GET', path: () => '/api/overview', input: '{}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },
 	'projects.import': { method: 'POST', path: () => '/api/projects/import', input: '{repository}' },
