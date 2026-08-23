@@ -154,6 +154,8 @@ export interface RunEvaluationView {
 		role: RunCostRole;
 		models: string[];
 		efforts: string[];
+		/** Absent on a run replayed before providers were recorded by role (GSHIP-709). */
+		providers?: Array<'claude' | 'codex'>;
 	}>;
 }
 

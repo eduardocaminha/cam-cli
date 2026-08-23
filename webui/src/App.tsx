@@ -1010,10 +1010,16 @@ function configurationLabel(
 	locale: Locale,
 ): string {
 	const roleLabels = LOCALE_CATALOG[locale].runsOperational.cost.roleLabels;
-	const roles = configuration.roles.map(({ role, models, efforts }) => {
+	const roles = configuration.roles.map(({ role, models, efforts, providers }) => {
 		const model = models.length === 0 ? catalog.benchmarks.card.modelMissing : models.join(' + ');
-		const effort = efforts.length === 0 ? '' : ` (${efforts.join(' + ')})`;
-		return `${roleLabels[role]}: ${model}${effort}`;
+		// The providers that actually ran the role sit beside its effort
+		// (GSHIP-709): a review that fell back shows both, so the run's own
+		// provider still reads as the origin it is.
+		const detail = [
+			...(efforts.length === 0 ? [] : [efforts.join(' + ')]),
+			...(providers === undefined || providers.length === 0 ? [] : [providers.join(' + ')]),
+		];
+		return `${roleLabels[role]}: ${model}${detail.length === 0 ? '' : ` (${detail.join(', ')})`}`;
 	});
 	return [configuration.provider, ...roles].join(' · ');
 }

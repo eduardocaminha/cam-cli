@@ -1,3 +1,4 @@
+import { REVIEW_FALLBACK_EVENT } from './agent-reviewer-router.ts';
 import type { AgentProviderId } from './agent-session.ts';
 import type { RunCostRole, RunEvent, RunRecord } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
@@ -8,6 +9,15 @@ export interface RunRoleConfiguration {
 	role: RunCostRole;
 	models: string[];
 	efforts: string[];
+	/**
+	 * The providers this role was actually invoked on (GSHIP-709), the same
+	 * reading `models` and `efforts` already have: what ran, not what it
+	 * produced. The run's own provider ran every invocation it configured, and
+	 * a review fallback adds the alternative it invoked beside -- never
+	 * instead of -- the origin it started from. Whether that attempt reached a
+	 * verdict is the fallback event's own `outcome`, not a provider's absence.
+	 */
+	providers: AgentProviderId[];
 }
 
 /**
@@ -31,6 +41,10 @@ const MODEL_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'review.model': 'reviewer',
 	'run.cycle-response': 'orchestrator',
 };
+
+function providerOf(value: unknown): AgentProviderId | null {
+	return value === 'claude' || value === 'codex' ? value : null;
+}
 
 function normalizedText(value: unknown): string | null {
 	if (typeof value !== 'string') return null;
@@ -58,17 +72,56 @@ function workflowRevisionOf(events: readonly RunEvent[]): string | null {
 	return normalizedText(created?.payload['workflowRevision']);
 }
 
-function roleConfigurations(events: readonly RunEvent[]): RunRoleConfiguration[] {
-	const configurations = new Map<RunCostRole, { models: Set<string>; efforts: Set<string> }>();
+interface RoleConfigurationAccumulator {
+	models: Set<string>;
+	efforts: Set<string>;
+	providers: Set<AgentProviderId>;
+}
+
+/**
+ * Both providers one review fallback names. The event is written only once the
+ * alternative reviewer has actually been invoked, so the target counts as
+ * invoked even when it refused: its own spawn already reported the model and
+ * effort it ran with, and dropping the provider alone would leave the role
+ * showing a model no listed provider ever ran.
+ */
+function foldReviewFallback(
+	entry: RoleConfigurationAccumulator,
+	payload: Record<string, unknown>,
+): void {
+	const from = providerOf(payload['from']);
+	const to = providerOf(payload['to']);
+	if (from !== null) entry.providers.add(from);
+	if (to !== null) entry.providers.add(to);
+}
+
+/**
+ * The models, efforts and providers each role was actually invoked with. The
+ * model events carry the first two; the provider comes from the run, which is
+ * the one that spawned them, plus the review fallback's own durable record --
+ * the only place a role runs on a provider the run did not select.
+ */
+function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRoleConfiguration[] {
+	const configurations = new Map<RunCostRole, RoleConfigurationAccumulator>();
+	const entryFor = (role: RunCostRole): RoleConfigurationAccumulator => {
+		const entry = configurations.get(role)
+			?? { models: new Set<string>(), efforts: new Set<string>(), providers: new Set<AgentProviderId>() };
+		configurations.set(role, entry);
+		return entry;
+	};
 	for (const event of events) {
+		if (event.kind === REVIEW_FALLBACK_EVENT) {
+			foldReviewFallback(entryFor('reviewer'), event.payload);
+			continue;
+		}
 		const role = MODEL_EVENT_ROLES[event.kind];
 		if (role === undefined) continue;
-		const entry = configurations.get(role) ?? { models: new Set<string>(), efforts: new Set<string>() };
+		const entry = entryFor(role);
 		const model = normalizedText(event.payload['model']);
 		const effort = normalizedText(event.payload['effort']);
 		if (model !== null) entry.models.add(model);
 		if (effort !== null) entry.efforts.add(effort);
-		configurations.set(role, entry);
+		entry.providers.add(run.providerId);
 	}
 	return [...configurations.entries()]
 		.sort(([left], [right]) => left.localeCompare(right))
@@ -76,6 +129,7 @@ function roleConfigurations(events: readonly RunEvent[]): RunRoleConfiguration[]
 			role,
 			models: [...configuration.models].sort(),
 			efforts: [...configuration.efforts].sort(),
+			providers: [...configuration.providers].sort(),
 		}));
 }
 
@@ -90,6 +144,6 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		operatorInterventions: events.filter((event) => event.kind === 'run.operator-guidance').length,
 		providerHolds: events.filter((event) => event.kind === 'run.provider-waiting').length,
 		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
-		roles: roleConfigurations(events),
+		roles: roleConfigurations(run, events),
 	};
 }

@@ -5,6 +5,7 @@ import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
+import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
@@ -381,6 +382,130 @@ describe('durable run runtime', () => {
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(executions).toBe(1);
 		expect(reviews).toBe(2);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-709: the review fallback is wired through the real router, so the
+	// run keeps its Claude provider, session and worktree while the verdict
+	// comes from Codex.
+	test('returns a Codex fallback finding to the original Claude executor', async () => {
+		const executions: Array<{ providerId?: string; reviewFeedback?: string }> = [];
+		let claudeReviews = 0;
+		let codexReviews = 0;
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-review-fallback',
+			newSessionId: () => 'session-review-fallback',
+			executor: {
+				execute: async (input) => {
+					executions.push({
+						...(input.providerId === undefined ? {} : { providerId: input.providerId }),
+						...(input.reviewFeedback === undefined ? {} : { reviewFeedback: input.reviewFeedback }),
+					});
+					return { outcome: 'completed', summary: 'implemented' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: new AgentReviewerRouter({
+				claude: {
+					review: async () => {
+						claudeReviews += 1;
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+					},
+				},
+				codex: {
+					review: async () => {
+						codexReviews += 1;
+						return codexReviews === 1
+							? { verdict: 'findings', detail: 'the fix misses a test' }
+							: { verdict: 'clean' };
+					},
+				},
+			}),
+		});
+
+		const run = runtime.startRun('GSHIP-709');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(claudeReviews).toBe(2);
+		expect(codexReviews).toBe(2);
+		expect(executions).toEqual([
+			{ providerId: 'claude' },
+			{ providerId: 'claude', reviewFeedback: 'the fix misses a test' },
+		]);
+		expect(runtime.getRun(run.id)).toMatchObject({
+			providerId: 'claude',
+			sessionId: 'session-review-fallback',
+		});
+		expect(runtime.getSelectedProvider()).toBe('claude');
+		expect(runtime.listRunDecisionEvents(run.id)
+			.filter((event) => event.kind === 'run.review-fallback')
+			.map((event) => event.payload))
+			.toEqual([
+				{
+					from: 'claude',
+					to: 'codex',
+					phase: 'review',
+					reason: 'usage-limit',
+					message: 'Claude usage limit reached.',
+					outcome: 'findings',
+				},
+				{
+					from: 'claude',
+					to: 'codex',
+					phase: 'review',
+					reason: 'usage-limit',
+					message: 'Claude usage limit reached.',
+					outcome: 'clean',
+				},
+			]);
+		expect(runtime.getRunEvaluation(run.id)?.roles)
+			.toEqual([{ role: 'reviewer', models: [], efforts: [], providers: ['claude', 'codex'] }]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('keeps the Claude review hold when the Codex fallback is refused', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-review-fallback-refused',
+			now: () => '2026-08-23T12:00:00.000Z',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'implemented' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: new AgentReviewerRouter({
+				claude: {
+					review: async () => {
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+							retryAt: '2026-08-23T12:10:00.000Z',
+						});
+					},
+				},
+				codex: {
+					review: async () => {
+						throw new ProviderCallError('codex', 'auth-required', 'Codex is not authenticated.');
+					},
+				},
+			}),
+		});
+
+		const run = runtime.startRun('GSHIP-709');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toEqual({
+			provider: 'claude',
+			kind: 'usage-limit',
+			message: 'Claude usage limit reached.',
+			phase: 'review',
+			retryAt: '2026-08-23T12:10:00.000Z',
+		});
+		expect(runtime.getProviderWait('codex')).toBeNull();
+		expect(runtime.listRunDecisionEvents(run.id)
+			.filter((event) => event.kind === 'run.review-fallback')
+			.map((event) => event.payload['outcome']))
+			.toEqual(['refused']);
+		expect(runtime.getRun(run.id)?.providerId).toBe('claude');
 		await runtime.stop();
 		runtime.close();
 	});
