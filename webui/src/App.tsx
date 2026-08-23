@@ -143,7 +143,7 @@ export function routeOf(pathname: string): OperatorRoute {
 
 interface RouteSelection {
 	projectId: string | null;
-	surface: ProjectSurface | 'overview';
+	surface: ProjectSurface | 'overview' | 'global-settings';
 }
 
 /**
@@ -160,7 +160,8 @@ export function projectIdOf(pathname: string): string | null {
 function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
 	if (route === '/overview') return { projectId: null, surface: 'overview' };
 	const legacy = route === '/' ? 'conversation' : route.slice(1);
-	if (route === '/' || route === '/runs' || route === '/work' || route === '/settings') {
+	if (route === '/settings') return { projectId: null, surface: 'global-settings' };
+	if (route === '/' || route === '/runs' || route === '/work') {
 		return { projectId: currentId, surface: legacy as ProjectSurface };
 	}
 	const match = /^\/projects\/([^/]+)(?:\/(runs|work|settings))?$/.exec(route);
@@ -2065,7 +2066,7 @@ const NOTIFICATION_INSTRUCTION_VALUES: Readonly<Record<string, string>> = {
 };
 
 function NotificationChannelInstructions({ channelId, catalog }: { channelId: NotificationChannelId; catalog: SettingsCatalog }): React.ReactElement {
-	const values: Readonly<Record<string, string>> = { ...NOTIFICATION_INSTRUCTION_VALUES, file: channelId === 'resend' ? '.gship/resend-api-key' : '.gship/ntfy-url' };
+	const values: Readonly<Record<string, string>> = { ...NOTIFICATION_INSTRUCTION_VALUES, file: channelId === 'resend' ? 'GATESHIP_HOME/.gship/resend-api-key' : 'GATESHIP_HOME/.gship/ntfy-url' };
 	return <>{catalog.notifications.instructions[channelId].split(/(\{(?:file|url|key|from|to)\})/).map((part) => {
 		const key = part.startsWith('{') ? part.slice(1, -1) : null;
 		return key === null ? part : <code className="break-all" key={key}>{values[key]}</code>;
@@ -2830,6 +2831,68 @@ function humanVersionOf(version: string): string {
 	return buildMetadata === -1 ? version : version.slice(0, buildMetadata);
 }
 
+function ShellNavigation({
+	catalog,
+	projects,
+	selection,
+}: {
+	catalog: ShellCatalog;
+	projects: AppProps['projects'];
+	selection: ReturnType<typeof routeSelection>;
+}): React.ReactElement {
+	return <>
+		<nav aria-label={catalog.projectNavigationLabel}>
+			<ul className="flex flex-col gap-1">
+				<li>
+					<a
+						aria-current={selection.surface === 'overview' ? 'page' : undefined}
+						className={cn(NAV_LINK_CLASS, selection.surface === 'overview' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+						href="/overview"
+					>
+						{catalog.allProjectsLabel}
+					</a>
+				</li>
+				{projects.map((project) => (
+					<li key={project.id}>
+						<a
+							aria-current={selection.projectId === project.id && selection.surface === 'conversation' ? 'page' : undefined}
+							className={cn(NAV_LINK_CLASS, selection.projectId === project.id && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+							href={`/projects/${encodeURIComponent(project.id)}`}
+						>
+							{project.name}
+						</a>
+					</li>
+				))}
+			</ul>
+		</nav>
+		<a
+			aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
+			className={cn(NAV_LINK_CLASS, selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+			href="/settings"
+		>
+			{catalog.routeLabels.globalSettings}
+		</a>
+		{selection.projectId === null ? null : <nav aria-label={catalog.operatorNavigationLabel}>
+			<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
+				{SURFACES.map((surface) => (
+					<li key={surface.surface}>
+						<a
+							aria-current={surface.surface === selection.surface ? 'page' : undefined}
+							className={cn(
+								NAV_LINK_CLASS,
+								surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
+							)}
+							href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
+						>
+							{catalog.routeLabels[surface.label]}
+						</a>
+					</li>
+				))}
+			</ul>
+		</nav>}
+	</>;
+}
+
 function ShellSidebar({
 	chainRuns,
 	gitIdentity,
@@ -2881,52 +2944,11 @@ function ShellSidebar({
 					{runInspectorCatalog.attentionLabels[attention]}
 				</Badge> : null}
 			</div>
-			<nav aria-label={catalog.projectNavigationLabel}>
-				<ul className="flex flex-col gap-1">
-					<li>
-						<a
-							aria-current={selection.surface === 'overview' ? 'page' : undefined}
-							className={cn(NAV_LINK_CLASS, selection.surface === 'overview' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-							href="/overview"
-						>
-							{catalog.allProjectsLabel}
-						</a>
-					</li>
-					{projects.map((project) => (
-						<li key={project.id}>
-							<a
-								aria-current={selection.projectId === project.id && selection.surface === 'conversation' ? 'page' : undefined}
-								className={cn(NAV_LINK_CLASS, selection.projectId === project.id && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-								href={`/projects/${encodeURIComponent(project.id)}`}
-							>
-								{project.name}
-							</a>
-						</li>
-					))}
-				</ul>
-			</nav>
+			<ShellNavigation catalog={catalog} projects={projects} selection={selection} />
 			<ChainPauseCallout pause={queuePause} />
 			{operational ? <StaleServiceCallout staleService={staleService} /> : null}
 			{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
 			<Separator />
-			{selection.projectId === null ? null : <nav aria-label={catalog.operatorNavigationLabel}>
-				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
-					{SURFACES.map((surface) => (
-						<li key={surface.surface}>
-							<a
-								aria-current={surface.surface === selection.surface ? 'page' : undefined}
-								className={cn(
-									NAV_LINK_CLASS,
-									surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
-								)}
-								href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
-							>
-								{catalog.routeLabels[surface.label]}
-							</a>
-						</li>
-					))}
-				</ul>
-			</nav>}
 			<label className="flex flex-col gap-1 text-sidebar-foreground text-xs lg:mt-auto" htmlFor="gateship-locale">
 				<span className="font-medium">{catalog.languageLabel}</span>
 				<select
@@ -4304,7 +4326,7 @@ function OnboardingSurface({
 	);
 }
 
-function SettingsSurface(props: AppProps & { bootRuntimeExtras: boolean }): React.ReactElement {
+function SettingsSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
@@ -4340,9 +4362,22 @@ function SettingsSurface(props: AppProps & { bootRuntimeExtras: boolean }): Reac
 				onSetExecutorHandoff={props.onSetExecutorHandoff}
 				pending={props.pending}
 			/>
-			{props.bootRuntimeExtras ? (
-				<>
-					<OperatorProfilePanel
+			<ProjectBriefPanel
+				brief={props.brief}
+				catalog={catalog}
+				onSaveBrief={props.onSaveBrief}
+				pending={props.pending}
+			/>
+			<HandoffPanel catalog={catalog} handoff={props.handoff} />
+		</SurfaceColumn>
+	);
+}
+
+function GlobalSettingsSurface(props: AppProps): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].settings;
+	return (
+		<SurfaceColumn label={catalog.title} status={props.status}>
+			<OperatorProfilePanel
 						catalog={catalog}
 						onSaveOperatorProfile={props.onSaveOperatorProfile}
 						operatorProfile={props.operatorProfile}
@@ -4363,7 +4398,7 @@ function SettingsSurface(props: AppProps & { bootRuntimeExtras: boolean }): Reac
 						onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
 						pending={props.pending}
 					/>
-					<NotificationsPanel
+			<NotificationsPanel
 						catalog={catalog}
 						notificationChannels={props.notificationChannels}
 						notificationPermission={props.notificationPermission}
@@ -4372,16 +4407,7 @@ function SettingsSurface(props: AppProps & { bootRuntimeExtras: boolean }): Reac
 						onSaveResendSettings={props.onSaveResendSettings}
 						onRemoveResendCredential={props.onRemoveResendCredential}
 						pending={props.pending}
-					/>
-				</>
-			) : null}
-			<ProjectBriefPanel
-				brief={props.brief}
-				catalog={catalog}
-				onSaveBrief={props.onSaveBrief}
-				pending={props.pending}
 			/>
-			<HandoffPanel catalog={catalog} handoff={props.handoff} />
 		</SurfaceColumn>
 	);
 }
@@ -4408,7 +4434,7 @@ function NonCurrentProjectSurface({
 		if (surface === 'settings') {
 			return (
 				<>
-					<SettingsSurface {...props} bootRuntimeExtras={false} />
+					<SettingsSurface {...props} />
 					<UnregisterProjectPanel
 						catalog={LOCALE_CATALOG[props.locale].projects}
 						onUnregisterProject={props.onUnregisterProject}
@@ -4441,6 +4467,7 @@ function SelectedRouteSurface({
 }): React.ReactElement {
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	if (selection.surface === 'overview') return <OverviewSurface {...props} />;
+	if (selection.surface === 'global-settings') return <GlobalSettingsSurface {...props} />;
 	if (selectedProject === null) {
 		return (
 			<SurfaceColumn label={localeCatalog.projects.notFoundTitle} status={props.status}>
@@ -4470,7 +4497,7 @@ function SelectedRouteSurface({
 	}
 	if (selection.surface === 'runs') return <RunsSurface {...props} />;
 	if (selection.surface === 'work') return <WorkSurface {...props} bootRuntimeExtras />;
-	if (selection.surface === 'settings') return <SettingsSurface {...props} bootRuntimeExtras />;
+	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
 	return <HomeSurface {...props} projectId={selectedProject.id} />;
 }
 

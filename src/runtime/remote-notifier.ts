@@ -43,6 +43,10 @@ function notificationStateDir(cwd: string, stateDir?: string): string {
 	return stateDir ?? join(cwd, '.gship');
 }
 
+function notificationStateDirs(cwd: string, stateDir?: string, fallbackStateDir?: string): string[] {
+	return [...new Set([notificationStateDir(cwd, stateDir), ...(fallbackStateDir === undefined ? [] : [fallbackStateDir])])];
+}
+
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 /** Reasons `run.chain-paused` carries that are chaining's default-off steady state, not a stopped queue (mirrors webui/src/App.tsx's stoppedQueuePause, GSHIP-650). */
@@ -144,15 +148,19 @@ export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotificati
  * left to honor that decision is refusing to trust a file that arrived more
  * permissive than the contract, the same posture SSH takes on a private key.
  */
-function readNtfyUrlFile(cwd: string, stateDir?: string): string | null {
-	const path = join(notificationStateDir(cwd, stateDir), 'ntfy-url');
-	try {
-		if ((statSync(path).mode & 0o077) !== 0) return null;
-		const raw = readFileSync(path, 'utf8').trim();
-		return raw.length === 0 ? null : raw;
-	} catch {
-		return null;
+
+function readNtfyUrlFile(cwd: string, stateDir?: string, fallbackStateDir?: string): string | null {
+	for (const directory of notificationStateDirs(cwd, stateDir, fallbackStateDir)) {
+		const path = join(directory, 'ntfy-url');
+		try {
+			if ((statSync(path).mode & 0o077) !== 0) continue;
+			const raw = readFileSync(path, 'utf8').trim();
+			if (raw.length > 0) return raw;
+		} catch {
+			// Try the explicit legacy location, if one was supplied.
+		}
 	}
+	return null;
 }
 
 /**
@@ -164,11 +172,12 @@ export function resolveNtfyUrl(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): string | null {
 	const fromEnv = env[NTFY_URL_ENV_VAR];
 	const trimmedEnv = typeof fromEnv === 'string' ? fromEnv.trim() : '';
 	if (trimmedEnv.length > 0) return trimmedEnv;
-	return readNtfyUrlFile(cwd, stateDir);
+	return readNtfyUrlFile(cwd, stateDir, fallbackStateDir);
 }
 
 /**
@@ -182,8 +191,9 @@ function resolveNtfyTopicUrl(
 	cwd: string,
 	env: Record<string, string | undefined>,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): URL | null {
-	const raw = resolveNtfyUrl(cwd, env, stateDir);
+	const raw = resolveNtfyUrl(cwd, env, stateDir, fallbackStateDir);
 	if (raw === null) return null;
 	try {
 		return new URL(raw);
@@ -200,8 +210,9 @@ export function isNtfyConfigured(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): boolean {
-	return resolveNtfyTopicUrl(cwd, env, stateDir) !== null;
+	return resolveNtfyTopicUrl(cwd, env, stateDir, fallbackStateDir) !== null;
 }
 
 export interface RemoteNotifierOptions {
@@ -215,6 +226,8 @@ export interface RemoteNotifierOptions {
 	cwd?: string;
 	/** Explicit project state directory; defaults to `<cwd>/.gship`. */
 	stateDir?: string;
+	/** Legacy boot-project state, consulted only when the global file is absent. */
+	legacyStateDir?: string;
 }
 
 /** One ntfy delivery; swallowed after being counted against the request itself (a settled, failed fetch) rather than left an unhandled rejection -- the channel is optional, so its own failure carries no further consequence. */
@@ -269,10 +282,10 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 		const notification = remoteNotificationForRunEvent(event);
 		if (notification === null) return;
 
-		const topicUrl = resolveNtfyTopicUrl(cwd, env, stateDir);
+		const topicUrl = resolveNtfyTopicUrl(cwd, env, stateDir, options.legacyStateDir);
 		if (topicUrl !== null) void sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs);
 
-		const { config } = resolveResendConfig(cwd, env, stateDir);
+		const { config } = resolveResendConfig(cwd, env, stateDir, options.legacyStateDir);
 		if (config !== null) void sendResendDelivery(config, notification, fetchImpl, timeoutMs);
 	};
 }
@@ -294,9 +307,9 @@ export async function sendRemoteServiceNotification(
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const notification = { title, body };
 	const deliveries: Promise<void>[] = [];
-	const topicUrl = resolveNtfyTopicUrl(cwd, env, options.stateDir);
+	const topicUrl = resolveNtfyTopicUrl(cwd, env, options.stateDir, options.legacyStateDir);
 	if (topicUrl !== null) deliveries.push(sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs));
-	const { config } = resolveResendConfig(cwd, env, options.stateDir);
+	const { config } = resolveResendConfig(cwd, env, options.stateDir, options.legacyStateDir);
 	if (config !== null) deliveries.push(sendResendDelivery(config, notification, fetchImpl, timeoutMs));
 	await Promise.all(deliveries);
 }
@@ -313,6 +326,7 @@ export interface NtfyTestResult {
 export interface NtfyTestOptions {
 	cwd: string;
 	stateDir?: string;
+	legacyStateDir?: string;
 	/** Defaults to `process.env`; a test supplies its own map instead of mutating the real process. */
 	env?: Record<string, string | undefined>;
 	/** Defaults to the global `fetch`; a test injects a stub to observe or fail a delivery. */
@@ -327,7 +341,7 @@ export interface NtfyTestOptions {
  */
 export async function sendNtfyTestNotification(options: NtfyTestOptions): Promise<NtfyTestResult> {
 	const env = options.env ?? process.env;
-	const topicUrl = resolveNtfyTopicUrl(options.cwd, env, options.stateDir);
+	const topicUrl = resolveNtfyTopicUrl(options.cwd, env, options.stateDir, options.legacyStateDir);
 	if (topicUrl === null) return { outcome: 'not-configured' };
 
 	const fetchImpl = options.fetchImpl ?? fetch;
@@ -396,15 +410,19 @@ export const RESEND_FIELD_LABELS: Readonly<Record<ResendConfigField, string>> = 
 };
 
 /** Same refusal as `readNtfyUrlFile`: absent, empty, or looser than 600 all read as no file. */
-function readResendApiKeyFile(cwd: string, stateDir?: string): string | null {
-	const path = join(notificationStateDir(cwd, stateDir), 'resend-api-key');
-	try {
-		if ((statSync(path).mode & 0o077) !== 0) return null;
-		const raw = readFileSync(path, 'utf8').trim();
-		return raw.length === 0 ? null : raw;
-	} catch {
-		return null;
+
+function readResendApiKeyFile(cwd: string, stateDir?: string, fallbackStateDir?: string): string | null {
+	for (const directory of notificationStateDirs(cwd, stateDir, fallbackStateDir)) {
+		const path = join(directory, 'resend-api-key');
+		try {
+			if ((statSync(path).mode & 0o077) !== 0) continue;
+			const raw = readFileSync(path, 'utf8').trim();
+			if (raw.length > 0) return raw;
+		} catch {
+			// Try the explicit legacy location, if one was supplied.
+		}
 	}
+	return null;
 }
 
 interface ResendFileSettings {
@@ -418,18 +436,20 @@ function boundedSetting(value: unknown): string | null {
 	return trimmed.length > 0 && trimmed.length <= RESEND_SETTING_MAX_LENGTH ? trimmed : null;
 }
 
-function readResendFileSettings(cwd: string, stateDir?: string): ResendFileSettings {
-	try {
-		const parsed = JSON.parse(readFileSync(
-			join(notificationStateDir(cwd, stateDir), 'resend-settings.json'),
-			'utf8',
-		)) as unknown;
-		if (parsed === null || typeof parsed !== 'object') return { from: null, to: null };
-		const record = parsed as Record<string, unknown>;
-		return { from: boundedSetting(record.from), to: boundedSetting(record.to) };
-	} catch {
-		return { from: null, to: null };
+
+function readResendFileSettings(cwd: string, stateDir?: string, fallbackStateDir?: string): ResendFileSettings {
+	for (const directory of notificationStateDirs(cwd, stateDir, fallbackStateDir)) {
+		try {
+			const parsed = JSON.parse(readFileSync(join(directory, 'resend-settings.json'), 'utf8')) as unknown;
+			if (parsed === null || typeof parsed !== 'object') continue;
+			const record = parsed as Record<string, unknown>;
+			const settings = { from: boundedSetting(record.from), to: boundedSetting(record.to) };
+			if (settings.from !== null || settings.to !== null) return settings;
+		} catch {
+			// Try the explicit legacy location, if one was supplied.
+		}
 	}
+	return { from: null, to: null };
 }
 
 function atomicWrite(cwd: string, filename: string, contents: string, mode: number, stateDir?: string): void {
@@ -492,11 +512,12 @@ export function resolveResendApiKey(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): string | null {
 	const fromEnv = env[RESEND_API_KEY_ENV_VAR];
 	const trimmedEnv = typeof fromEnv === 'string' ? fromEnv.trim() : '';
 	if (trimmedEnv.length > 0) return trimmedEnv;
-	return readResendApiKeyFile(cwd, stateDir);
+	return readResendApiKeyFile(cwd, stateDir, fallbackStateDir);
 }
 
 function trimmedEnvValue(env: Record<string, string | undefined>, key: string): string | null {
@@ -519,8 +540,9 @@ export function resolveResendStatus(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): ResendStatus {
-	const file = readResendFileSettings(cwd, stateDir);
+	const file = readResendFileSettings(cwd, stateDir, fallbackStateDir);
 	const envFrom = trimmedEnvValue(env, RESEND_FROM_ENV_VAR);
 	const envTo = trimmedEnvValue(env, RESEND_TO_ENV_VAR);
 	const externallyManaged = {
@@ -530,7 +552,7 @@ export function resolveResendStatus(
 	};
 	const from = envFrom ?? file.from;
 	const to = envTo ?? file.to;
-	const apiKey = resolveResendApiKey(cwd, env, stateDir);
+	const apiKey = resolveResendApiKey(cwd, env, stateDir, fallbackStateDir);
 	const missing: ResendConfigField[] = [];
 	if (apiKey === null) missing.push('apiKey');
 	if (from === null) missing.push('from');
@@ -540,7 +562,8 @@ export function resolveResendStatus(
 		missing,
 		from,
 		to,
-		fileCredentialExists: existsSync(join(notificationStateDir(cwd, stateDir), 'resend-api-key')),
+		fileCredentialExists: notificationStateDirs(cwd, stateDir, fallbackStateDir)
+			.some((directory) => existsSync(join(directory, 'resend-api-key'))),
 		externallyManaged,
 	};
 }
@@ -556,9 +579,10 @@ function resolveResendConfig(
 	cwd: string,
 	env: Record<string, string | undefined>,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): { config: ResendConfig | null; missing: ResendConfigField[] } {
-	const status = resolveResendStatus(cwd, env, stateDir);
-	const apiKey = resolveResendApiKey(cwd, env, stateDir);
+	const status = resolveResendStatus(cwd, env, stateDir, fallbackStateDir);
+	const apiKey = resolveResendApiKey(cwd, env, stateDir, fallbackStateDir);
 	const { from, to, missing } = status;
 	if (apiKey === null || from === null || to === null) return { config: null, missing };
 	return { config: { apiKey, from, to }, missing: [] };
@@ -569,8 +593,9 @@ export function isResendConfigured(
 	cwd: string,
 	env: Record<string, string | undefined> = process.env,
 	stateDir?: string,
+	fallbackStateDir?: string,
 ): boolean {
-	return resolveResendConfig(cwd, env, stateDir).config !== null;
+	return resolveResendConfig(cwd, env, stateDir, fallbackStateDir).config !== null;
 }
 
 /** What Ajustes names, by field, when Resend is off because of a partial configuration. */
@@ -625,6 +650,7 @@ export interface ResendTestResult {
 export interface ResendTestOptions {
 	cwd: string;
 	stateDir?: string;
+	legacyStateDir?: string;
 	/** Defaults to `process.env`; a test supplies its own map instead of mutating the real process. */
 	env?: Record<string, string | undefined>;
 	/** Defaults to the global `fetch`; a test injects a stub to observe or fail a delivery. */
@@ -641,7 +667,7 @@ export interface ResendTestOptions {
  */
 export async function sendResendTestNotification(options: ResendTestOptions): Promise<ResendTestResult> {
 	const env = options.env ?? process.env;
-	const { config, missing } = resolveResendConfig(options.cwd, env, options.stateDir);
+	const { config, missing } = resolveResendConfig(options.cwd, env, options.stateDir, options.legacyStateDir);
 	if (config === null) {
 		return { outcome: 'not-configured', detail: missing.map((field) => RESEND_FIELD_LABELS[field]).join(', ') };
 	}
