@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T17:27:16.600Z",
-  "updatedAt": "2026-08-23T17:27:16.600Z",
+  "updatedAt": "2026-08-23T17:27:30.680Z",
   "description": "Fechar a única evidência ausente da GSHIP-736 com um teste server-level usando dois projetos registrados, dois stateDir/RunRuntime distintos e propostas distintas em ambos. Exercitar as rotas /api/projects/:projectId/proposals, /resolved, dismiss e promote. Provar que listar ou decidir em um projeto não lê nem altera o outro e que promote cria o draft somente no repositório do projeto nomeado.\n\nPreferir apenas teste. Se o teste revelar um defeito real, corrigir somente o menor seam necessário. Reutilizar ProjectRuntimeManager e os helpers existentes; não criar abstração, tabela, processo, serviço, dependência ou regra geral nova.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/project-scoped-browser-runs.test.ts test/web/issue-intake-api.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "4cf396765c114e506620064b746fb65fed7ddeb85b3fa7fa205b9b47ed8ae7a8",
+    "approvedAt": "2026-08-23T17:27:30.680Z"
   }
 }
