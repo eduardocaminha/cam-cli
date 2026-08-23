@@ -2,14 +2,14 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readBacklogFromMain } from '../issues/backlog.ts';
-import { deriveBacklogJson, type BacklogJsonView } from '../issues/list.ts';
+import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import type { RegisteredProject } from './project-registry.ts';
 import {
+	type PersistedRunHistory,
+	type PersistedRunStatus,
 	readPersistedRunHistory,
 	readPersistedRunOverview,
 	readPersistedRunStatuses,
-	type PersistedRunHistory,
-	type PersistedRunStatus,
 } from './run-store.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
@@ -41,6 +41,7 @@ export interface HistoricalOverview {
 	daily: Array<{
 		date: string;
 		totalRuns: number;
+		runsByOutcome: HistoricalOverview['runsByOutcome'];
 		runsWithKnownCost: number;
 		knownCostUsd: number | null;
 		inputTokens: number | null;
@@ -168,8 +169,9 @@ function addReportedTokens(result: HistoricalOverview, item: PersistedRunHistory
 function addDailyRun(daily: Map<string, HistoricalOverview['daily'][number]>, item: PersistedRunHistory): void {
 	const date = runDate(item.run.createdAt);
 	if (date === null) return;
-	const day = daily.get(date) ?? { date, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
+	const day = daily.get(date) ?? { date, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
 	day.totalRuns += 1;
+	day.runsByOutcome[evaluationOutcome(item)] += 1;
 	if (item.cost.totalCostUsd !== null) {
 		day.runsWithKnownCost += 1;
 		day.knownCostUsd = (day.knownCostUsd ?? 0) + item.cost.totalCostUsd;
@@ -179,6 +181,10 @@ function addDailyRun(daily: Map<string, HistoricalOverview['daily'][number]>, it
 		if (entries.length > 0) day[field] = addNullable(day[field], entries.reduce((sum, entry) => sum + (entry[field] ?? 0), 0));
 	}
 	daily.set(date, day);
+}
+
+function evaluationOutcome(item: PersistedRunHistory): keyof HistoricalOverview['runsByOutcome'] {
+	return item.evaluation.outcome;
 }
 
 function historicalOverview(
@@ -250,6 +256,7 @@ export interface ProjectOperationalOverview {
 		overview: HistoricalOverviewRead;
 		activeRun: PersistedRunStatus | null;
 		latestRun: PersistedRunStatus | null;
+			latestRunOutcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete' | null;
 		recentRuns: PersistedRunStatus[];
 	}>;
 }
@@ -315,6 +322,7 @@ export function readProjectOperationalOverview(
 		overview: HistoricalOverviewRead;
 		activeRun: PersistedRunStatus | null;
 		latestRun: PersistedRunStatus | null;
+		latestRunOutcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete' | null;
 		recentRuns: PersistedRunStatus[];
 		nonTerminalRuns: number;
 	}> = statuses.map((status) => {
@@ -324,20 +332,14 @@ export function readProjectOperationalOverview(
 				overview: { overview: null, reason: status.database.reason },
 				activeRun: null,
 				latestRun: null,
+				latestRunOutcome: null,
 				recentRuns: [],
 				nonTerminalRuns: 0,
 			};
 		}
+		let runOverview: ReturnType<typeof readPersistedRunOverview>;
 		try {
-			const runOverview = readRunOverview(status.database.path);
-			return {
-				...status,
-				overview: readProjectHistoricalOverview(status.project, window, now),
-				activeRun: runOverview.activeRun,
-				latestRun: status.database.runs[0] ?? null,
-				recentRuns: status.database.runs,
-				nonTerminalRuns: runOverview.nonTerminalRuns,
-			};
+			runOverview = readRunOverview(status.database.path);
 		} catch (error) {
 			return {
 				...status,
@@ -349,8 +351,31 @@ export function readProjectOperationalOverview(
 				overview: { overview: null, reason: unavailableReason(error) },
 				activeRun: null,
 				latestRun: status.database.runs[0] ?? null,
+				latestRunOutcome: null,
 				recentRuns: status.database.runs,
 				nonTerminalRuns: 0,
+			};
+		}
+		try {
+			const latestHistory = readPersistedRunHistory(status.database.path).at(-1);
+			return {
+				...status,
+				overview: readProjectHistoricalOverview(status.project, window, now),
+				activeRun: runOverview.activeRun,
+				latestRun: status.database.runs[0] ?? null,
+				latestRunOutcome: latestHistory?.evaluation.outcome ?? null,
+				recentRuns: status.database.runs,
+				nonTerminalRuns: runOverview.nonTerminalRuns,
+			};
+		} catch (error) {
+			return {
+				...status,
+				overview: { overview: null, reason: unavailableReason(error) },
+				activeRun: runOverview.activeRun,
+				latestRun: status.database.runs[0] ?? null,
+				latestRunOutcome: null,
+				recentRuns: status.database.runs,
+				nonTerminalRuns: runOverview.nonTerminalRuns,
 			};
 		}
 	});
@@ -393,12 +418,7 @@ export function readProjectOperationalOverview(
 	};
 }
 
-function addHistoricalOverview(
-	combined: HistoricalOverview,
-	item: HistoricalOverview,
-	configurations: Set<string>,
-	daily: Map<string, HistoricalOverview['daily'][number]>,
-): void {
+function mergeHistoricalTotals(combined: HistoricalOverview, item: HistoricalOverview): void {
 	combined.totalRuns += item.totalRuns;
 	combined.runsWithKnownCost += item.runsWithKnownCost;
 	if (item.knownCostUsd !== null) combined.knownCostUsd = (combined.knownCostUsd ?? 0) + item.knownCostUsd;
@@ -412,16 +432,31 @@ function addHistoricalOverview(
 	for (const key of Object.keys(combined.reportedTokens) as Array<keyof HistoricalOverview['reportedTokens']>) {
 		combined.reportedTokens[key] = addNullable(combined.reportedTokens[key], item.reportedTokens[key] ?? undefined);
 	}
+}
+
+function mergeHistoricalDay(
+	daily: Map<string, HistoricalOverview['daily'][number]>,
+	itemDay: HistoricalOverview['daily'][number],
+): void {
+	const day = daily.get(itemDay.date) ?? { ...itemDay, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
+	day.totalRuns += itemDay.totalRuns;
+	for (const outcome of Object.keys(day.runsByOutcome) as Array<keyof HistoricalOverview['runsByOutcome']>) day.runsByOutcome[outcome] += itemDay.runsByOutcome[outcome];
+	day.runsWithKnownCost += itemDay.runsWithKnownCost;
+	if (itemDay.knownCostUsd !== null) day.knownCostUsd = (day.knownCostUsd ?? 0) + itemDay.knownCostUsd;
+	day.inputTokens = addNullable(day.inputTokens, itemDay.inputTokens ?? undefined);
+	day.outputTokens = addNullable(day.outputTokens, itemDay.outputTokens ?? undefined);
+	daily.set(day.date, day);
+}
+
+function addHistoricalOverview(
+	combined: HistoricalOverview,
+	item: HistoricalOverview,
+	configurations: Set<string>,
+	daily: Map<string, HistoricalOverview['daily'][number]>,
+): void {
+	mergeHistoricalTotals(combined, item);
 	for (const entry of item.configurations) configurations.add(JSON.stringify(entry));
-	for (const itemDay of item.daily) {
-		const day = daily.get(itemDay.date) ?? { ...itemDay, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
-		day.totalRuns += itemDay.totalRuns;
-		day.runsWithKnownCost += itemDay.runsWithKnownCost;
-		if (itemDay.knownCostUsd !== null) day.knownCostUsd = (day.knownCostUsd ?? 0) + itemDay.knownCostUsd;
-		day.inputTokens = addNullable(day.inputTokens, itemDay.inputTokens ?? undefined);
-		day.outputTokens = addNullable(day.outputTokens, itemDay.outputTokens ?? undefined);
-		daily.set(day.date, day);
-	}
+	for (const itemDay of item.daily) mergeHistoricalDay(daily, itemDay);
 }
 
 function combineHistoricalOverviews(overviews: readonly HistoricalOverview[], window: OverviewWindow): HistoricalOverview {

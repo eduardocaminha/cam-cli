@@ -3117,6 +3117,35 @@ describe('settings surface', () => {
 	});
 });
 
+function assertOverviewLoadingAndError(locale: 'en-US' | 'pt-BR'): void {
+	const loading = renderAt('/overview', { locale, projects: [CURRENT_PROJECT], overview: null, overviewLoading: true });
+	const error = renderAt('/overview', { locale, projects: [CURRENT_PROJECT], overview: null, overviewError: 'network failure' });
+	expect(loading).toContain(locale === 'en-US' ? 'Loading operational overview' : 'Carregando visão operacional');
+	expect(loading).not.toContain(locale === 'en-US' ? 'No active run' : 'Nenhuma run ativa');
+	expect(error).toContain(locale === 'en-US' ? 'The operational overview could not be loaded' : 'Não foi possível carregar a visão operacional');
+	expect(error).toContain(CURRENT_PROJECT.name);
+	expect(error).toContain(locale === 'en-US' ? 'Readiness' : 'Prontidão');
+	expect(error).not.toContain(locale === 'en-US' ? 'No outcome in this window' : 'Nenhum resultado nesta janela');
+	expect(error).not.toContain('Provider');
+	expect(error).not.toContain('Backlog');
+}
+
+function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
+	const history = { window: '7d' as const, totalRuns: 1, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 1, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 1, daily: [], configurations: [] };
+	const overviewFor = (database: NonNullable<AppProps['overview']>['projects'][number]['database'], historical: NonNullable<AppProps['overview']>['projects'][number]['overview']['overview']) => ({
+		window: '7d' as const, overview: history,
+		summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 0 } },
+		projects: [{ project: CURRENT_PROJECT, root: { state: 'available' as const }, backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 0 } }, database, overview: { overview: historical }, activeRun: { id: 'run-factual', issueId: 'CAM-900', state: 'working', providerId: 'claude' as const, createdAt: '', updatedAt: '' }, latestRun: null, latestRunOutcome: null, recentRuns: [] }],
+	});
+	const databaseUnavailable = renderAt('/overview', { locale, projects: [CURRENT_PROJECT], overview: overviewFor({ state: 'unavailable', path: '/state/runtime.sqlite', reason: 'read failed' }, history) });
+	expect(databaseUnavailable).toContain(locale === 'en-US' ? 'Operational data is unavailable.' : 'Dados operacionais indisponíveis.');
+	expect(databaseUnavailable).not.toContain(locale === 'en-US' ? 'No active run' : 'Nenhuma run ativa');
+	expect(databaseUnavailable).toContain(locale === 'en-US' ? 'Readiness' : 'Prontidão');
+	const historyUnavailable = renderAt('/overview', { locale, projects: [CURRENT_PROJECT], overview: overviewFor({ state: 'available', path: '/state/runtime.sqlite' }, null) });
+	expect(historyUnavailable).toContain(locale === 'en-US' ? 'Historical data is unavailable.' : 'Dados históricos indisponíveis.');
+	expect(historyUnavailable).not.toContain(locale === 'en-US' ? 'No outcome in this window' : 'Nenhum resultado nesta janela');
+}
+
 describe('operator shell', () => {
 	test('overview and the project selector expose the global registry in both locales', () => {
 		for (const expected of [
@@ -3133,6 +3162,167 @@ describe('operator shell', () => {
 			expect(html).toContain('href="/projects/project-current"');
 			expect(html).toContain('href="/projects/project-other"');
 		}
+	});
+
+	test('overview localizes every latest outcome in pt-BR and keeps absence explicit', () => {
+		const outcomes = ['shipped', 'failed', 'cancelled', 'incomplete'] as const;
+		const labels = ['enviada', 'falhou', 'cancelada', 'incompleta'];
+		for (const [index, outcome] of outcomes.entries()) {
+			const html = renderAt('/overview', {
+				locale: 'pt-BR',
+				projects: [CURRENT_PROJECT],
+				overview: {
+					window: '7d',
+					overview: {
+						window: '7d', totalRuns: 1, runsWithKnownCost: 0, knownCostUsd: null,
+						runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 1 }, activeRuns: 1,
+						daily: [], configurations: [],
+					},
+					summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 0, backlog: { idea: 0, specified: 0, planned: 0 } },
+					projects: [{
+						project: CURRENT_PROJECT, root: { state: 'available' }, backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 } },
+						database: { state: 'available', path: '/state/runtime.sqlite' }, overview: { overview: null }, activeRun: null, latestRun: { id: `run-${index}`, issueId: 'CAM-900', state: 'done', providerId: 'claude', createdAt: '', updatedAt: '' }, latestRunOutcome: outcome, recentRuns: [],
+					}],
+				},
+			});
+			expect(html).toContain(labels[index]!);
+			expect(html).not.toContain(`>${outcome}</p>`);
+		}
+		const empty = renderAt('/overview', { locale: 'pt-BR', projects: [CURRENT_PROJECT], overview: null });
+		expect(empty).not.toContain('Nenhum resultado nesta janela');
+		expect(empty).not.toContain('Nenhuma run ativa');
+	});
+
+	test('overview loading and error preserve no inferred operational fields in both locales', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) assertOverviewLoadingAndError(locale);
+	});
+
+	test('overview derives active projects from activeRun and escalates missing history', () => {
+		const entry = (activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun'], history: NonNullable<AppProps['overview']>['projects'][number]['overview']['overview']) => ({
+			project: CURRENT_PROJECT,
+			root: { state: 'available' as const },
+			backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 0 } },
+			database: { state: 'available' as const, path: '/state/runtime.sqlite' },
+			overview: { overview: history }, activeRun, latestRun: null, latestRunOutcome: null, recentRuns: [],
+		});
+		const aggregate = (projects: NonNullable<AppProps['overview']>['projects']): NonNullable<AppProps['overview']> => ({
+			window: '7d', overview: { window: '7d', totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] },
+			summary: { totalProjects: projects.length, readyProjects: projects.length, unavailableProjects: 0, nonTerminalRuns: 0, backlog: { idea: 0, specified: 0, planned: 0 } }, projects,
+		});
+		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
+		const noActive = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, history)]) });
+		expect(noActive).toContain('>0</p>');
+			const active = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry({ id: 'run-active', issueId: 'CAM-900', state: 'working', providerId: 'claude', createdAt: '', updatedAt: '' }, history)]) });
+		expect(active).toContain('>1</p>');
+		const unavailable = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, null)]) });
+		expect(unavailable).toContain('Needs attention');
+		expect(unavailable).toContain('Some project data is unavailable.');
+	});
+
+	test('overview uses the active run provider instead of historical configuration', () => {
+		const history = {
+			window: '7d' as const,
+			totalRuns: 1,
+			runsWithKnownCost: 0,
+			knownCostUsd: null,
+			runsByOutcome: { shipped: 1, failed: 0, cancelled: 0, incomplete: 0 },
+			activeRuns: 1,
+			daily: [],
+			configurations: [{ provider: 'claude', role: 'executor' }],
+		};
+		const html = renderAt('/overview', {
+			projects: [CURRENT_PROJECT],
+			overview: {
+				window: '7d',
+				overview: history,
+				summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 0 } },
+				projects: [{
+					project: CURRENT_PROJECT,
+					root: { state: 'available' },
+					backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 } },
+					database: { state: 'available', path: '/state/runtime.sqlite' },
+					overview: { overview: history },
+					activeRun: { id: 'run-codex', issueId: 'CAM-900', state: 'working', providerId: 'codex', createdAt: '', updatedAt: '' },
+					latestRun: null,
+					latestRunOutcome: null,
+					recentRuns: [],
+				}],
+			},
+		});
+		expect(html).toContain('Provider:</span> Codex');
+		expect(html).not.toContain('Provider:</span> Claude Code');
+	});
+
+	test('overview localizes active run states in pt-BR', () => {
+		const states = [
+			['working', 'em andamento'],
+			['waiting-user', 'aguardando você'],
+			['interrupted', 'interrompida'],
+		] as const;
+		for (const [state, label] of states) {
+			const history = {
+				window: '7d' as const,
+				totalRuns: 0,
+				runsWithKnownCost: 0,
+				knownCostUsd: null,
+				runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 },
+				activeRuns: 1,
+				daily: [],
+				configurations: [],
+			};
+			const html = renderAt('/overview', {
+				locale: 'pt-BR',
+				projects: [CURRENT_PROJECT],
+				overview: {
+					window: '7d',
+					overview: history,
+					summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 0 } },
+					projects: [{
+						project: CURRENT_PROJECT,
+						root: { state: 'available' },
+						backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 } },
+						database: { state: 'available', path: '/state/runtime.sqlite' },
+						overview: { overview: history },
+						activeRun: { id: `run-${state}`, issueId: 'CAM-900', state, providerId: 'claude', createdAt: '', updatedAt: '' },
+						latestRun: null,
+						latestRunOutcome: null,
+						recentRuns: [],
+					}],
+				},
+			});
+			expect(html).toContain(`Fase:</span> ${label}`);
+			expect(html).not.toContain(`>${state}</p>`);
+		}
+	});
+
+	test('overview keeps database and history availability distinct in both locales', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) assertOverviewAvailability(locale);
+	});
+
+	test('overview counts incomplete terminal runs as completed', () => {
+		const history = {
+			window: '7d' as const,
+			totalRuns: 3,
+			runsWithKnownCost: 0,
+			knownCostUsd: null,
+			runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 3 },
+			activeRuns: 1,
+			daily: [],
+			configurations: [],
+		};
+		const html = renderAt('/overview', {
+			projects: [CURRENT_PROJECT],
+			overview: {
+				window: '7d', overview: history,
+				summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 0 } },
+				projects: [{
+					project: CURRENT_PROJECT, root: { state: 'available' }, backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 } },
+					database: { state: 'available', path: '/state/runtime.sqlite' }, overview: { overview: history },
+					activeRun: null, latestRun: null, latestRunOutcome: null, recentRuns: [],
+				}],
+			},
+		});
+		expect(html).toMatch(/Runs completed<\/p>.*?font-semibold text-xl">2<\/p>/s);
 	});
 
 	// GSHIP-716: onboarding a checkout the operator already has is one absolute

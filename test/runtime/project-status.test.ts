@@ -56,6 +56,21 @@ test('marks a project unavailable when its second database read fails', () => {
 	});
 });
 
+test('preserves an active run when the historical read fails', () => {
+	const status: ProjectOperationalStatus = {
+		project,
+		root: { state: 'available' },
+		backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 }, plannable: [], byStage: { idea: [], specified: [], planned: [] }, drafts: [] },
+		database: { state: 'available', path: '/state/runtime.sqlite', runs: [] },
+	};
+	const activeRun = { id: 'run-active', issueId: 'GSHIP-731', providerId: 'claude' as const, state: 'working' as const, createdAt: '', updatedAt: '' };
+	const overview = readProjectOperationalOverview([project], () => status, () => ({ activeRun, nonTerminalRuns: 1 }));
+	const entry = overview.projects[0];
+	expect(entry?.database).toEqual(status.database);
+	expect(entry?.activeRun).toEqual(activeRun);
+	expect(entry?.overview).toEqual({ overview: null, reason: 'unable to open database file' });
+});
+
 test('ignores malformed activity events when reading historical decisions', () => {
 	const databasePath = join(createTestTmpdir('gship-project-history-'), 'runtime.sqlite');
 	const store = new RunStore(databasePath);

@@ -577,6 +577,7 @@ describe('GET /api/projects/:projectId/status', () => {
 			issueId: 'GSHIP-1',
 			sessionId: 'session-status',
 			workspacePath: '/managed/run-status',
+			providerId: 'codex',
 			createdAt: '2026-08-22T10:00:00.000Z',
 		});
 		store.close();
@@ -603,7 +604,7 @@ describe('GET /api/projects/:projectId/status', () => {
 					state: 'available',
 					path: join(targetState, 'runtime.sqlite'),
 					runs: [{
-						id: 'run-status', issueId: 'GSHIP-1', state: 'queued',
+						id: 'run-status', issueId: 'GSHIP-1', providerId: 'codex', state: 'queued',
 						createdAt: '2026-08-22T10:00:00.000Z', updatedAt: '2026-08-22T10:00:00.000Z',
 					}],
 				},

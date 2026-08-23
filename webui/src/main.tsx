@@ -43,6 +43,7 @@ import {
 	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
+	fetchOverview,
 	fetchProjectStatus,
 	fetchProjects,
 	fetchProposals,
@@ -58,6 +59,7 @@ import {
 	type NotificationChannelsView,
 	type OperatorProfileView,
 	type ProjectBriefView,
+	type ProjectOperationalOverviewView,
 	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
@@ -175,6 +177,9 @@ function useOperationalRun(): {
 	selfUpdate: SelfUpdateView;
 	version: string;
 	status: string | null;
+	overview: ProjectOperationalOverviewView | null;
+	overviewLoading: boolean;
+	overviewError: string | null;
 	pending: boolean;
 	claudeCredentialError: string | null;
 	connectClaude: (token: string) => Promise<boolean>;
@@ -221,6 +226,10 @@ function useOperationalRun(): {
 	// token must survive it -- `claude setup-token` prints the token once.
 	const [claudeCredentialError, setClaudeCredentialError] = useState<string | null>(null);
 	const [version, setVersion] = useState('');
+	const [overview, setOverview] = useState<ProjectOperationalOverviewView | null>(null);
+	const [pathname, setPathname] = useState(window.location.pathname);
+	const [overviewLoading, setOverviewLoading] = useState(routeOf(pathname) === '/overview');
+	const [overviewError, setOverviewError] = useState<string | null>(null);
 
 	const refresh = useCallback(() => {
 		void Promise.all([
@@ -345,6 +354,53 @@ function useOperationalRun(): {
 		refresh();
 	}, [refresh]);
 
+	useEffect(() => {
+		const onPopState = () => setPathname(window.location.pathname);
+		window.addEventListener('popstate', onPopState);
+		return () => window.removeEventListener('popstate', onPopState);
+	}, []);
+
+	useEffect(() => {
+		if (routeOf(pathname) !== '/overview') {
+			setOverviewLoading(false);
+			return;
+		}
+		const controller = new AbortController();
+		let first = true;
+		let disposed = false;
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		const commit = (value: ProjectOperationalOverviewView): void => {
+			if (!disposed) { setOverview(value); setOverviewError(null); }
+		};
+		const report = (error: unknown): void => {
+			if (!disposed && !(error instanceof DOMException && error.name === 'AbortError')) setOverviewError(String(error));
+		};
+		const finish = (): void => {
+			if (!disposed) {
+				first = false;
+				setOverviewLoading(false);
+				timeout = setTimeout(() => { void read(); }, 15_000);
+			}
+		};
+		const read = async (): Promise<void> => {
+			if (disposed) return;
+			if (first) setOverviewLoading(true);
+			try {
+				commit(await fetchOverview(controller.signal));
+			} catch (error: unknown) {
+				report(error);
+			} finally {
+				finish();
+			}
+		};
+		void read();
+		return () => {
+			disposed = true;
+			controller.abort();
+			if (timeout !== undefined) clearTimeout(timeout);
+		};
+	}, [pathname]);
+
 	// One subscription, bound to the project this document is about. A selection
 	// the registry does not report ready has no runtime to stream, and opening it
 	// would only make EventSource reconnect against a typed refusal, so the
@@ -432,6 +488,9 @@ function useOperationalRun(): {
 		selfUpdate,
 		version,
 		status,
+		overview,
+		overviewLoading,
+		overviewError,
 		pending,
 		claudeCredentialError,
 		connectClaude,
@@ -471,6 +530,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		selfUpdate,
 		version,
 		status,
+		overview,
+		overviewLoading,
+		overviewError,
 		pending,
 		claudeCredentialError,
 		connectClaude,
@@ -511,6 +573,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			handoff={handoff}
 			ideas={ideas}
 			locale={locale}
+			overview={overview}
+			 overviewLoading={overviewLoading}
+			overviewError={overviewError}
 			notificationChannels={notificationChannels}
 			notificationPermission={notificationPermission}
 			onAbandon={command('abandon')}
