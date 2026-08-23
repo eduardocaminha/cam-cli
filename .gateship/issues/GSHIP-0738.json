@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-738",
+  "title": "Escopar diagnóstico ad hoc por projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T17:36:56.506Z",
+  "updatedAt": "2026-08-23T17:36:56.506Z",
+  "description": "Tornar o diagnóstico manual realmente project-scoped sem adicionar processo ou serviço. Cada ProjectCycleContext deve possuir um DiagnosticsRuntime ligado ao root, stateDir, SQLite e RunRuntime daquele projeto. Adicionar rotas /api/projects/:projectId/diagnostics, cancel, dismiss e promote, resolvidas pelo ProjectRuntimeManager; manter rotas sem escopo como compatibilidade do projeto de boot.\n\nFazer o cliente derivar todos os paths manuais de diagnóstico do ProjectScope selecionado e mostrar o painel de diagnósticos na Work surface de qualquer projeto ready. Start, cancel, dismiss e promote devem agir somente no projeto nomeado, e promote deve criar o draft nesse repositório.\n\nPreservar exclusão mútua por projeto: um run e um diagnóstico do mesmo projeto não podem iniciar simultaneamente, enquanto projetos diferentes podem operar em paralelo. O fence de atualização deve bloquear novos diagnósticos e considerar qualquer diagnóstico ativo antes do handoff. Reutilizar ProjectRuntimeManager com o menor seam de lifecycle necessário.\n\nNão implementar agenda multiprojeto nesta issue. Retirar o painel de agenda da rota global, onde hoje aparenta ser global sem ser; manter a API/scheduler sem escopo do projeto de boot por compatibilidade até a issue seguinte. Provar isolamento manual com dois projetos. Não criar tabela, processo, serviço ou dependência nova.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tornar o diagnóstico manual realmente project-scoped sem adicionar processo ou serviço. Cada ProjectCycleContext deve possuir um DiagnosticsRuntime ligado ao root, stateDir, SQLite e RunRuntime daquele projeto. Adicionar rotas /api/projects/:projectId/diagnostics, cancel, dismiss e promote, resolvidas pelo ProjectRuntimeManager; manter rotas sem escopo como compatibilidade do projeto de boot.\n\nFazer o cliente derivar todos os paths manuais de diagnóstico do ProjectScope selecionado e mostrar o painel de diagnósticos na Work surface de qualquer projeto ready. Start, cancel, dismiss e promote devem agir somente no projeto nomeado, e promote deve criar o draft nesse repositório.\n\nPreservar exclusão mútua por projeto: um run e um diagnóstico do mesmo projeto não podem iniciar simultaneamente, enquanto projetos diferentes podem operar em paralelo. O fence de atualização deve bloquear novos diagnósticos e considerar qualquer diagnóstico ativo antes do handoff. Reutilizar ProjectRuntimeManager com o menor seam de lifecycle necessário.\n\nNão implementar agenda multiprojeto nesta issue. Retirar o painel de agenda da rota global, onde hoje aparenta ser global sem ser; manter a API/scheduler sem escopo do projeto de boot por compatibilidade até a issue seguinte. Provar isolamento manual com dois projetos. Não criar tabela, processo, serviço ou dependência nova.",
+    "verify": [
+      "bun test test/web/diagnostics-api.test.ts test/web/project-scoped-browser-runs.test.ts test/runtime/project-runtime-manager.test.ts test/runtime/diagnostics.test.ts test/web/ui-client.test.tsx && bun run typecheck"
+    ]
+  }
+}
