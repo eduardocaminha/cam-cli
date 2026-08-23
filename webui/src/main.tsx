@@ -495,8 +495,11 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			notificationPermission={notificationPermission}
 			onAbandon={command('abandon')}
 			onCancel={command('cancel')}
+			// Intake, specification, approval, abandon and start all name the same
+			// project the screen is reading (GSHIP-712), so no Work action falls
+			// back to the boot runtime while another project is selected.
 			onCreateIssue={(draft) => {
-				send(() => createIssue(draft).then((created) => {
+				send(() => createIssue(SELECTED_PROJECT_ID, draft).then((created) => {
 					setSelectedIssueId(created.id);
 					return `${created.id} created and selected.`;
 				}));
@@ -551,20 +554,22 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
-				send(() => specifyIssue(issueId, draft).then((specified) => {
+				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then((specified) => {
 					setSelectedIssueId(specified.id);
 					return `${specified.id} specified and selected.`;
 				}));
 			}}
-			onApproveIssue={(issueId) => send(() => approveIssue(issueId).then(() => `${issueId} approved.`))}
+			onApproveIssue={(issueId) =>
+				send(() => approveIssue(SELECTED_PROJECT_ID, issueId).then(() => `${issueId} approved.`))}
 			onAbandonIssue={(issueId, reason) => {
-				send(() => abandonIssue(issueId, reason).then(() => `${issueId} abandoned.`));
+				send(() =>
+					abandonIssue(SELECTED_PROJECT_ID, issueId, reason).then(() => `${issueId} abandoned.`));
 			}}
 			onReviewIssue={(issueId, draft) => {
-				send(() => specifyIssue(issueId, draft).then(() => `${issueId} revised.`));
+				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then(() => `${issueId} revised.`));
 			}}
 			onStart={() => {
-				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
+				if (selectedIssueId !== null) send(() => startRun(SELECTED_PROJECT_ID, selectedIssueId));
 			}}
 			modelSettings={modelSettings}
 			selfUpdate={selfUpdate}

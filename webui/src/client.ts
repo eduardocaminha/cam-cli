@@ -34,9 +34,9 @@ export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
 
 /**
- * Which project a run-facing read or write names (GSHIP-707). A project id is
- * the selection the browser path carries, and every such call goes to that
- * project's own scoped route. `null` is the absence of a selection -- the
+ * Which project a run- or issue-facing read or write names (GSHIP-707,
+ * GSHIP-712). A project id is the selection the browser path carries, and
+ * every such call goes to that project's own scoped route. `null` is the absence of a selection -- the
  * overview, and the legacy paths the service redirects to the boot project --
  * and keeps the unscoped routes the boot runtime already answers.
  */
@@ -57,6 +57,20 @@ function snapshotPathOf(scope: ProjectScope): string {
 
 function runsPathOf(scope: ProjectScope): string {
 	return scope === null ? RUNS_PATH : projectApiPath(scope, '/runs');
+}
+
+/**
+ * The issue collection of the selected project (GSHIP-712), derived from the
+ * same scope runs already use so intake, specification, approval and abandon
+ * all address the project the browser path names.
+ */
+function issuesPathOf(scope: ProjectScope): string {
+	return scope === null ? ISSUES_PATH : projectApiPath(scope, '/issues');
+}
+
+/** One issue inside that collection, the base of its `/spec`, `/approve` and `/abandon` routes. */
+function issuePathOf(scope: ProjectScope, id: string): string {
+	return `${issuesPathOf(scope)}/${encodeURIComponent(id)}`;
 }
 
 /**
@@ -1219,12 +1233,16 @@ async function postCommand(path: string, body?: unknown): Promise<string> {
 	return payload.message ?? `Command rejected (${response.status}).`;
 }
 
-export function startRun(issueId: string): Promise<string> {
-	return postCommand(RUNS_PATH, { issueId });
+/** Starts the issue in the selected project's runtime, never the boot one. */
+export function startRun(scope: ProjectScope, issueId: string): Promise<string> {
+	return postCommand(runsPathOf(scope), { issueId });
 }
 
-export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIssue> {
-	const response = await fetch(ISSUES_PATH, {
+export async function createIssue(
+	scope: ProjectScope,
+	input: OperatorIssueDraft,
+): Promise<CreatedIssue> {
+	const response = await fetch(issuesPathOf(scope), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input),
@@ -1239,8 +1257,12 @@ export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIss
 	return payload.issue;
 }
 
-export async function specifyIssue(id: string, input: OperatorSpecDraft): Promise<CreatedIssue> {
-	const response = await fetch(`${ISSUES_PATH}/${encodeURIComponent(id)}/spec`, {
+export async function specifyIssue(
+	scope: ProjectScope,
+	id: string,
+	input: OperatorSpecDraft,
+): Promise<CreatedIssue> {
+	const response = await fetch(`${issuePathOf(scope, id)}/spec`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input),
@@ -1305,13 +1327,17 @@ export async function promoteProposal(
 	return payload.issue;
 }
 
-export function approveIssue(id: string): Promise<string> {
-	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/approve`);
+export function approveIssue(scope: ProjectScope, id: string): Promise<string> {
+	return postCommand(`${issuePathOf(scope, id)}/approve`);
 }
 
 /** Closes an open issue without shipping it, keeping the justification durable. */
-export function abandonIssue(id: string, reason: string): Promise<string> {
-	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/abandon`, { reason });
+export function abandonIssue(
+	scope: ProjectScope,
+	id: string,
+	reason: string,
+): Promise<string> {
+	return postCommand(`${issuePathOf(scope, id)}/abandon`, { reason });
 }
 
 /**

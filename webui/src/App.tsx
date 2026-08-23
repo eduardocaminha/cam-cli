@@ -3578,7 +3578,19 @@ function ResolvedProposalsPanel({
 	);
 }
 
-function WorkSurface(props: AppProps): React.ReactElement {
+/**
+ * Work is two things stacked in one column (GSHIP-712). Above the separator is
+ * the project-scoped core -- approved backlog, drafts to review or approve,
+ * ideas to specify and intake -- every panel of which reads and commands the
+ * project the browser path names. Below it are the extras that still belong to
+ * the boot runtime alone: diagnostics, and the proposal inbox with its resolved
+ * history. `bootRuntimeExtras` is false for any other project, so those extras
+ * are absent rather than showing the boot project's data under another name.
+ */
+function WorkSurface({
+	bootRuntimeExtras,
+	...props
+}: AppProps & { bootRuntimeExtras: boolean }): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const catalog = localeCatalog.work;
@@ -3593,31 +3605,7 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
 			/>
-			<DiagnosticsPanel
-				catalog={catalog}
-				diagnostics={props.diagnostics}
-				locale={props.locale}
-				onCancelDiagnostic={props.onCancelDiagnostic}
-				onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
-				onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
-				onStartDiagnostic={props.onStartDiagnostic}
-				pending={props.pending}
-			/>
 			<IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
-			<ProposalsPanel
-				catalog={catalog}
-				locale={props.locale}
-				onDismissProposal={props.onDismissProposal}
-				onPromoteProposal={props.onPromoteProposal}
-				pending={props.pending}
-				proposals={props.proposals}
-			/>
-			<ResolvedProposalsPanel
-				catalog={catalog}
-				locale={props.locale}
-				resolvedProposals={props.resolvedProposals}
-				resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
-			/>
 			<IssueSpecifyPanel
 				catalog={catalog}
 				ideas={props.ideas}
@@ -3625,6 +3613,35 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				pending={props.pending}
 			/>
 			<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
+			{bootRuntimeExtras ? (
+				<>
+					<Separator />
+					<DiagnosticsPanel
+						catalog={catalog}
+						diagnostics={props.diagnostics}
+						locale={props.locale}
+						onCancelDiagnostic={props.onCancelDiagnostic}
+						onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
+						onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
+						onStartDiagnostic={props.onStartDiagnostic}
+						pending={props.pending}
+					/>
+					<ProposalsPanel
+						catalog={catalog}
+						locale={props.locale}
+						onDismissProposal={props.onDismissProposal}
+						onPromoteProposal={props.onPromoteProposal}
+						pending={props.pending}
+						proposals={props.proposals}
+					/>
+					<ResolvedProposalsPanel
+						catalog={catalog}
+						locale={props.locale}
+						resolvedProposals={props.resolvedProposals}
+						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
+					/>
+				</>
+			) : null}
 		</SurfaceColumn>
 	);
 }
@@ -3879,6 +3896,34 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 	);
 }
 
+/**
+ * GSHIP-707, GSHIP-712: runs and work are operational for any registered ready
+ * project, reading and commanding that project's own runtime. Conversation and
+ * settings still belong to the boot project alone, and a project the registry
+ * does not report ready keeps the same typed answer it always had.
+ */
+function NonCurrentProjectSurface({
+	props,
+	selectedProject,
+	surface,
+}: {
+	props: AppProps;
+	selectedProject: RegisteredProjectView;
+	surface: RouteSelection['surface'];
+}): React.ReactElement {
+	if (selectedProject.readiness === 'ready') {
+		if (surface === 'runs') return <RunsSurface {...props} />;
+		if (surface === 'work') return <WorkSurface {...props} bootRuntimeExtras={false} />;
+	}
+	return (
+		<UnavailableProjectSurface
+			locale={props.locale}
+			project={selectedProject}
+			status={props.status}
+		/>
+	);
+}
+
 function SelectedRouteSurface({
 	props,
 	selectedProject,
@@ -3899,14 +3944,13 @@ function SelectedRouteSurface({
 		);
 	}
 	if (!selectedProject.current) {
-		// GSHIP-707: runs is the first surface operational for any registered
-		// ready project, reading and commanding that project's own runtime. The
-		// other three still belong to the boot project alone, and a project the
-		// registry does not report ready keeps the same typed answer it had.
-		if (selection.surface !== 'runs' || selectedProject.readiness !== 'ready') {
-			return <UnavailableProjectSurface locale={props.locale} project={selectedProject} status={props.status} />;
-		}
-		return <RunsSurface {...props} />;
+		return (
+			<NonCurrentProjectSurface
+				props={props}
+				selectedProject={selectedProject}
+				surface={selection.surface}
+			/>
+		);
 	}
 	if (props.project.state !== 'ready' && selection.surface !== 'settings') {
 		return (
@@ -3919,7 +3963,7 @@ function SelectedRouteSurface({
 		);
 	}
 	if (selection.surface === 'runs') return <RunsSurface {...props} />;
-	if (selection.surface === 'work') return <WorkSurface {...props} />;
+	if (selection.surface === 'work') return <WorkSurface {...props} bootRuntimeExtras />;
 	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
 	return <HomeSurface {...props} />;
 }
