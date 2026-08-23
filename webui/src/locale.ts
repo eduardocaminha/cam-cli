@@ -381,6 +381,9 @@ export interface SettingsCatalog {
 		installedDisconnected: string;
 		clientMissing: string;
 		connectChatGpt: string;
+		codexSubscriptionGuidance: string;
+		codexApiKeyWarning: string;
+		codexEnterpriseFuture: string;
 		useProvider: (label: string) => string;
 		waitReasons: Readonly<Record<RunProviderWaitView['kind'], string>>;
 		usageWindowLabels: Readonly<Record<string, string>>;
@@ -396,6 +399,10 @@ export interface SettingsCatalog {
 		resetCredits: (count: number, formatted: string) => string;
 		/** Ajustes > Providers universal onboarding for a dedicated Claude subscription (GSHIP-704), isolated from Claude Desktop's or the terminal's own OAuth/Keychain login. */
 		claudeCredential: {
+			recommendedTitle: string;
+			recommendedGuidance: string;
+			recommendedCommandLabel: string;
+			usageGuidance: string;
 			explanation: string;
 			/** GSHIP-705: what the check actually proves, and why no account may be promised with it. */
 			inferenceOnly: string;
@@ -887,11 +894,18 @@ export const LOCALE_CATALOG = {
 			providers: {
 				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients. Claude can optionally use a dedicated credential of its own, isolated from Claude Desktop or the terminal; Codex and the external Claude login never leave the client that owns them.', inUse: 'in use',
 				connectedUnavailable: (reason) => `Subscription connected, but currently unavailable: ${reason}.`, unavailable: (reason) => `Currently unavailable: ${reason}.`, connected: (plan) => `Subscription connected${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Installed, without a connected subscription', clientMissing: 'Client not found', connectChatGpt: 'Connect ChatGPT', useProvider: (label) => `Use ${label}`,
+				codexSubscriptionGuidance: 'Recommended: sign in with your ChatGPT subscription using codex login in the environment where Gateship runs.',
+				codexApiKeyWarning: 'An API key uses Platform billing, not credits from your ChatGPT plan, and is not an admissible subscription login for Gateship execution.',
+				codexEnterpriseFuture: 'Codex Enterprise access-token support is planned for a future capability; it is not available here.',
 				waitReasons: { 'auth-required': 'Authentication required', 'usage-limit': 'Subscription usage limit reached', 'rate-limited': 'Calls temporarily rate-limited', overloaded: 'Provider temporarily overloaded', 'model-refused': 'Model or effort rejected', 'transport-unavailable': 'Provider connection unavailable', 'protocol-invalid': 'Invalid provider response', cancelled: 'Call cancelled', unknown: 'Provider unavailable' },
 				usageWindowLabels: { five_hour: '5 hour', seven_day: '7 day', seven_day_opus: '7 day (Opus)', seven_day_sonnet: '7 day (Sonnet)', seven_day_overage_included: '7 day (overage)', overage: 'Overage' },
 				duration: { days: (_count, formatted) => `${formatted} day`, hours: (_count, formatted) => `${formatted} hour`, minutes: (formatted) => `${formatted} min` },
 				usedPercent: (formatted) => `${formatted} used`, resets: 'resets', asOf: 'as of', credits: 'Credits', unlimited: 'unlimited', available: 'available', none: 'none', spendLimit: (used, limit, remainingPercent) => `Spend limit: ${used} of ${limit} (${remainingPercent} remaining)`, resetCredits: (_count, formatted) => `${formatted} reset credit(s) available`,
 				claudeCredential: {
+					recommendedTitle: 'Recommended: interactive Claude subscription login',
+					recommendedGuidance: 'Sign in with your Claude subscription in the environment where Gateship runs. If Gateship runs in a container, run the command inside that container.',
+					recommendedCommandLabel: 'Run this command in that environment:',
+					usageGuidance: 'A setup token is limited to inference. It may not expose your account, organization or plan. Usage windows appear here only when the Claude CLI reports them during calls.',
 					explanation: 'A dedicated subscription token keeps Gateship\'s own Claude access separate from Claude Desktop\'s or the terminal\'s login. Generate one on this host and paste it once below; it is never shown again.',
 					inferenceOnly: 'Gateship checks the token with one minimal Claude call, without tools. A setup token is limited to inference, so Claude may report no email, organization or plan for it -- that is expected, not a failed connection.',
 					cliMissing: 'Claude CLI not found. Install it before connecting a dedicated subscription.',
@@ -907,7 +921,7 @@ export const LOCALE_CATALOG = {
 					connected: 'Dedicated subscription connected.',
 					needsReconnect: 'Dedicated credential needs reconnecting.',
 					envManaged: 'Managed by CLAUDE_CODE_OAUTH_TOKEN in the service environment. Connecting, rotating and disconnecting are unavailable here: change or remove that variable in the service configuration and restart Gateship.',
-					advancedTitle: 'Advanced: sign in locally instead',
+					advancedTitle: 'Advanced: use a dedicated setup token instead',
 					originLabels: { external: 'external login', web: 'managed login', dedicated: 'dedicated credential' },
 				},
 			},
@@ -1318,11 +1332,18 @@ export const LOCALE_CATALOG = {
 			providers: {
 				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados. O Claude pode opcionalmente usar uma credencial dedicada própria, isolada do Claude Desktop ou do terminal; o Codex e o login externo do Claude nunca saem do cliente que os possui.', inUse: 'em uso',
 				connectedUnavailable: (reason) => `Assinatura conectada, mas indisponível no momento: ${reason}.`, unavailable: (reason) => `Indisponível no momento: ${reason}.`, connected: (plan) => `Assinatura conectada${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Instalado, sem uma assinatura conectada', clientMissing: 'Cliente não encontrado', connectChatGpt: 'Conectar ChatGPT', useProvider: (label) => `Usar ${label}`,
+				codexSubscriptionGuidance: 'Recomendado: entre com sua assinatura do ChatGPT usando codex login no ambiente onde o Gateship executa.',
+				codexApiKeyWarning: 'Uma API key usa o faturamento da Platform, não os créditos do seu plano ChatGPT, e não é um login de assinatura admissível para execução no Gateship.',
+				codexEnterpriseFuture: 'O suporte a access token do Codex Enterprise é uma capacidade futura; não está disponível aqui.',
 				waitReasons: { 'auth-required': 'Autenticação necessária', 'usage-limit': 'Limite de uso da assinatura atingido', 'rate-limited': 'Chamadas temporariamente limitadas', overloaded: 'Provedor temporariamente sobrecarregado', 'model-refused': 'Modelo ou esforço rejeitado', 'transport-unavailable': 'Conexão com o provedor indisponível', 'protocol-invalid': 'Resposta inválida do provedor', cancelled: 'Chamada cancelada', unknown: 'Provedor indisponível' },
 				usageWindowLabels: { five_hour: '5 horas', seven_day: '7 dias', seven_day_opus: '7 dias (Opus)', seven_day_sonnet: '7 dias (Sonnet)', seven_day_overage_included: '7 dias (excedente)', overage: 'Excedente' },
 				duration: { days: (count, formatted) => `${formatted} ${count === 1 ? 'dia' : 'dias'}`, hours: (count, formatted) => `${formatted} ${count === 1 ? 'hora' : 'horas'}`, minutes: (formatted) => `${formatted} min` },
 				usedPercent: (formatted) => `${formatted} usados`, resets: 'reinicia', asOf: 'observado em', credits: 'Créditos', unlimited: 'ilimitados', available: 'disponíveis', none: 'nenhum', spendLimit: (used, limit, remainingPercent) => `Limite de gastos: ${used} de ${limit} (${remainingPercent} restantes)`, resetCredits: (count, formatted) => `${formatted} ${count === 1 ? 'crédito de reinício disponível' : 'créditos de reinício disponíveis'}`,
 				claudeCredential: {
+					recommendedTitle: 'Recomendado: login interativo da assinatura Claude',
+					recommendedGuidance: 'Entre com sua assinatura Claude no ambiente onde o Gateship executa. Se o Gateship estiver em um container, execute o comando dentro dele.',
+					recommendedCommandLabel: 'Execute este comando nesse ambiente:',
+					usageGuidance: 'Um token de configuração é limitado a inferência. Ele pode não expor sua conta, organização ou plano. As janelas de uso só aparecem aqui quando a CLI do Claude as reporta durante chamadas.',
 					explanation: 'Um token de assinatura dedicado mantém o acesso do Gateship ao Claude separado do login do Claude Desktop ou do terminal. Gere um neste host e cole-o uma única vez abaixo; ele não é mostrado novamente.',
 					inferenceOnly: 'O Gateship verifica o token com uma chamada mínima ao Claude, sem ferramentas. Um token de configuração é limitado a inferência, então o Claude pode não informar e-mail, organização ou plano para ele -- isso é esperado, não uma conexão que falhou.',
 					cliMissing: 'Claude CLI não encontrado. Instale-o antes de conectar uma assinatura dedicada.',
@@ -1338,7 +1359,7 @@ export const LOCALE_CATALOG = {
 					connected: 'Assinatura dedicada conectada.',
 					needsReconnect: 'A credencial dedicada precisa ser reconectada.',
 					envManaged: 'Gerenciado por CLAUDE_CODE_OAUTH_TOKEN no ambiente do serviço. Conectar, rotacionar e desconectar não estão disponíveis aqui: altere ou remova essa variável na configuração do serviço e reinicie o Gateship.',
-					advancedTitle: 'Avançado: entrar localmente em vez disso',
+					advancedTitle: 'Avançado: usar um token de configuração dedicado',
 					originLabels: { external: 'login externo', web: 'login gerenciado', dedicated: 'credencial dedicada' },
 				},
 			},

@@ -2361,7 +2361,8 @@ describe('settings surface', () => {
 		expect(providers).toContain('Subscription connected · max');
 		expect(providers).toContain('in use');
 		expect(buttonIsEnabled(providers, 'Connect ChatGPT')).toBe(true);
-		expect(providers).not.toMatch(/api key|oauth token/i);
+		expect(providers).toContain('Platform billing');
+		expect(providers).not.toContain('name="api-key"');
 	});
 
 	// GSHIP-704: the universal onboarding for a dedicated Claude subscription,
@@ -2386,9 +2387,10 @@ describe('settings surface', () => {
 		expect(providers).toContain('value=""');
 		// Never persisted before the operator confirms, so the button starts disabled.
 		expect(buttonIsEnabled(providers, 'Connect')).toBe(false);
-		// The external login fallback stays available, clearly marked advanced.
-		expect(providers).toContain('Advanced: sign in locally instead');
-		expect(providers).toContain('claude auth login');
+		// The dedicated token remains available only as the advanced alternative.
+		expect(providers).toContain('Advanced: use a dedicated setup token instead');
+		expect(providers).toContain('claude auth login --claudeai');
+		expect(providers).toContain('inside that container');
 	});
 
 	test('does not offer the setup-token command or field when the Claude CLI is not installed', () => {
@@ -2416,6 +2418,7 @@ describe('settings surface', () => {
 
 		expect(providers).toContain('dedicated credential');
 		expect(providers).toContain('Dedicated subscription connected.');
+		expect(providers).toContain('Usage windows appear here only when the Claude CLI reports them during calls.');
 		expect(buttonIsEnabled(providers, 'Rotate')).toBe(true);
 		expect(buttonIsEnabled(providers, 'Disconnect')).toBe(true);
 		// Rotating is a click away; the token form is not open by default.

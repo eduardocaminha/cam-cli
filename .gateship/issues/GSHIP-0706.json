@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-706",
   "title": "Priorizar login interativo e explicar credenciais alternativas",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-22T22:47:40.567Z",
-  "updatedAt": "2026-08-23T13:03:46.646Z",
+  "updatedAt": "2026-08-23T13:17:21.618Z",
   "description": "Reorganizar Ajustes > Providers para refletir as capacidades reais de autenticação sem alterar o runtime dos agentes. Para Claude, apresentar o login interativo de assinatura com claude auth login --claudeai como caminho recomendado e manter o setup-token em uma seção avançada. Antes da conexão e enquanto o token dedicado estiver ativo, informar persistentemente que ele é limitado a inferência, pode não expor conta, organização ou plano e que janelas de uso só aparecem quando o CLI as reporta durante chamadas. Tornar explícito que conectar o token passa a preferi-lo e que desconectá-lo retorna ao login interativo disponível; não manter duas credenciais como seleções simultâneas. Orientar que o login seja feito no ambiente onde Gateship executa, inclusive dentro do container quando essa for a instalação. Para Codex, manter codex login com ChatGPT como caminho recomendado de assinatura. Não apresentar API key como equivalente: quando detectada ou mencionada, explicar que ela usa faturamento da Platform, não créditos do plano ChatGPT, e não é uma assinatura admissível para execução no Gateship. Registrar o access token de Codex Enterprise apenas como capacidade futura, fora desta fatia. Preservar en-US e pt-BR, origem de autenticação visível, telemetria existente, armazenamento write-only do token Claude, proteção mode 0600 e comportamento fail-closed. Fora do escopo: armazenar API keys, implementar Codex Enterprise, mudar adaptadores de execução, criar abstração universal de credenciais ou alterar seleção de modelos.",
   "specSource": "operator",
   "spec": {
