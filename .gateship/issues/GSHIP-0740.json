@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T17:57:59.229Z",
-  "updatedAt": "2026-08-23T17:57:59.229Z",
+  "updatedAt": "2026-08-23T17:58:09.773Z",
   "description": "Concluir a agenda multiprojeto dentro do único serviço existente. Persistir enabled, cadence, analyzer, lastScanAt e nextRunAt no SQLite já pertencente a cada projeto. Adicionar a rota PUT /api/projects/:projectId/diagnostics/schedule, mantendo a rota sem escopo como compatibilidade do projeto de boot, e fazer o cliente salvar a agenda no ProjectScope selecionado. Recolocar o painel de agenda somente em Settings do projeto ready, nunca nos ajustes globais.\n\nUsar um único dono de cadência no processo web. A cada tick, ele deve reconciliar os projetos registrados que estão ready e chamar runScheduledIfDue no DiagnosticsRuntime de cada um, sem criar timer por projeto, processo, daemon, cron, fila, tabela ou serviço. Projetos diferentes podem iniciar diagnósticos agendados em paralelo; projeto com run ou diagnóstico ativo retorna busy apenas para si. Um período perdido gera no máximo um scan atrasado por projeto, sem catch-up. O fence global de atualização impede novos scans agendados e observa qualquer scan ativo.\n\nProvar com dois projetos que agendas, estado due/busy, scans e alterações via API/UI não vazam entre projetos. Preservar compatibilidade das rotas sem escopo e o comportamento ad hoc da GSHIP-738. Se o código atual exigir uma seam menor que um coordenador nomeado, adapte a implementação técnica e registre a reconciliação, mas não altere estes comportamentos.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/web/diagnostics-api.test.ts test/runtime/diagnostics.test.ts test/runtime/project-runtime-manager.test.ts test/web/project-scoped-browser-runs.test.ts test/web/ui-client.test.tsx && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "226c92bb186d9c498914a375929b7d0e6536ec1fbad114ef76f1afa6f448b7ba",
+    "approvedAt": "2026-08-23T17:58:09.773Z"
   }
 }
