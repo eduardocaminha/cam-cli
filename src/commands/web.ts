@@ -277,10 +277,27 @@ interface ProjectCycleContext {
 	issueIntake: IssueIntakeWriter;
 	issueSpecifier: IssueSpecifier;
 	issueApprover: IssueApprover;
+	approveIssue: IssueApprover;
 	issueAbandoner: IssueAbandoner;
 	issueReader: (id: string) => IssueEntry | null;
 	orchestrator: OrchestratorRuntime;
 	close(): Promise<void>;
+}
+
+async function approveIssueAndWake(
+	runtime: RunRuntime,
+	issueApprover: IssueApprover,
+	id: string,
+	admit: () => void,
+): Promise<CreatedOperatorIssue> {
+	const issue = await issueApprover(id);
+	try {
+		runtime.startNextAdmissibleIssue(admit);
+	} catch {
+		// Approval is already durable. A temporary admission or start failure must
+		// not turn the successful approval into a failed transport response.
+	}
+	return issue;
 }
 
 type OperatorProfileAccess = Pick<ProjectRegistry, 'getOperatorProfile' | 'setOperatorProfile'>;
@@ -2697,6 +2714,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		issueIntake,
 		issueSpecifier,
 		issueApprover,
+		approveIssue: (id) => approveIssueAndWake(
+			runRuntime,
+			issueApprover,
+			id,
+			() => { projectRuntimes.admitStart(currentProject.id); },
+		),
 		issueAbandoner,
 		issueReader,
 	} as ProjectCycleContext;
@@ -2706,7 +2729,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			bootContext.runtime,
 			bootContext.issueIntake,
 			bootContext.issueSpecifier,
-			bootContext.issueApprover,
+			bootContext.approveIssue,
 			bootContext.issueAbandoner,
 			{
 				start: () => { projectRuntimes.admitStart(currentProject.id); },
@@ -2721,7 +2744,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			bootContext.runtime,
 			bootContext.issueIntake,
 			bootContext.issueSpecifier,
-			bootContext.issueApprover,
+			bootContext.approveIssue,
 			bootContext.issueAbandoner,
 			{
 				start: () => { projectRuntimes.admitStart(currentProject.id); },
@@ -2757,6 +2780,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				set: (brief) => runtime.setProjectBrief(brief),
 			},
 			...writers,
+			approveIssue: (id: string) => approveIssueAndWake(
+				runtime,
+				writers.issueApprover,
+				id,
+				() => { projectRuntimes.admitStart(project.id); },
+			),
 			issueReader: (id) => readPublishedIssue(project.root, id),
 		} as ProjectCycleContext;
 		context.orchestrator = options.orchestrator?.((command) =>
@@ -2765,7 +2794,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				context.runtime,
 				context.issueIntake,
 				context.issueSpecifier,
-				context.issueApprover,
+				context.approveIssue,
 				context.issueAbandoner,
 				{
 					start: () => { projectRuntimes.admitStart(project.id); },
@@ -2780,7 +2809,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				context.runtime,
 				context.issueIntake,
 				context.issueSpecifier,
-				context.issueApprover,
+				context.approveIssue,
 				context.issueAbandoner,
 				{
 					start: () => { projectRuntimes.admitStart(project.id); },
@@ -3046,7 +3075,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						request,
 						request.params.issueId,
 						context.runtime,
-						context.issueApprover,
+						context.approveIssue,
 						context.issueReader,
 					),
 				),
@@ -3267,7 +3296,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request,
 					request.params.issueId,
 					runRuntime,
-					issueApprover,
+					bootContext.approveIssue,
 					issueReader,
 				),
 			},

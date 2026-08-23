@@ -553,6 +553,15 @@ export class RunRuntime {
 		return created.run;
 	}
 
+	/** Wake the existing chain scheduler after an approval makes work admissible. */
+	startNextAdmissibleIssue(admit?: () => void): RunRecord | null {
+		if (!this.#store.getChainRunsEnabled()) return null;
+		const issueId = this.#nextAdmissibleIssueId();
+		if (issueId === null) return null;
+		admit?.();
+		return this.startRun(issueId);
+	}
+
 	/** Synchronous admission fence used only during the native update handoff. */
 	setAdmissionBlocked(reason: string | null): void {
 		this.#admissionBlockedReason = reason;
@@ -1982,7 +1991,7 @@ export class RunRuntime {
 			return;
 		}
 		try {
-			this.startRun(nextIssueId);
+			this.startNextAdmissibleIssue();
 		} catch (error) {
 			const reason = error instanceof RuntimeConflictError
 				? CHAIN_PAUSE_REASONS.runActive
