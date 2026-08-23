@@ -3579,10 +3579,10 @@ describe('operator shell', () => {
 		expect(html).not.toContain('Operator profile');
 	});
 
-	// GSHIP-712: work is the second surface operational for a registered ready
-	// project. Its project-scoped core renders; the extras that still read the
-	// boot runtime are absent rather than shown with the boot project's data.
-	test('work is operational for a ready non-current project, without the boot runtime extras', () => {
+	// GSHIP-712 and GSHIP-736: work is operational for a registered ready
+	// project. Diagnostics remain boot-only, while proposals belong to the
+	// selected project and render on every ready project's work surface.
+	test('work is operational for a ready non-current project, with its proposals', () => {
 		const html = renderAt('/projects/project-other/work', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			drafts: [DRAFT],
@@ -3603,13 +3603,14 @@ describe('operator shell', () => {
 		expect(html).toContain('Specify existing idea');
 		expect(html).toContain('CAM-950');
 		expect(html).toContain('New issue');
-		// The extras that still belong to the boot runtime, absent with their data.
+		// Diagnostics still belong to the boot runtime, but proposal data is scoped
+		// to this selected project and must remain visible.
 		expect(html).not.toContain('Gateship Diagnostics');
 		expect(html).not.toContain('regra-autoral');
-		expect(html).not.toContain('Derived proposals');
-		expect(html).not.toContain('Resolved proposals');
-		expect(html).not.toContain('proposta do boot');
-		expect(html).not.toContain('+3 resolved proposals not shown.');
+		expect(html).toContain('Derived proposals');
+		expect(html).toContain('Resolved proposals');
+		expect(html).toContain('proposta do boot');
+		expect(html).toContain('+3 resolved proposals not shown.');
 	});
 
 	test('the current project keeps the same work panels and their behaviour', () => {

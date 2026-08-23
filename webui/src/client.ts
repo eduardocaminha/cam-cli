@@ -98,6 +98,14 @@ function issuesPathOf(scope: ProjectScope): string {
 	return scope === null ? ISSUES_PATH : projectApiPath(scope, '/issues');
 }
 
+function proposalsPathOf(scope: ProjectScope): string {
+	return scope === null ? PROPOSALS_PATH : projectApiPath(scope, '/proposals');
+}
+
+function resolvedProposalsPathOf(scope: ProjectScope): string {
+	return scope === null ? RESOLVED_PROPOSALS_PATH : projectApiPath(scope, '/proposals/resolved');
+}
+
 /** One issue inside that collection, the base of its `/spec`, `/approve` and `/abandon` routes. */
 function issuePathOf(scope: ProjectScope, id: string): string {
 	return `${issuesPathOf(scope)}/${encodeURIComponent(id)}`;
@@ -1501,8 +1509,8 @@ export async function specifyIssue(
 }
 
 /** The inbox the server already filtered: only proposals still pending. */
-export async function fetchProposals(): Promise<ProposalView[]> {
-	const payload = await readJson<ProposalsPayload>(await fetch(PROPOSALS_PATH), 'Proposals');
+export async function fetchProposals(scope: ProjectScope = null): Promise<ProposalView[]> {
+	const payload = await readJson<ProposalsPayload>(await fetch(proposalsPathOf(scope)), 'Proposals');
 	return payload.proposals ?? [];
 }
 
@@ -1510,16 +1518,16 @@ export async function fetchProposals(): Promise<ProposalView[]> {
  * The settled proposals, newest decision first, separate from the pending
  * inbox above so a historical record never mixes with a pending decision.
  */
-export async function fetchResolvedProposals(): Promise<ResolvedProposalsSnapshot> {
+export async function fetchResolvedProposals(scope: ProjectScope = null): Promise<ResolvedProposalsSnapshot> {
 	const payload = await readJson<ResolvedProposalsPayload>(
-		await fetch(RESOLVED_PROPOSALS_PATH),
+		await fetch(resolvedProposalsPathOf(scope)),
 		'Resolved proposals',
 	);
 	return { proposals: payload.proposals ?? [], omittedCount: payload.omittedCount ?? 0 };
 }
 
-export async function dismissProposal(id: string): Promise<string> {
-	const response = await fetch(`${PROPOSALS_PATH}/${encodeURIComponent(id)}/dismiss`, {
+export async function dismissProposal(id: string, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(`${proposalsPathOf(scope)}/${encodeURIComponent(id)}/dismiss`, {
 		method: 'POST',
 	});
 	const payload = (await response.json()) as CommandPayload;
@@ -1534,8 +1542,9 @@ export async function dismissProposal(id: string): Promise<string> {
 export async function promoteProposal(
 	id: string,
 	input: OperatorIssueDraft,
+	scope: ProjectScope = null,
 ): Promise<CreatedIssue> {
-	const response = await fetch(`${PROPOSALS_PATH}/${encodeURIComponent(id)}/promote`, {
+	const response = await fetch(`${proposalsPathOf(scope)}/${encodeURIComponent(id)}/promote`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input),
