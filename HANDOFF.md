@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-08-23, against the `v0.342.0` tag.
+> Updated: 2026-08-23, against the `v0.371.0` tag.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -50,42 +50,38 @@ the single state volume.
 ## Multiproject state and its limits
 
 A global `GATESHIP_HOME` holds a durable, automatically reconciled project
-registry. Overview lists registered projects, and Runs and Work are operational
-for any registered project the registry reports ready, reading and commanding
-that project's own runtime.
+registry. It supports checkout registration, GitHub import and creation, and
+removal without deleting project data. Overview lists registered projects, and
+the operator surfaces and policies are scoped by the selected project.
 
-The rest is still boot-project only, and saying so precisely matters more than
-the headline:
+Profile and notifications are global. Each project keeps its own runtime
+database, worktrees, and history in its resolved project `stateDir`; the global
+registry stores only identity and location. There is one active run per project,
+with serialization within that project, while the central surface aggregates
+project state.
 
-- conversation, the operator-owned brief, settings, and every runtime control
-  belong to the boot project alone;
-- a project the registry does not report ready keeps its typed unavailable
-  answer;
-- there is no project onboarding, no registration, and no removal;
-- same-repository runs remain serial, and there is no parallelism across
-  projects yet.
-
-Each registered project keeps its own runtime database, worktrees,
-notifications, and history in its resolved project `stateDir`; the global
-registry stores only identity and location. No physical state migration is
-planned.
+Every run performs technical reconciliation at startup. Technical internal
+answers are recorded, CI can be resumed, and handoff between providers is safe.
+Projects the registry does not report ready retain their typed unavailable
+answer. No physical state migration is planned.
 
 ## Current evidence
 
-The beta surface includes the project registry, conversation, run inspection,
-work and proposal queues, provider and settings management, deterministic
-onboarding of the boot project, optional notifications, advisory React
+The beta surface includes the project registry, checkout registration, GitHub
+import and creation, removal without data deletion, project-scoped surfaces and
+policies, global profile and notifications, conversation, run inspection, work
+and proposal queues, provider management, technical startup reconciliation,
+recorded internal answers, resumable CI, safe provider handoff, advisory React
 diagnostics, revision-cohort facts, and bounded native self-update. The current
 flow is summarized in `FLOW.md`; provider and credential boundaries are
 documented under `docs/`.
 
-Recent runs that changed direction rather than surface: GSHIP-711 made provider
-holds self-resuming; GSHIP-709 added the review-only Codex fallback; GSHIP-712
-made Work operational per selected project; GSHIP-713 replaced the visible
-brand; GSHIP-714 restricted review findings to material defects. Two of these
-are evidence about the process itself. GSHIP-712 showed the cost of an
-immaterial finding: a true remark that changed no behaviour still bought a fix
-round. GSHIP-714 then shipped with no fix round at all.
+The GSHIP-723 to GSHIP-741 cohort, without a score, delivered 19 PRs with green
+CI in 4.52 hours of summed terminal wall time, with an 8.67-minute median, 29
+fix rounds, 16 internal questions, and 17 of 19 runs without operator
+intervention. GSHIP-733 to GSHIP-741 had zero operator intervention and resolved
+10 internal questions. The first GSHIP-741 attempt failed typecheck; a new run
+shipped without intervention.
 
 Use the tag, commit graph, and the running service's `/api/snapshot` as factual
 evidence for an installed version. Git history and GitHub Releases own older
@@ -143,17 +139,12 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-1. Onboarding: deterministic registration of an existing or a new repository,
-   plus removal. Without it the registry only ever reflects what discovery
-   found.
-2. Project scope for the operator surfaces that are still boot-only:
-   conversation, brief, settings, and operational credentials.
-3. Concurrency across independent repositories only, with a global limit and a
-   per-provider limit. Same-repository runs stay serial.
-4. Then, in this order: a per-project visual harness; derived documentation and
-   changelog from the change itself; ntfy configuration; an optional and
-   auditable executor policy by subscription, model, and effort; a measured
-   beta; and a soft ratchet.
+1. An explicit multistack contract per project.
+2. End-to-end proof for JavaScript and Python, followed by stack-aware
+   readiness.
+3. Typed diagnostic and measurement adapters.
+4. External validation of onboarding.
+5. Only then, a soft ratchet or statistical policy.
 
 Accumulating comparable revision-tagged terminal runs stays ahead of every
 threshold, cohort rule, and self-tuning behaviour in this list. Do not invent a
