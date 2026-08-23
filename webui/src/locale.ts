@@ -106,6 +106,32 @@ export interface ProjectsCatalog {
 	};
 }
 
+export interface OverviewCatalog {
+	title: string;
+	description: string;
+	loading: string;
+	empty: string;
+	partial: string;
+	error: string;
+	metrics: { activeProjects: string; attention: string; backlog: string; completed: string; cost: string };
+	activeRun: string;
+	issue: string;
+	phase: string;
+	provider: string;
+	updated: string;
+	backlogLabel: string;
+	lastOutcome: string;
+	noRun: string;
+	noOutcome: string;
+	databaseUnavailable: string;
+	historyUnavailable: string;
+	noCost: string;
+	costCoverage: (known: number, total: number) => string;
+	trend: string;
+	activity: string;
+	outcomes: { shipped: string; failed: string; cancelled: string; incomplete: string };
+}
+
 export interface ConversationCatalog {
 	transcriptLabel: string;
 	emptyStateGuidance: string;
@@ -508,6 +534,7 @@ export interface OnboardingCatalog {
 export interface LocaleCatalog {
 	shell: ShellCatalog;
 	projects: ProjectsCatalog;
+	overview: OverviewCatalog;
 	conversation: ConversationCatalog;
 	runInspector: RunInspectorCatalog;
 	runsOperational: RunsOperationalCatalog;
@@ -587,6 +614,10 @@ export const LOCALE_CATALOG = {
 				confirm: (name) => `Remove ${name} from the registry and keep every file it has.`,
 				submit: 'Remove project',
 			},
+		},
+		overview: {
+			title: 'Operations overview', description: 'A live view of project readiness, active work and recent outcomes.', loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
+			metrics: { activeProjects: 'Active projects', attention: 'Needs attention', backlog: 'Approved backlog', completed: 'Runs completed', cost: 'Known cost' }, activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Backlog', lastOutcome: 'Last outcome', noRun: 'No active run', noOutcome: 'No outcome in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', activity: 'Activity', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
 		},
 		conversation: {
 			transcriptLabel: 'Conversation transcript',
@@ -1025,6 +1056,10 @@ export const LOCALE_CATALOG = {
 				confirm: (name) => `Remover ${name} do registro e manter todos os seus arquivos.`,
 				submit: 'Remover projeto',
 			},
+		},
+		overview: {
+			title: 'Central de operações', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
+			metrics: { activeProjects: 'Projetos ativos', attention: 'Requer atenção', backlog: 'Backlog aprovado', completed: 'Runs concluídas', cost: 'Custo conhecido' }, activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Backlog', lastOutcome: 'Último resultado', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhum resultado nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', activity: 'Atividade', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
 		},
 		conversation: {
 			transcriptLabel: 'Transcrição da conversa',

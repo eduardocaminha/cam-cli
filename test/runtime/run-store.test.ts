@@ -48,11 +48,11 @@ describe('read-only persisted run status', () => {
 
 		expect(readPersistedRunStatuses(dbPath, 2)).toEqual([
 			{
-				id: 'run-2', issueId: 'GSHIP-2', state: 'queued',
+				id: 'run-2', issueId: 'GSHIP-2', providerId: 'claude', state: 'queued',
 				createdAt: '2026-08-22T10:00:02.000Z', updatedAt: '2026-08-22T10:00:02.000Z',
 			},
 			{
-				id: 'run-1', issueId: 'GSHIP-1', state: 'queued',
+				id: 'run-1', issueId: 'GSHIP-1', providerId: 'claude', state: 'queued',
 				createdAt: '2026-08-22T10:00:01.000Z', updatedAt: '2026-08-22T10:00:01.000Z',
 			},
 		]);

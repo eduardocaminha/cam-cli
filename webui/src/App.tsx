@@ -41,6 +41,8 @@ import {
 	type OperatorProfileView,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
+	type ProjectOperationalOverviewView,
+	type ProjectOverviewView,
 	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
@@ -72,6 +74,7 @@ import {
 	LOCALE_CATALOG,
 	type Locale,
 	type OnboardingCatalog,
+	type OverviewCatalog,
 	type ProjectsCatalog,
 	type RunInspectorCatalog,
 	type RunsOperationalCatalog,
@@ -96,6 +99,7 @@ import {
 	type RunEventView,
 	type RunExecutorHandoffView,
 	type RunProviderWaitView,
+	type RunState,
 	type RunView,
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
@@ -196,6 +200,9 @@ export interface AppProps {
 	project: ProjectStatusView;
 	/** Read-only global registry used by URL-backed project navigation. */
 	projects: readonly RegisteredProjectView[];
+	overview?: ProjectOperationalOverviewView | null;
+	overviewLoading?: boolean;
+	overviewError?: string | null;
 	/** Human-owned identity and timezone, empty until explicitly saved. */
 	operatorProfile: OperatorProfileView;
 	/** Browser-derived suggestion; it is never persisted without a save. */
@@ -3218,47 +3225,89 @@ function UnregisterProjectPanel({
 	);
 }
 
+type OverviewCardEntry =
+	| { project: RegisteredProjectView; snapshot: false }
+	| (ProjectOverviewView & { snapshot: true });
+
+function OverviewOperationalFacts({ entry, catalog, locale }: { entry: ProjectOverviewView; catalog: OverviewCatalog; locale: Locale }): React.ReactElement {
+	if (entry.database.state !== 'available') return <p>{catalog.databaseUnavailable}</p>;
+	const provider = entry.activeRun === null ? null : MODEL_PROVIDER_LABELS[entry.activeRun.providerId];
+	return <>{provider === null ? null : <p><span className="font-medium">{catalog.provider}:</span> {provider}</p>}<p><span className="font-medium">{catalog.activeRun}:</span> {entry.activeRun === null ? catalog.noRun : <a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(entry.project.id)}/runs`}>{entry.activeRun.id}</a>}</p><p><span className="font-medium">{catalog.issue}:</span> {entry.activeRun?.issueId ?? catalog.noRun}</p><p><span className="font-medium">{catalog.phase}:</span> {entry.activeRun === null ? catalog.noRun : LOCALE_CATALOG[locale].runInspector.stateLabels[entry.activeRun.state as RunState]}</p><p><span className="font-medium">{catalog.updated}:</span> {entry.latestRun?.updatedAt ?? catalog.noRun}</p></>;
+}
+
+function OverviewProjectDetails({ entry, catalog, projectCatalog, locale }: { entry: OverviewCardEntry; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
+	if (!entry.snapshot) return <p><span className="font-medium">{projectCatalog.readinessLabel}:</span> {projectCatalog.readiness[entry.project.readiness]}</p>;
+	const lastOutcome = entry.overview.overview === null ? catalog.historyUnavailable : entry.latestRunOutcome === null ? catalog.noOutcome : catalog.outcomes[entry.latestRunOutcome];
+	return <><p><span className="font-medium">{projectCatalog.readinessLabel}:</span> {projectCatalog.readiness[entry.project.readiness]}</p><OverviewOperationalFacts entry={entry} catalog={catalog} locale={locale} /><p><span className="font-medium">{catalog.backlogLabel}:</span> {entry.backlog.state === 'available' ? entry.backlog.counts.planned : catalog.partial}</p><p><span className="font-medium">{catalog.lastOutcome}:</span> {lastOutcome}</p></>;
+}
+
+function OverviewProjectCard({ entry, catalog, projectCatalog, locale }: { entry: OverviewCardEntry; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
+	const project = entry.project;
+	return <li><Card><CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle><a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>{project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</div><CardDescription>{project.repository ?? projectCatalog.repositoryUnknown}</CardDescription></CardHeader><CardPanel><div className="grid gap-2 text-sm sm:grid-cols-2"><OverviewProjectDetails entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={locale} /></div></CardPanel></Card></li>;
+}
+
+function OverviewProjectCards({ props, overview, catalog, projectCatalog }: { props: AppProps; overview: ProjectOperationalOverviewView | null; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog }): React.ReactElement | null {
+	if (overview === null && props.overviewLoading) return null;
+	const entries: OverviewCardEntry[] = overview === null ? props.projects.map((project) => ({ project, snapshot: false })) : overview.projects.map((entry) => ({ ...entry, snapshot: true }));
+	return <ul className="grid gap-3 lg:grid-cols-2">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
+}
+
+function OverviewData({ props, overview, catalog, attention, activeProjects }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number; activeProjects: number }): React.ReactElement {
+	const historical = overview.overview;
+	const completed = historical.totalRuns - historical.activeRuns;
+	const chartPoints = historical.daily;
+	const maxRuns = Math.max(1, ...chartPoints.map((day) => day.totalRuns));
+	const maxOutcomes = Math.max(1, ...chartPoints.flatMap((day) => Object.values(day.runsByOutcome)));
+	return <>
+		<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[[catalog.metrics.activeProjects, activeProjects], [catalog.metrics.attention, attention], [catalog.metrics.backlog, overview.summary.backlog.planned], [catalog.metrics.completed, completed], [catalog.metrics.cost, historical.knownCostUsd === null ? catalog.noCost : formatCostUsd(historical.knownCostUsd, props.locale)]].map(([label, value]) => <Card key={String(label)}><CardPanel><p className="text-muted-foreground text-xs">{label}</p><p className="font-semibold text-xl">{value}</p>{label === catalog.metrics.cost ? <p className="text-muted-foreground text-xs">{catalog.costCoverage(historical.runsWithKnownCost, historical.totalRuns)}</p> : null}</CardPanel></Card>)}</div>
+		{props.overviewLoading ? <p className="text-muted-foreground text-xs" role="status">{catalog.loading}</p> : null}
+		{attention > 0 ? <p className="text-warning-foreground text-sm" role="status">{catalog.partial}</p> : null}
+		<Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel>
+			<svg aria-label={catalog.activity} className="h-24 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.activity}</title><polyline aria-label={catalog.activity} fill="none" points={chartPoints.map((day, index) => `${chartPoints.length < 2 ? 50 : (index / (chartPoints.length - 1)) * 100},${30 - (day.totalRuns / maxRuns) * 26}`).join(' ')} stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /></svg>
+			<svg aria-label={catalog.trend} className="h-24 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.trend}</title>{(['shipped', 'failed', 'cancelled', 'incomplete'] as const).map((outcome, index) => <polyline aria-label={catalog.outcomes[outcome]} fill="none" key={outcome} points={chartPoints.map((day, pointIndex) => `${chartPoints.length < 2 ? 50 : (pointIndex / (chartPoints.length - 1)) * 100},${30 - (day.runsByOutcome[outcome] / maxOutcomes) * 26}`).join(' ')} stroke="currentColor" strokeDasharray={['none', '4 2', '1 2', '8 2 1 2'][index]} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />)}</svg>
+			<ul aria-label={catalog.trend} className="sr-only">{chartPoints.map((day) => <li key={day.date}>{day.date}: {catalog.activity} {day.totalRuns}; {catalog.outcomes.shipped} {day.runsByOutcome.shipped}; {catalog.outcomes.failed} {day.runsByOutcome.failed}; {catalog.outcomes.cancelled} {day.runsByOutcome.cancelled}; {catalog.outcomes.incomplete} {day.runsByOutcome.incomplete}</li>)}</ul>
+			<p className="text-muted-foreground text-xs">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</p>
+		</CardPanel></Card>
+	</>;
+}
+
 function OverviewSurface(props: AppProps): React.ReactElement {
-	const catalog = LOCALE_CATALOG[props.locale].projects;
+	const catalog = LOCALE_CATALOG[props.locale].overview;
+	const projectCatalog = LOCALE_CATALOG[props.locale].projects;
+	const overview = props.overview ?? null;
+	const activeProjects = overview?.projects.filter((project) => project.activeRun !== null).length ?? 0;
+	const attention = overview?.projects.filter((project) => project.overview.overview === null
+		|| project.root.state !== 'available'
+		|| project.backlog.state !== 'available' || project.database.state !== 'available'
+		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
 			<div>
-				<h2 className="font-semibold text-xl">{catalog.title}</h2>
+				<h2 className="font-semibold text-xl">{projectCatalog.title}</h2>
+				<p className="font-medium text-sm">{catalog.title}</p>
 				<p className="text-muted-foreground text-sm">{catalog.description}</p>
 			</div>
-			<ul className="grid gap-3">
-				{props.projects.map((project) => (
-					<li key={project.id}>
-						<Card>
-							<CardHeader>
-								<div className="flex flex-wrap items-center gap-2">
-									<CardTitle><a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>
-									{project.current ? <Badge variant="info">{catalog.currentBadge}</Badge> : null}
-								</div>
-								<CardDescription>{project.repository ?? catalog.repositoryUnknown}</CardDescription>
-							</CardHeader>
-							<CardPanel>
-								<p className="text-sm"><span className="font-medium">{catalog.readinessLabel}:</span> {catalog.readiness[project.readiness]}</p>
-							</CardPanel>
-						</Card>
-					</li>
-				))}
-			</ul>
+			{props.overviewLoading && overview === null ? <p role="status">{catalog.loading}</p> : null}
+			{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
+			{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <Card><CardPanel><p>{catalog.empty}</p></CardPanel></Card> : null}
+			{props.overviewError ? <p className="text-warning-foreground text-sm" role="alert">{catalog.error}: {props.overviewError}</p> : null}
+			{overview === null || overview.projects.length === 0 ? null : <OverviewData props={props} overview={overview} catalog={catalog} attention={attention} activeProjects={activeProjects} />}
+			<OverviewProjectCards props={props} overview={overview} catalog={catalog} projectCatalog={projectCatalog} />
 			<CreateProjectPanel
-				catalog={catalog}
+				catalog={projectCatalog}
 				onCreateProject={props.onCreateProject}
 				pending={props.pending}
 				projectOnboardingPending={props.projectOnboardingPending}
 			/>
 			<div className="grid gap-3 md:grid-cols-2">
 				<ImportProjectPanel
-					catalog={catalog}
+					catalog={projectCatalog}
 					onImportProject={props.onImportProject}
 					pending={props.pending}
 					projectOnboardingPending={props.projectOnboardingPending}
 				/>
 				<RegisterProjectPanel
-					catalog={catalog}
+					catalog={projectCatalog}
 					onRegisterProject={props.onRegisterProject}
 					pending={props.pending}
 				/>

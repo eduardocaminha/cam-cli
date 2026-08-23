@@ -33,6 +33,7 @@ export const CHAIN_RUNS_PATH = '/api/chain-runs';
 export const EXECUTOR_HANDOFF_PATH = '/api/executor-handoff';
 export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
+export const OVERVIEW_PATH = '/api/overview';
 
 /**
  * Which project a run- or issue-facing read or write names (GSHIP-707,
@@ -194,6 +195,59 @@ export interface RegisteredProjectView {
 	readiness: Exclude<ProjectStatusView['state'], 'checking'>;
 	repository?: string;
 	current: boolean;
+}
+
+export type OverviewWindow = '7d' | '30d' | 'all';
+
+export interface OverviewRunView {
+	id: string;
+	issueId: string;
+	state: string;
+	createdAt: string;
+	updatedAt: string;
+	providerId: 'claude' | 'codex';
+}
+
+export interface ProjectOverviewView {
+	project: RegisteredProjectView;
+	root: { state: 'available' } | { state: 'unavailable'; reason: string };
+	backlog: {
+		state: 'available';
+		counts: { idea: number; specified: number; planned: number };
+	} | { state: 'unavailable'; reason: string };
+	database: { state: 'available'; path: string } | { state: 'unavailable'; path: string; reason: string };
+	overview: {
+		overview: HistoricalOverviewView | null;
+		reason?: string;
+	};
+	activeRun: OverviewRunView | null;
+	latestRun: OverviewRunView | null;
+	latestRunOutcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete' | null;
+	recentRuns: OverviewRunView[];
+}
+
+export interface HistoricalOverviewView {
+	window: OverviewWindow;
+	totalRuns: number;
+	runsWithKnownCost: number;
+	knownCostUsd: number | null;
+	runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number };
+	activeRuns: number;
+	daily: Array<{ date: string; totalRuns: number; runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number }; runsWithKnownCost: number; knownCostUsd: number | null }>;
+	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
+}
+
+export interface ProjectOperationalOverviewView {
+	window: OverviewWindow;
+	overview: HistoricalOverviewView;
+	summary: {
+		totalProjects: number;
+		readyProjects: number;
+		unavailableProjects: number;
+		nonTerminalRuns: number;
+		backlog: { idea: number; specified: number; planned: number };
+	};
+	projects: ProjectOverviewView[];
 }
 
 export interface CreateProjectInput {
@@ -493,6 +547,18 @@ interface ProjectPayload {
 
 interface ProjectsPayload {
 	projects?: unknown[];
+}
+
+function overviewRecord(value: unknown): ProjectOperationalOverviewView | null {
+	if (value === null || typeof value !== 'object') return null;
+	return value as ProjectOperationalOverviewView;
+}
+
+export async function fetchOverview(signal?: AbortSignal): Promise<ProjectOperationalOverviewView> {
+	const response = await fetch(`${OVERVIEW_PATH}?window=7d`, { signal });
+	const overview = overviewRecord(await readJson<unknown>(response, 'Overview'));
+	if (overview === null) throw new Error('Gateship returned an unreadable overview.');
+	return overview;
 }
 
 interface ProjectCommandPayload extends CommandPayload {

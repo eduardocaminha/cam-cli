@@ -69,12 +69,13 @@ export interface RunRecord {
 
 export type PersistedRunStatus = Pick<
 	RunRecord,
-	'id' | 'issueId' | 'state' | 'createdAt' | 'updatedAt'
+	'id' | 'issueId' | 'providerId' | 'state' | 'createdAt' | 'updatedAt'
 >;
 
 interface PersistedRunStatusRow {
 	id: string;
 	issue_id: string;
+	provider_id: AgentProviderId;
 	state: string;
 	created_at: string;
 	updated_at: string;
@@ -101,7 +102,7 @@ export function readPersistedRunStatuses(path: string, limit = 20): PersistedRun
 	const db = openReadOnlyDatabase(path);
 	try {
 		const rows = db.query(`
-			SELECT id, issue_id, state, created_at, updated_at
+			SELECT id, issue_id, provider_id, state, created_at, updated_at
 			FROM runs
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?
@@ -109,6 +110,7 @@ export function readPersistedRunStatuses(path: string, limit = 20): PersistedRun
 		return rows.map((row) => ({
 			id: row.id,
 			issueId: row.issue_id,
+			providerId: row.provider_id,
 			state: decodeState(row.state),
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
@@ -133,7 +135,7 @@ export function readPersistedRunOverview(path: string): PersistedRunOverview {
 	const db = openReadOnlyDatabase(path);
 	try {
 		const activeRow = db.query(`
-			SELECT id, issue_id, state, created_at, updated_at
+			SELECT id, issue_id, provider_id, state, created_at, updated_at
 			FROM runs
 			WHERE state IN (${NON_TERMINAL_RUN_STATES.map(() => '?').join(', ')})
 			ORDER BY created_at DESC, id DESC
@@ -148,6 +150,7 @@ export function readPersistedRunOverview(path: string): PersistedRunOverview {
 			activeRun: activeRow === null ? null : {
 				id: activeRow.id,
 				issueId: activeRow.issue_id,
+				providerId: activeRow.provider_id,
 				state: decodeState(activeRow.state),
 				createdAt: activeRow.created_at,
 				updatedAt: activeRow.updated_at,
@@ -170,7 +173,7 @@ export function readActivePersistedRun(path: string): PersistedRunStatus | null 
 	const db = openReadOnlyDatabase(path);
 	try {
 		const row = db.query(`
-			SELECT id, issue_id, state, created_at, updated_at
+			SELECT id, issue_id, provider_id, state, created_at, updated_at
 			FROM runs
 			WHERE state IN (${NON_TERMINAL_RUN_STATES.map(() => '?').join(', ')})
 			ORDER BY created_at DESC, id DESC
@@ -180,6 +183,7 @@ export function readActivePersistedRun(path: string): PersistedRunStatus | null 
 		return {
 			id: row.id,
 			issueId: row.issue_id,
+			providerId: row.provider_id,
 			state: decodeState(row.state),
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
