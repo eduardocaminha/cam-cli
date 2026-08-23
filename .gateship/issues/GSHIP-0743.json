@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-743",
+  "title": "Atualizar checkpoint após corrida multiprojeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T20:49:13.131Z",
+  "updatedAt": "2026-08-23T20:49:13.131Z",
+  "description": "Atualizar somente HANDOFF.md para substituir o checkpoint v0.342.0 pelo estado factual da v0.371.0. Remover afirmações obsoletas de que onboarding, conversa, brief, settings, propostas e diagnósticos ainda são boot-project only. Registrar de forma concisa as capacidades entregues: registro de checkout existente, importação e criação GitHub, remoção sem apagar dados; superfícies e políticas escopadas pelo projeto selecionado; perfil e notificações globais; uma run ativa por projeto com serialização dentro do mesmo projeto; central agregada; reconciliação técnica no início da run; respostas técnicas internas registradas; retomada de CI e handoff seguro entre providers. Registrar a evidência da coorte GSHIP-723 a GSHIP-741 sem score: 19 entregas com PR e CI verde em 4,52 horas de wall time terminal somado, mediana 8,67 minutos, 29 fix rounds, 16 perguntas internas, 17 de 19 runs sem intervenção do operador; GSHIP-733 a GSHIP-741 tiveram zero intervenção e resolveram 10 perguntas internas. Registrar separadamente que a primeira tentativa da GSHIP-741 falhou no typecheck e a nova run shipou sem intervenção. Atualizar os próximos seams: contrato multistack explícito por projeto, prova end-to-end JavaScript e Python, readiness stack-aware, adapters tipados de diagnóstico e medição, validação externa de onboarding e só depois ratchet suave ou política estatística. Preservar as decisões de arquitetura e segurança ainda válidas. Não transformar o arquivo em changelog, não adicionar dependência, código, teste ou mecanismo novo.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Atualizar somente HANDOFF.md para substituir o checkpoint v0.342.0 pelo estado factual da v0.371.0. Remover afirmações obsoletas de que onboarding, conversa, brief, settings, propostas e diagnósticos ainda são boot-project only. Registrar de forma concisa as capacidades entregues: registro de checkout existente, importação e criação GitHub, remoção sem apagar dados; superfícies e políticas escopadas pelo projeto selecionado; perfil e notificações globais; uma run ativa por projeto com serialização dentro do mesmo projeto; central agregada; reconciliação técnica no início da run; respostas técnicas internas registradas; retomada de CI e handoff seguro entre providers. Registrar a evidência da coorte GSHIP-723 a GSHIP-741 sem score: 19 entregas com PR e CI verde em 4,52 horas de wall time terminal somado, mediana 8,67 minutos, 29 fix rounds, 16 perguntas internas, 17 de 19 runs sem intervenção do operador; GSHIP-733 a GSHIP-741 tiveram zero intervenção e resolveram 10 perguntas internas. Registrar separadamente que a primeira tentativa da GSHIP-741 falhou no typecheck e a nova run shipou sem intervenção. Atualizar os próximos seams: contrato multistack explícito por projeto, prova end-to-end JavaScript e Python, readiness stack-aware, adapters tipados de diagnóstico e medição, validação externa de onboarding e só depois ratchet suave ou política estatística. Preservar as decisões de arquitetura e segurança ainda válidas. Não transformar o arquivo em changelog, não adicionar dependência, código, teste ou mecanismo novo.",
+    "verify": [
+      "bun test test/web/idle-state.test.ts"
+    ]
+  }
+}
