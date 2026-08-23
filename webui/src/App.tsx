@@ -1363,6 +1363,7 @@ function ClaudeCredentialEnvManagedNotice({
 	return (
 		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
 			<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
+			<p className="text-muted-foreground text-xs">{text.usageGuidance}</p>
 			<p className="text-muted-foreground text-xs">{text.envManaged}</p>
 		</div>
 	);
@@ -1405,6 +1406,7 @@ function ClaudeCredentialConnectedCard({
 	return (
 		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
 			<p>{provider.subscription ? text.connected : text.needsReconnect}</p>
+			<p className="text-muted-foreground text-xs">{text.usageGuidance}</p>
 			{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
 			<div className="flex flex-wrap gap-2">
 				{provider.installed ? (
@@ -1490,6 +1492,7 @@ function ClaudeCredentialSection({
 
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-border p-3 text-sm">
+			<p className="font-medium">{text.advancedTitle}</p>
 			<p className="text-muted-foreground">{text.explanation}</p>
 			<p className="text-muted-foreground text-xs">{text.inferenceOnly}</p>
 			{provider.installed ? (
@@ -1579,6 +1582,28 @@ function ClaudeCredentialSection({
 	);
 }
 
+function ClaudeInteractiveLoginNotice({
+	provider,
+	text,
+}: {
+	provider: ProviderStatusView;
+	text: SettingsCatalog['providers']['claudeCredential'];
+}): React.ReactElement {
+	return (
+		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+			<p className="font-medium">{text.recommendedTitle}</p>
+			<p className="text-muted-foreground">{text.recommendedGuidance}</p>
+			<p className="text-muted-foreground text-xs">{text.usageGuidance}</p>
+			{provider.installed ? (
+				<div className="flex flex-col gap-1">
+					<span className="text-muted-foreground text-xs">{text.recommendedCommandLabel}</span>
+					<code className="break-all">claude auth login --claudeai</code>
+				</div>
+			) : <p className="text-muted-foreground text-xs">{text.cliMissing}</p>}
+		</div>
+	);
+}
+
 function ProviderRow({
 	provider,
 	catalog,
@@ -1616,20 +1641,26 @@ function ProviderRow({
 				) : null}
 			</div>
 			{provider.id === 'claude' ? (
-				<ClaudeCredentialSection
-					catalog={catalog}
-					error={claudeCredentialError}
-					onConnectClaudeCredential={onConnectClaudeCredential}
-					onDisconnectClaudeCredential={onDisconnectClaudeCredential}
-					onDismissError={onDismissClaudeCredentialError}
-					pending={pending}
-					provider={provider}
-				/>
+				<>
+					{provider.login === 'dedicated' ? null : <ClaudeInteractiveLoginNotice provider={provider} text={catalog.providers.claudeCredential} />}
+					<ClaudeCredentialSection
+						catalog={catalog}
+						error={claudeCredentialError}
+						onConnectClaudeCredential={onConnectClaudeCredential}
+						onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+						onDismissError={onDismissClaudeCredentialError}
+						pending={pending}
+						provider={provider}
+					/>
+				</>
 			) : null}
-			{provider.id === 'claude' && provider.login !== 'dedicated' && provider.installed ? (
-				<p className="text-muted-foreground text-xs">
-					{catalog.providers.claudeCredential.advancedTitle}: <code className="break-all">claude auth login</code>
-				</p>
+			{provider.id === 'codex' ? (
+				<div className="flex flex-col gap-1 text-xs text-muted-foreground">
+					<p>{catalog.providers.codexSubscriptionGuidance}</p>
+					<code className="break-all">codex login</code>
+					<p>{catalog.providers.codexApiKeyWarning}</p>
+					<p>{catalog.providers.codexEnterpriseFuture}</p>
+				</div>
 			) : null}
 		</li>
 	);
