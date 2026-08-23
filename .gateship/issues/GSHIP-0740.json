@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-740",
+  "title": "Escopar agenda de diagnósticos por projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T17:57:59.229Z",
+  "updatedAt": "2026-08-23T18:07:14.400Z",
+  "description": "Concluir a agenda multiprojeto dentro do único serviço existente. Persistir enabled, cadence, analyzer, lastScanAt e nextRunAt no SQLite já pertencente a cada projeto. Adicionar a rota PUT /api/projects/:projectId/diagnostics/schedule, mantendo a rota sem escopo como compatibilidade do projeto de boot, e fazer o cliente salvar a agenda no ProjectScope selecionado. Recolocar o painel de agenda somente em Settings do projeto ready, nunca nos ajustes globais.\n\nUsar um único dono de cadência no processo web. A cada tick, ele deve reconciliar os projetos registrados que estão ready e chamar runScheduledIfDue no DiagnosticsRuntime de cada um, sem criar timer por projeto, processo, daemon, cron, fila, tabela ou serviço. Projetos diferentes podem iniciar diagnósticos agendados em paralelo; projeto com run ou diagnóstico ativo retorna busy apenas para si. Um período perdido gera no máximo um scan atrasado por projeto, sem catch-up. O fence global de atualização impede novos scans agendados e observa qualquer scan ativo.\n\nProvar com dois projetos que agendas, estado due/busy, scans e alterações via API/UI não vazam entre projetos. Preservar compatibilidade das rotas sem escopo e o comportamento ad hoc da GSHIP-738. Se o código atual exigir uma seam menor que um coordenador nomeado, adapte a implementação técnica e registre a reconciliação, mas não altere estes comportamentos.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Implementar somente o núcleo backend da agenda multiprojeto dentro do único serviço existente. Persistir enabled, cadence, analyzer, lastScanAt e nextRunAt no SQLite já pertencente a cada projeto. Adicionar PUT /api/projects/:projectId/diagnostics/schedule e manter a rota sem escopo como compatibilidade do projeto de boot.\n\nUsar um único dono de cadência no processo web. A cada tick, reconciliar os projetos registrados ready e chamar runScheduledIfDue no DiagnosticsRuntime de cada um, sem timer por projeto, processo, daemon, cron, fila, tabela ou serviço. Projetos diferentes podem iniciar scans agendados em paralelo; run ou diagnóstico ativo torna busy somente o próprio projeto. Cada projeto inicia no máximo um scan atrasado, sem catch-up. O fence global impede novos scans e observa qualquer scan ativo.\n\nProvar no backend, com dois projetos, que agendas, due/busy e scans não vazam entre projectId. Preservar o diagnóstico ad hoc e as rotas sem escopo. Não alterar React, cliente ou UI nesta issue.",
+    "verify": [
+      "bun test test/web/diagnostics-api.test.ts test/runtime/diagnostics.test.ts test/runtime/project-runtime-manager.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "6a1b5f14966adea6ba670745cbebf1511e732550f8777dced78599d093e6c355",
+    "approvedAt": "2026-08-23T18:07:14.400Z"
+  }
+}
