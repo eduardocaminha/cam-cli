@@ -60,6 +60,7 @@ import {
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
+	registerProject,
 	removeResendCredential,
 	type ResolvedProposalView,
 	type RunAction,
@@ -549,6 +550,15 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => saveDiagnosticSchedule(enabled, cadence))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
+			// GSHIP-716: registering a checkout only adds it to the registry. The
+			// list and the sidebar stay the selection surface, so success goes
+			// straight to the newly registered project's own URL.
+			onRegisterProject={(root) => {
+				send(() => registerProject(root).then((registered) => {
+					window.location.assign(`/projects/${encodeURIComponent(registered.id)}`);
+					return `${registered.name} registered.`;
+				}));
+			}}
 			onSelectIssue={setSelectedIssueId}
 			onSelectLocale={selectLocale}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-716",
   "title": "Registrar checkout existente no onboarding multiprojeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T03:44:48.011Z",
-  "updatedAt": "2026-08-23T03:45:01.608Z",
+  "updatedAt": "2026-08-23T04:06:53.916Z",
   "description": "Adicionar o primeiro seam de onboarding multiprojeto como uma unica operacao deterministica de registro de checkout existente. Criar um comando compartilhado que receba root, exija string nao vazia e caminho absoluto visivel ao processo do Gateship, resolva symlinks e qualquer subdiretorio para o top-level real do repositorio Git, e inspecione somente metadados locais. Nao executar fetch, clone, gh, criar repositorio, mover arquivos ou alterar Git. Registrar somente projetos com readiness ready, isto e, origin GitHub e refs/remotes/origin/main ja presentes; devolver erro tipado e o detalhe existente de readiness para caminho ausente, nao diretorio, nao repositorio, origin invalido ou origin/main ausente. Persistir no ProjectRegistry com stateDir igual a <top-level>/.gship. Repetir o mesmo root deve ser idempotente, preservar o projectId e atualizar readiness, nunca criar duplicata. Expor POST /api/projects com body {root}, resposta {ok:true,project}, e adicionar a operacao projects.register {root} ao agent CLI usando o mesmo endpoint e contrato. Na Overview, adicionar um formulario pequeno e localizado em en-US e pt-BR para registrar um checkout existente por caminho absoluto, explicar que no Docker o caminho precisa existir dentro do container por mount, mostrar recusas tipadas e, em sucesso, recarregar a lista e navegar para /projects/:projectId. Manter a lista e sidebar atuais como fonte de selecao. Provar top-level a partir de subdiretorio, symlink, idempotencia, persistencia apos restart, stateDir por projeto, recusas sem escrita, endpoint web, operacao agent e fluxo visual. Nao adicionar file picker, clone, projeto novo, remocao, descoberta automatica adicional, migracao, paralelismo, mudanca em conversa/brief/settings, novo daemon, MCP, dependencia ou tabela alem do registro existente.",
   "specSource": "operator",
   "spec": {

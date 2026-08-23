@@ -65,15 +65,18 @@ describe('canonical agent CLI', () => {
 		const result = await executeAgent(['operations']);
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
-			'project.inspect', 'projects.list', 'projects.status', 'status.get', 'backlog.list', 'issues.list', 'issues.get',
+			'project.inspect', 'projects.list', 'projects.status', 'projects.register', 'status.get',
+			'backlog.list', 'issues.list', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
 			'runs.cancel', 'runs.abandon', 'runs.ship',
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
+		// Onboarding names a location, never a project that does not exist yet.
+		expect(operations.find(({ name }) => name === 'projects.register')?.input).toBe('{root}');
 		for (const operation of operations.filter(({ name }) =>
-			!['project.inspect', 'projects.list', 'projects.status'].includes(name))) {
+			!['project.inspect', 'projects.list', 'projects.status', 'projects.register'].includes(name))) {
 			expect(operation.input).toContain('projectId');
 		}
 	});
@@ -119,6 +122,53 @@ describe('canonical agent CLI', () => {
 		expect(result.output).toMatchObject({
 			ok: true,
 			result: { projects: [{ id: 'project-1', current: true }] },
+		});
+	});
+
+	test('registers an existing checkout through the same endpoint the screen posts to', async () => {
+		let requested = '';
+		let sent: { method?: string; body?: unknown } = {};
+		const result = await executeAgent([
+			'call', 'projects.register', '--input', '{"root":"/workspace/product/packages/app"}',
+		], async (url, init) => {
+			requested = String(url);
+			sent = { method: init?.method, body: JSON.parse(String(init?.body)) };
+			return jsonResponse({ ok: true, project: {
+				id: 'project-2', name: 'product', root: '/workspace/product',
+				stateDir: '/workspace/product/.gship', readiness: 'ready',
+				repository: 'acme/product', current: false,
+			} });
+		});
+		expect(requested).toBe('http://127.0.0.1:7777/api/projects');
+		expect(sent).toEqual({ method: 'POST', body: { root: '/workspace/product/packages/app' } });
+		expect(result).toMatchObject({
+			exitCode: 0,
+			output: {
+				ok: true,
+				operation: 'projects.register',
+				result: { project: { id: 'project-2', root: '/workspace/product', current: false } },
+			},
+		});
+	});
+
+	test('surfaces a typed registration refusal with the readiness detail behind it', async () => {
+		const result = await executeAgent([
+			'call', 'projects.register', '--input', '{"root":"/workspace/unfetched"}',
+		], async () => jsonResponse({
+			ok: false,
+			code: 'project-not-ready',
+			message: 'The local origin/main reference does not exist yet. Fetch or publish the main branch.',
+			readiness: { state: 'needs-attention', name: 'unfetched', reason: 'origin-main-missing' },
+		}, 409));
+		expect(result).toMatchObject({
+			exitCode: 1,
+			output: {
+				ok: false,
+				code: 'project-not-ready',
+				message: expect.stringContaining('origin/main'),
+				httpStatus: 409,
+				readiness: { reason: 'origin-main-missing' },
+			},
 		});
 	});
 

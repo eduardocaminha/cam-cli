@@ -121,6 +121,11 @@ import {
 } from '../runtime/claude-credential.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
+	PROJECT_STATE_DIRECTORY,
+	ProjectRegistrationError,
+	registerExistingCheckout,
+} from '../runtime/project-registration.ts';
+import {
 	openProjectRegistry,
 	type RegisteredProject,
 	type ProjectRegistry,
@@ -758,6 +763,43 @@ async function createIssueFromOperator(
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
 			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+/**
+ * Register a checkout the operator already has, by absolute path (GSHIP-716).
+ * Local metadata only: the refusal carries the same readiness detail the
+ * screen already renders, and nothing is written unless the project is ready.
+ */
+async function registerProjectFromOperator(
+	request: Request,
+	registry: ProjectRegistry,
+	currentRoot: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const project = registerExistingCheckout(body, registry, currentRoot);
+		return Response.json({ ok: true, project });
+	} catch (error) {
+		if (!(error instanceof ProjectRegistrationError)) throw error;
+		return Response.json(
+			{
+				ok: false,
+				code: error.code,
+				message: error.message,
+				...(error.readiness === undefined ? {} : { readiness: error.readiness }),
+			},
 			{ status: error.status },
 		);
 	}
@@ -2337,7 +2379,7 @@ function updateSelfUpdate(request: Request, selfUpdate: SelfUpdateAccess | undef
 }
 
 function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDir'>): string {
-	return resolve(options.stateDir ?? join(options.cwd, '.gship'));
+	return resolve(options.stateDir ?? join(options.cwd, PROJECT_STATE_DIRECTORY));
 }
 
 /**
@@ -2579,7 +2621,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
-			'/api/projects': () => Response.json({ projects: projectRegistry.list(projectRoot) }),
+			'/api/projects': {
+				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
+				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),
+			},
 			'/api/projects/:projectId/status': (request) => {
 				const project = projectRegistry.get(request.params.projectId, projectRoot);
 				if (project === null) {

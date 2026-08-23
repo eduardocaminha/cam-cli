@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
@@ -89,6 +89,111 @@ describe('GET /api/projects', () => {
 			expect(body.projects.find((project) => project.root === secondRoot)?.current).toBe(true);
 		} finally {
 			await second.stop();
+		}
+	});
+});
+
+/** A checkout the operator already has: GitHub origin and a local origin/main. */
+function readyCheckout(root: string, remoteUrl = 'git@github.com:acme/product.git'): void {
+	execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: root });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: root });
+	writeFileSync(join(root, 'README.md'), '# product\n');
+	execFileSync('git', ['add', 'README.md'], { cwd: root });
+	execFileSync('git', ['commit', '-m', 'seed'], { cwd: root });
+	execFileSync('git', ['remote', 'add', 'origin', remoteUrl], { cwd: root });
+	execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root });
+}
+
+describe('POST /api/projects', () => {
+	test('registers an existing checkout by absolute path and repeats without duplicating', async () => {
+		const cwd = createTestTmpdir('gship-register-api-current-');
+		const gateshipHome = createTestTmpdir('gship-register-api-home-');
+		const target = realpathSync(createTestTmpdir('gship-register-api-target-'));
+		readyCheckout(target);
+		mkdirSync(join(target, 'packages', 'app'), { recursive: true });
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const register = (root: string) => fetch(`${origin}/api/projects`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin },
+				body: JSON.stringify({ root }),
+			});
+
+			const created = await register(join(target, 'packages', 'app'));
+			expect(created.status).toBe(200);
+			const body = await created.json() as { ok: boolean; project: { id: string } };
+			const projectId = body.project.id;
+			expect(typeof projectId).toBe('string');
+			expect(body).toMatchObject({
+				ok: true,
+				project: {
+					root: target,
+					stateDir: join(target, '.gship'),
+					readiness: 'ready',
+					repository: 'acme/product',
+					current: false,
+				},
+			});
+
+			const repeated = await register(target).then((response) => response.json()) as {
+				project: { id: string };
+			};
+			expect(repeated.project.id).toBe(projectId);
+			const listed = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ id: string }> };
+			expect(listed.projects).toHaveLength(2);
+			expect(listed.projects.some((project) => project.id === projectId)).toBe(true);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('refuses an unready or invisible path with its readiness detail and registers nothing', async () => {
+		const cwd = createTestTmpdir('gship-register-api-refusal-current-');
+		const gateshipHome = createTestTmpdir('gship-register-api-refusal-home-');
+		const unfetched = realpathSync(createTestTmpdir('gship-register-api-refusal-target-'));
+		readyCheckout(unfetched);
+		execFileSync('git', ['update-ref', '-d', 'refs/remotes/origin/main'], { cwd: unfetched });
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const register = (body: unknown, headers: Record<string, string> = { origin }) =>
+				fetch(`${origin}/api/projects`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json', ...headers },
+					body: JSON.stringify(body),
+				});
+
+			const relative = await register({ root: 'relative/checkout' });
+			expect(relative.status).toBe(400);
+			expect(await relative.json()).toMatchObject({ ok: false, code: 'invalid-request' });
+
+			const absent = await register({ root: join(unfetched, 'absent') });
+			expect(absent.status).toBe(404);
+			expect(await absent.json()).toMatchObject({ ok: false, code: 'root-not-found' });
+
+			const notReady = await register({ root: unfetched });
+			expect(notReady.status).toBe(409);
+			expect(await notReady.json()).toMatchObject({
+				ok: false,
+				code: 'project-not-ready',
+				message: expect.stringContaining('origin/main'),
+				readiness: { state: 'needs-attention', reason: 'origin-main-missing' },
+			});
+
+			const untrusted = await register({ root: unfetched }, { origin: 'http://evil.example' });
+			expect(untrusted.status).toBe(403);
+			expect(await untrusted.json()).toMatchObject({ ok: false, code: 'forbidden-origin' });
+
+			// Only the boot project the service started in is registered.
+			const listed = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ current: boolean }> };
+			expect(listed.projects).toHaveLength(1);
+			expect(listed.projects[0]?.current).toBe(true);
+		} finally {
+			await handle.stop();
 		}
 	});
 });

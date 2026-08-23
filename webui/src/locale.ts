@@ -57,6 +57,16 @@ export interface ProjectsCatalog {
 	unavailableDescription: string;
 	notFoundTitle: string;
 	notFoundDescription: string;
+	/** Onboarding a checkout the operator already has, by absolute path. */
+	register: {
+		title: string;
+		description: string;
+		rootLabel: string;
+		rootPlaceholder: string;
+		rootGuidance: string;
+		containerGuidance: string;
+		submit: string;
+	};
 }
 
 export interface ConversationCatalog {
@@ -473,6 +483,15 @@ export const LOCALE_CATALOG = {
 			unavailableDescription: 'This project is registered, but its runtime is not loaded in this Gateship instance.',
 			notFoundTitle: 'Project not registered',
 			notFoundDescription: 'This URL does not match a registered project.',
+			register: {
+				title: 'Register an existing checkout',
+				description: 'Gateship only registers a clone that already has a GitHub origin and a local origin/main.',
+				rootLabel: 'Absolute path',
+				rootPlaceholder: '/home/operator/code/product',
+				rootGuidance: 'Any directory inside the repository works; Gateship registers its real top level.',
+				containerGuidance: 'In Docker the path must exist inside the container, so mount the checkout first.',
+				submit: 'Register project',
+			},
 		},
 		conversation: {
 			transcriptLabel: 'Conversation transcript',
@@ -845,6 +864,15 @@ export const LOCALE_CATALOG = {
 			unavailableDescription: 'Este projeto está registrado, mas seu runtime não está carregado nesta instância do Gateship.',
 			notFoundTitle: 'Projeto não registrado',
 			notFoundDescription: 'Esta URL não corresponde a um projeto registrado.',
+			register: {
+				title: 'Registrar um checkout existente',
+				description: 'O Gateship só registra um clone que já tem origin no GitHub e origin/main local.',
+				rootLabel: 'Caminho absoluto',
+				rootPlaceholder: '/home/operador/code/produto',
+				rootGuidance: 'Qualquer diretório dentro do repositório serve; o Gateship registra o top-level real.',
+				containerGuidance: 'No Docker o caminho precisa existir dentro do contêiner, então monte o checkout antes.',
+				submit: 'Registrar projeto',
+			},
 		},
 		conversation: {
 			transcriptLabel: 'Transcrição da conversa',
