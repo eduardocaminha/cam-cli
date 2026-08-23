@@ -121,6 +121,11 @@ import {
 } from '../runtime/claude-credential.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
+	type GitCloneRunner,
+	importRepository,
+	ProjectImportError,
+} from '../runtime/project-import.ts';
+import {
 	PROJECT_STATE_DIRECTORY,
 	ProjectRegistrationError,
 	registerExistingCheckout,
@@ -178,6 +183,8 @@ export interface WebServerOptions {
 	gateshipHome?: string;
 	/** Injectable global project registry. */
 	projectRegistry?: ProjectRegistry;
+	/** Test seam for the GitHub import clone step; production spawns real `git clone`. */
+	projectImportClone?: GitCloneRunner;
 	/** Canonical web argv, after any internal self-update wrapper was removed. */
 	serverArgs?: string[];
 	/** Injectable durable run runtime. Production defaults to `<stateDir>/runtime.sqlite`. */
@@ -797,6 +804,53 @@ async function registerProjectFromOperator(
 		return Response.json({ ok: true, project });
 	} catch (error) {
 		if (!(error instanceof ProjectRegistrationError)) throw error;
+		return Response.json(
+			{
+				ok: false,
+				code: error.code,
+				message: error.message,
+				...(error.readiness === undefined ? {} : { readiness: error.readiness }),
+			},
+			{ status: error.status },
+		);
+	}
+}
+
+/**
+ * Import a GitHub repository into a Gateship-managed checkout (GSHIP-718): the
+ * operator names a repository, never a path, and the service owns where it
+ * lands, how it is cloned and how it is admitted -- the same readiness and
+ * registration contract `registerProjectFromOperator` already relies on.
+ */
+async function importProjectFromOperator(
+	request: Request,
+	registry: ProjectRegistry,
+	currentRoot: string,
+	gateshipHome: string,
+	clone: GitCloneRunner | undefined,
+	server: Pick<Bun.Server<unknown>, 'timeout'>,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	// Bun closes quiet responses after ten seconds by default, and a clone can
+	// run for up to PROJECT_IMPORT_CLONE_TIMEOUT_MS, which the runtime bounds
+	// with its own timeout instead. Without this the connection would drop
+	// mid-clone and read as a failed import while the clone kept running and
+	// could still register the project the operator was told it never got.
+	server.timeout(request, 0);
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const project = await importRepository(body, registry, currentRoot, gateshipHome, { clone });
+		return Response.json({ ok: true, project });
+	} catch (error) {
+		if (!(error instanceof ProjectImportError)) throw error;
 		return Response.json(
 			{
 				ok: false,
@@ -2655,6 +2709,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/projects': {
 				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
 				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),
+			},
+			'/api/projects/import': {
+				POST: (request, requestServer) => importProjectFromOperator(
+					request,
+					projectRegistry,
+					projectRoot,
+					gateshipHome,
+					options.projectImportClone,
+					requestServer,
+				),
 			},
 			'/api/projects/:projectId': {
 				DELETE: (request) => unregisterProjectFromOperator(

@@ -49,6 +49,7 @@ import {
 	fetchRuns,
 	fetchSelfUpdate,
 	type GitIdentityView,
+	importProject,
 	type IssueReviewDraft,
 	type ModelSettingsView,
 	type NotificationChannelsView,
@@ -551,6 +552,15 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => saveDiagnosticSchedule(enabled, cadence))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
+			// GSHIP-718: importing clones into a checkout Gateship manages and
+			// registers it, so success navigates the same way a fresh registration
+			// does -- straight to the imported project's own URL.
+			onImportProject={(repository) => {
+				send(() => importProject(repository).then((imported) => {
+					window.location.assign(`/projects/${encodeURIComponent(imported.id)}`);
+					return `${imported.name} imported.`;
+				}));
+			}}
 			// GSHIP-716: registering a checkout only adds it to the registry. The
 			// list and the sidebar stay the selection surface, so success goes
 			// straight to the newly registered project's own URL.

@@ -67,6 +67,17 @@ export interface ProjectsCatalog {
 		containerGuidance: string;
 		submit: string;
 	};
+	/** Cloning a GitHub repository into a checkout Gateship manages and owns the location of. */
+	import: {
+		title: string;
+		description: string;
+		repositoryLabel: string;
+		repositoryPlaceholder: string;
+		destinationGuidance: string;
+		credentialGuidance: string;
+		submit: string;
+		pending: string;
+	};
 	/** Dropping a registration, which is the whole operation: nothing is deleted. */
 	remove: {
 		title: string;
@@ -500,6 +511,16 @@ export const LOCALE_CATALOG = {
 				containerGuidance: 'In Docker the path must exist inside the container, so mount the checkout first.',
 				submit: 'Register project',
 			},
+			import: {
+				title: 'Import a GitHub repository',
+				description: 'Gateship clones the repository into a checkout it manages, and registers it once ready.',
+				repositoryLabel: 'GitHub repository',
+				repositoryPlaceholder: 'owner/repo or https://github.com/owner/repo',
+				destinationGuidance: 'Gateship stores the clone under its own managed directory, not a path you choose.',
+				credentialGuidance: 'A public repository needs nothing else; a private one uses your existing GitHub login. No token or password is ever entered here.',
+				submit: 'Import repository',
+				pending: 'Cloning the repository…',
+			},
 			remove: {
 				title: 'Remove this project from Gateship',
 				description: 'Removal only drops the registration from this Gateship installation.',
@@ -888,6 +909,16 @@ export const LOCALE_CATALOG = {
 				rootGuidance: 'Qualquer diretório dentro do repositório serve; o Gateship registra o top-level real.',
 				containerGuidance: 'No Docker o caminho precisa existir dentro do contêiner, então monte o checkout antes.',
 				submit: 'Registrar projeto',
+			},
+			import: {
+				title: 'Importar um repositório do GitHub',
+				description: 'O Gateship clona o repositório em um checkout que ele mesmo gerencia, e o registra assim que estiver pronto.',
+				repositoryLabel: 'Repositório do GitHub',
+				repositoryPlaceholder: 'owner/repo ou https://github.com/owner/repo',
+				destinationGuidance: 'O Gateship guarda o clone no seu próprio diretório gerenciado, não em um caminho à sua escolha.',
+				credentialGuidance: 'Um repositório público não precisa de mais nada; um privado usa o seu login do GitHub já existente. Nenhum token ou senha é digitado aqui.',
+				submit: 'Importar repositório',
+				pending: 'Clonando o repositório…',
 			},
 			remove: {
 				title: 'Remover este projeto do Gateship',

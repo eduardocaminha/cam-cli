@@ -276,6 +276,11 @@ export interface AppProps {
 	onSetChainRuns: (enabled: boolean) => void;
 	onSetSelfUpdate: (enabled: boolean) => void;
 	/**
+	 * Import a GitHub repository into a checkout Gateship manages, by
+	 * owner/repo or an https://github.com/owner/repo URL.
+	 */
+	onImportProject: (repository: string) => void;
+	/**
 	 * Register a checkout that already exists on disk, by absolute path
 	 * (GSHIP-716). Selection stays with the list and the sidebar; this only
 	 * adds a project to them.
@@ -2879,6 +2884,54 @@ function RegisterProjectPanel({
 }
 
 /**
+ * The other onboarding write the overview offers: a GitHub repository, not a
+ * path. Gateship owns the destination, the clone and the credential -- the
+ * operator only ever names the repository, using their existing GitHub login.
+ */
+function ImportProjectPanel({
+	catalog,
+	pending,
+	onImportProject,
+}: Pick<AppProps, 'pending' | 'onImportProject'> & {
+	catalog: ProjectsCatalog;
+}): React.ReactElement {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{catalog.import.title}</CardTitle>
+				<CardDescription>{catalog.import.description}</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<form
+					className="flex flex-col gap-3"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const repository = fieldReader(event.currentTarget)('project-import-repository');
+						if (repository !== '') onImportProject(repository);
+					}}
+				>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="project-import-repository">
+						<span className="font-medium">{catalog.import.repositoryLabel}</span>
+						<input
+							className={FIELD_CLASS}
+							id="project-import-repository"
+							name="project-import-repository"
+							placeholder={catalog.import.repositoryPlaceholder}
+						/>
+						<span className="text-muted-foreground text-xs">{catalog.import.destinationGuidance}</span>
+						<span className="text-muted-foreground text-xs">{catalog.import.credentialGuidance}</span>
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+						{catalog.import.submit}
+					</button>
+					{pending ? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p> : null}
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
+/**
  * Removing a project is a registry write and nothing else, so the copy says
  * exactly that and the explicit confirmation is the same checkbox gate the
  * approve and abandon actions already use -- no second dialog, no new
@@ -2955,11 +3008,18 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 					</li>
 				))}
 			</ul>
-			<RegisterProjectPanel
-				catalog={catalog}
-				onRegisterProject={props.onRegisterProject}
-				pending={props.pending}
-			/>
+			<div className="grid gap-3 md:grid-cols-2">
+				<ImportProjectPanel
+					catalog={catalog}
+					onImportProject={props.onImportProject}
+					pending={props.pending}
+				/>
+				<RegisterProjectPanel
+					catalog={catalog}
+					onRegisterProject={props.onRegisterProject}
+					pending={props.pending}
+				/>
+			</div>
 		</SurfaceColumn>
 	);
 }

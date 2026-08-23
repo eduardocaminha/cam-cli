@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import type { GitCloneRunner } from '../../src/runtime/project-import.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -192,6 +193,109 @@ describe('POST /api/projects', () => {
 				.then((response) => response.json()) as { projects: Array<{ current: boolean }> };
 			expect(listed.projects).toHaveLength(1);
 			expect(listed.projects[0]?.current).toBe(true);
+		} finally {
+			await handle.stop();
+		}
+	});
+});
+
+/**
+ * Stands in for a real `git clone` without touching the network: it leaves
+ * behind exactly what a successful `git clone --branch main` of `input.url`
+ * would -- a local checkout with `origin` set to that URL and a local
+ * `origin/main` ref -- at the staging path the runtime already computed.
+ */
+const cloneLocally: GitCloneRunner = async (input) => {
+	mkdirSync(input.destination, { recursive: true });
+	readyCheckout(input.destination, input.url);
+	return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+};
+
+// GSHIP-718: the other onboarding write is a GitHub repository, never a path.
+describe('POST /api/projects/import', () => {
+	test('clones a new repository into a Gateship-managed checkout and registers it', async () => {
+		const cwd = createTestTmpdir('gship-import-api-current-');
+		const gateshipHome = createTestTmpdir('gship-import-api-home-');
+		const handle = startWebServer({ port: 0, cwd, gateshipHome, projectImportClone: cloneLocally });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const imported = await fetch(`${origin}/api/projects/import`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin },
+				body: JSON.stringify({ repository: 'acme/product' }),
+			});
+			expect(imported.status).toBe(200);
+			const body = await imported.json() as { ok: boolean; project: Record<string, unknown> };
+			const destination = join(gateshipHome, 'projects', 'acme', 'product');
+			expect(body).toMatchObject({
+				ok: true,
+				project: {
+					name: 'product',
+					root: destination,
+					stateDir: join(destination, '.gship'),
+					readiness: 'ready',
+					repository: 'acme/product',
+					current: false,
+				},
+			});
+			expect(existsSync(destination)).toBe(true);
+
+			// Idempotent: the same repository, already a ready checkout, is only
+			// registered/returned -- the injected clone would throw if it ran again.
+			const repeated = await fetch(`${origin}/api/projects/import`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin },
+				body: JSON.stringify({ repository: 'https://github.com/acme/product' }),
+			});
+			expect(repeated.status).toBe(200);
+			expect((await repeated.json() as { project: { id: string } }).project.id)
+				.toBe(body.project.id as string);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('refuses invalid input, an untrusted origin and a clone failure without registering anything', async () => {
+		const cwd = createTestTmpdir('gship-import-api-refusal-current-');
+		const gateshipHome = createTestTmpdir('gship-import-api-refusal-home-');
+		const failingClone: GitCloneRunner = async () => ({
+			exitCode: 128,
+			stdout: '',
+			stderr: 'fatal: repository not found',
+			timedOut: false,
+		});
+		const handle = startWebServer({ port: 0, cwd, gateshipHome, projectImportClone: failingClone });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const doImport = (body: unknown, headers: Record<string, string> = { origin }) =>
+				fetch(`${origin}/api/projects/import`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json', ...headers },
+					body: JSON.stringify(body),
+				});
+
+			const invalid = await doImport({ repository: 'https://gitlab.com/acme/product' });
+			expect(invalid.status).toBe(400);
+			expect(await invalid.json()).toMatchObject({ ok: false, code: 'invalid-request' });
+
+			const untrusted = await doImport({ repository: 'acme/product' }, { origin: 'http://evil.example' });
+			expect(untrusted.status).toBe(403);
+			expect(await untrusted.json()).toMatchObject({ ok: false, code: 'forbidden-origin' });
+
+			const failed = await doImport({ repository: 'acme/product' });
+			expect(failed.status).toBe(502);
+			expect(await failed.json()).toMatchObject({
+				ok: false,
+				code: 'clone-failed',
+				message: expect.stringContaining('repository not found'),
+			});
+
+			// Only the boot project the service started in is registered.
+			const listed = await fetch(`${origin}/api/projects`)
+				.then((response) => response.json()) as { projects: Array<{ current: boolean }> };
+			expect(listed.projects).toHaveLength(1);
+			expect(listed.projects[0]?.current).toBe(true);
+			expect(existsSync(join(gateshipHome, 'projects', 'acme', 'product'))).toBe(false);
 		} finally {
 			await handle.stop();
 		}

@@ -672,6 +672,28 @@ export async function registerProject(root: string): Promise<RegisteredProjectVi
 }
 
 /**
+ * Import a GitHub repository into a Gateship-managed checkout (GSHIP-718).
+ * The service picks the destination, clones with the operator's existing
+ * GitHub login and refuses anything not ready, so the typed refusal message
+ * is what the operator has to act on -- the same shape `registerProject`
+ * already returns.
+ */
+export async function importProject(repository: string): Promise<RegisteredProjectView> {
+	const response = await fetch(`${PROJECTS_PATH}/import`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ repository }),
+	});
+	const payload = (await response.json()) as ProjectCommandPayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Project import rejected (${response.status}).`);
+	}
+	const project = registeredProjectRecord(payload.project);
+	if (project === null) throw new Error('Gateship returned an unreadable project import.');
+	return project;
+}
+
+/**
  * Remove a project from the global registry (GSHIP-717). The service deletes
  * nothing on disk, so the only failure the operator has to act on is a typed
  * refusal: the current checkout, or a project with a run still going.
