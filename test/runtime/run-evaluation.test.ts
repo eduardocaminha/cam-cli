@@ -110,6 +110,30 @@ describe('replayable run evaluation', () => {
 		}]);
 	});
 
+	// GSHIP-721: the same attribution in the other direction -- a Codex run
+	// reviewed by the Claude fallback keeps the provider its record was opened
+	// with and lists both under the reviewer role.
+	test('attributes the fallback on a Codex run without rewriting its own provider', () => {
+		const evaluation = evaluateRun({ ...RUN, providerId: 'codex' }, [
+			event('provider.model', 'working', 'working', { model: 'gpt-5-codex' }),
+			event('review.model', 'review', 'review', { model: 'opus', effort: 'medium' }),
+			event('run.review-fallback', 'review', 'review', {
+				from: 'codex',
+				to: 'claude',
+				phase: 'review',
+				reason: 'rate-limited',
+				retryAt: '2026-08-20T11:00:00.000Z',
+				outcome: 'clean',
+			}),
+		]);
+
+		expect(evaluation.provider).toBe('codex');
+		expect(evaluation.roles).toEqual([
+			{ role: 'executor', models: ['gpt-5-codex'], efforts: [], providers: ['codex'] },
+			{ role: 'reviewer', models: ['opus'], efforts: ['medium'], providers: ['claude', 'codex'] },
+		]);
+	});
+
 	test('keeps legacy revision and non-terminal wall time explicitly unknown', () => {
 		expect(evaluateRun({ ...RUN, state: 'working' }, [event('run.created', null, 'queued')]))
 			.toMatchObject({ workflowRevision: null, outcome: 'incomplete', wallTimeMs: null });

@@ -15,14 +15,22 @@ export const REVIEW_FALLBACK_EVENT = 'run.review-fallback';
 
 /**
  * Only a subscription limit reached before any verdict buys the alternative
- * reviewer. Every other failure -- auth, refused model, transport, protocol --
- * keeps the run on its own provider, because retrying elsewhere would answer a
- * question the operator never asked.
+ * reviewer. Every other failure -- auth, refused model, transport, protocol,
+ * cancellation, or a kind Gateship could not classify -- keeps the run on its
+ * own provider, because retrying elsewhere would answer a question the operator
+ * never asked.
  */
 const REVIEW_FALLBACK_REASONS: readonly ProviderErrorKind[] = ['usage-limit', 'rate-limited'];
 
-/** The single alternative, for the single origin the fallback is defined for. */
-const REVIEW_FALLBACK: Readonly<Record<string, AgentProviderId>> = { claude: 'codex' };
+/**
+ * The single alternative each origin may try. GSHIP-721 completes the pair
+ * GSHIP-709 opened in one direction, so a held Codex reviewer buys the same one
+ * Claude attempt a held Claude reviewer buys on Codex.
+ */
+const REVIEW_FALLBACK: Readonly<Record<AgentProviderId, AgentProviderId>> = {
+	claude: 'codex',
+	codex: 'claude',
+};
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -30,14 +38,16 @@ function errorMessage(error: unknown): string {
 
 /**
  * Routes a review to the run's own provider and, only at this read-only
- * boundary, answers a Claude limit with exactly one Codex attempt.
+ * boundary, answers a subscription limit with exactly one attempt on the other
+ * provider, in either direction.
  *
  * The run keeps its provider: nothing here mutates the record, the global
- * selection or the executor's session and worktree, so a Codex finding returns
- * to the original Claude executor and an unavailable executor still rests on
- * the existing waiting-provider state. A refused attempt is recorded and then
- * gets out of the way, rethrowing Claude's own error so the run waits for the
- * provider that actually holds it -- never for the alternative that declined.
+ * selection or the executor's session and worktree, so the alternative's
+ * finding returns to the original executor and an unavailable executor still
+ * rests on the existing waiting-provider state. A refused attempt is recorded
+ * and then gets out of the way, rethrowing the origin's own error so the run
+ * waits for the provider that actually holds it -- never for the alternative
+ * that declined.
  */
 export class AgentReviewerRouter implements RuntimeReviewer {
 	readonly #reviewers: Readonly<Record<AgentProviderId, RuntimeReviewer>>;
@@ -62,7 +72,8 @@ export class AgentReviewerRouter implements RuntimeReviewer {
 	 * stand. A verdict already produced never reaches here -- the reviewer
 	 * returned it instead of throwing -- so no review that concluded is ever
 	 * repeated, and an aborted run is left to its own interruption instead of
-	 * spawning one more child.
+	 * spawning one more child. The limit must be the origin's own: a failure
+	 * carrying another provider's name is not evidence that this one is held.
 	 */
 	#fallbackProvider(
 		providerId: AgentProviderId,
@@ -73,10 +84,15 @@ export class AgentReviewerRouter implements RuntimeReviewer {
 		if (error.provider !== providerId) return null;
 		if (!REVIEW_FALLBACK_REASONS.includes(error.kind)) return null;
 		if (input.signal.aborted) return null;
-		const fallback = REVIEW_FALLBACK[providerId];
-		return fallback === undefined || fallback === providerId ? null : fallback;
+		return REVIEW_FALLBACK[providerId];
 	}
 
+	/**
+	 * The one alternative attempt, invoked on its own reviewer rather than back
+	 * through this router: whatever it fails with -- its own limit included --
+	 * settles as this fallback's outcome and restores the origin's error, so
+	 * the two directions can never hand the review back and forth.
+	 */
 	async #reviewWithFallback(
 		input: RuntimeExecutionInput,
 		origin: AgentProviderId,
