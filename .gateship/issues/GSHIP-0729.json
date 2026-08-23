@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-729",
+  "title": "Expor snapshot operacional agregado dos projetos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T14:14:07.923Z",
+  "updatedAt": "2026-08-23T14:14:07.923Z",
+  "description": "Criar uma projeção read-only product-wide para a central multiprojeto, reutilizando ProjectRegistry e as leituras estritamente read-only de cada runtime.sqlite e backlog em origin/main. Expor GET /api/overview e a operação agent projects.overview com o mesmo contrato. Retornar um resumo com totais de projetos, projetos ready, projetos indisponíveis, runs não terminais e backlog por estágio; para cada projeto retornar metadados estáveis, disponibilidade de root, backlog e database, contagens do backlog, activeRun, latestRun e até as 20 runs recentes já suportadas pela projeção atual. Uma run só é ativa quando seu estado é não terminal. Falha de um projeto deve aparecer naquela linha e não derrubar o snapshot dos demais. A leitura não pode compor RunRuntime, criar schema, recuperar run, escrever arquivo ou banco, chamar provider ou git remoto. Preservar /api/projects/:projectId/status e os comandos existentes. Não incluir métricas históricas, gráficos ou score nesta issue.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Criar uma projeção read-only product-wide para a central multiprojeto, reutilizando ProjectRegistry e as leituras estritamente read-only de cada runtime.sqlite e backlog em origin/main. Expor GET /api/overview e a operação agent projects.overview com o mesmo contrato. Retornar um resumo com totais de projetos, projetos ready, projetos indisponíveis, runs não terminais e backlog por estágio; para cada projeto retornar metadados estáveis, disponibilidade de root, backlog e database, contagens do backlog, activeRun, latestRun e até as 20 runs recentes já suportadas pela projeção atual. Uma run só é ativa quando seu estado é não terminal. Falha de um projeto deve aparecer naquela linha e não derrubar o snapshot dos demais. A leitura não pode compor RunRuntime, criar schema, recuperar run, escrever arquivo ou banco, chamar provider ou git remoto. Preservar /api/projects/:projectId/status e os comandos existentes. Não incluir métricas históricas, gráficos ou score nesta issue.",
+    "verify": [
+      "bun test test/runtime/project-status.test.ts test/web/project-status-api.test.ts test/commands/agent.test.ts && bun run typecheck"
+    ]
+  }
+}
