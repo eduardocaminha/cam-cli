@@ -2906,6 +2906,51 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				}
 				return Response.json(readProjectOperationalStatus(project));
 			},
+			'/api/projects/:projectId/providers': (request) => projectOperation(
+				request.params.projectId,
+				(context) => listProviders(providerAuth, context.runtime, bootClaudeEnv),
+			),
+			'/api/projects/:projectId/providers/:providerId/select': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => selectProvider(
+						request,
+						request.params.providerId,
+						providerAuth,
+						context.runtime,
+					),
+				),
+			},
+			'/api/projects/:projectId/model-settings': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json({ settings: context.runtime.getModelSettings() }),
+				),
+				PUT: (request) => projectOperation(
+					request.params.projectId,
+					(context) => writeModelSettings(request, context.runtime, modelProber, context.root),
+				),
+			},
+			'/api/projects/:projectId/chain-runs': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json(chainRunsSnapshot(context.runtime)),
+				),
+				PUT: (request) => projectOperation(
+					request.params.projectId,
+					(context) => writeChainRuns(request, context.runtime),
+				),
+			},
+			'/api/projects/:projectId/executor-handoff': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json(executorHandoffSnapshot(context.runtime)),
+				),
+				PUT: (request) => projectOperation(
+					request.params.projectId,
+					(context) => writeExecutorHandoff(request, context.runtime),
+				),
+			},
 			// Agent-facing lifecycle routes are project-explicit. The registry
 			// guard runs before the current runtime or any of its collaborators.
 			'/api/projects/:projectId/snapshot': (request) => projectOperation(

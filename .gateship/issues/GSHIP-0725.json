@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-725",
   "title": "Escopar politicas de execucao ao projeto selecionado",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T13:01:38.258Z",
-  "updatedAt": "2026-08-23T13:03:43.262Z",
+  "updatedAt": "2026-08-23T13:10:51.770Z",
   "description": "Tornar as politicas operacionais já persistidas em cada runtime.sqlite acessíveis pelo projeto selecionado. Adicionar, sob o mesmo projectOperation tipado, GET /api/projects/:projectId/providers e POST /api/projects/:projectId/providers/:providerId/select, GET/PUT /api/projects/:projectId/model-settings, GET/PUT /api/projects/:projectId/chain-runs e GET/PUT /api/projects/:projectId/executor-handoff. A autenticação e a disponibilidade dos CLIs continuam globais, mas provider selecionado, modelos e efforts por papel, chain-runs, pause e executor-handoff devem ser lidos e gravados somente no runtime do projectId; a prova de modelo deve usar a raiz desse projeto. Fazer o cliente escopar essas leituras e escritas pelo projectId da rota. Para qualquer projeto registrado ready, a rota /projects/:projectId/settings deve renderizar Providers, Models by role, Run queue, Executor handoff, Project brief e Automatic handoff usando aquele projeto; conexões de provider continuam reutilizando a credencial global. Manter no projeto de boot os painéis globais e ainda não escopados, incluindo perfil do operador, self-update, diagnósticos e notificações. Preservar /api/providers, /api/model-settings, /api/chain-runs e /api/executor-handoff como aliases do projeto de boot, sem copiar ou migrar ajustes. Projeto desconhecido ou não pronto recebe a recusa tipada existente sem compor runtime nem alterar qualquer configuração. Não criar defaults globais de modelo/provider, não alterar credenciais, RunStore, schema, lifecycle, admission, notificações ou diagnósticos e não adicionar tabs, dependência ou nova página.",
   "specSource": "operator",
   "spec": {

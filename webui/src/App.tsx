@@ -4224,18 +4224,11 @@ function OnboardingSurface({
 	);
 }
 
-function SettingsSurface(props: AppProps): React.ReactElement {
+function SettingsSurface(props: AppProps & { bootRuntimeExtras: boolean }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
 			<ProjectPanel catalog={catalog} project={props.project} />
-			<OperatorProfilePanel
-				catalog={catalog}
-				onSaveOperatorProfile={props.onSaveOperatorProfile}
-				operatorProfile={props.operatorProfile}
-				pending={props.pending}
-				suggestedTimezone={props.suggestedTimezone}
-			/>
 			<ProvidersPanel
 				catalog={catalog}
 				claudeCredentialError={props.claudeCredentialError}
@@ -4267,30 +4260,41 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				onSetExecutorHandoff={props.onSetExecutorHandoff}
 				pending={props.pending}
 			/>
-			<SelfUpdatePanel
-				catalog={catalog}
-				locale={props.locale}
-				onSetSelfUpdate={props.onSetSelfUpdate}
-				pending={props.pending}
-				selfUpdate={props.selfUpdate}
-			/>
-			<DiagnosticSchedulePanel
-				catalog={catalog}
-				diagnostics={props.diagnostics}
-				locale={props.locale}
-				onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
-				pending={props.pending}
-			/>
-			<NotificationsPanel
-				catalog={catalog}
-				notificationChannels={props.notificationChannels}
-				notificationPermission={props.notificationPermission}
-				onEnableNotifications={props.onEnableNotifications}
-				onSendNotificationTest={props.onSendNotificationTest}
-				onSaveResendSettings={props.onSaveResendSettings}
-				onRemoveResendCredential={props.onRemoveResendCredential}
-				pending={props.pending}
-			/>
+			{props.bootRuntimeExtras ? (
+				<>
+					<OperatorProfilePanel
+						catalog={catalog}
+						onSaveOperatorProfile={props.onSaveOperatorProfile}
+						operatorProfile={props.operatorProfile}
+						pending={props.pending}
+						suggestedTimezone={props.suggestedTimezone}
+					/>
+					<SelfUpdatePanel
+						catalog={catalog}
+						locale={props.locale}
+						onSetSelfUpdate={props.onSetSelfUpdate}
+						pending={props.pending}
+						selfUpdate={props.selfUpdate}
+					/>
+					<DiagnosticSchedulePanel
+						catalog={catalog}
+						diagnostics={props.diagnostics}
+						locale={props.locale}
+						onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
+						pending={props.pending}
+					/>
+					<NotificationsPanel
+						catalog={catalog}
+						notificationChannels={props.notificationChannels}
+						notificationPermission={props.notificationPermission}
+						onEnableNotifications={props.onEnableNotifications}
+						onSendNotificationTest={props.onSendNotificationTest}
+						onSaveResendSettings={props.onSaveResendSettings}
+						onRemoveResendCredential={props.onRemoveResendCredential}
+						pending={props.pending}
+					/>
+				</>
+			) : null}
 			<ProjectBriefPanel
 				brief={props.brief}
 				catalog={catalog}
@@ -4321,6 +4325,19 @@ function NonCurrentProjectSurface({
 		if (surface === 'conversation') return <HomeSurface {...props} projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} bootRuntimeExtras={false} />;
+		if (surface === 'settings') {
+			return (
+				<>
+					<SettingsSurface {...props} bootRuntimeExtras={false} />
+					<UnregisterProjectPanel
+						catalog={LOCALE_CATALOG[props.locale].projects}
+						onUnregisterProject={props.onUnregisterProject}
+						pending={props.pending}
+						project={selectedProject}
+					/>
+				</>
+			);
+		}
 	}
 	return (
 		<UnavailableProjectSurface
@@ -4373,7 +4390,7 @@ function SelectedRouteSurface({
 	}
 	if (selection.surface === 'runs') return <RunsSurface {...props} />;
 	if (selection.surface === 'work') return <WorkSurface {...props} bootRuntimeExtras />;
-	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
+	if (selection.surface === 'settings') return <SettingsSurface {...props} bootRuntimeExtras />;
 	return <HomeSurface {...props} projectId={selectedProject.id} />;
 }
 

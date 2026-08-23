@@ -3256,7 +3256,7 @@ describe('operator shell', () => {
 		})).toContain('That repository is already a checkout of a different one.');
 	});
 
-	test('a ready non-current project has conversation while settings stay unavailable', () => {
+	test('a ready non-current project has conversation and project-scoped settings', () => {
 		const conversation = renderAt('/projects/project-other', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
@@ -3267,15 +3267,24 @@ describe('operator shell', () => {
 
 		const settings = renderAt('/projects/project-other/settings', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			project: {
+				...READY_PROJECT,
+				name: 'other-product',
+				repository: 'acme/other-product',
+				remoteUrl: 'git@github.com:acme/other-product.git',
+			},
 			runs: [runIn('interrupted')],
 		});
 		expect(settings).toContain('other-product');
 		expect(settings).toContain('acme/other-product');
-		expect(settings).toContain('Project runtime not loaded');
+		expect(settings).toContain('Local agents');
+		expect(settings).toContain('Model and effort by role');
+		expect(settings).toContain('Automatic run chaining');
+		expect(settings).toContain('Executor handoff between providers');
+		expect(settings).toContain('Project brief');
+		expect(settings).toContain('Automatic handoff');
 		expect(settings).not.toContain('CAM-900');
 		expect(settings).not.toContain('acme/gateship');
-		expect(settings).not.toContain('>Resume<');
-		expect(settings).not.toContain('>Start<');
 		expect(settings).not.toContain('Operator profile');
 	});
 

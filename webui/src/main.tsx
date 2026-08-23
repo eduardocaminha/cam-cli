@@ -226,16 +226,16 @@ function useOperationalRun(): {
 		void Promise.all([
 			fetchRuns(SELECTED_PROJECT_ID),
 			fetchBacklog(SELECTED_PROJECT_ID),
-			fetchProviders(),
+			fetchProviders(SELECTED_PROJECT_ID),
 			fetchChat(SELECTED_PROJECT_ID),
 			fetchBrief(SELECTED_PROJECT_ID),
 			fetchProposals(),
 			fetchResolvedProposals(),
-			fetchModelSettings(),
-			fetchChainRuns(),
-			fetchExecutorHandoff(),
+			fetchModelSettings(SELECTED_PROJECT_ID),
+			fetchChainRuns(SELECTED_PROJECT_ID),
+			fetchExecutorHandoff(SELECTED_PROJECT_ID),
 			fetchNotificationChannels(),
-			fetchProjectStatus(),
+			fetchProjectStatus(SELECTED_PROJECT_ID),
 			fetchProjects(),
 			fetchOperatorProfile(),
 			fetchDiagnostics(),
@@ -567,9 +567,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSaveBrief={(draft) => send(() => saveBrief(draft, SELECTED_PROJECT_ID))}
 			onSaveDiagnosticSchedule={(enabled, cadence) =>
 				send(() => saveDiagnosticSchedule(enabled, cadence))}
-			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
-			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
-			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled))}
+			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft, SELECTED_PROJECT_ID))}
+			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled, SELECTED_PROJECT_ID))}
+			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled, SELECTED_PROJECT_ID))}
 			// GSHIP-718: importing clones into a checkout Gateship manages and
 			// registers it, so success navigates the same way a fresh registration
 			// does -- straight to the imported project's own URL.
@@ -611,7 +611,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			}}
 			onSelectIssue={setSelectedIssueId}
 			onSelectLocale={selectLocale}
-			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
+			onSelectProvider={(providerId) => send(() => selectProvider(providerId, SELECTED_PROJECT_ID))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
 				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then((specified) => {
