@@ -11,6 +11,7 @@ import {
 	RunRuntime,
 	RuntimeUnavailableError,
 	type RuntimeExecutionInput,
+	type RuntimeCycleQuestionResolver,
 	type RuntimeShipInput,
 	type RuntimeShipper,
 	type RuntimeShipResult,
@@ -914,6 +915,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 	function createFullVerifyRuntime(
 		fullVerifier: RuntimeVerifier,
 		shipper: RuntimeShipper,
+		cycleQuestionResolver?: RuntimeCycleQuestionResolver,
 	): { runtime: RunRuntime; executions: FullVerifyExecution[] } {
 		const executions: FullVerifyExecution[] = [];
 		const runtime = new RunRuntime({
@@ -930,6 +932,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			fullVerifier,
 			shipper,
+			...(cycleQuestionResolver === undefined ? {} : { cycleQuestionResolver }),
 		});
 		return { runtime, executions };
 	}
@@ -1029,13 +1032,40 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			'run.full-verify-fix-requested',
 			'run.work-completed',
 			'run.verified',
-			'run.full-verify-fix-limit',
+			'run.cycle-question',
+			'run.review-fix-limit',
 		]);
 		expect(runtime.listEvents().at(-1)?.payload).toEqual({
+			questionId: 'run-full-verify',
 			findings: 'bun run verify: lint failed in test/',
+			origin: 'full-verify',
+			reason: 'Cycle question resolver is unavailable.',
 		});
 		expect(executions).toHaveLength(2);
 		expect(shipCalls).toBe(0);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('routes a later full verification failure through the internal resolver', async () => {
+		let calls = 0;
+		const { runtime } = createFullVerifyRuntime(
+			{ verify: async () => {
+				calls += 1;
+				return calls < 3 ? { ok: false, detail: `full verify failure ${calls}` } : { ok: true };
+			} },
+			{ ship: async () => ({ outcome: 'merged', prNumber: 732 }) },
+			{ resolve: async (input) => {
+				expect(input.origin).toBe('full-verify');
+				return { outcome: 'continue', guidance: 'Apply the verification correction.', usage: { model: 'model', effort: 'high' } };
+			} },
+		);
+		const run = runtime.startRun('GSHIP-732');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+		expect(runtime.getRun(run.id)?.fixRounds).toBe(2);
+		expect(runtime.listRunDecisionEvents(run.id).find((event) => event.kind === 'run.cycle-question')?.payload)
+			.toMatchObject({ origin: 'full-verify' });
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({ attentionRequests: 0, operatorInterventions: 0 });
 		await runtime.stop();
 		runtime.close();
 	});

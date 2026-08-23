@@ -79,10 +79,13 @@ export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): stri
 		...OPERATOR_LANGUAGE_CONTRACT,
 		'',
 		'Current independent-review finding:',
+		`Finding origin: ${input.origin}.`,
 		input.finding,
 		'',
 		'Prior durable cycle responses:',
 		JSON.stringify(input.priorResponses),
+		'',
+		'If the same finding has returned without concrete new executable guidance or evidence of progress, return operator with that stall as the public reason. A new technical finding within the approved contract must return continue.',
 	].join('\n');
 }
 

@@ -189,15 +189,20 @@ export interface RuntimeCycleResponseUsage {
 export interface RuntimeCycleResponse {
 	questionId: string;
 	outcome: 'continue' | 'operator';
+	finding: string;
+	origin: RuntimeCycleQuestionOrigin;
 	text: string;
 	createdAt: string;
 }
+
+export type RuntimeCycleQuestionOrigin = 'review' | 'full-verify';
 
 export interface RuntimeCycleQuestionInput {
 	runId: string;
 	issueId: string;
 	workspace: string;
 	finding: string;
+	origin: RuntimeCycleQuestionOrigin;
 	priorResponses: readonly RuntimeCycleResponse[];
 	providerId: AgentProviderId;
 	signal: AbortSignal;
@@ -344,7 +349,7 @@ export interface RunProviderWait {
 	provider: AgentProviderId;
 	kind: ProviderErrorKind;
 	message: string;
-	phase: 'working' | 'review';
+	phase: 'working' | 'review' | 'full-verify';
 	retryAt?: string;
 }
 
@@ -397,8 +402,7 @@ interface ActiveRun {
 }
 
 /**
- * One implementation attempt: the first pass, the single review fix, or the
- * single full-verification fix (GSHIP-649).
+ * One implementation attempt and its current correction context.
  */
 interface RunAttempt {
 	resume: boolean;
@@ -773,7 +777,7 @@ export class RunRuntime {
 			|| typeof kind !== 'string'
 			|| !(PROVIDER_ERROR_KINDS as readonly string[]).includes(kind)
 			|| typeof message !== 'string'
-			|| (phase !== 'working' && phase !== 'review')) {
+			|| (phase !== 'working' && phase !== 'review' && phase !== 'full-verify')) {
 			return null;
 		}
 		return {
@@ -1035,7 +1039,7 @@ export class RunRuntime {
 		// `run.started` an interrupted run has always resumed with, so its round
 		// accounting does not change with the phase it re-enters.
 		const resumeKind = run.state === 'waiting-provider' ? 'run.provider-retry-started' : 'run.started';
-		if (resumePhase !== 'review') {
+		if (resumePhase !== 'review' && resumePhase !== 'full-verify') {
 			this.#transition(run.id, 'working', resumePhase === 'working' ? resumeKind : 'run.started');
 		}
 
@@ -1047,7 +1051,7 @@ export class RunRuntime {
 				run,
 				signal,
 				firstAttempt,
-				resumePhase === 'review' ? resumeKind : null,
+				resumePhase === 'review' || resumePhase === 'full-verify' ? resumePhase : null,
 			);
 		} catch (error) {
 			this.#settleDriveFailure(run.id, signal, error);
@@ -1077,10 +1081,8 @@ export class RunRuntime {
 	 * One pass per implementation attempt through work, review and the full
 	 * project verification, and -- once all three are clean -- the ship
 	 * attempt. A review finding or a full-verify failure (GSHIP-649) each buy
-	 * the run its own single automatic fix round; either one persisting past
-	 * that round ends the run at waiting-user instead of shipping or looping.
-	 * The fix-round ceiling for review lives in run-state.ts; full-verify's own
-	 * ceiling is tracked independently, by `#fullVerifyFixUsed`. `#review` owns
+	 * the run a correction; the cycle resolver decides whether a later finding
+	 * remains in scope or needs the operator. `#review` owns
 	 * the whole clean path through to `ready-to-ship`, including full
 	 * verification's own phase and retry, so this loop only ever sees one of:
 	 * a fix-round attempt to redo, or the settled run.
@@ -1091,10 +1093,19 @@ export class RunRuntime {
 		run: RunRecord,
 		signal: AbortSignal,
 		firstAttempt: RunAttempt,
-		resumeAtReview: string | null = null,
+		resumeAtReview: 'review' | 'full-verify' | null = null,
 	): Promise<void> {
 		let attempt = firstAttempt;
-		if (resumeAtReview !== null) {
+		if (resumeAtReview === 'full-verify') {
+			const next = await this.#enterFullVerify(
+				run, signal, this.#executionInput(run, signal, attempt), 'run.review-clean',
+			);
+			if (next === null) {
+				await this.#shipIfReady(run, signal);
+				return;
+			}
+			attempt = next;
+		} else if (resumeAtReview === 'review') {
 			const next = await this.#review(
 				run,
 				signal,
@@ -1128,7 +1139,7 @@ export class RunRuntime {
 		await this.#driveShip(shipper, run, signal);
 	}
 
-	#providerWaitPhase(runId: string): 'working' | 'review' {
+	#providerWaitPhase(runId: string): 'working' | 'review' | 'full-verify' {
 		return this.getRunProviderWait(runId)?.phase ?? 'working';
 	}
 
@@ -1141,7 +1152,7 @@ export class RunRuntime {
 	 * emitted while the run already sits there, such as the operator's own
 	 * guidance on the resume, carries the state forward and never names a phase.
 	 */
-	#resumePhase(run: RunRecord): 'working' | 'review' | null {
+	#resumePhase(run: RunRecord): 'working' | 'review' | 'full-verify' | null {
 		if (run.state === 'waiting-provider') return this.#providerWaitPhase(run.id);
 		if (run.state !== 'interrupted') return null;
 		const interruption = this.#store.listRunDecisionEvents(run.id)
@@ -1503,7 +1514,8 @@ export class RunRuntime {
 		const pendingQuestion = this.#pendingCycleQuestion(run.id);
 		if (pendingQuestion !== null) {
 			return this.#answerCycleQuestion(
-				run, signal, pendingQuestion.questionId, pendingQuestion.finding, executionInput.ciFeedback,
+				run, signal, pendingQuestion.questionId, pendingQuestion.finding,
+				pendingQuestion.origin, executionInput.ciFeedback,
 			);
 		}
 		const review = await reviewer.review(executionInput);
@@ -1515,20 +1527,7 @@ export class RunRuntime {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.review-clean');
 		}
 		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
-			if (this.#cycleContinues(run.id) >= 2) {
-				this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
-					summary: review.detail,
-					payload: { findings: review.detail },
-				});
-				return null;
-			}
-			const questionId = this.#newId();
-			this.#emit(run.id, 'run.cycle-question', {
-				questionId,
-				issueId: run.issueId,
-				finding: review.detail,
-			});
-			return this.#answerCycleQuestion(run, signal, questionId, review.detail, executionInput.ciFeedback);
+			return this.#askCycleQuestion(run, signal, review.detail, 'review', executionInput.ciFeedback);
 		}
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
 			payload: { findings: review.detail },
@@ -1546,19 +1545,20 @@ export class RunRuntime {
 			.flatMap((event) => {
 				const questionId = event.payload['questionId'];
 				const outcome = event.payload['outcome'];
+				const finding = event.payload['findings'];
+				const origin = event.payload['origin'];
+				const normalizedOrigin = origin === undefined ? 'review' : origin;
 				const text = outcome === 'continue' ? event.payload['guidance'] : event.payload['reason'];
 				if (typeof questionId !== 'string'
 					|| (outcome !== 'continue' && outcome !== 'operator')
+					|| typeof finding !== 'string'
+					|| (normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify')
 					|| typeof text !== 'string') return [];
-				return [{ questionId, outcome, text, createdAt: event.createdAt }];
+				return [{ questionId, outcome, finding, origin: normalizedOrigin, text, createdAt: event.createdAt }];
 			});
 	}
 
-	#cycleContinues(runId: string): number {
-		return this.#cycleResponses(runId).filter((response) => response.outcome === 'continue').length;
-	}
-
-	#recoveredCycleAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback'> | null {
+	#recoveredCycleAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback' | 'fullVerifyFeedback'> | null {
 		if (run.state !== 'interrupted') return null;
 		return this.#unconsumedCycleAttempt(run.id);
 	}
@@ -1570,7 +1570,7 @@ export class RunRuntime {
 	 * front of the existing executor session instead of reviewing unchanged
 	 * work or spending another cycle response.
 	 */
-	#unconsumedCycleAttempt(runId: string): Pick<RunAttempt, 'reviewFeedback'> | null {
+	#unconsumedCycleAttempt(runId: string): Pick<RunAttempt, 'reviewFeedback' | 'fullVerifyFeedback'> | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const responseIndex = events.findLastIndex((event) =>
 			event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue');
@@ -1581,8 +1581,14 @@ export class RunRuntime {
 		const response = events[responseIndex];
 		const finding = response?.payload['findings'];
 		const guidance = response?.payload['guidance'];
+		const origin = response?.payload['origin'];
+		const normalizedOrigin = origin === undefined ? 'review' : origin;
 		if (typeof finding !== 'string' || typeof guidance !== 'string') return null;
-		return { reviewFeedback: this.#cycleReviewFeedback(finding, guidance) };
+		if (normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify') return null;
+		const feedback = this.#cycleReviewFeedback(finding, guidance);
+		return normalizedOrigin === 'review'
+			? { reviewFeedback: feedback }
+			: { fullVerifyFeedback: feedback };
 	}
 
 	/** Rebuild CI context until that correction reaches ready-to-ship or a terminal state. */
@@ -1612,7 +1618,11 @@ export class RunRuntime {
 		return `${finding}\n\nBinding orchestrator guidance:\n${guidance}\n\nA no-change response is allowed only when backed by concrete evidence.`;
 	}
 
-	#pendingCycleQuestion(runId: string): { questionId: string; finding: string } | null {
+	#pendingCycleQuestion(runId: string): {
+		questionId: string;
+		finding: string;
+		origin: RuntimeCycleQuestionOrigin;
+	} | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const answered = new Set(this.#cycleResponses(runId).map((response) => response.questionId));
 		let supersededByOperator = false;
@@ -1622,13 +1632,30 @@ export class RunRuntime {
 			if (event?.kind !== 'run.cycle-question') continue;
 			const questionId = event.payload['questionId'];
 			const finding = event.payload['finding'];
+			const origin = event.payload['origin'];
+			const normalizedOrigin = origin === undefined ? 'review' : origin;
 			if (typeof questionId === 'string' && typeof finding === 'string'
+				&& (normalizedOrigin === 'review' || normalizedOrigin === 'full-verify')
 				&& !answered.has(questionId) && !supersededByOperator) {
-				return { questionId, finding };
+				return { questionId, finding, origin: normalizedOrigin };
 			}
 			return null;
 		}
 		return null;
+	}
+
+	async #askCycleQuestion(
+		run: RunRecord,
+		signal: AbortSignal,
+		finding: string,
+		origin: RuntimeCycleQuestionOrigin,
+		ciFeedback?: string,
+	): Promise<RunAttempt | null> {
+		const questionId = this.#newId();
+		this.#emit(run.id, 'run.cycle-question', {
+			questionId, issueId: run.issueId, finding, origin,
+		});
+		return this.#answerCycleQuestion(run, signal, questionId, finding, origin, ciFeedback);
 	}
 
 	async #answerCycleQuestion(
@@ -1636,13 +1663,14 @@ export class RunRuntime {
 		signal: AbortSignal,
 		questionId: string,
 		finding: string,
+		origin: RuntimeCycleQuestionOrigin,
 		ciFeedback?: string,
 	): Promise<RunAttempt | null> {
 		const resolver = this.#cycleQuestionResolver;
 		if (resolver === undefined) {
 			this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
 				summary: finding,
-				payload: { questionId, findings: finding, reason: 'Cycle question resolver is unavailable.' },
+				payload: { questionId, findings: finding, origin, reason: 'Cycle question resolver is unavailable.' },
 			});
 			return null;
 		}
@@ -1652,6 +1680,7 @@ export class RunRuntime {
 			issueId: run.issueId,
 			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			finding,
+			origin,
 			priorResponses: this.#cycleResponses(run.id),
 			providerId: run.providerId,
 			signal,
@@ -1674,6 +1703,7 @@ export class RunRuntime {
 				payload: {
 					questionId,
 					findings: finding,
+					origin,
 					reason,
 					latencyMs: Math.max(0, Math.round(performance.now() - started)),
 					provider: run.providerId,
@@ -1694,16 +1724,18 @@ export class RunRuntime {
 		if (result.outcome === 'operator') {
 			this.#transition(run.id, 'waiting-user', 'run.cycle-response', {
 				summary: normalized,
-				payload: { ...responsePayload, findings: finding },
+				payload: { ...responsePayload, findings: finding, origin },
 			});
 			return null;
 		}
 		this.#transition(run.id, 'working', 'run.cycle-response', {
-			payload: { ...responsePayload, findings: finding },
+			payload: { ...responsePayload, findings: finding, origin },
 		});
 		return {
 			resume: true,
-			reviewFeedback: this.#cycleReviewFeedback(finding, normalized),
+			...(origin === 'review'
+				? { reviewFeedback: this.#cycleReviewFeedback(finding, normalized) }
+				: { fullVerifyFeedback: this.#cycleReviewFeedback(finding, normalized) }),
 			...(ciFeedback === undefined ? {} : { ciFeedback }),
 		};
 	}
@@ -1738,6 +1770,13 @@ export class RunRuntime {
 			return null;
 		}
 		this.#transition(run.id, 'full-verify', cleanKind);
+		const pendingQuestion = this.#pendingCycleQuestion(run.id);
+		if (pendingQuestion !== null) {
+			return this.#answerCycleQuestion(
+				run, signal, pendingQuestion.questionId, pendingQuestion.finding,
+				pendingQuestion.origin, executionInput.ciFeedback,
+			);
+		}
 		const result = await fullVerifier.verify(executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
@@ -1749,11 +1788,7 @@ export class RunRuntime {
 		}
 		const detail = result.detail ?? 'Full project verification failed.';
 		if (this.#fullVerifyFixUsed(run.id)) {
-			this.#transition(run.id, 'waiting-user', 'run.full-verify-fix-limit', {
-				summary: detail,
-				payload: { findings: detail },
-			});
-			return null;
+			return this.#askCycleQuestion(run, signal, detail, 'full-verify', executionInput.ciFeedback);
 		}
 		this.#transition(run.id, 'working', 'run.full-verify-fix-requested', {
 			payload: { findings: detail },
