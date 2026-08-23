@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-711",
   "title": "Retomar automaticamente runs após retryAt do provider",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T01:24:01.633Z",
-  "updatedAt": "2026-08-23T01:46:04.854Z",
+  "updatedAt": "2026-08-23T02:02:26.917Z",
   "description": "Adicionar retomada automática determinística para uma run em waiting-provider quando o evento durável mais recente carregar retryAt válido e esse instante tiver chegado. O dono deve ser o RunRuntime em processo, sem novo daemon, fila, cron externo ou intervenção do orquestrador. O scheduler usa relógio e timer injetáveis, inicia com o runtime, trata imediatamente um retry vencido após restart e para junto com ele. Antes de retomar, confirma que a run continua waiting-provider, não tem owner ativo e que o wait consultado ainda é o mais recente; então reutiliza resumeRun sem guidance, preservando provider, sessão, worktree e fase working ou review. Registrar fonte automática e ligação ao wait anterior em evento durável, sem incrementar operatorInterventions ou attentionRequests. Uma nova recusa do provider pode produzir outro wait e novo retryAt, mas cada evento de wait admite no máximo uma tentativa automática e nunca cria loop apertado; retryAt ausente ou inválido permanece aguardando. Resume manual continua disponível e vence a corrida pelo owner existente. Cobrir com testes determinísticos: retry futuro não dispara cedo, dispara uma vez no prazo, retry vencido após restart, fase de review preservada, corrida com resume manual, novo hold reagendado, retryAt ausente, stop cancela timer e métricas continuam sem intervenção humana. Evidência real: GSHIP-708 ficou waiting-provider após retryAt 2026-08-23T00:50:00Z até 2026-08-23T01:06:55Z e só retomou quando o endpoint sem guidance foi chamado; depois completou review, full verify, PR, CI e merge com operatorInterventions 0. Fora de escopo: fallback entre providers, mudança de modelo, orientação sintética, retries de erros não tipados, backoff genérico ou nova operação de agente.",
   "specSource": "operator",
   "spec": {

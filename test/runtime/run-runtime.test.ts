@@ -8,7 +8,7 @@ import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-questi
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
-import { RunRuntime, type RuntimeShipInput } from '../../src/runtime/run-runtime.ts';
+import { RunRuntime, type RuntimeShipInput, type RuntimeTimer } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { RunStore, type RunEvent, type RunRecord } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -281,6 +281,9 @@ describe('durable run runtime', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-provider-limit',
 			newSessionId: () => 'session-provider-limit',
+			// Before the hold's own retryAt: the automatic retry (GSHIP-711) is
+			// armed for later, so this test keeps covering the manual resume.
+			now: () => '2026-08-20T12:00:00.000Z',
 			workspace: {
 				prepare: () => '/workspaces/run-provider-limit',
 				release: ({ runId }) => {
@@ -425,6 +428,419 @@ describe('durable run runtime', () => {
 		]);
 		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({ text: 'Use the smaller seam.' });
 		await runtime.stop();
+		runtime.close();
+	});
+});
+
+// GSHIP-711: the run's own retomada automatica after a provider hold whose
+// retryAt has arrived, owned by this runtime and by nothing else. Every test
+// below drives an injected clock and an injected one-shot timer, so the
+// schedule is exercised without any wall-clock waiting.
+describe('automatic resume after the provider retry instant', () => {
+	function createFakeTimer() {
+		let armed: { handle: number; delayMs: number; callback: () => void } | null = null;
+		let nextHandle = 1;
+		let clears = 0;
+		const timer: RuntimeTimer = {
+			set: (callback, delayMs) => {
+				const handle = nextHandle;
+				nextHandle += 1;
+				armed = { handle, delayMs, callback };
+				return handle;
+			},
+			clear: (handle) => {
+				clears += 1;
+				if (armed?.handle === handle) armed = null;
+			},
+		};
+		return {
+			timer,
+			delay: () => armed?.delayMs ?? null,
+			clears: () => clears,
+			/** The armed callback itself, kept to replay a retry the runtime cancelled. */
+			callback: () => {
+				const current = armed;
+				if (current === null) throw new Error('no automatic retry is armed');
+				return current.callback;
+			},
+			fire: () => {
+				const current = armed;
+				if (current === null) throw new Error('no automatic retry is armed');
+				armed = null;
+				current.callback();
+			},
+		};
+	}
+
+	test('waits for the hold instant, then resumes the same work exactly once', async () => {
+		const calls: Array<{
+			resume: boolean;
+			sessionId: string;
+			cwd: string;
+			providerId?: string;
+			operatorGuidance?: string;
+		}> = [];
+		const fake = createFakeTimer();
+		let clock = '2026-08-23T00:40:00.000Z';
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry',
+			newSessionId: () => 'session-auto-retry',
+			now: () => clock,
+			timer: fake.timer,
+			workspace: { prepare: () => '/workspaces/run-auto-retry' },
+			executor: {
+				execute: async (input) => {
+					calls.push({
+						resume: input.resume,
+						sessionId: input.sessionId,
+						cwd: input.cwd,
+						...(input.providerId === undefined ? {} : { providerId: input.providerId }),
+						...(input.operatorGuidance === undefined
+							? {}
+							: { operatorGuidance: input.operatorGuidance }),
+					});
+					if (!input.resume) {
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+							retryAt: '2026-08-23T00:50:00.000Z',
+						});
+					}
+					return { outcome: 'completed', summary: 'retomado' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-708');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		// Ten minutes out, and nothing fires before it: the run is still resting.
+		expect(fake.delay()).toBe(600_000);
+		expect(calls).toHaveLength(1);
+		expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
+
+		clock = '2026-08-23T00:50:00.000Z';
+		fake.fire();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(calls).toEqual([
+			{
+				resume: false,
+				sessionId: 'session-auto-retry',
+				cwd: '/workspaces/run-auto-retry',
+				providerId: 'claude',
+			},
+			{
+				resume: true,
+				sessionId: 'session-auto-retry',
+				cwd: '/workspaces/run-auto-retry',
+				providerId: 'claude',
+			},
+		]);
+		expect(fake.delay()).toBeNull();
+
+		const waitEvent = runtime.listRunDecisionEvents(run.id)
+			.find((event) => event.kind === 'run.provider-waiting');
+		const automatic = runtime.listRunDecisionEvents(run.id)
+			.find((event) => event.kind === 'run.provider-retry-automatic');
+		expect(automatic?.payload).toEqual({
+			source: 'automatic',
+			waitSeq: waitEvent?.seq,
+			retryAt: '2026-08-23T00:50:00.000Z',
+		});
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain(
+			'run.provider-retry-started',
+		);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).not.toContain(
+			'run.operator-guidance',
+		);
+		// The whole point of the automatic path: the run's evaluation still
+		// reports no human in the loop.
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 0,
+			operatorInterventions: 0,
+			providerHolds: 1,
+		});
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('takes a retry that came due while the process was down, at the first tick', async () => {
+		const store = new RunStore(':memory:');
+		const resumes: boolean[] = [];
+		const executor = {
+			execute: async (input: { resume: boolean }) => {
+				resumes.push(input.resume);
+				if (!input.resume) {
+					throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+						retryAt: '2026-08-23T00:50:00.000Z',
+					});
+				}
+				return { outcome: 'completed' as const, summary: 'retomado apos reinicio' };
+			},
+		};
+		const verifier = { verify: async () => ({ ok: true }) };
+		const before = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-auto-retry-restart',
+			now: () => '2026-08-23T00:40:00.000Z',
+			timer: createFakeTimer().timer,
+			executor,
+			verifier,
+		});
+		const run = before.startRun('GSHIP-708');
+		await waitFor(() => before.getRun(run.id)?.state === 'waiting-provider');
+		await before.stop();
+
+		const fake = createFakeTimer();
+		const after = new RunRuntime({
+			cwd: '/project',
+			store,
+			now: () => '2026-08-23T01:06:55.000Z',
+			timer: fake.timer,
+			executor,
+			verifier,
+		});
+		// Already overdue at startup: armed for the very next tick, not skipped.
+		expect(fake.delay()).toBe(0);
+		expect(after.getRun(run.id)?.state).toBe('waiting-provider');
+
+		fake.fire();
+		await waitFor(() => after.getRun(run.id)?.state === 'ready-to-ship');
+		expect(resumes).toEqual([false, true]);
+
+		await after.stop();
+		after.close();
+	});
+
+	test('resumes a hold taken during review at review, without re-running the executor', async () => {
+		let executions = 0;
+		let reviews = 0;
+		const fake = createFakeTimer();
+		let clock = '2026-08-23T00:40:00.000Z';
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry-review',
+			now: () => clock,
+			timer: fake.timer,
+			executor: {
+				execute: async () => {
+					executions += 1;
+					return { outcome: 'completed', summary: 'implementado' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async () => {
+					reviews += 1;
+					if (reviews === 1) {
+						throw new ProviderCallError('codex', 'overloaded', 'Codex is overloaded.', {
+							retryAt: '2026-08-23T00:50:00.000Z',
+						});
+					}
+					return { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = runtime.startRun('GSHIP-709');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'review' });
+
+		clock = '2026-08-23T00:50:00.000Z';
+		fake.fire();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executions).toBe(1);
+		expect(reviews).toBe(2);
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('lets a manual resume win the run, leaving the armed retry with nothing to do', async () => {
+		let executions = 0;
+		const fake = createFakeTimer();
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry-race',
+			now: () => '2026-08-23T00:40:00.000Z',
+			timer: fake.timer,
+			executor: {
+				execute: async (input) => {
+					executions += 1;
+					if (!input.resume) {
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+							retryAt: '2026-08-23T00:50:00.000Z',
+						});
+					}
+					await Bun.sleep(20);
+					return { outcome: 'completed', summary: 'retomado pelo operador' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-710');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		const stale = fake.callback();
+
+		runtime.resumeRun(run.id, undefined, 'operator');
+		// The manual resume owns the run, so the armed retry is dropped -- and
+		// replaying it anyway resumes nothing a second time.
+		expect(fake.delay()).toBeNull();
+		stale();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executions).toBe(2);
+		expect(runtime.listRunDecisionEvents(run.id).map((event) => event.kind)).not.toContain(
+			'run.provider-retry-automatic',
+		);
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('reschedules the retry when a new refusal carries a later instant', async () => {
+		const fake = createFakeTimer();
+		let clock = '2026-08-23T00:40:00.000Z';
+		let attempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry-again',
+			now: () => clock,
+			timer: fake.timer,
+			executor: {
+				execute: async () => {
+					attempts += 1;
+					if (attempts <= 2) {
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+							retryAt: attempts === 1 ? '2026-08-23T00:50:00.000Z' : '2026-08-23T01:10:00.000Z',
+						});
+					}
+					return { outcome: 'completed', summary: 'retomado no segundo hold' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-711');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(fake.delay()).toBe(600_000);
+
+		clock = '2026-08-23T00:50:00.000Z';
+		fake.fire();
+		// The second refusal is its own hold, with its own instant twenty
+		// minutes out -- armed again, never taken early.
+		await waitFor(() => fake.delay() === 1_200_000);
+		expect(attempts).toBe(2);
+		expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
+
+		clock = '2026-08-23T01:10:00.000Z';
+		fake.fire();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(attempts).toBe(3);
+		expect(
+			runtime.listRunDecisionEvents(run.id)
+				.filter((event) => event.kind === 'run.provider-retry-automatic'),
+		).toHaveLength(2);
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('spends at most one automatic retry per hold instant', async () => {
+		const fake = createFakeTimer();
+		let clock = '2026-08-23T00:40:00.000Z';
+		let attempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry-once',
+			now: () => clock,
+			timer: fake.timer,
+			executor: {
+				execute: async () => {
+					attempts += 1;
+					// The same instant on every refusal: an already spent retry.
+					throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+						retryAt: '2026-08-23T00:50:00.000Z',
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-711');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		clock = '2026-08-23T00:50:00.000Z';
+		fake.fire();
+		await waitFor(() => attempts === 2);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+
+		expect(fake.delay()).toBeNull();
+		expect(attempts).toBe(2);
+		expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
+
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('keeps waiting when the hold carries no usable retryAt', async () => {
+		const holds: Array<{ retryAt?: string }> = [{}, { retryAt: 'em breve' }];
+		for (const [index, hold] of holds.entries()) {
+			const fake = createFakeTimer();
+			const runtime = new RunRuntime({
+				cwd: '/project',
+				store: new RunStore(':memory:'),
+				newId: () => `run-auto-retry-unusable-${index}`,
+				now: () => '2026-08-23T00:40:00.000Z',
+				timer: fake.timer,
+				executor: {
+					execute: async () => {
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', hold);
+					},
+				},
+				verifier: { verify: async () => ({ ok: true }) },
+			});
+			const run = runtime.startRun('GSHIP-712');
+			await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+			expect(fake.delay()).toBeNull();
+			expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('stops the scheduler with the runtime', async () => {
+		const fake = createFakeTimer();
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-auto-retry-stop',
+			now: () => '2026-08-23T00:40:00.000Z',
+			timer: fake.timer,
+			executor: {
+				execute: async () => {
+					throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+						retryAt: '2026-08-23T00:50:00.000Z',
+					});
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-713');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(fake.delay()).toBe(600_000);
+
+		await runtime.stop();
+		expect(fake.delay()).toBeNull();
+		expect(fake.clears()).toBeGreaterThan(0);
+		expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
 		runtime.close();
 	});
 });
