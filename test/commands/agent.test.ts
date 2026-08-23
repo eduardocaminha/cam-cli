@@ -66,7 +66,7 @@ describe('canonical agent CLI', () => {
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
 			'project.inspect', 'projects.list', 'projects.status', 'projects.register',
-			'projects.import',
+			'projects.import', 'projects.create',
 			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
@@ -79,10 +79,12 @@ describe('canonical agent CLI', () => {
 		expect(operations.find(({ name }) => name === 'projects.register')?.input).toBe('{root}');
 		// Importing names a repository, never a location on disk or a credential.
 		expect(operations.find(({ name }) => name === 'projects.import')?.input).toBe('{repository}');
+		expect(operations.find(({ name }) => name === 'projects.create')?.input)
+			.toBe('{repository, visibility, description?, authorization}');
 		// Removing one names the registration, never a location on disk.
 		expect(operations.find(({ name }) => name === 'projects.unregister')?.input).toBe('{projectId}');
 		for (const operation of operations.filter(({ name }) =>
-			!['project.inspect', 'projects.list', 'projects.status', 'projects.register', 'projects.import']
+			!['project.inspect', 'projects.list', 'projects.status', 'projects.register', 'projects.import', 'projects.create']
 				.includes(name))) {
 			expect(operation.input).toContain('projectId');
 		}
@@ -205,6 +207,47 @@ describe('canonical agent CLI', () => {
 		});
 		expect(JSON.stringify(result.output)).not.toContain('token');
 		expect(JSON.stringify(result.output)).not.toContain('password');
+	});
+
+	test('creates a repository through the shared endpoint and requires explicit authorization', async () => {
+		const missing = await executeAgent([
+			'call', 'projects.create', '--input', '{"repository":"acme/product","visibility":"private","authorization":" "}',
+		]);
+		expect(missing).toMatchObject({
+			exitCode: 1,
+			output: { ok: false, code: 'invalid-input', message: expect.stringContaining('authorization') },
+		});
+
+		let requested = '';
+		let sent: unknown;
+		const input = {
+			repository: 'acme/product',
+			visibility: 'public',
+			description: 'Product',
+			authorization: 'Create acme/product as a public repository.',
+		};
+		const created = await executeAgent([
+			'call', 'projects.create', '--input', JSON.stringify(input),
+		], async (url, init) => {
+			requested = String(url);
+			sent = JSON.parse(String(init?.body));
+			return jsonResponse({ ok: true, project: {
+				id: 'project-2', name: 'product', root: '/home/.gateship/projects/acme/product',
+				stateDir: '/home/.gateship/projects/acme/product/.gship', readiness: 'ready',
+				repository: 'acme/product', current: false,
+			} });
+		});
+		expect(requested).toBe('http://127.0.0.1:7777/api/projects/create');
+		expect(sent).toEqual(input);
+		expect(created).toMatchObject({
+			exitCode: 0,
+			output: {
+				ok: true,
+				operation: 'projects.create',
+				result: { project: { repository: 'acme/product', current: false } },
+			},
+		});
+		expect(JSON.stringify(created.output)).not.toContain('authorization');
 	});
 
 	// GSHIP-717: the CLI and the screen call the same service function through
