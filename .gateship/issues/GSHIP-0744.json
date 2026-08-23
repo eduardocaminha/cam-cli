@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-744",
+  "title": "Aceitar autorização Unicode no agent CLI",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T21:04:13.779Z",
+  "updatedAt": "2026-08-23T21:04:13.779Z",
+  "description": "Corrigir somente brief.update no agent CLI. Continuar exigindo authorization não vazia no input local, mas não copiar o texto arbitrário para o header HTTP: depois da validação, enviar um marcador ASCII constante de autorização explícita. O servidor continua verificando apenas presença, o body continua sem authorization e nenhum texto de autorização é persistido ou exposto. Atualizar a prova de roteamento para o marcador e adicionar uma prova pelo servidor real de que uma autorização em pt-BR com caracteres Unicode atualiza o brief. Não alterar as demais operações, o contrato do brief, a UI, SQLite, schema, dependências ou políticas.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir somente brief.update no agent CLI. Continuar exigindo authorization não vazia no input local, mas não copiar o texto arbitrário para o header HTTP: depois da validação, enviar um marcador ASCII constante de autorização explícita. O servidor continua verificando apenas presença, o body continua sem authorization e nenhum texto de autorização é persistido ou exposto. Atualizar a prova de roteamento para o marcador e adicionar uma prova pelo servidor real de que uma autorização em pt-BR com caracteres Unicode atualiza o brief. Não alterar as demais operações, o contrato do brief, a UI, SQLite, schema, dependências ou políticas.",
+    "verify": [
+      "bun test test/commands/agent.test.ts"
+    ]
+  }
+}
