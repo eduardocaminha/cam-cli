@@ -140,6 +140,12 @@ const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
  */
 const SELECTED_PROJECT_ID = projectIdOf(window.location.pathname);
 
+async function fetchDiagnosticsForScope(scope: string | null): Promise<DiagnosticsView> {
+	if (scope === null) return fetchDiagnostics(null);
+	const status = await fetchProjectStatus(scope);
+	return status.state === 'ready' ? fetchDiagnostics(scope) : emptyDiagnostics();
+}
+
 function browserTimeZone(): string {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
@@ -247,7 +253,7 @@ function useOperationalRun(): {
 			fetchProjectStatus(SELECTED_PROJECT_ID),
 			fetchProjects(),
 			fetchOperatorProfile(),
-			fetchDiagnostics(),
+			fetchDiagnosticsForScope(SELECTED_PROJECT_ID),
 			fetchSelfUpdate(),
 		])
 			.then(async ([
@@ -440,7 +446,7 @@ function useOperationalRun(): {
 		const state = diagnostics.scan?.state;
 		if (state !== 'queued' && state !== 'running') return;
 		const interval = setInterval(() => {
-			void fetchDiagnostics()
+			void fetchDiagnosticsForScope(SELECTED_PROJECT_ID)
 				.then(setDiagnostics)
 				.catch((error: unknown) => setStatus(String(error)));
 		}, 1_500);
@@ -590,14 +596,14 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				}));
 			}}
 			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, SELECTED_PROJECT_ID))}
-			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId))}
+			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId, SELECTED_PROJECT_ID))}
 			onDismissDiagnosticFinding={(findingId) =>
-				send(() => dismissDiagnosticFinding(findingId))}
+				send(() => dismissDiagnosticFinding(findingId, SELECTED_PROJECT_ID))}
 			onPromoteDiagnosticFinding={(findingId, draft) => {
-				send(() => promoteDiagnosticFinding(findingId, draft).then((created) =>
+				send(() => promoteDiagnosticFinding(findingId, draft, SELECTED_PROJECT_ID).then((created) =>
 					`${created.id} created from the diagnostic.`));
 			}}
-			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer))}
+			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer, SELECTED_PROJECT_ID))}
 			onPromoteProposal={(proposalId, draft) => {
 				// The created issue is a draft to review, not the next run: it is
 				// filed unapproved, so it is not selected to start either.

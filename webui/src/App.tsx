@@ -1921,82 +1921,6 @@ function ExecutorHandoffPanel({
 	);
 }
 
-function DiagnosticSchedulePanel({
-	diagnostics,
-	pending,
-	onSaveDiagnosticSchedule,
-	catalog,
-	locale,
-}: Pick<
-	AppProps,
-	'diagnostics' | 'pending' | 'onSaveDiagnosticSchedule'
-> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
-	const { schedule } = diagnostics;
-	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
-			description={catalog.diagnostics.description}
-			title={catalog.diagnostics.title}
-		>
-			<form
-				className="flex flex-col gap-4"
-				key={JSON.stringify(schedule)}
-				onSubmit={(event) => {
-					event.preventDefault();
-					const form = event.currentTarget as unknown as {
-						elements: { namedItem: (name: string) => { checked?: unknown; value?: unknown } | null };
-					};
-					const enabled = form.elements.namedItem('diagnostic-schedule-enabled')?.checked === true;
-					const cadenceValue = form.elements.namedItem('diagnostic-schedule-cadence')?.value;
-					const cadence: DiagnosticCadenceView = cadenceValue === 'daily' ? 'daily' : 'weekly';
-					onSaveDiagnosticSchedule(enabled, cadence);
-				}}
-			>
-				<label className="flex items-center gap-2 text-sm">
-					<input
-						defaultChecked={schedule.enabled}
-						disabled={pending}
-						name="diagnostic-schedule-enabled"
-						type="checkbox"
-					/>
-					<span className="font-medium">{catalog.diagnostics.label}</span>
-				</label>
-				<label className="flex max-w-sm flex-col gap-1 text-sm" htmlFor="diagnostic-schedule-cadence">
-					<span className="font-medium">{catalog.diagnostics.cadence}</span>
-					<select
-						className={FIELD_CLASS}
-						defaultValue={schedule.cadence}
-						disabled={pending}
-						id="diagnostic-schedule-cadence"
-						name="diagnostic-schedule-cadence"
-					>
-						<option value="daily">{catalog.diagnostics.cadenceLabels.daily}</option>
-						<option value="weekly">{catalog.diagnostics.cadenceLabels.weekly}</option>
-					</select>
-				</label>
-				<div className="flex flex-wrap items-center gap-2 text-sm">
-					<Badge variant="outline">{schedule.analyzer}</Badge>
-					{!schedule.enabled ? (
-						<span className="text-muted-foreground">{catalog.diagnostics.disabled}</span>
-					) : schedule.overdue ? (
-						<Badge variant="warning">{catalog.diagnostics.overdue}</Badge>
-					) : (
-						<span className="text-muted-foreground">
-							{catalog.diagnostics.nextRun(schedule.nextRunAt === null ? catalog.diagnostics.calculating : formatUsageTime(schedule.nextRunAt, locale))}
-						</span>
-					)}
-				</div>
-				<p className="text-muted-foreground text-xs">
-					{catalog.diagnostics.guidance}
-				</p>
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
-					{catalog.diagnostics.save}
-				</button>
-			</form>
-		</ContextPanel>
-	);
-}
-
 function SelfUpdatePanel({
 	selfUpdate,
 	pending,
@@ -4089,10 +4013,7 @@ function ResolvedProposalsPanel({
  * history. Diagnostics remain boot-runtime-only. Proposals are project-scoped
  * and are shown for every ready project selected in the browser.
  */
-function WorkSurface({
-	bootRuntimeExtras,
-	...props
-}: AppProps & { bootRuntimeExtras: boolean }): React.ReactElement {
+function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const catalog = localeCatalog.work;
@@ -4115,8 +4036,7 @@ function WorkSurface({
 				pending={props.pending}
 			/>
 			<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
-			{bootRuntimeExtras ? (
-				<>
+			<>
 					<Separator />
 					<DiagnosticsPanel
 						catalog={catalog}
@@ -4128,8 +4048,7 @@ function WorkSurface({
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
 					/>
-				</>
-			) : null}
+			</>
 			<ProposalsPanel
 				catalog={catalog}
 				locale={props.locale}
@@ -4391,13 +4310,6 @@ function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 						pending={props.pending}
 						selfUpdate={props.selfUpdate}
 					/>
-					<DiagnosticSchedulePanel
-						catalog={catalog}
-						diagnostics={props.diagnostics}
-						locale={props.locale}
-						onSaveDiagnosticSchedule={props.onSaveDiagnosticSchedule}
-						pending={props.pending}
-					/>
 			<NotificationsPanel
 						catalog={catalog}
 						notificationChannels={props.notificationChannels}
@@ -4430,7 +4342,7 @@ function NonCurrentProjectSurface({
 	if (selectedProject.readiness === 'ready') {
 		if (surface === 'conversation') return <HomeSurface {...props} projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
-		if (surface === 'work') return <WorkSurface {...props} bootRuntimeExtras={false} />;
+		if (surface === 'work') return <WorkSurface {...props} />;
 		if (surface === 'settings') {
 			return (
 				<>
@@ -4496,7 +4408,7 @@ function SelectedRouteSurface({
 		);
 	}
 	if (selection.surface === 'runs') return <RunsSurface {...props} />;
-	if (selection.surface === 'work') return <WorkSurface {...props} bootRuntimeExtras />;
+	if (selection.surface === 'work') return <WorkSurface {...props} />;
 	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
 	return <HomeSurface {...props} projectId={selectedProject.id} />;
 }

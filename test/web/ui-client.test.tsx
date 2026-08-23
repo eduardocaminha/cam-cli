@@ -2327,11 +2327,11 @@ describe('settings surface', () => {
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
 		}
 		for (const [html, labels] of [
-			[globalEnglish, ['Settings', 'Operator', 'Gateship updates', 'Diagnostic schedule', 'Notifications', 'Save profile', 'Save schedule', 'Disabled.']],
-			[globalPortuguese, ['Ajustes', 'Operador', 'Atualizações do Gateship', 'Agenda de diagnósticos', 'Notificações', 'Salvar perfil', 'Salvar agenda', 'Desativada.']],
+			[globalEnglish, ['Settings', 'Operator', 'Gateship updates', 'Notifications', 'Save profile']],
+			[globalPortuguese, ['Ajustes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
 		] as const) {
 			expectContainsAll(html, labels);
-			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo', 'react']);
+			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo']);
 			expectNotContainsAll(html, ['Project runtime', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Automatic handoff', 'Project brief']);
 		}
 		for (const html of [english, portuguese]) {
@@ -3104,39 +3104,12 @@ describe('settings surface', () => {
 		expect(updates).toContain('1.0.0 → 2.0.0');
 	});
 
-	test('the diagnostic schedule is bounded, off by default and closed by default', () => {
-		const html = globalSettingsPage();
-		const schedule = panel(html, 'Diagnostic schedule');
-
-		expect(panelIsOpen(html, 'Diagnostic schedule')).toBe(false);
-		expect(schedule).toContain('at most one overdue diagnostic');
-		expect(schedule).toContain('name="diagnostic-schedule-enabled"');
-		expect(schedule).not.toContain('checked=""');
-		expect(schedule).toContain('<option value="weekly" selected="">Weekly</option>');
-		expect(schedule).toContain('Missed periods do not create catch-up runs.');
-		expect(schedule).not.toMatch(/cron/i);
-		expect(buttonIsEnabled(schedule, 'Save schedule')).toBe(true);
+	test('the diagnostic schedule is not shown on the global settings route', () => {
+		expect(globalSettingsPage()).not.toContain('Diagnostic schedule');
 	});
 
-	test('the diagnostic schedule shows its due state and holds every control during a command', () => {
-		const diagnostics = emptyDiagnostics();
-		diagnostics.schedule = {
-			enabled: true,
-			analyzer: 'react',
-			cadence: 'daily',
-			lastScanAt: '2026-08-19T12:00:00.000Z',
-			nextRunAt: '2026-08-20T12:00:00.000Z',
-			overdue: true,
-		};
-		const due = panel(globalSettingsPage({ diagnostics }), 'Diagnostic schedule');
-		expect(due).toContain('checked=""');
-		expect(due).toContain('<option value="daily" selected="">Daily</option>');
-		expect(due).toContain('overdue');
-
-		const held = panel(globalSettingsPage({ diagnostics, pending: true }), 'Diagnostic schedule');
-		expect(elementWith(held, 'name="diagnostic-schedule-enabled"')).toContain('disabled=""');
-		expect(elementWith(held, 'name="diagnostic-schedule-cadence"')).toContain('disabled=""');
-		expect(buttonIsEnabled(held, 'Save schedule')).toBe(false);
+	test('the diagnostic schedule is not shown on the global settings route', () => {
+		expect(globalSettingsPage({ diagnostics: emptyDiagnostics() })).not.toContain('Diagnostic schedule');
 	});
 
 	// GSHIP-650: a stopped queue asks for attention in the shell header now,
@@ -3603,10 +3576,9 @@ describe('operator shell', () => {
 		expect(html).toContain('Specify existing idea');
 		expect(html).toContain('CAM-950');
 		expect(html).toContain('New issue');
-		// Diagnostics still belong to the boot runtime, but proposal data is scoped
-		// to this selected project and must remain visible.
-		expect(html).not.toContain('Gateship Diagnostics');
-		expect(html).not.toContain('regra-autoral');
+		// Diagnostics and proposal data are both scoped to this selected project.
+		expect(html).toContain('Gateship Diagnostics');
+		expect(html).toContain('regra-autoral');
 		expect(html).toContain('Derived proposals');
 		expect(html).toContain('Resolved proposals');
 		expect(html).toContain('proposta do boot');

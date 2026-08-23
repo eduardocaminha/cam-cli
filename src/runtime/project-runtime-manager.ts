@@ -8,6 +8,10 @@ export interface ManagedProjectRuntime {
 		listRuns(limit?: number): RunRecord[];
 		acquireAdmissionFence(reason: string): () => void;
 	};
+	diagnostics?: {
+		isActive(): boolean;
+		setAdmissionBlocked(reason: string | null): void;
+	};
 	close(): Promise<void> | void;
 }
 
@@ -77,7 +81,8 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 
 	/** Read every ready project's durable runs, composing unopened runtimes as needed. */
 	isIdle(): boolean {
-		return this.#firstBlockingRun() === null;
+		return this.#firstBlockingRun() === null
+			&& [...this.#contexts.values()].every((context) => !context.diagnostics?.isActive());
 	}
 
 	/** Close one product-wide admission fence and only the fence it created. */
@@ -97,6 +102,9 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	/** Admit a new run only when the requested project is idle. */
 	admitStart(projectId: string): T {
 		const requested = this.#contexts.get(projectId) ?? this.get(projectId).context;
+		if (requested.diagnostics?.isActive()) {
+			throw new RuntimeConflictError(`diagnostic in project ${projectId} is still running; finish or cancel it first`);
+		}
 		const blocking = this.#firstBlockingRun(projectId);
 		if (blocking !== null) throw projectAdmissionConflict(projectId, blocking);
 		return requested;
@@ -109,6 +117,9 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	 */
 	admitResume(projectId: string, runId: string): T {
 		const requested = this.#contexts.get(projectId) ?? this.get(projectId).context;
+		if (requested.diagnostics?.isActive()) {
+			throw new RuntimeConflictError(`diagnostic in project ${projectId} is still running; finish or cancel it first`);
+		}
 		const blocking = this.#firstBlockingRun(projectId, runId);
 		if (blocking !== null) throw projectAdmissionConflict(projectId, blocking);
 		return requested;
@@ -151,9 +162,14 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 
 	#applyAdmissionFence(context: T): void {
 		if (this.#admissionFence === null || this.#contextFenceReleases.has(context)) return;
+		context.diagnostics?.setAdmissionBlocked(this.#admissionFence.reason);
+		const releaseRuntimeFence = context.runtime.acquireAdmissionFence(this.#admissionFence.reason);
 		this.#contextFenceReleases.set(
 			context,
-			context.runtime.acquireAdmissionFence(this.#admissionFence.reason),
+			() => {
+				releaseRuntimeFence();
+				context.diagnostics?.setAdmissionBlocked(null);
+			},
 		);
 	}
 }

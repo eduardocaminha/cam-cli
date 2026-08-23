@@ -60,6 +60,7 @@ import {
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
+import { isTerminalRunState } from '../runtime/run-state.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
 	abandonOperatorIssue,
@@ -273,6 +274,7 @@ interface ProjectCycleContext {
 	root: string;
 	stateDir: string;
 	runtime: RunRuntime;
+	diagnostics: DiagnosticsRuntime;
 	projectBrief: ProjectBriefAccess;
 	issueIntake: IssueIntakeWriter;
 	issueSpecifier: IssueSpecifier;
@@ -2689,7 +2691,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
 		adapters: [new ReactDoctorAdapter(options.cwd, undefined, stateDir)],
-		isProjectIdle: () => projectRuntimes.isIdle(),
+		isProjectIdle: () => runRuntime.listRuns().every((run) => isTerminalRunState(run.state)),
 	});
 	let selfUpdate = options.selfUpdate;
 	// The same durable event log the SSE stream below reads per-connection
@@ -2718,6 +2720,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		root: projectRoot,
 		stateDir,
 		runtime: runRuntime,
+		diagnostics,
 		projectBrief,
 		issueIntake,
 		issueSpecifier,
@@ -2774,6 +2777,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			project.stateDir,
 			resolveClaudeCredentialForSpawn,
 		));
+		const diagnostics = new DiagnosticsRuntime({
+			store: new RunStore(join(project.stateDir, 'runtime.sqlite')),
+			workspace: new GitDiagnosticWorkspace(project.root, undefined, project.stateDir),
+			adapters: [new ReactDoctorAdapter(project.root, undefined, project.stateDir)],
+			isProjectIdle: () => runtime.listRuns().every((run) => isTerminalRunState(run.state)),
+		});
 		const writers = defaultIssueWriters(project.root, ensureIdentity);
 		const unsubscribe = runtime.subscribe(createRemoteNotifier({
 			cwd: project.root,
@@ -2783,7 +2792,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		const context = {
 			root: project.root,
 			stateDir: project.stateDir,
-			runtime,
+			 runtime,
+			diagnostics,
 			projectBrief: {
 				get: () => runtime.getProjectBrief(),
 				set: (brief) => runtime.setProjectBrief(brief),
@@ -2832,6 +2842,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			unsubscribe();
 			if (options.orchestrator === undefined) await context.orchestrator.stop();
 			await runtime.stop();
+			await diagnostics.stop();
+			diagnostics.close();
 			runtime.close();
 		};
 		return context;
@@ -3182,6 +3194,39 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				request.params.projectId,
 				(context) => createRunEventStream(context.runtime, request, requestServer),
 			),
+			'/api/projects/:projectId/diagnostics': {
+				GET: (request) => projectOperation(
+					request.params.projectId,
+					(context) => Response.json(context.diagnostics.snapshot()),
+				),
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => startDiagnosticFromOperator(request, context.diagnostics),
+				),
+			},
+			'/api/projects/:projectId/diagnostics/:scanId/cancel': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => cancelDiagnosticFromOperator(request, context.diagnostics, request.params.scanId),
+				),
+			},
+			'/api/projects/:projectId/diagnostic-findings/:findingId/dismiss': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => dismissDiagnosticFindingFromOperator(request, context.diagnostics, request.params.findingId),
+				),
+			},
+			'/api/projects/:projectId/diagnostic-findings/:findingId/promote': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => promoteDiagnosticFindingFromOperator(
+						request,
+						context.diagnostics,
+						request.params.findingId,
+						context.issueIntake,
+					),
+				),
+			},
 			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),
