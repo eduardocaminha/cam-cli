@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-714",
+  "title": "Restringir findings de review a defeitos materiais",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T02:58:55.876Z",
+  "updatedAt": "2026-08-23T02:58:55.876Z",
+  "description": "A GSHIP-712 provou uma regressao de eficiencia: um comentario obsoleto dentro de teste, sem efeito executavel ou observavel, produziu FINDINGS, retomou o executor Opus e disparou uma segunda revisao completa. Corrigir a causa no contrato canonico compartilhado por Claude e Codex em buildReviewPrompt. Definir CLEAN como ausencia de defeito material, nao como ausencia de qualquer melhoria possivel. Reservar FINDINGS a defeitos concretos e localizaveis que possam alterar comportamento executavel, seguranca, integridade de dados, o contrato aprovado, a validade da verificacao, uma interface publica ou a informacao observavel pelo operador. Orientar o revisor a omitir preferencias de estilo, refactors opcionais, nomes, comentarios internos obsoletos, prosa interna e pedidos de testes adicionais quando nao revelarem uma lacuna real de comportamento. Comentarios e documentacao continuam materiais quando forem publicos, contratuais, usados para operar o sistema ou capazes de induzir execucao/verificacao incorreta. Preservar revisor novo e read-only, verdict estruturado e o fix round limitado existente. Adicionar regressao focada ao prompt compartilhado e provar que ambos os providers recebem o mesmo contrato. Nao adicionar severidades, score, regex, filtro posterior, nova fase, segundo revisor, backlog de sugestoes ou mudanca no lifecycle.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "A GSHIP-712 provou uma regressao de eficiencia: um comentario obsoleto dentro de teste, sem efeito executavel ou observavel, produziu FINDINGS, retomou o executor Opus e disparou uma segunda revisao completa. Corrigir a causa no contrato canonico compartilhado por Claude e Codex em buildReviewPrompt. Definir CLEAN como ausencia de defeito material, nao como ausencia de qualquer melhoria possivel. Reservar FINDINGS a defeitos concretos e localizaveis que possam alterar comportamento executavel, seguranca, integridade de dados, o contrato aprovado, a validade da verificacao, uma interface publica ou a informacao observavel pelo operador. Orientar o revisor a omitir preferencias de estilo, refactors opcionais, nomes, comentarios internos obsoletos, prosa interna e pedidos de testes adicionais quando nao revelarem uma lacuna real de comportamento. Comentarios e documentacao continuam materiais quando forem publicos, contratuais, usados para operar o sistema ou capazes de induzir execucao/verificacao incorreta. Preservar revisor novo e read-only, verdict estruturado e o fix round limitado existente. Adicionar regressao focada ao prompt compartilhado e provar que ambos os providers recebem o mesmo contrato. Nao adicionar severidades, score, regex, filtro posterior, nova fase, segundo revisor, backlog de sugestoes ou mudanca no lifecycle.",
+    "verify": [
+      "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts && bun run typecheck"
+    ]
+  }
+}
