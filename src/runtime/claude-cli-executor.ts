@@ -206,12 +206,16 @@ export function buildWorkPrompt(
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
-		'',
-		...OPERATOR_LANGUAGE_CONTRACT,
 		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
 		...fullVerifySection,
+		'',
+		// GSHIP-708: the contract names the Issue record as the source of the
+		// operator's language, so it sits directly above it. Kept below the
+		// variable sections -- review findings, a failed verify log, operator
+		// guidance -- so no turn shape can push the two apart.
+		...OPERATOR_LANGUAGE_CONTRACT,
 		'',
 		'Issue record:',
 		issue,

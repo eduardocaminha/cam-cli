@@ -65,6 +65,16 @@ describe('agent cycle question resolver', () => {
 		}))).toContain(contract);
 	});
 
+	// GSHIP-708: this turn holds no Issue record, so the contract's fallback
+	// clause is the only thing naming a language source for it. Ruling out the
+	// instructions' own English without it would leave the resolver with none.
+	test('names a language source for a turn that carries no issue record', () => {
+		const prompt = buildCycleQuestionPrompt(questionInput());
+		expect(prompt).not.toContain('Issue record:');
+		expect(prompt).toContain('When a turn carries no Issue record');
+		expect(prompt).toContain('the review finding under discussion or the prior answers');
+	});
+
 	test('keeps the contract ahead of the finding and the prior responses', () => {
 		const prompt = buildCycleQuestionPrompt(questionInput());
 		expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))

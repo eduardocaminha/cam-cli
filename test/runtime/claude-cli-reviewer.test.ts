@@ -352,12 +352,12 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			'a real bug, a broken contract, or work outside the issue. Style preference',
 			'and speculation are not findings.',
 			'',
-			...OPERATOR_LANGUAGE_CONTRACT,
-			'',
 			'End your reply with a single JSON object on the last line and nothing after it:',
 			'{"verdict":"CLEAN","findings":[]}',
 			'or',
 			'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+			'',
+			...OPERATOR_LANGUAGE_CONTRACT,
 			'',
 			'Issue record:',
 			issue,
@@ -390,6 +390,28 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 		expect(buildReviewPrompt(issueId, issue, change, [])).toContain(contract);
 		expect(buildReviewPrompt(issueId, issue, change, ['Keep the smaller seam.']))
 			.toContain(contract);
+	});
+
+	// GSHIP-708: the contract names the Issue record as the source of the
+	// operator's language, so it sits between the verdict format and that
+	// record, next to both the expected output and the record itself. The
+	// decision block, which varies per round, stays above it.
+	test('keeps the contract between the verdict format and the issue record', () => {
+		for (const decisions of [[], ['Keep the smaller seam.']]) {
+			const prompt = buildReviewPrompt(issueId, issue, change, decisions);
+			expect(prompt).toContain([
+				'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+				'',
+				...OPERATOR_LANGUAGE_CONTRACT,
+				'',
+				'Issue record:',
+				issue,
+			].join('\n'));
+			expect(prompt.indexOf('End your reply'))
+				.toBeLessThan(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]));
+			expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))
+				.toBeLessThan(prompt.indexOf('Issue record:'));
+		}
 	});
 
 	test('multiple decisions render numbered in the order given', () => {

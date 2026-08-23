@@ -113,6 +113,11 @@ describe('conversational orchestrator', () => {
 		// this surface cannot drift from the executor, reviewer and cycle
 		// resolver that carry the same lines.
 		expect(prompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
+		// GSHIP-708: no Issue record reaches this surface, so the fallback
+		// clause is what names its language source.
+		expect(prompt).not.toContain('Issue record:');
+		expect(prompt).toContain('When a turn carries no Issue record');
+		expect(prompt).toContain('the transcript, the project brief');
 		expect(prompt).toContain('Lead with the answer or outcome.');
 		expect(prompt).toContain('State facts, inferences, and uncertainty honestly.');
 		expect(prompt).toContain('re-explain the previous answer instead of answering a different question');

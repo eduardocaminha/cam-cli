@@ -174,8 +174,6 @@ export function buildReviewPrompt(
 		'a real bug, a broken contract, or work outside the issue. Style preference',
 		'and speculation are not findings.',
 		'',
-		...OPERATOR_LANGUAGE_CONTRACT,
-		'',
 		...(decisions.length === 0 ? [] : [
 			'Decisions the operator has already made for this run, oldest first:',
 			...formatOperatorDecisionList(decisions),
@@ -189,6 +187,11 @@ export function buildReviewPrompt(
 		'{"verdict":"CLEAN","findings":[]}',
 		'or',
 		'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+		'',
+		// GSHIP-708: between the verdict format and the Issue record, so the
+		// contract sits next to both the expected output and the record whose
+		// natural language it names as the operator's language.
+		...OPERATOR_LANGUAGE_CONTRACT,
 		'',
 		'Issue record:',
 		issue,
