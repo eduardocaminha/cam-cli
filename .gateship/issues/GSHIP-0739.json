@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-739",
+  "title": "Provar isolamento de diagnósticos entre projetos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T17:47:22.625Z",
+  "updatedAt": "2026-08-23T17:47:33.458Z",
+  "description": "Adicionar somente a prova automatizada que faltou na GSHIP-738. Em um único teste de integração do servidor, registrar dois repositórios ready com stateDir e SQLite distintos e provar que snapshot, start, cancel, dismiss e promote de diagnóstico usam exclusivamente o projectId nomeado; que promote grava o draft apenas no repositório correto; que um diagnóstico ativo bloqueia run no mesmo projeto, mas não impede operação no outro; e que o fence global impede novos diagnósticos nos dois. Reutilizar os fixtures existentes. Não alterar o contrato do produto, a UI, o schema, o runtime de produção, dependências ou processos.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar somente a prova automatizada que faltou na GSHIP-738. Em um único teste de integração do servidor, registrar dois repositórios ready com stateDir e SQLite distintos e provar que snapshot, start, cancel, dismiss e promote de diagnóstico usam exclusivamente o projectId nomeado; que promote grava o draft apenas no repositório correto; que um diagnóstico ativo bloqueia run no mesmo projeto, mas não impede operação no outro; e que o fence global impede novos diagnósticos nos dois. Reutilizar os fixtures existentes. Não alterar o contrato do produto, a UI, o schema, o runtime de produção, dependências ou processos.",
+    "verify": [
+      "bun test test/web/diagnostics-api.test.ts test/runtime/project-runtime-manager.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "573f42ef27b79af48e9424752ee33291dff04b0fce167a5ad4647e63372d9b29",
+    "approvedAt": "2026-08-23T17:47:33.458Z"
+  }
+}
