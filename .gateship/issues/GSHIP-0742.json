@@ -2,10 +2,10 @@
   "id": "GSHIP-742",
   "title": "Provar cadência e agenda isoladas por projeto",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-08-23T18:16:11.232Z",
-  "updatedAt": "2026-08-23T18:16:23.598Z",
+  "updatedAt": "2026-08-23T18:28:56.110Z",
   "description": "Adicionar somente as provas automatizadas ausentes da GSHIP-740, sem alterar produção. Em ProjectRuntimeManager, registrar dois projetos ready e um não ready com DiagnosticsRuntime espiões; uma chamada a reconcileScheduledDiagnostics deve executar cada ready exatamente uma vez, ignorar o não ready e continuar o segundo mesmo quando o primeiro retorna busy. Provar também que startDiagnosticScheduler é idempotente e close remove seu único timer sem deixar trabalho pendente.\n\nNa API, usar dois projetos e SQLite distintos para fazer PUT apenas em /api/projects/:foreignId/diagnostics/schedule com enabled, cadence e analyzer; confirmar que o snapshot e a persistência do projeto estrangeiro mudam e o projeto de boot permanece igual. Reutilizar fixtures existentes. Não testar novamente o diagnóstico ad hoc, a UI ou todas as combinações de cadence.",
   "specSource": "operator",
   "spec": {
@@ -17,5 +17,6 @@
   "approval": {
     "fingerprint": "ac9f8b24d917591abac87b4a72368400fb9897377830eee83271dfee3c9f0dae",
     "approvedAt": "2026-08-23T18:16:23.598Z"
-  }
+  },
+  "abandonedReason": "Superseded by GSHIP-740: its final reviewed diff added the same two-project cadence, busy, scan, timer and scoped schedule isolation proofs, so executing GSHIP-742 would duplicate coverage."
 }
