@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
+import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import {
 	type DiagnosticDraft,
 	type DiagnosticFinding,
@@ -390,6 +391,13 @@ export interface RunCostSummary {
 	roles: RunCostRoleUsage[];
 }
 
+export interface PersistedRunHistory {
+	run: RunRecord;
+	events: RunEvent[];
+	evaluation: RunEvaluation;
+	cost: RunCostSummary;
+}
+
 /**
  * One rate-limit window's latest reported state (GSHIP-664), derived across
  * every `provider.rate-limit`/`review.rate-limit` event ever recorded --
@@ -577,6 +585,22 @@ function accumulateRoleUsage(
 	roles.set(role, existing);
 }
 
+export function summarizeRunCost(events: readonly RunEvent[]): RunCostSummary {
+	let totalCostUsd: number | null = null;
+	const breakdown = new Map<string, RunCostBreakdownEntry>();
+	const roles = new Map<RunCostRole, RoleUsageAccumulator>();
+	for (const event of events) {
+		const role = USAGE_EVENT_ROLES[event.kind];
+		if (role === undefined) continue;
+		totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, event.payload);
+		accumulateRoleUsage(roles, role, event.payload);
+	}
+	const roleUsage = [...roles.entries()]
+		.map(([role, acc]) => toRoleUsage(role, acc))
+		.filter((usage): usage is RunCostRoleUsage => usage !== undefined);
+	return { totalCostUsd, breakdown: [...breakdown.values()], roles: roleUsage };
+}
+
 /** Drops a role with nothing to report, the same absence-over-empty-value pattern as the breakdown. */
 function toRoleUsage(role: RunCostRole, acc: RoleUsageAccumulator): RunCostRoleUsage | undefined {
 	if (acc.thinkingTokens === undefined && acc.effort === undefined) return undefined;
@@ -727,6 +751,36 @@ function decodeEvent(row: EventRow): RunEvent {
 		createdAt: row.created_at,
 		eventClass: decodeEventClass(row.event_class),
 	};
+}
+
+/** Complete historical run facts, read without opening the mutable runtime. */
+export function readPersistedRunHistory(path: string): PersistedRunHistory[] {
+	const db = openReadOnlyDatabase(path);
+	try {
+		const runs = (db.query('SELECT * FROM runs ORDER BY created_at ASC, id ASC').all() as RunRow[])
+			.map(decodeRun);
+		const events = db.query(
+			"SELECT * FROM run_events WHERE event_class = 'decision' ORDER BY seq ASC",
+		).all() as EventRow[];
+		const byRun = new Map<string, RunEvent[]>();
+		for (const row of events) {
+			const event = decodeEvent(row);
+			const list = byRun.get(event.runId) ?? [];
+			list.push(event);
+			byRun.set(event.runId, list);
+		}
+		return runs.map((run) => {
+			const decisionEvents = byRun.get(run.id) ?? [];
+			return {
+				run,
+				events: decisionEvents,
+				evaluation: evaluateRun(run, decisionEvents),
+				cost: summarizeRunCost(decisionEvents),
+			};
+		});
+	} finally {
+		db.close();
+	}
 }
 
 /**
@@ -1816,20 +1870,16 @@ export class RunStore {
 			ORDER BY seq ASC
 		`).all({ runId }) as Array<{ kind: string; payload_json: string }>;
 
-		let totalCostUsd: number | null = null;
-		const breakdown = new Map<string, RunCostBreakdownEntry>();
-		const roles = new Map<RunCostRole, RoleUsageAccumulator>();
-		for (const row of rows) {
-			const role = USAGE_EVENT_ROLES[row.kind];
-			if (role === undefined) continue;
-			const payload = decodePayload(row.payload_json);
-			totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, payload);
-			accumulateRoleUsage(roles, role, payload);
-		}
-		const roleUsage = [...roles.entries()]
-			.map(([role, acc]) => toRoleUsage(role, acc))
-			.filter((usage): usage is RunCostRoleUsage => usage !== undefined);
-		return { totalCostUsd, breakdown: [...breakdown.values()], roles: roleUsage };
+		return summarizeRunCost(rows.map((row) => ({
+			seq: 0,
+			runId,
+			kind: row.kind,
+			fromState: null,
+			toState: 'queued',
+			payload: decodePayload(row.payload_json),
+			createdAt: '',
+			eventClass: 'decision',
+		})));
 	}
 
 	/**
