@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T03:34:32.913Z",
-  "updatedAt": "2026-08-23T03:34:32.913Z",
+  "updatedAt": "2026-08-23T03:34:44.872Z",
   "description": "Corrigir somente a entrada Forge em docs/product-radar.md. O produto avaliado pelo operador foi https://github.com/LucasDuys/forge, licença MIT, e nao o homonimo nxtg-ai/forge-orchestrator. Remover a referencia ao homonimo e qualquer afirmacao especifica dele, inclusive file locking e drift detection. Descrever apenas propriedades conferiveis no README de LucasDuys/forge: pipeline de cinco fases, tarefas com dependencias em worktrees paralelas, TDD como regra e backprop que pode propor ou aplicar criterio novo. Manter as decisoes Gateship ja registradas: mesma-repository continua serial, TDD nao e universal, cerimonia deve ser proporcional ao risco e uma spec aprovada nao se reescreve silenciosamente. Usar link direto e registrar MIT. Nao alterar HANDOFF.md, outras entradas do radar, runtime, UI, dependencias, banco ou workflow.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "LucasDuys/forge\tMIT"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "1cc6f933fdc4b635e747449f5dbc36832b36f352acf88412bf81f96e61937af8",
+    "approvedAt": "2026-08-23T03:34:44.872Z"
   }
 }
