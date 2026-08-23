@@ -236,6 +236,45 @@ const OTHER_PROJECT: RegisteredProjectView = {
 
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
 
+// GSHIP-712: one representative value per Work panel, so a surface rendered for
+// another project can be asserted on what it shows and on what it leaves out.
+const DRAFT = {
+	id: 'CAM-940',
+	title: 'draft para revisar',
+	scope: 'Escopo persistido',
+	verificationCommand: 'bun test focused',
+	state: 'stale' as const,
+};
+
+const PROPOSAL = {
+	id: 'proposal-boot',
+	title: 'proposta do boot',
+	evidence: 'Evidência do boot.',
+	sourceRunId: 'run-boot',
+	sourceIssueId: 'CAM-50',
+};
+
+const DIAGNOSTICS_WITH_FINDING: AppProps['diagnostics'] = {
+	...emptyDiagnostics(),
+	findings: [{
+		id: 'diagnostic-boot',
+		analyzer: 'analyzer-factual',
+		rule: 'regra-autoral',
+		severity: 'warning',
+		file: 'src/arquivo-autoral.tsx',
+		evidence: 'Evidência do operador sem tradução.',
+		toolVersion: '0.9.12',
+		sourceSha: 'b'.repeat(40),
+		status: 'pending',
+		promotedIssueId: null,
+		occurrenceCount: 1,
+		firstSeenAt: '2026-08-20T12:00:00.000Z',
+		lastSeenAt: '2026-08-20T12:00:00.000Z',
+		updatedAt: '2026-08-20T12:00:00.000Z',
+	}],
+	stats: { total: 1, pending: 1, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
+};
+
 function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
@@ -2974,8 +3013,8 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('a non-current project keeps every surface but runs unavailable', () => {
-		for (const suffix of ['', '/work', '/settings']) {
+	test('a non-current project keeps conversation and settings unavailable', () => {
+		for (const suffix of ['', '/settings']) {
 			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
 				projects: [CURRENT_PROJECT, OTHER_PROJECT],
 				runs: [runIn('interrupted')],
@@ -3002,31 +3041,95 @@ describe('operator shell', () => {
 		expect(html).toContain('CAM-900');
 		expect(html).toContain('>Resume<');
 		expect(html).toContain('>Abandon<');
-		// No surface but runs opens: work and settings stay the boot project's.
+		// The route renders runs alone: no work or settings panel leaks into it.
 		expect(html).not.toContain('>Start<');
 		expect(html).not.toContain('Operator profile');
 	});
 
-	test('a not-ready non-current project keeps the unavailable surface on runs too', () => {
-		const html = renderAt('/projects/project-other/runs', {
-			projects: [CURRENT_PROJECT, { ...OTHER_PROJECT, readiness: 'empty' as const }],
-			runs: [runIn('interrupted')],
+	// GSHIP-712: work is the second surface operational for a registered ready
+	// project. Its project-scoped core renders; the extras that still read the
+	// boot runtime are absent rather than shown with the boot project's data.
+	test('work is operational for a ready non-current project, without the boot runtime extras', () => {
+		const html = renderAt('/projects/project-other/work', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			drafts: [DRAFT],
+			ideas: [{ id: 'CAM-950', title: 'ideia para especificar' }],
+			diagnostics: DIAGNOSTICS_WITH_FINDING,
+			proposals: [PROPOSAL],
+			resolvedProposals: [{ ...PROPOSAL, status: 'dismissed' as const, promotedIssueId: null }],
+			resolvedProposalsOmittedCount: 3,
 		});
 
-		expect(html).toContain('Project runtime not loaded');
-		expect(html).not.toContain('CAM-900');
-		expect(html).not.toContain('>Resume<');
+		expect(html).not.toContain('Project runtime not loaded');
+		// The project-scoped core, whole: backlog, drafts, ideas and intake.
+		expect(html).toContain('Executable backlog');
+		expect(html).toContain('CAM-900');
+		expect(html).toContain('>Start run<');
+		expect(html).toContain('Review and approve');
+		expect(html).toContain('CAM-940');
+		expect(html).toContain('Specify existing idea');
+		expect(html).toContain('CAM-950');
+		expect(html).toContain('New issue');
+		// The extras that still belong to the boot runtime, absent with their data.
+		expect(html).not.toContain('Gateship Diagnostics');
+		expect(html).not.toContain('regra-autoral');
+		expect(html).not.toContain('Derived proposals');
+		expect(html).not.toContain('Resolved proposals');
+		expect(html).not.toContain('proposta do boot');
+		expect(html).not.toContain('+3 resolved proposals not shown.');
+	});
+
+	test('the current project keeps the same work panels and their behaviour', () => {
+		const html = renderAt('/projects/project-current/work', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			drafts: [DRAFT],
+			diagnostics: DIAGNOSTICS_WITH_FINDING,
+			proposals: [PROPOSAL],
+			resolvedProposals: [{ ...PROPOSAL, status: 'dismissed' as const, promotedIssueId: null }],
+			resolvedProposalsOmittedCount: 3,
+		});
+
+		expect(html).toContain('Executable backlog');
+		expect(html).toContain('Review and approve');
+		expect(html).toContain('New issue');
+		expect(html).toContain('Gateship Diagnostics');
+		expect(html).toContain('regra-autoral');
+		expect(html).toContain('Derived proposals');
+		expect(html).toContain('proposta do boot');
+		expect(html).toContain('Resolved proposals');
+		expect(html).toContain('+3 resolved proposals not shown.');
+	});
+
+	test('a not-ready non-current project keeps the unavailable surface on runs and work', () => {
+		for (const suffix of ['/runs', '/work']) {
+			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
+				projects: [CURRENT_PROJECT, { ...OTHER_PROJECT, readiness: 'empty' as const }],
+				runs: [runIn('interrupted')],
+				diagnostics: DIAGNOSTICS_WITH_FINDING,
+				proposals: [PROPOSAL],
+			});
+
+			expect(html).toContain('Project runtime not loaded');
+			expect(html).not.toContain('CAM-900');
+			expect(html).not.toContain('>Resume<');
+			expect(html).not.toContain('Executable backlog');
+			expect(html).not.toContain('Gateship Diagnostics');
+			expect(html).not.toContain('proposta do boot');
+		}
 	});
 
 	test('an unknown project keeps the typed not-found surface', () => {
-		const html = renderAt('/projects/project-missing/runs', {
-			projects: [CURRENT_PROJECT, OTHER_PROJECT],
-			runs: [runIn('interrupted')],
-		});
+		for (const suffix of ['/runs', '/work']) {
+			const html = renderAt(`/projects/project-missing${suffix}` as OperatorRoute, {
+				projects: [CURRENT_PROJECT, OTHER_PROJECT],
+				runs: [runIn('interrupted')],
+			});
 
-		expect(html).toContain('Project not registered');
-		expect(html).not.toContain('CAM-900');
-		expect(html).not.toContain('>Resume<');
+			expect(html).toContain('Project not registered');
+			expect(html).not.toContain('CAM-900');
+			expect(html).not.toContain('>Resume<');
+			expect(html).not.toContain('Executable backlog');
+		}
 	});
 
 	test('the persistent language control renders both self-named choices and marks the locale on every surface', () => {
@@ -4053,7 +4156,7 @@ describe('same-origin transport', () => {
 			{ ok: true, issue: { id: 'CAM-902', title: draft.title } },
 			201,
 			async () => {
-				expect(await createIssue(draft)).toEqual({ id: 'CAM-902', title: draft.title });
+				expect(await createIssue(null, draft)).toEqual({ id: 'CAM-902', title: draft.title });
 			},
 		);
 
@@ -4071,7 +4174,7 @@ describe('same-origin transport', () => {
 			{ ok: true, issue: { id: 'CAM-42', title: 'ideia antiga' } },
 			200,
 			async () => {
-				expect(await specifyIssue('CAM-42', draft)).toEqual({
+				expect(await specifyIssue(null, 'CAM-42', draft)).toEqual({
 					id: 'CAM-42',
 					title: 'ideia antiga',
 				});
@@ -4091,19 +4194,19 @@ describe('same-origin transport', () => {
 			{ ok: true, issue: { id: 'CAM-42', title: 'Draft' } },
 			200,
 			async (calls) => {
-				await specifyIssue('CAM-42', draft);
+				await specifyIssue(null, 'CAM-42', draft);
 				expect(calls).toEqual([{ url: '/api/issues/CAM-42/spec', method: 'POST', body: JSON.stringify(draft) }]);
 			},
 		);
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await approveIssue('CAM-42')).toBe('Run updated.');
+			expect(await approveIssue(null, 'CAM-42')).toBe('Run updated.');
 			expect(calls).toEqual([{ url: '/api/issues/CAM-42/approve', method: 'POST', body: null }]);
 		});
 	});
 
 	test('abandoning an issue uses the same trusted origin route with its justification', async () => {
 		await withRecordedFetch({ ok: true }, 200, async (calls) => {
-			expect(await abandonIssue('CAM-42', 'Não faz mais sentido.')).toBe('Run updated.');
+			expect(await abandonIssue(null, 'CAM-42', 'Não faz mais sentido.')).toBe('Run updated.');
 			expect(calls).toEqual([{
 				url: '/api/issues/CAM-42/abandon',
 				method: 'POST',
@@ -4274,12 +4377,50 @@ describe('same-origin transport', () => {
 
 	test('start posts the issue id to the runs route', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
-			expect(await startRun('CAM-900')).toBe('Run updated.');
+			expect(await startRun(null, 'CAM-900')).toBe('Run updated.');
 		});
 
 		expect(calls).toEqual([
 			{ url: '/api/runs', method: 'POST', body: JSON.stringify({ issueId: 'CAM-900' }) },
 		]);
+	});
+
+	// GSHIP-712: every Work write derives its route from the selected project,
+	// so none of them can reach the boot runtime while another project is named.
+	test('every work action addresses the selected project, never the boot routes', async () => {
+		const draft = { title: 'Intake escopado', scope: 'Escopo.', verificationCommand: 'bun test' };
+		const spec = { scope: 'Escopo revisto.', verificationCommand: 'bun test focused' };
+		const calls = await withRecordedFetch(
+			{ ok: true, issue: { id: 'CAM-902', title: draft.title } },
+			200,
+			async () => {
+				await createIssue('project other', draft);
+				await specifyIssue('project other', 'CAM 42', spec);
+				await approveIssue('project other', 'CAM 42');
+				await abandonIssue('project other', 'CAM 42', 'Sem sentido.');
+				await startRun('project other', 'CAM-900');
+			},
+		);
+
+		expect(calls).toEqual([
+			{ url: '/api/projects/project%20other/issues', method: 'POST', body: JSON.stringify(draft) },
+			{ url: '/api/projects/project%20other/issues/CAM%2042/spec', method: 'POST', body: JSON.stringify(spec) },
+			{ url: '/api/projects/project%20other/issues/CAM%2042/approve', method: 'POST', body: null },
+			{
+				url: '/api/projects/project%20other/issues/CAM%2042/abandon',
+				method: 'POST',
+				body: JSON.stringify({ reason: 'Sem sentido.' }),
+			},
+			{
+				url: '/api/projects/project%20other/runs',
+				method: 'POST',
+				body: JSON.stringify({ issueId: 'CAM-900' }),
+			},
+		]);
+		for (const call of calls) {
+			expect(call.url.startsWith(ISSUES_PATH)).toBe(false);
+			expect(call.url.startsWith(RUNS_PATH)).toBe(false);
+		}
 	});
 
 	test('each command posts to its own run-scoped route', async () => {
