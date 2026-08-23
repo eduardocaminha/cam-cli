@@ -20,6 +20,7 @@ import {
 	type ChainPauseReason,
 	type ChainRunsView,
 	type ChatMessageView,
+	type CreateProjectInput,
 	type DiagnosticCadenceView,
 	type DiagnosticFindingView,
 	type DiagnosticsView,
@@ -230,6 +231,7 @@ export interface AppProps {
 	status: string | null;
 	/** A command is in flight; every button is held until it answers. */
 	pending: boolean;
+	projectOnboardingPending: 'create' | 'import' | null;
 	onSelectIssue: (issueId: string) => void;
 	onSelectLocale: (locale: Locale) => void;
 	onCreateIssue: (input: OperatorIssueDraft) => void;
@@ -280,6 +282,7 @@ export interface AppProps {
 	 * owner/repo or an https://github.com/owner/repo URL.
 	 */
 	onImportProject: (repository: string) => void;
+	onCreateProject: (input: CreateProjectInput) => void;
 	/**
 	 * Register a checkout that already exists on disk, by absolute path
 	 * (GSHIP-716). Selection stays with the list and the sidebar; this only
@@ -2891,8 +2894,9 @@ function RegisterProjectPanel({
 function ImportProjectPanel({
 	catalog,
 	pending,
+	projectOnboardingPending,
 	onImportProject,
-}: Pick<AppProps, 'pending' | 'onImportProject'> & {
+}: Pick<AppProps, 'pending' | 'projectOnboardingPending' | 'onImportProject'> & {
 	catalog: ProjectsCatalog;
 }): React.ReactElement {
 	return (
@@ -2924,7 +2928,120 @@ function ImportProjectPanel({
 					<button className={BUTTON_CLASS} disabled={pending} type="submit">
 						{catalog.import.submit}
 					</button>
-					{pending ? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p> : null}
+					{projectOnboardingPending === 'import'
+						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
+						: null}
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
+/** New-repository onboarding is intentionally separate from importing or registering. */
+function CreateProjectPanel({
+	catalog,
+	pending,
+	projectOnboardingPending,
+	onCreateProject,
+}: Pick<AppProps, 'pending' | 'projectOnboardingPending' | 'onCreateProject'> & {
+	catalog: ProjectsCatalog;
+}): React.ReactElement {
+	const [repository, setRepository] = useState('');
+	const [description, setDescription] = useState('');
+	const [visibility, setVisibility] = useState<'private' | 'public'>('private');
+	const [confirmed, setConfirmed] = useState(false);
+	const namedRepository = repository.trim();
+	const visibilityLabel = visibility === 'private'
+		? catalog.create.privateLabel.toLocaleLowerCase()
+		: catalog.create.publicLabel.toLocaleLowerCase();
+	const authorization = catalog.create.confirm(namedRepository, visibilityLabel);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{catalog.create.title}</CardTitle>
+				<CardDescription>{catalog.create.description}</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<form
+					className="flex flex-col gap-3"
+					onSubmit={(event) => {
+						event.preventDefault();
+						if (namedRepository === '' || !confirmed) return;
+						onCreateProject({
+							repository: namedRepository,
+							visibility,
+							...(description.trim() === '' ? {} : { description: description.trim() }),
+							authorization,
+						});
+					}}
+				>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-repository">
+						<span className="font-medium">{catalog.create.repositoryLabel}</span>
+						<input
+							className={FIELD_CLASS}
+							id="project-create-repository"
+							name="project-create-repository"
+							onChange={(event) => {
+								setRepository((event.currentTarget as unknown as { value: string }).value);
+								setConfirmed(false);
+							}}
+							placeholder={catalog.create.repositoryPlaceholder}
+							value={repository}
+						/>
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-description">
+						<span className="font-medium">{catalog.create.descriptionLabel}</span>
+						<input
+							className={FIELD_CLASS}
+							id="project-create-description"
+							maxLength={350}
+							name="project-create-description"
+							onChange={(event) =>
+								setDescription((event.currentTarget as unknown as { value: string }).value)}
+							placeholder={catalog.create.descriptionPlaceholder}
+							value={description}
+						/>
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-visibility">
+						<span className="font-medium">{catalog.create.visibilityLabel}</span>
+						<select
+							className={FIELD_CLASS}
+							id="project-create-visibility"
+							name="project-create-visibility"
+							onChange={(event) => {
+								setVisibility((event.currentTarget as unknown as {
+									value: 'private' | 'public';
+								}).value);
+								setConfirmed(false);
+							}}
+							value={visibility}
+						>
+							<option value="private">{catalog.create.privateLabel}</option>
+							<option value="public">{catalog.create.publicLabel}</option>
+						</select>
+					</label>
+					{visibility === 'public' ? (
+						<p className="text-destructive text-sm" role="alert">{catalog.create.publicWarning}</p>
+					) : null}
+					<p className="text-muted-foreground text-xs">{catalog.create.destinationGuidance}</p>
+					<p className="text-muted-foreground text-xs">{catalog.create.credentialGuidance}</p>
+					<label className="flex items-start gap-2 text-sm">
+						<input
+							checked={confirmed}
+							disabled={pending || namedRepository === ''}
+							name="project-create-confirm"
+							onChange={(event) =>
+								setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)}
+							type="checkbox"
+						/>
+						<span>{authorization}</span>
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending || !confirmed || namedRepository === ''} type="submit">
+						{catalog.create.submit}
+					</button>
+					{projectOnboardingPending === 'create'
+						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
+						: null}
 				</form>
 			</CardPanel>
 		</Card>
@@ -3008,11 +3125,18 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 					</li>
 				))}
 			</ul>
+			<CreateProjectPanel
+				catalog={catalog}
+				onCreateProject={props.onCreateProject}
+				pending={props.pending}
+				projectOnboardingPending={props.projectOnboardingPending}
+			/>
 			<div className="grid gap-3 md:grid-cols-2">
 				<ImportProjectPanel
 					catalog={catalog}
 					onImportProject={props.onImportProject}
 					pending={props.pending}
+					projectOnboardingPending={props.projectOnboardingPending}
 				/>
 				<RegisterProjectPanel
 					catalog={catalog}

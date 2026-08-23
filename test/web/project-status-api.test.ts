@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { startWebServer } from '../../src/commands/web.ts';
+import { createProjectFromOperator, startWebServer } from '../../src/commands/web.ts';
+import type { ProjectCreateCommandRunner } from '../../src/runtime/project-create.ts';
 import type { GitCloneRunner } from '../../src/runtime/project-import.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -296,6 +297,128 @@ describe('POST /api/projects/import', () => {
 			expect(listed.projects).toHaveLength(1);
 			expect(listed.projects[0]?.current).toBe(true);
 			expect(existsSync(join(gateshipHome, 'projects', 'acme', 'product'))).toBe(false);
+		} finally {
+			await handle.stop();
+		}
+	});
+});
+
+describe('POST /api/projects/create', () => {
+	test('disables Bun\'s short HTTP timeout before reading the creation request', async () => {
+		const home = createTestTmpdir('gship-create-timeout-home-');
+		const currentRoot = createTestTmpdir('gship-create-timeout-current-');
+		const registry = openProjectRegistry(home);
+		const calls: Array<{ request: Request; seconds: number }> = [];
+		const request = new Request('http://127.0.0.1:7777/api/projects/create', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:7777' },
+			body: '{',
+		});
+		try {
+			const response = await createProjectFromOperator(
+				request,
+				registry,
+				currentRoot,
+				home,
+				undefined,
+				undefined,
+				{ timeout: (timedRequest, seconds) => calls.push({ request: timedRequest, seconds }) },
+			);
+			expect(response.status).toBe(400);
+			expect(calls).toEqual([{ request, seconds: 0 }]);
+		} finally {
+			registry.close();
+		}
+	});
+
+	test('creates through the managed service, requires trusted authorization and returns partial recovery', async () => {
+		const cwd = createTestTmpdir('gship-create-api-current-');
+		const gateshipHome = createTestTmpdir('gship-create-api-home-');
+		let makeReady = true;
+		const commands: string[][] = [];
+		const runCommand: ProjectCreateCommandRunner = async (input) => {
+			commands.push([...input.cmd]);
+			if (input.cmd[0] === 'git') {
+				const child = Bun.spawnSync(input.cmd, {
+					cwd: input.cwd,
+					env: {
+						...process.env,
+						GIT_AUTHOR_NAME: 'Gateship Test',
+						GIT_AUTHOR_EMAIL: 'gateship@example.test',
+						GIT_COMMITTER_NAME: 'Gateship Test',
+						GIT_COMMITTER_EMAIL: 'gateship@example.test',
+					},
+					stdout: 'pipe',
+					stderr: 'pipe',
+				});
+				return { exitCode: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() };
+			}
+			if (input.cmd[2] === 'view') {
+				return { exitCode: 1, stdout: '', stderr: 'Could not resolve to a Repository' };
+			}
+			if (makeReady) {
+				execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/product.git'], { cwd: input.cwd });
+				execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: input.cwd });
+			}
+			return { exitCode: makeReady ? 0 : 1, stdout: '', stderr: makeReady ? '' : 'push failed' };
+		};
+		const handle = startWebServer({
+			port: 0,
+			cwd,
+			gateshipHome,
+			projectCreateCommand: runCommand,
+			projectCreateEnsureIdentity: () => ({ outcome: 'already-configured' }),
+		});
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const post = (body: unknown, requestOrigin = origin) => fetch(`${origin}/api/projects/create`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin: requestOrigin },
+				body: JSON.stringify(body),
+			});
+
+			const untrusted = await post({
+				repository: 'acme/product', visibility: 'private', authorization: 'Create acme/product as private.',
+			}, 'http://evil.example');
+			expect(untrusted.status).toBe(403);
+			expect(commands).toEqual([]);
+
+			const emptyAuthorization = await post({
+				repository: 'acme/product', visibility: 'private', authorization: '',
+			});
+			expect(emptyAuthorization.status).toBe(400);
+			expect(await emptyAuthorization.json()).toMatchObject({ code: 'invalid-authorization' });
+
+			const created = await post({
+				repository: 'acme/product',
+				visibility: 'private',
+				description: 'Product repository',
+				authorization: 'Create acme/product as a private repository.',
+			});
+			expect(created.status).toBe(200);
+			expect(await created.json()).toMatchObject({
+				ok: true,
+				project: { repository: 'acme/product', readiness: 'ready' },
+			});
+			expect(commands.find((argv) => argv[2] === 'create')).toContain('--private');
+			expect(JSON.stringify(await fetch(`${origin}/api/projects`).then((response) => response.json())))
+				.not.toContain('authorization');
+
+			makeReady = false;
+			const partial = await post({
+				repository: 'acme/partial',
+				visibility: 'public',
+				authorization: 'Create acme/partial as a public repository.',
+			});
+			expect(partial.status).toBe(502);
+			expect(await partial.json()).toMatchObject({
+				ok: false,
+				code: 'partial-create',
+				repository: 'acme/partial',
+				root: join(gateshipHome, 'projects', 'acme', 'partial'),
+				readiness: { state: 'needs-attention', reason: 'origin-missing' },
+			});
+			expect(existsSync(join(gateshipHome, 'projects', 'acme', 'partial', 'README.md'))).toBe(true);
 		} finally {
 			await handle.stop();
 		}

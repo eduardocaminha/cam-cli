@@ -78,6 +78,24 @@ export interface ProjectsCatalog {
 		submit: string;
 		pending: string;
 	};
+	/** Creating a new GitHub repository and its Gateship-managed checkout. */
+	create: {
+		title: string;
+		description: string;
+		repositoryLabel: string;
+		repositoryPlaceholder: string;
+		descriptionLabel: string;
+		descriptionPlaceholder: string;
+		visibilityLabel: string;
+		privateLabel: string;
+		publicLabel: string;
+		publicWarning: string;
+		destinationGuidance: string;
+		credentialGuidance: string;
+		confirm: (repository: string, visibility: string) => string;
+		submit: string;
+		pending: string;
+	};
 	/** Dropping a registration, which is the whole operation: nothing is deleted. */
 	remove: {
 		title: string;
@@ -521,6 +539,23 @@ export const LOCALE_CATALOG = {
 				submit: 'Import repository',
 				pending: 'Cloning the repository…',
 			},
+			create: {
+				title: 'Create a new GitHub repository',
+				description: 'Gateship creates the repository, an initial README commit on main, and its managed checkout.',
+				repositoryLabel: 'GitHub repository',
+				repositoryPlaceholder: 'owner/repo',
+				descriptionLabel: 'Short description (optional)',
+				descriptionPlaceholder: 'What this repository is for',
+				visibilityLabel: 'Visibility',
+				privateLabel: 'Private',
+				publicLabel: 'Public',
+				publicWarning: 'A public repository is visible to everyone on GitHub.',
+				destinationGuidance: 'The checkout is stored under GATESHIP_HOME/projects/owner/repo. A custom path is not accepted.',
+				credentialGuidance: 'Creation and push use your existing GitHub CLI login. No token or password is entered here.',
+				confirm: (repository, visibility) => `Create ${repository} as a ${visibility} GitHub repository.`,
+				submit: 'Create repository',
+				pending: 'Creating the repository and pushing main…',
+			},
 			remove: {
 				title: 'Remove this project from Gateship',
 				description: 'Removal only drops the registration from this Gateship installation.',
@@ -919,6 +954,23 @@ export const LOCALE_CATALOG = {
 				credentialGuidance: 'Um repositório público não precisa de mais nada; um privado usa o seu login do GitHub já existente. Nenhum token ou senha é digitado aqui.',
 				submit: 'Importar repositório',
 				pending: 'Clonando o repositório…',
+			},
+			create: {
+				title: 'Criar um repositório novo no GitHub',
+				description: 'O Gateship cria o repositório, um commit inicial com README na main e seu checkout gerenciado.',
+				repositoryLabel: 'Repositório do GitHub',
+				repositoryPlaceholder: 'owner/repo',
+				descriptionLabel: 'Descrição curta (opcional)',
+				descriptionPlaceholder: 'Para que serve este repositório',
+				visibilityLabel: 'Visibilidade',
+				privateLabel: 'Privado',
+				publicLabel: 'Público',
+				publicWarning: 'Um repositório público fica visível para qualquer pessoa no GitHub.',
+				destinationGuidance: 'O checkout fica em GATESHIP_HOME/projects/owner/repo. Não é aceito um caminho personalizado.',
+				credentialGuidance: 'A criação e o push usam seu login existente no GitHub CLI. Nenhum token ou senha é digitado aqui.',
+				confirm: (repository, visibility) => `Criar ${repository} como um repositório ${visibility} no GitHub.`,
+				submit: 'Criar repositório',
+				pending: 'Criando o repositório e enviando a main…',
 			},
 			remove: {
 				title: 'Remover este projeto do Gateship',

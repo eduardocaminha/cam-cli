@@ -29,6 +29,7 @@ import {
 	cancelDiagnostic,
 	commandRun,
 	connectClaudeCredential,
+	createProject,
 	createIssue,
 	describeClaudeCredentialConfirmation,
 	DIAGNOSTIC_FINDINGS_PATH,
@@ -316,6 +317,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onPromoteProposal={() => {}}
 			onPromoteDiagnosticFinding={() => {}}
 			onImportProject={() => {}}
+			onCreateProject={() => {}}
 			onRegisterProject={() => {}}
 			onUnregisterProject={() => {}}
 			onResume={() => {}}
@@ -335,6 +337,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onStartDiagnostic={() => {}}
 			onCancelDiagnostic={() => {}}
 			pending={false}
+			projectOnboardingPending={null}
 			proposals={[]}
 			project={READY_PROJECT}
 			projects={[CURRENT_PROJECT]}
@@ -3047,7 +3050,7 @@ describe('operator shell', () => {
 			expect(html).toContain(expected.docker);
 			expect(html).toContain('name="project-root"');
 			expect(buttonIsEnabled(html, expected.submit)).toBe(true);
-			// No file picker, no clone and no new-project command joins it.
+			// No file picker or clone joins path registration.
 			expect(html).not.toContain('type="file"');
 		}
 		// A typed refusal reaches the operator on the surface that asked for it.
@@ -3055,6 +3058,48 @@ describe('operator shell', () => {
 			status: 'The origin remote must point to a repository on GitHub.com.',
 		})).toContain('The origin remote must point to a repository on GitHub.com.');
 		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Register project')).toBe(false);
+	});
+
+	test('the overview keeps new GitHub creation separate, private by default and confirmation-gated', () => {
+		for (const expected of [
+			{
+				locale: 'en-US' as const,
+				title: 'Create a new GitHub repository',
+				submit: 'Create repository',
+				destination: 'GATESHIP_HOME/projects/owner/repo',
+				credential: 'existing GitHub CLI login',
+				publicWarning: 'visible to everyone on GitHub',
+			},
+			{
+				locale: 'pt-BR' as const,
+				title: 'Criar um repositório novo no GitHub',
+				submit: 'Criar repositório',
+				destination: 'GATESHIP_HOME/projects/owner/repo',
+				credential: 'login existente no GitHub CLI',
+				publicWarning: 'visível para qualquer pessoa no GitHub',
+			},
+		]) {
+			const html = renderAt('/overview', { locale: expected.locale });
+			expect(html).toContain(`>${expected.title}</h2>`);
+			expect(html).toContain(expected.destination);
+			expect(html).toContain(expected.credential);
+			expect(html).toContain('name="project-create-repository"');
+			expect(html).toContain('name="project-create-description"');
+			expect(html).toContain('<option value="private" selected="">');
+			expect(html).toContain('name="project-create-confirm"');
+			expect(buttonIsEnabled(html, expected.submit)).toBe(false);
+			expect(html).not.toContain(expected.publicWarning);
+			expect(html).not.toContain('type="password"');
+		}
+		expect(renderAt('/overview', {
+			status: 'The managed checkout was preserved at /managed/acme/product.',
+		})).toContain('preserved at /managed/acme/product');
+		const creating = renderAt('/overview', {
+			pending: true,
+			projectOnboardingPending: 'create',
+		});
+		expect(creating).toContain('Creating the repository and pushing main');
+		expect(creating).not.toContain('Cloning the repository');
 	});
 
 	// GSHIP-718: the other onboarding write is a GitHub repository, never a
@@ -3091,8 +3136,10 @@ describe('operator shell', () => {
 			expect(html).not.toContain('type="password"');
 			expect(html).not.toContain(expected.pending);
 		}
-		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Import repository')).toBe(false);
-		expect(renderAt('/overview', { pending: true })).toContain('Cloning the repository');
+		const importing = renderAt('/overview', { pending: true, projectOnboardingPending: 'import' });
+		expect(buttonIsEnabled(importing, 'Import repository')).toBe(false);
+		expect(importing).toContain('Cloning the repository');
+		expect(importing).not.toContain('Creating the repository and pushing main');
 		// A typed refusal reaches the operator on the surface that asked for it.
 		expect(renderAt('/overview', {
 			status: 'That repository is already a checkout of a different one.',
@@ -3989,6 +4036,39 @@ describe('same-origin transport', () => {
 		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
 			await expect(importProject('acme/other-product'))
 				.rejects.toThrow('unreadable project import');
+		});
+	});
+
+	test('creates a GitHub repository through its own route without credential fields', async () => {
+		const input = {
+			repository: 'acme/other-product',
+			visibility: 'public' as const,
+			description: 'Other product',
+			authorization: 'Create acme/other-product as a public GitHub repository.',
+		};
+		await withRecordedFetch({ ok: true, project: OTHER_PROJECT }, 200, async (calls) => {
+			expect(await createProject(input)).toEqual(OTHER_PROJECT);
+			expect(calls).toEqual([{
+				url: `${PROJECTS_PATH}/create`,
+				method: 'POST',
+				body: JSON.stringify(input),
+			}]);
+		});
+		await withRecordedFetch(
+			{
+				ok: false,
+				code: 'partial-create',
+				message: 'The managed checkout was preserved at /managed/acme/other-product.',
+				repository: 'acme/other-product',
+				root: '/managed/acme/other-product',
+			},
+			502,
+			async () => {
+				await expect(createProject(input)).rejects.toThrow('preserved at /managed/acme/other-product');
+			},
+		);
+		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
+			await expect(createProject(input)).rejects.toThrow('unreadable project creation');
 		});
 	});
 

@@ -21,6 +21,7 @@ import {
 	cancelDiagnostic,
 	commandRun,
 	connectClaudeCredential,
+	createProject,
 	createIssue,
 	describeClaudeCredentialConfirmation,
 	type DiagnosticsView,
@@ -467,6 +468,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	const run = runs[0] ?? null;
 	const [locale, setLocale] = useState(initialLocale);
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+	const [projectOnboardingPending, setProjectOnboardingPending] =
+		useState<'create' | 'import' | null>(null);
 	const selectLocale = (selectedLocale: Locale) => {
 		applyLocalePreference(
 			selectedLocale,
@@ -556,10 +559,22 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			// registers it, so success navigates the same way a fresh registration
 			// does -- straight to the imported project's own URL.
 			onImportProject={(repository) => {
-				send(() => importProject(repository).then((imported) => {
-					window.location.assign(`/projects/${encodeURIComponent(imported.id)}`);
-					return `${imported.name} imported.`;
-				}));
+				setProjectOnboardingPending('import');
+				send(() => importProject(repository)
+					.then((imported) => {
+						window.location.assign(`/projects/${encodeURIComponent(imported.id)}`);
+						return `${imported.name} imported.`;
+					})
+					.finally(() => setProjectOnboardingPending(null)));
+			}}
+			onCreateProject={(input) => {
+				setProjectOnboardingPending('create');
+				send(() => createProject(input)
+					.then((created) => {
+						window.location.assign(`/projects/${encodeURIComponent(created.id)}`);
+						return `${created.name} created.`;
+					})
+					.finally(() => setProjectOnboardingPending(null)));
 			}}
 			// GSHIP-716: registering a checkout only adds it to the registry. The
 			// list and the sidebar stay the selection surface, so success goes
@@ -606,6 +621,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSetSelfUpdate={(enabled) => send(() => saveSelfUpdate(enabled))}
 			onSaveOperatorProfile={(profile) => send(() => saveOperatorProfile(profile))}
 			pending={pending}
+			projectOnboardingPending={projectOnboardingPending}
 			proposals={proposals}
 			project={project}
 			projects={projects}

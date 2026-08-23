@@ -39,6 +39,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },
 	'projects.import': { method: 'POST', path: () => '/api/projects/import', input: '{repository}' },
+	'projects.create': { method: 'POST', path: () => '/api/projects/create', input: '{repository, visibility, description?, authorization}' },
 	'projects.unregister': { method: 'DELETE', path: projectRootPath, input: '{projectId}' },
 	'status.get': { method: 'GET', path: projectPath('/snapshot'), input: '{projectId}' },
 	'backlog.list': { method: 'GET', path: projectPath('/backlog'), input: '{projectId, limit?, offset?}' },
@@ -64,8 +65,9 @@ const GUIDE = [
 	'Use gship agent as the source of truth for Gateship state and actions.',
 	'Use issues.list and runs.list for discovery, then issues.get or runs.get for detail.',
 	'Use projects.list to select a projectId, then pass it to every project lifecycle operation.',
-	'Use projects.register with an absolute root to add a checkout that already exists on disk.',
-	'Use projects.import with owner/repo or a GitHub URL to clone it into a managed checkout.',
+	'projects.register adds an existing checkout by absolute root.',
+	'projects.import clones owner/repo into a managed checkout.',
+	'projects.create requires explicit authorization and private or public visibility.',
 	'Use projects.unregister to drop a registration; it deletes no file and no project history.',
 	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
@@ -440,6 +442,7 @@ export async function executeAgent(
 		const operationName = parsed.operation!;
 		const operation = AGENT_OPERATIONS[operationName];
 		if (operation === undefined) throw new AgentCliError('unknown-operation', `Unknown operation: ${operationName}.`);
+		if (operationName === 'projects.create') requiredString(parsed.input, 'authorization');
 		const headers: Record<string, string> = {
 			accept: 'application/json',
 			origin: parsed.url,

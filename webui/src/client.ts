@@ -167,6 +167,13 @@ export interface RegisteredProjectView {
 	current: boolean;
 }
 
+export interface CreateProjectInput {
+	repository: string;
+	visibility: 'private' | 'public';
+	description?: string;
+	authorization: string;
+}
+
 export interface OperatorProfileView {
 	name: string;
 	timezone: string;
@@ -690,6 +697,22 @@ export async function importProject(repository: string): Promise<RegisteredProje
 	}
 	const project = registeredProjectRecord(payload.project);
 	if (project === null) throw new Error('Gateship returned an unreadable project import.');
+	return project;
+}
+
+/** Create one GitHub repository and managed checkout with explicit human authorization. */
+export async function createProject(input: CreateProjectInput): Promise<RegisteredProjectView> {
+	const response = await fetch(`${PROJECTS_PATH}/create`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input),
+	});
+	const payload = (await response.json()) as ProjectCommandPayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Project creation rejected (${response.status}).`);
+	}
+	const project = registeredProjectRecord(payload.project);
+	if (project === null) throw new Error('Gateship returned an unreadable project creation.');
 	return project;
 }
 

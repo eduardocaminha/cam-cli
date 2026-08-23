@@ -121,6 +121,11 @@ import {
 } from '../runtime/claude-credential.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
+	createProject,
+	type ProjectCreateCommandRunner,
+	ProjectCreateError,
+} from '../runtime/project-create.ts';
+import {
 	type GitCloneRunner,
 	importRepository,
 	ProjectImportError,
@@ -185,6 +190,10 @@ export interface WebServerOptions {
 	projectRegistry?: ProjectRegistry;
 	/** Test seam for the GitHub import clone step; production spawns real `git clone`. */
 	projectImportClone?: GitCloneRunner;
+	/** Test seam for local Git and `gh repo` creation commands. */
+	projectCreateCommand?: ProjectCreateCommandRunner;
+	/** Test seam for the Git author identity admission used by project creation. */
+	projectCreateEnsureIdentity?: (cwd: string) => GitIdentityResult;
 	/** Canonical web argv, after any internal self-update wrapper was removed. */
 	serverArgs?: string[];
 	/** Injectable durable run runtime. Production defaults to `<stateDir>/runtime.sqlite`. */
@@ -857,6 +866,50 @@ async function importProjectFromOperator(
 				code: error.code,
 				message: error.message,
 				...(error.readiness === undefined ? {} : { readiness: error.readiness }),
+			},
+			{ status: error.status },
+		);
+	}
+}
+
+/** Create a GitHub repository and its managed checkout as one bounded onboarding operation. */
+export async function createProjectFromOperator(
+	request: Request,
+	registry: ProjectRegistry,
+	currentRoot: string,
+	gateshipHome: string,
+	runCommand: ProjectCreateCommandRunner | undefined,
+	ensureIdentity: ((cwd: string) => GitIdentityResult) | undefined,
+	server: Pick<Bun.Server<unknown>, 'timeout'>,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	// Repository creation and its initial push own their completion boundary;
+	// Bun's short quiet-response timeout must not turn an active operation into
+	// an apparent failure while `gh` can still create the remote.
+	server.timeout(request, 0);
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const project = await createProject(body, registry, currentRoot, gateshipHome, {
+			runCommand,
+			ensureIdentity,
+		});
+		return Response.json({ ok: true, project });
+	} catch (error) {
+		if (!(error instanceof ProjectCreateError)) throw error;
+		return Response.json(
+			{
+				ok: false,
+				code: error.code,
+				message: error.message,
+				...(error.recovery === undefined ? {} : error.recovery),
 			},
 			{ status: error.status },
 		);
@@ -2717,6 +2770,17 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					projectRoot,
 					gateshipHome,
 					options.projectImportClone,
+					requestServer,
+				),
+			},
+			'/api/projects/create': {
+				POST: (request, requestServer) => createProjectFromOperator(
+					request,
+					projectRegistry,
+					projectRoot,
+					gateshipHome,
+					options.projectCreateCommand,
+					options.projectCreateEnsureIdentity,
 					requestServer,
 				),
 			},
