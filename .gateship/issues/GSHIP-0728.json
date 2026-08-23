@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T13:53:19.297Z",
-  "updatedAt": "2026-08-23T13:53:19.297Z",
+  "updatedAt": "2026-08-23T13:55:02.096Z",
   "description": "Depois da cerca product-wide da GSHIP-727, trocar somente a admissão do ProjectRuntimeManager de global para project-local. Um start deve ser recusado quando já existir qualquer run não terminal no projeto solicitado, mas uma run de outro projeto não deve bloquear. Um resume deve admitir a própria run interrompida quando ela for a única não terminal daquele projeto e recusar quando houver outra run não terminal no mesmo projeto; runs de outros projetos não devem bloquear. Preservar RunRuntime, SQLite, worktree, fila e chain isolados por projeto, de modo que a serialização continue estrita dentro de cada projeto e dois projetos distintos possam trabalhar simultaneamente. Provar pelas rotas project-scoped que duas runs de projetos diferentes alcançam execução concorrente e que uma segunda run no mesmo projeto recebe conflito tipado. Manter status, SSE, cancel, resume, review, full verify, CI, ship e shutdown associados ao runtime correto. Não adicionar limite global, pool, prioridade, quota, scheduler, worker, tabela ou microsserviço; balanceamento de consumo fica para telemetria posterior.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun test test/runtime/project-runtime-manager.test.ts test/web/project-scoped-run-api.test.ts test/web/project-status-api.test.ts && bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "a8dab115d72667daa54b3c08d926285ab4e5abb6522d68c3b64fc5d69ffe2895",
+    "approvedAt": "2026-08-23T13:55:02.096Z"
   }
 }
