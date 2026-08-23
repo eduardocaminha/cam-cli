@@ -1495,9 +1495,11 @@ async function writeDiagnosticSchedule(
 		: {};
 	const enabled = record['enabled'];
 	const cadence = record['cadence'];
+	const analyzer = record['analyzer'];
 	if (typeof enabled !== 'boolean'
 		|| typeof cadence !== 'string'
-		|| !DIAGNOSTIC_CADENCES.includes(cadence as DiagnosticCadence)) {
+		|| !DIAGNOSTIC_CADENCES.includes(cadence as DiagnosticCadence)
+		|| (analyzer !== undefined && (typeof analyzer !== 'string' || analyzer.trim().length === 0))) {
 		return Response.json(
 			{
 				ok: false,
@@ -1507,9 +1509,18 @@ async function writeDiagnosticSchedule(
 			{ status: 400 },
 		);
 	}
-	diagnostics.setSchedule({ enabled, cadence: cadence as DiagnosticCadence });
-	const outcome = diagnostics.runScheduledIfDue();
-	return Response.json({ ok: true, schedule: diagnostics.getSchedule(), outcome });
+	try {
+		diagnostics.setSchedule({
+			enabled,
+		cadence: cadence as DiagnosticCadence,
+		...(typeof analyzer === 'string' ? { analyzer: analyzer.trim() } : {}),
+		});
+		const outcome = diagnostics.runScheduledIfDue();
+		return Response.json({ ok: true, schedule: diagnostics.getSchedule(), outcome });
+	} catch (error) {
+		if (!(error instanceof DiagnosticRuntimeError)) throw error;
+		return refusalResponse(error);
+	}
 }
 
 async function writeSelfUpdatePolicy(
@@ -3204,6 +3215,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					(context) => startDiagnosticFromOperator(request, context.diagnostics),
 				),
 			},
+			'/api/projects/:projectId/diagnostics/schedule': {
+				PUT: (request) => projectOperation(
+					request.params.projectId,
+					(context) => writeDiagnosticSchedule(request, context.diagnostics),
+				),
+			},
 			'/api/projects/:projectId/diagnostics/:scanId/cancel': {
 				POST: (request) => projectOperation(
 					request.params.projectId,
@@ -3470,7 +3487,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		bootClaudeEnv,
 		projectRuntimes,
 	});
-	diagnostics.startScheduler();
+	projectRuntimes.startDiagnosticScheduler();
 	selfUpdate.startScheduler();
 
 	let stopped = false;

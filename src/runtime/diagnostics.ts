@@ -20,7 +20,6 @@ const REACT_DOCTOR_MAX_SECONDS = 60;
 const DEFAULT_SCAN_TIMEOUT_MS = 75_000;
 const MAX_REPORT_BYTES = 20 * 1024 * 1024;
 const CLEANUP_TIMEOUT_MS = 10_000;
-const SCHEDULE_CHECK_MS = 60_000;
 
 export interface DiagnosticAdapterResult {
 	version: string;
@@ -400,7 +399,6 @@ export class DiagnosticsRuntime {
 	readonly #newId: () => string;
 	readonly #scanTimeoutMs: number;
 	#active: ActiveDiagnostic | null = null;
-	#scheduleTimer: ReturnType<typeof setInterval> | null = null;
 	#admissionBlockedReason: string | null = null;
 
 	constructor(options: DiagnosticsRuntimeOptions) {
@@ -510,12 +508,16 @@ export class DiagnosticsRuntime {
 		);
 	}
 
-	setSchedule(input: { enabled: boolean; cadence: DiagnosticCadence }): DiagnosticScheduleStatus {
+	setSchedule(input: { enabled: boolean; cadence: DiagnosticCadence; analyzer?: string }): DiagnosticScheduleStatus {
 		const current = this.#store.getDiagnosticSchedule();
+		const analyzer = input.analyzer ?? current.analyzer;
+		if (!this.#adapters.has(analyzer)) {
+			throw new DiagnosticRuntimeError('analyzer-not-found', `Unknown analyzer: ${analyzer}.`, 404);
+		}
 		this.#store.setDiagnosticSchedule({
 			enabled: input.enabled,
 			cadence: input.cadence,
-			analyzer: current.analyzer,
+			analyzer,
 		});
 		return this.getSchedule();
 	}
@@ -532,13 +534,6 @@ export class DiagnosticsRuntime {
 		return 'started';
 	}
 
-	/** The existing process owns the cadence; no host cron or second lifecycle owner. */
-	startScheduler(): void {
-		if (this.#scheduleTimer !== null) return;
-		this.runScheduledIfDue();
-		this.#scheduleTimer = setInterval(() => this.runScheduledIfDue(), SCHEDULE_CHECK_MS);
-	}
-
 	getFinding(id: string): DiagnosticFinding | null {
 		return this.#store.getDiagnosticFinding(id);
 	}
@@ -552,17 +547,12 @@ export class DiagnosticsRuntime {
 	}
 
 	async stop(): Promise<void> {
-		if (this.#scheduleTimer !== null) {
-			clearInterval(this.#scheduleTimer);
-			this.#scheduleTimer = null;
-		}
 		if (this.#active === null) return;
 		this.#active.controller.abort();
 		await this.#active.promise;
 	}
 
 	close(): void {
-		if (this.#scheduleTimer !== null) throw new Error('cannot close diagnostics while scheduler is active');
 		if (this.#active !== null) throw new Error('cannot close diagnostics while a scan is active');
 		this.#store.close();
 	}
