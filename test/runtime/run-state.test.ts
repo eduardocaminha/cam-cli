@@ -29,7 +29,15 @@ describe('the ship phase of the run state machine', () => {
 		expect(canTransition('shipping', 'interrupted')).toBe(true);
 		// The change is verified and reviewed: a bad attempt never burns the run.
 		expect(canTransition('shipping', 'failed')).toBe(false);
-		expect(canTransition('shipping', 'working')).toBe(false);
+		// A typed required-check failure alone may reopen the same run for one correction.
+		expect(canTransition('shipping', 'working')).toBe(true);
+		expect(canTransition('shipping', 'waiting-user')).toBe(true);
+	});
+
+	test('a crash recovered out of review can resume in the reviewer', () => {
+		expect(canTransition('interrupted', 'review')).toBe(true);
+		expect(canTransition('interrupted', 'working')).toBe(true);
+		expect(canTransition('interrupted', 'verify')).toBe(false);
 	});
 });
 

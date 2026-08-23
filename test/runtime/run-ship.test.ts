@@ -14,9 +14,11 @@ import {
 	type RuntimeShipInput,
 	type RuntimeShipper,
 	type RuntimeShipResult,
+	type RuntimeTimer,
 	type RuntimeVerifier,
 } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 function createRuntime(shipper?: RuntimeShipper): RunRuntime {
@@ -49,6 +51,66 @@ async function retryShip(runtime: RunRuntime, runId: string): Promise<void> {
 			return false;
 		}
 	});
+}
+
+/** The one-shot provider-retry timer, driven by hand instead of the clock. */
+function createFakeTimer() {
+	let armed: { handle: number; delayMs: number; callback: () => void } | null = null;
+	let nextHandle = 1;
+	const timer: RuntimeTimer = {
+		set: (callback, delayMs) => {
+			const handle = nextHandle;
+			nextHandle += 1;
+			armed = { handle, delayMs, callback };
+			return handle;
+		},
+		clear: (handle) => {
+			if (armed?.handle === handle) armed = null;
+		},
+	};
+	return {
+		timer,
+		delay: (): number | null => armed?.delayMs ?? null,
+		fire: (): void => {
+			const current = armed;
+			if (current === null) throw new Error('no automatic retry is armed');
+			armed = null;
+			current.callback();
+		},
+	};
+}
+
+/**
+ * A run stopped by a crash while reviewing the single CI correction round: the
+ * store recovers it as interrupted out of `review`, with the correction's
+ * durable evidence still unconsumed.
+ */
+function crashedCiRun(runId: string, sessionId: string): RunStore {
+	const store = new RunStore(':memory:');
+	store.createRun({
+		id: runId,
+		issueId: 'GSHIP-720',
+		sessionId,
+		workspacePath: `/workspaces/${runId}`,
+		createdAt: '2026-08-23T10:00:00Z',
+	});
+	for (const toState of ['working', 'verify', 'review', 'full-verify', 'ready-to-ship', 'shipping'] as const) {
+		store.transition({ runId, toState, kind: `run.${toState}`, createdAt: '2026-08-23T10:00:01Z' });
+	}
+	store.transition({
+		runId,
+		toState: 'working',
+		kind: 'run.ci-fix-requested',
+		createdAt: '2026-08-23T10:00:02Z',
+		payload: {
+			origin: 'ci',
+			evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+		},
+	});
+	for (const toState of ['verify', 'review'] as const) {
+		store.transition({ runId, toState, kind: `run.${toState}`, createdAt: '2026-08-23T10:00:03Z' });
+	}
+	return store;
 }
 
 describe('shipping a run', () => {
@@ -213,6 +275,345 @@ describe('shipping a run', () => {
 		await retryShip(runtime, run.id);
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 		expect(attempts).toHaveLength(2);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a required CI check failure reuses the run for one verified, reviewed correction and the same PR', async () => {
+		const executions: RuntimeExecutionInput[] = [];
+		let ships = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-fix',
+			newSessionId: () => 'session-ci-fix',
+			executor: { execute: async (input) => {
+				executions.push(input);
+				return { outcome: 'completed', summary: 'change written' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => ++ships === 1 ? {
+				outcome: 'ci-failed',
+				evidence: {
+					prNumber: 385,
+					headSha: 'aaaa',
+					check: { name: 'ci/build', url: 'https://github.com/acme/repo/actions/runs/7' },
+				},
+			} : { outcome: 'merged', prNumber: 385 } },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(ships).toBe(2);
+		expect(executions).toHaveLength(2);
+		const correctionFeedback = executions[1]?.ciFeedback;
+		expect(correctionFeedback).toContain('Required check: ci/build');
+		expect(correctionFeedback).toContain('Check URL: https://github.com/acme/repo/actions/runs/7');
+		// GSHIP-720: the shared evidence is durable facts only. The ephemeral
+		// diagnosis command belongs to the executors' own prompt section,
+		// because the reviewer reads this same text and cannot run commands.
+		expect(correctionFeedback).not.toContain('--log-failed');
+		expect(executions[1]).toMatchObject({
+			resume: true,
+		});
+		expect(eventKinds(runtime)).toContain('run.ci-fix-requested');
+		expect(runtime.getRunRoundOrigins(run.id)).toMatchObject({ ci: 1 });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a repeated CI failure on the corrected head stops at waiting-user with both durable evidences', async () => {
+		let ships = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-repeat',
+			newSessionId: () => 'session-ci-repeat',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed',
+				evidence: {
+					prNumber: 385,
+					headSha: ++ships === 1 ? 'aaaa' : 'bbbb',
+					check: { name: 'ci/build', url: `https://github.com/acme/repo/actions/runs/${ships}` },
+				},
+			}) },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		const limit = runtime.listEvents().find((event) => event.kind === 'run.ci-fix-limit');
+		expect(limit?.payload).toMatchObject({
+			evidence: { headSha: 'bbbb' },
+			previousEvidence: { headSha: 'aaaa' },
+		});
+		expect(ships).toBe(2);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a CI correction that produces no change stops before verification', async () => {
+		let verifications = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-no-change',
+			newSessionId: () => 'session-ci-no-change',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => { verifications += 1; return { ok: true }; } },
+			hasWorkspaceChanges: () => false,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed',
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			}) },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(verifications).toBe(1);
+		expect(eventKinds(runtime).at(-1)).toBe('run.ci-fix-no-change');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a provider hold during CI correction uses waiting-provider and resumes with the durable CI evidence', async () => {
+		let executions = 0;
+		let ships = 0;
+		let resumedEvidence = '';
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-provider',
+			newSessionId: () => 'session-ci-provider',
+			executor: { execute: async (input) => {
+				executions += 1;
+				if (executions === 2) throw new ProviderCallError('claude', 'usage-limit', 'limit reached');
+				if (executions === 3) resumedEvidence = input.ciFeedback ?? '';
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => ++ships === 1 ? {
+				outcome: 'ci-failed',
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			} : { outcome: 'merged', prNumber: 385 } },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		runtime.resumeRun(run.id);
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+		expect(resumedEvidence).toContain('Required check: ci/build');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a review hold resumes the reviewer with CI evidence and keeps it on a later fix attempt', async () => {
+		const executions: RuntimeExecutionInput[] = [];
+		const reviewerEvidence: Array<string | undefined> = [];
+		let reviews = 0;
+		let verifications = 0;
+		let changeChecks = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-review-provider',
+			newSessionId: () => 'session-ci-review-provider',
+			executor: { execute: async (input) => {
+				executions.push(input);
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => { verifications += 1; return { ok: true }; } },
+			reviewer: { review: async (input) => {
+				reviews += 1;
+				reviewerEvidence.push(input.ciFeedback);
+				if (reviews === 1) return { verdict: 'clean' };
+				if (reviews === 2) {
+					throw new ProviderCallError('claude', 'usage-limit', 'review limit reached');
+				}
+				return { verdict: 'findings', detail: 'fix the CI-specific defect' };
+			} },
+			hasWorkspaceChanges: () => changeChecks++ === 0,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed',
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			}) },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(executions).toHaveLength(2);
+		expect(verifications).toBe(2);
+
+		runtime.resumeRun(run.id);
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		expect(executions).toHaveLength(3);
+		expect(reviewerEvidence[2]).toContain('Required check: ci/build');
+		expect(executions[2]?.ciFeedback).toContain('Required check: ci/build');
+		expect(verifications).toBe(2);
+		expect(eventKinds(runtime).at(-1)).toBe('run.ci-fix-no-change');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-720: the CI correction can also start from the operator's shipRun,
+	// and a provider hold taken there rests on waiting-provider like any other.
+	// The automatic resume has to be armed on this path too, or the run waits
+	// for a human that the hold never needed.
+	test('a provider hold in a shipRun-started CI correction arms the automatic resume', async () => {
+		let executions = 0;
+		let ships = 0;
+		const fake = createFakeTimer();
+		let clock = '2026-08-23T10:00:00.000Z';
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-ship-retry',
+			newSessionId: () => 'session-ci-ship-retry',
+			now: () => clock,
+			timer: fake.timer,
+			executor: { execute: async () => {
+				executions += 1;
+				if (executions === 2) {
+					throw new ProviderCallError('claude', 'usage-limit', 'limit reached', {
+						retryAt: '2026-08-23T10:10:00.000Z',
+					});
+				}
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async (): Promise<RuntimeShipResult> => {
+				ships += 1;
+				if (ships === 1) return { outcome: 'failed', detail: 'github unavailable' };
+				if (ships === 2) {
+					return {
+						outcome: 'ci-failed',
+						evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+					};
+				}
+				return { outcome: 'merged', prNumber: 385 };
+			} },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		// The correction round belongs to the operator's explicit retry, not to
+		// the automatic ship the run made for itself.
+		await retryShip(runtime, run.id);
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(fake.delay()).toBe(600_000);
+
+		clock = '2026-08-23T10:10:00.000Z';
+		fake.fire();
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+
+		// No operator answered the hold: the resume is the automatic one.
+		const kinds = eventKinds(runtime);
+		expect(kinds).toContain('run.provider-retry-automatic');
+		expect(kinds).not.toContain('run.operator-guidance');
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({ operatorInterventions: 0 });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a crash taken in review during a CI correction resumes the reviewer with the same evidence', async () => {
+		const store = crashedCiRun('run-ci-crash', 'session-ci-crash');
+		const executions: RuntimeExecutionInput[] = [];
+		const reviews: RuntimeExecutionInput[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			executor: { execute: async (input) => {
+				executions.push(input);
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async (input) => {
+				reviews.push(input);
+				return { verdict: 'clean' };
+			} },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
+		});
+
+		expect(runtime.getRun('run-ci-crash')?.state).toBe('interrupted');
+		// The operator answers the crash with guidance. That guidance is an
+		// event of its own, emitted while the run is already interrupted, and
+		// it must not be read as the interruption that names the resumed phase.
+		runtime.resumeRun('run-ci-crash', 'Mantenha a correcao de CI e revise o diff atual.');
+		await waitForCondition(() => runtime.getRun('run-ci-crash')?.state === 'done');
+
+		// The verified diff is reviewed again, not re-executed, and the open CI
+		// round is still the reviewer's context.
+		expect(executions).toHaveLength(0);
+		expect(reviews).toHaveLength(1);
+		expect(reviews[0]?.ciFeedback).toContain('Required check: ci/build');
+		// The decision reached the handoff and stayed in the history.
+		expect(reviews[0]?.operatorDecisions)
+			.toContain('Mantenha a correcao de CI e revise o diff atual.');
+		expect(eventKinds(runtime)).toContain('run.operator-guidance');
+		const events = runtime.listEvents();
+		const recovered = events.findLastIndex((event) => event.kind === 'run.recovered-interrupted');
+		expect(events.slice(recovered + 1).map((event) => event.toState)).not.toContain('working');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a later interruption taken from working resumes working, not the earlier review recovery', async () => {
+		const store = crashedCiRun('run-ci-crash-again', 'session-ci-crash-again');
+		// The crash out of review is really recovered, resumed into the reviewer
+		// and answered with a fix round; the run is then stopped again from
+		// working. The current interruption, not the older recovery still in the
+		// history, names the phase the resume re-enters.
+		store.recoverUnownedRuns('2026-08-23T10:00:10Z');
+		store.transition({
+			runId: 'run-ci-crash-again',
+			toState: 'review',
+			kind: 'run.started',
+			createdAt: '2026-08-23T10:00:11Z',
+		});
+		store.transition({
+			runId: 'run-ci-crash-again',
+			toState: 'working',
+			kind: 'run.review-fix-requested',
+			createdAt: '2026-08-23T10:00:12Z',
+		});
+		store.transition({
+			runId: 'run-ci-crash-again',
+			toState: 'interrupted',
+			kind: 'run.interrupted',
+			createdAt: '2026-08-23T10:00:13Z',
+		});
+		const executions: RuntimeExecutionInput[] = [];
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			executor: { execute: async (input) => {
+				executions.push(input);
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
+		});
+
+		runtime.resumeRun('run-ci-crash-again');
+		await waitForCondition(() => runtime.getRun('run-ci-crash-again')?.state === 'done');
+
+		expect(executions).toHaveLength(1);
+		expect(executions[0]?.ciFeedback).toContain('Required check: ci/build');
+		expect(reviews).toBe(1);
 		await runtime.stop();
 		runtime.close();
 	});

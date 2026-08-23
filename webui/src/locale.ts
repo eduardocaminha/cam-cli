@@ -144,8 +144,9 @@ export interface RunInspectorCatalog {
 		ship: string;
 	};
 	expectedCost: (formattedCost: string) => string;
-	correctionRounds: (executor: number, decision: number, orchestrator: number, indeterminate: number) => string;
+	correctionRounds: (executor: number, ci: number, decision: number, orchestrator: number, indeterminate: number) => string;
 	pullRequestLabel: (number: number) => string;
+	ciCorrectionLabel: (checkName: string) => string;
 	ciLabels: Readonly<Record<'not-reported' | 'pending' | 'passed' | 'failed', string>>;
 	providerHold: {
 		accessibleLabel: string;
@@ -207,6 +208,7 @@ export interface RunsWorkflowCatalog {
 			roundCount: number,
 			runCount: number,
 			executor: number,
+			ci: number,
 			decision: number,
 			orchestrator: number,
 			indeterminate: number,
@@ -619,10 +621,11 @@ export const LOCALE_CATALOG = {
 				ship: 'Ship',
 			},
 			expectedCost: (formattedCost) => `Expected cost: ${formattedCost}`,
-			correctionRounds: (executor, decision, orchestrator, indeterminate) => {
-				const total = executor + decision + orchestrator + indeterminate;
+			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
+				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
 					`${executor} from the executor`,
+					...(ci > 0 ? [`${ci} from CI correction`] : []),
 					`${decision} from ${decision === 1 ? 'an operator decision' : 'operator decisions'}`,
 					`${orchestrator} resolved by the orchestrator`,
 				];
@@ -632,6 +635,7 @@ export const LOCALE_CATALOG = {
 				return `${total === 1 ? 'Correction round' : 'Correction rounds'}: ${parts.join(', ')}`;
 			},
 			pullRequestLabel: (number) => `PR #${number}`,
+			ciCorrectionLabel: (checkName) => `CI correction: ${checkName}`,
 			ciLabels: {
 				'not-reported': 'CI not reported',
 				pending: 'CI pending',
@@ -712,8 +716,8 @@ export const LOCALE_CATALOG = {
 				outcomes: (done, failed, cancelled, active) =>
 					`${done} completed · ${failed} failed · ${cancelled} cancelled${active === 0 ? '' : ` · ${active} active`}`,
 				correctionsLabel: 'Corrections',
-				corrections: (roundCount, runCount, executor, decision, orchestrator, indeterminate) =>
-					`${roundCount} ${roundCount === 1 ? 'round' : 'rounds'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}: ${executor} automatic, ${orchestrator} orchestrator-resolved, ${decision} after ${decision === 1 ? 'a human decision' : 'human decisions'}${indeterminate === 0 ? '' : `, ${indeterminate} with indeterminate origin`}`,
+				corrections: (roundCount, runCount, executor, ci, decision, orchestrator, indeterminate) =>
+					`${roundCount} ${roundCount === 1 ? 'round' : 'rounds'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}: ${executor} automatic${ci === 0 ? '' : `, ${ci} from CI correction`}, ${orchestrator} orchestrator-resolved, ${decision} after ${decision === 1 ? 'a human decision' : 'human decisions'}${indeterminate === 0 ? '' : `, ${indeterminate} with indeterminate origin`}`,
 				cycleResponsesLabel: 'Orchestrator cycle responses',
 				cycleResponses: (responses, runCount) => `${responses} ${responses === 1 ? 'response' : 'responses'} across ${runCount} ${runCount === 1 ? 'run' : 'runs'}`,
 				knownCostLabel: 'Known cost',
@@ -1035,10 +1039,11 @@ export const LOCALE_CATALOG = {
 				ship: 'Enviar',
 			},
 			expectedCost: (formattedCost) => `Custo esperado: ${formattedCost}`,
-			correctionRounds: (executor, decision, orchestrator, indeterminate) => {
-				const total = executor + decision + orchestrator + indeterminate;
+			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
+				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
 					`${executor} do executor`,
+					...(ci > 0 ? [`${ci} de Correção de CI`] : []),
 					`${decision} ${decision === 1 ? 'de uma decisão do operador' : 'de decisões do operador'}`,
 					`${orchestrator} resolvida${orchestrator === 1 ? '' : 's'} pelo orquestrador`,
 				];
@@ -1048,6 +1053,7 @@ export const LOCALE_CATALOG = {
 				return `${total === 1 ? 'Rodada de correção' : 'Rodadas de correção'}: ${parts.join(', ')}`;
 			},
 			pullRequestLabel: (number) => `PR #${number}`,
+			ciCorrectionLabel: (checkName) => `Correção de CI: ${checkName}`,
 			ciLabels: {
 				'not-reported': 'CI não informada',
 				pending: 'CI pendente',
@@ -1128,8 +1134,8 @@ export const LOCALE_CATALOG = {
 				outcomes: (done, failed, cancelled, active) =>
 					`${done} concluída${done === 1 ? '' : 's'} · ${failed} com falha · ${cancelled} cancelada${cancelled === 1 ? '' : 's'}${active === 0 ? '' : ` · ${active} ativa${active === 1 ? '' : 's'}`}`,
 				correctionsLabel: 'Correções',
-				corrections: (roundCount, runCount, executor, decision, orchestrator, indeterminate) =>
-					`${roundCount} ${roundCount === 1 ? 'rodada' : 'rodadas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}: ${executor} automática${executor === 1 ? '' : 's'}, ${orchestrator} resolvida${orchestrator === 1 ? '' : 's'} pelo orquestrador, ${decision} após ${decision === 1 ? 'uma decisão humana' : 'decisões humanas'}${indeterminate === 0 ? '' : `, ${indeterminate} de origem indeterminada`}`,
+				corrections: (roundCount, runCount, executor, ci, decision, orchestrator, indeterminate) =>
+					`${roundCount} ${roundCount === 1 ? 'rodada' : 'rodadas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}: ${executor} automática${executor === 1 ? '' : 's'}${ci === 0 ? '' : `, ${ci} de Correção de CI`}, ${orchestrator} resolvida${orchestrator === 1 ? '' : 's'} pelo orquestrador, ${decision} após ${decision === 1 ? 'uma decisão humana' : 'decisões humanas'}${indeterminate === 0 ? '' : `, ${indeterminate} de origem indeterminada`}`,
 				cycleResponsesLabel: 'Respostas do orquestrador ao ciclo',
 				cycleResponses: (responses, runCount) => `${responses} ${responses === 1 ? 'resposta' : 'respostas'} em ${runCount} ${runCount === 1 ? 'execução' : 'execuções'}`,
 				knownCostLabel: 'Custo conhecido',

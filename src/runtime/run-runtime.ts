@@ -68,6 +68,8 @@ export interface RuntimeExecutionInput {
 	 * verdict, only the full verification's.
 	 */
 	fullVerifyFeedback?: string;
+	/** Sanitized evidence from the one automatic correction of a failed required CI check. */
+	ciFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
 	/**
@@ -186,7 +188,21 @@ export interface RuntimeShipInput {
  */
 export type RuntimeShipResult =
 	| { outcome: 'merged'; prNumber: number }
+	| { outcome: 'ci-failed'; evidence: RuntimeCiFailureEvidence }
 	| { outcome: 'failed'; detail: string };
+
+export interface RuntimeCiFailureEvidence {
+	prNumber: number;
+	headSha: string;
+	check: { name: string; url?: string };
+}
+
+/** Browser-safe replay of the latest durable CI correction request. */
+export interface RunCiCorrection {
+	prNumber: number;
+	headSha: string;
+	check: { name: string; url?: string };
+}
 
 export interface RuntimeShipper {
 	ship: (input: RuntimeShipInput) => Promise<RuntimeShipResult>;
@@ -210,6 +226,8 @@ export interface RunRuntimeOptions {
 	 */
 	fullVerifier?: RuntimeVerifier;
 	shipper?: RuntimeShipper;
+	/** Production git-backed check used only to reject a no-change CI correction. */
+	hasWorkspaceChanges?: (cwd: string) => boolean;
 	now?: () => string;
 	/**
 	 * The one-shot timer the automatic provider retry is armed on (GSHIP-711),
@@ -340,6 +358,7 @@ interface RunAttempt {
 	resume: boolean;
 	reviewFeedback?: string;
 	fullVerifyFeedback?: string;
+	ciFeedback?: string;
 	operatorGuidance?: string;
 }
 
@@ -399,6 +418,7 @@ export class RunRuntime {
 	readonly #cycleQuestionResolver: RuntimeCycleQuestionResolver | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
+	readonly #hasWorkspaceChanges: ((cwd: string) => boolean) | undefined;
 	readonly #now: () => string;
 	readonly #timer: RuntimeTimer;
 	readonly #newId: () => string;
@@ -427,6 +447,7 @@ export class RunRuntime {
 		this.#cycleQuestionResolver = options.cycleQuestionResolver;
 		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
+		this.#hasWorkspaceChanges = options.hasWorkspaceChanges;
 		this.#now = options.now ?? (() => new Date().toISOString());
 		this.#timer = options.timer ?? HOST_TIMER;
 		this.#newId = options.newId ?? randomUUID;
@@ -486,6 +507,26 @@ export class RunRuntime {
 	}
 
 	resumeRun(runId: string, operatorGuidance?: string, source?: string): RunRecord {
+		const guidance = operatorGuidance?.trim();
+		const run = this.#resumableRun(runId, guidance);
+		if (guidance !== undefined && guidance.length > 0) {
+			this.#emit(run.id, 'run.operator-guidance', commandPayload({ text: guidance }, source));
+		}
+		const recoveredCycle = this.#recoveredCycleAttempt(run);
+		const recoveredCi = this.#unconsumedCiAttempt(run.id);
+		this.#launch(run, {
+			resume: true,
+			...(recoveredCycle ?? {}),
+			...(recoveredCi ?? {}),
+			...(guidance === undefined || guidance.length === 0
+				? {}
+				: { operatorGuidance: guidance }),
+		});
+		return run;
+	}
+
+	/** The run a resume may reopen, or the reason it may not. */
+	#resumableRun(runId: string, guidance: string | undefined): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -500,21 +541,9 @@ export class RunRuntime {
 			&& run.state !== 'waiting-provider') {
 			throw new Error(`run cannot resume from state ${run.state}`);
 		}
-		const guidance = operatorGuidance?.trim();
 		if (run.state === 'waiting-user' && (guidance === undefined || guidance.length === 0)) {
 			throw new Error('operator guidance is required to resume a waiting-user run');
 		}
-		if (guidance !== undefined && guidance.length > 0) {
-			this.#emit(run.id, 'run.operator-guidance', commandPayload({ text: guidance }, source));
-		}
-		const recoveredCycle = this.#recoveredCycleAttempt(run);
-		this.#launch(run, {
-			resume: true,
-			...(recoveredCycle ?? {}),
-			...(guidance === undefined || guidance.length === 0
-				? {}
-				: { operatorGuidance: guidance }),
-		});
 		return run;
 	}
 
@@ -559,7 +588,14 @@ export class RunRuntime {
 		if (source !== undefined) this.#emit(run.id, 'run.ship-requested', { source });
 		const controller = new AbortController();
 		const promise = this.#driveShip(shipper, run, controller.signal)
-			.finally(() => this.#active.delete(run.id));
+			.finally(() => {
+				this.#active.delete(run.id);
+				// A ship can enter the CI correction and rest on a provider
+				// there, so this path arms the automatic resume exactly like
+				// #launch does: the hold is only answerable once the run is
+				// unowned.
+				this.#armProviderRetry(run.id);
+			});
 		this.#active.set(run.id, { controller, promise });
 		// The ship phase is already persisted: report it, not the state the
 		// caller read before asking.
@@ -627,6 +663,22 @@ export class RunRuntime {
 	 */
 	getRunRoundOrigins(runId: string): RunRoundOrigins {
 		return selectRunRoundOrigins(this.#store.listRunDecisionEvents(runId));
+	}
+
+	/** Latest CI correction evidence, read from the complete durable decision log. */
+	getRunCiCorrection(runId: string): RunCiCorrection | null {
+		const evidence = this.#store.listRunDecisionEvents(runId)
+			.findLast((event) => event.kind === 'run.ci-fix-requested')?.payload['evidence'];
+		if (!this.#isCiEvidence(evidence)) return null;
+		const url = evidence.check.url;
+		return {
+			prNumber: evidence.prNumber,
+			headSha: evidence.headSha,
+			check: {
+				name: evidence.check.name,
+				...(typeof url === 'string' && /^https?:\/\//.test(url) ? { url } : {}),
+			},
+		};
 	}
 
 	/** GitHub delivery state projected from the complete durable decision log. */
@@ -893,15 +945,13 @@ export class RunRuntime {
 		if (executor === undefined || verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
-		const providerWaitPhase = run.state === 'waiting-provider'
-			? this.#providerWaitPhase(run.id)
-			: null;
-		if (providerWaitPhase !== 'review') {
-			this.#transition(
-				run.id,
-				'working',
-				providerWaitPhase === 'working' ? 'run.provider-retry-started' : 'run.started',
-			);
+		const resumePhase = this.#resumePhase(run);
+		// A provider retry names itself; a crash recovery resumes under the same
+		// `run.started` an interrupted run has always resumed with, so its round
+		// accounting does not change with the phase it re-enters.
+		const resumeKind = run.state === 'waiting-provider' ? 'run.provider-retry-started' : 'run.started';
+		if (resumePhase !== 'review') {
+			this.#transition(run.id, 'working', resumePhase === 'working' ? resumeKind : 'run.started');
 		}
 
 		try {
@@ -912,21 +962,29 @@ export class RunRuntime {
 				run,
 				signal,
 				firstAttempt,
-				providerWaitPhase === 'review',
+				resumePhase === 'review' ? resumeKind : null,
 			);
 		} catch (error) {
-			if (signal.aborted) {
-				this.#interrupt(run.id);
-				return;
-			}
-			if (this.#restForProviderFailure(run.id, error)) return;
-			const current = this.#store.getRun(run.id);
-			if (current !== null && canTransition(current.state, 'failed')) {
-				const failedRun = this.#transition(run.id, 'failed', 'run.failed', {
-					error: errorMessage(error),
-				}).run;
-				this.#releaseFinishedWorkspace(failedRun, false);
-			}
+			this.#settleDriveFailure(run.id, signal, error);
+		}
+	}
+
+	/**
+	 * How a cycle pass that threw comes to rest: cancelled first, then a
+	 * provider hold that can still be retried, and only otherwise `failed`.
+	 */
+	#settleDriveFailure(runId: string, signal: AbortSignal, error: unknown): void {
+		if (signal.aborted) {
+			this.#interrupt(runId);
+			return;
+		}
+		if (this.#restForProviderFailure(runId, error)) return;
+		const current = this.#store.getRun(runId);
+		if (current !== null && canTransition(current.state, 'failed')) {
+			const failedRun = this.#transition(runId, 'failed', 'run.failed', {
+				error: errorMessage(error),
+			}).run;
+			this.#releaseFinishedWorkspace(failedRun, false);
 		}
 	}
 
@@ -948,15 +1006,15 @@ export class RunRuntime {
 		run: RunRecord,
 		signal: AbortSignal,
 		firstAttempt: RunAttempt,
-		resumeAtReview = false,
+		resumeAtReview: string | null = null,
 	): Promise<void> {
 		let attempt = firstAttempt;
-		if (resumeAtReview) {
+		if (resumeAtReview !== null) {
 			const next = await this.#review(
 				run,
 				signal,
 				this.#executionInput(run, signal, attempt),
-				'run.provider-retry-started',
+				resumeAtReview,
 			);
 			if (next === null) {
 				await this.#shipIfReady(run, signal);
@@ -987,6 +1045,25 @@ export class RunRuntime {
 
 	#providerWaitPhase(runId: string): 'working' | 'review' {
 		return this.getRunProviderWait(runId)?.phase ?? 'working';
+	}
+
+	/**
+	 * Where a resume re-enters the cycle. A provider hold names its own phase.
+	 * A crash is read from the one event that put the run in `interrupted` now:
+	 * an older recovery says nothing about the current interruption, so a stop
+	 * taken from working after it resumes working, not the reviewer. Only an
+	 * event that actually entered `interrupted` counts; an informational one
+	 * emitted while the run already sits there, such as the operator's own
+	 * guidance on the resume, carries the state forward and never names a phase.
+	 */
+	#resumePhase(run: RunRecord): 'working' | 'review' | null {
+		if (run.state === 'waiting-provider') return this.#providerWaitPhase(run.id);
+		if (run.state !== 'interrupted') return null;
+		const interruption = this.#store.listRunDecisionEvents(run.id)
+			.findLast((event) => event.toState === 'interrupted' && event.fromState !== 'interrupted');
+		return interruption?.kind === 'run.recovered-interrupted' && interruption.fromState === 'review'
+			? 'review'
+			: null;
 	}
 
 	#latestProviderWaitEvent(runId: string): RunEvent | null {
@@ -1147,18 +1224,81 @@ export class RunRuntime {
 				this.#releaseFinishedWorkspace(doneRun, false);
 				return;
 			}
+			if (result.outcome === 'ci-failed') {
+				await this.#handleCiFailure(run, signal, result.evidence);
+				return;
+			}
 			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
 				payload: { error: result.detail },
 			});
 		} catch (error) {
-			if (signal.aborted) {
-				this.#transition(run.id, 'ready-to-ship', 'run.ship-cancelled');
-				return;
-			}
-			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
-				payload: { error: errorMessage(error) },
-			});
+			this.#settleShipFailure(run.id, signal, error);
 		}
+	}
+
+	/**
+	 * A ship pass that threw. Once the CI correction has moved the run off
+	 * `shipping`, the throw belongs to the cycle and rests the way any cycle
+	 * pass does; still shipping, it returns to `ready-to-ship` so the same diff
+	 * can be shipped again.
+	 */
+	#settleShipFailure(runId: string, signal: AbortSignal, error: unknown): void {
+		const current = this.#store.getRun(runId);
+		if (current !== null && current.state !== 'shipping') {
+			this.#settleDriveFailure(runId, signal, error);
+			return;
+		}
+		if (signal.aborted) {
+			this.#transition(runId, 'ready-to-ship', 'run.ship-cancelled');
+			return;
+		}
+		this.#transition(runId, 'ready-to-ship', 'run.ship-failed', {
+			payload: { error: errorMessage(error) },
+		});
+	}
+
+	async #handleCiFailure(
+		run: RunRecord,
+		signal: AbortSignal,
+		evidence: RuntimeCiFailureEvidence,
+	): Promise<void> {
+		const prior = this.#store.listRunDecisionEvents(run.id)
+			.find((event) => event.kind === 'run.ci-fix-requested');
+		if (prior !== undefined) {
+			this.#transition(run.id, 'waiting-user', 'run.ci-fix-limit', {
+				summary: `Required check "${evidence.check.name}" failed after the CI correction.`,
+				payload: { evidence, previousEvidence: prior.payload['evidence'] },
+			});
+			return;
+		}
+		this.#transition(run.id, 'working', 'run.ci-fix-requested', {
+			payload: { origin: 'ci', evidence },
+		});
+		const executor = this.#executor;
+		const verifier = this.#verifier;
+		if (executor === undefined || verifier === undefined) throw new RuntimeUnavailableError();
+		await this.#driveImplementation(executor, verifier, run, signal, {
+			resume: true,
+			ciFeedback: this.#ciFeedback(evidence),
+		});
+	}
+
+	/**
+	 * The durable evidence only: PR, head, check name and check URL. Both the
+	 * executor and the reviewer read this same text, and the two roles have
+	 * different powers -- the reviewer is read-only by contract and cannot run
+	 * `gh`, so telling it how to fetch failed output would hand it an
+	 * instruction it is forbidden to follow. How to diagnose ephemerally
+	 * belongs to the executors' own CI prompt section instead (GSHIP-720),
+	 * where it reaches exactly the role that can act on it.
+	 */
+	#ciFeedback(evidence: RuntimeCiFailureEvidence): string {
+		return [
+			`PR: #${evidence.prNumber}`,
+			`Head: ${evidence.headSha}`,
+			`Required check: ${evidence.check.name}`,
+			...(evidence.check.url === undefined ? [] : [`Check URL: ${evidence.check.url}`]),
+		].join('\n');
 	}
 
 	/**
@@ -1227,6 +1367,15 @@ export class RunRuntime {
 			});
 			return false;
 		}
+		if (executionInput.ciFeedback !== undefined
+			&& this.#hasWorkspaceChanges !== undefined
+			&& !this.#hasWorkspaceChanges(executionInput.cwd)) {
+			this.#transition(run.id, 'waiting-user', 'run.ci-fix-no-change', {
+				summary: 'The CI correction produced no change.',
+				payload: { evidence: this.#latestCiEvidence(run.id) },
+			});
+			return false;
+		}
 		this.#transition(run.id, 'verify', 'run.work-completed', { summary: execution.summary });
 		this.#captureProposals(run, execution.proposals);
 		const verification = await verifier.verify(executionInput);
@@ -1260,7 +1409,9 @@ export class RunRuntime {
 		this.#transition(run.id, 'review', startKind);
 		const pendingQuestion = this.#pendingCycleQuestion(run.id);
 		if (pendingQuestion !== null) {
-			return this.#answerCycleQuestion(run, signal, pendingQuestion.questionId, pendingQuestion.finding);
+			return this.#answerCycleQuestion(
+				run, signal, pendingQuestion.questionId, pendingQuestion.finding, executionInput.ciFeedback,
+			);
 		}
 		const review = await reviewer.review(executionInput);
 		if (signal.aborted) {
@@ -1284,12 +1435,16 @@ export class RunRuntime {
 				issueId: run.issueId,
 				finding: review.detail,
 			});
-			return this.#answerCycleQuestion(run, signal, questionId, review.detail);
+			return this.#answerCycleQuestion(run, signal, questionId, review.detail, executionInput.ciFeedback);
 		}
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
 			payload: { findings: review.detail },
 		});
-		return { resume: true, reviewFeedback: review.detail };
+		return {
+			resume: true,
+			reviewFeedback: review.detail,
+			...(executionInput.ciFeedback === undefined ? {} : { ciFeedback: executionInput.ciFeedback }),
+		};
 	}
 
 	#cycleResponses(runId: string): RuntimeCycleResponse[] {
@@ -1337,6 +1492,29 @@ export class RunRuntime {
 		return { reviewFeedback: this.#cycleReviewFeedback(finding, guidance) };
 	}
 
+	/** Rebuild CI context until that correction reaches ready-to-ship or a terminal state. */
+	#unconsumedCiAttempt(runId: string): Pick<RunAttempt, 'ciFeedback'> | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const requestIndex = events.findLastIndex((event) => event.kind === 'run.ci-fix-requested');
+		if (requestIndex < 0 || events.slice(requestIndex + 1).some((event) =>
+			event.toState === 'ready-to-ship' || isTerminalRunState(event.toState))) {
+			return null;
+		}
+		const evidence = events[requestIndex]?.payload['evidence'];
+		if (!this.#isCiEvidence(evidence)) return null;
+		return { ciFeedback: this.#ciFeedback(evidence) };
+	}
+
+	#isCiEvidence(value: unknown): value is RuntimeCiFailureEvidence {
+		if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+		const evidence = value as Record<string, unknown>;
+		const check = evidence['check'];
+		return typeof evidence['prNumber'] === 'number'
+			&& typeof evidence['headSha'] === 'string'
+			&& check !== null && typeof check === 'object' && !Array.isArray(check)
+			&& typeof (check as Record<string, unknown>)['name'] === 'string';
+	}
+
 	#cycleReviewFeedback(finding: string, guidance: string): string {
 		return `${finding}\n\nBinding orchestrator guidance:\n${guidance}\n\nA no-change response is allowed only when backed by concrete evidence.`;
 	}
@@ -1365,6 +1543,7 @@ export class RunRuntime {
 		signal: AbortSignal,
 		questionId: string,
 		finding: string,
+		ciFeedback?: string,
 	): Promise<RunAttempt | null> {
 		const resolver = this.#cycleQuestionResolver;
 		if (resolver === undefined) {
@@ -1432,6 +1611,7 @@ export class RunRuntime {
 		return {
 			resume: true,
 			reviewFeedback: this.#cycleReviewFeedback(finding, normalized),
+			...(ciFeedback === undefined ? {} : { ciFeedback }),
 		};
 	}
 
@@ -1485,7 +1665,11 @@ export class RunRuntime {
 		this.#transition(run.id, 'working', 'run.full-verify-fix-requested', {
 			payload: { findings: detail },
 		});
-		return { resume: true, fullVerifyFeedback: detail };
+		return {
+			resume: true,
+			fullVerifyFeedback: detail,
+			...(executionInput.ciFeedback === undefined ? {} : { ciFeedback: executionInput.ciFeedback }),
+		};
 	}
 
 	/**
@@ -1500,6 +1684,11 @@ export class RunRuntime {
 	#fullVerifyFixUsed(runId: string): boolean {
 		return this.#store.listRunDecisionEvents(runId)
 			.some((event) => event.kind === 'run.full-verify-fix-requested');
+	}
+
+	#latestCiEvidence(runId: string): unknown {
+		return this.#store.listRunDecisionEvents(runId)
+			.findLast((event) => event.kind === 'run.ci-fix-requested')?.payload['evidence'];
 	}
 
 	/**
@@ -1548,6 +1737,7 @@ export class RunRuntime {
 			...(attempt.fullVerifyFeedback === undefined
 				? {}
 				: { fullVerifyFeedback: attempt.fullVerifyFeedback }),
+			...(attempt.ciFeedback === undefined ? {} : { ciFeedback: attempt.ciFeedback }),
 			...(attempt.operatorGuidance === undefined
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),

@@ -1850,6 +1850,7 @@ function runWithInsights(runtime: RunRuntime, run: RunRecord): unknown {
 		...run,
 		cost: runtime.getRunCost(run.id),
 		roundOrigins: runtime.getRunRoundOrigins(run.id),
+		ciCorrection: runtime.getRunCiCorrection(run.id),
 		evaluation: runtime.getRunEvaluation(run.id),
 		providerWait: runtime.getRunProviderWait(run.id),
 		pullRequest: runtime.getPullRequestDelivery(run.id),
@@ -2215,6 +2216,10 @@ export function createDefaultRunRuntimeOptions(
 			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),
 		shipper: new GithubShipper({ ensureIdentity }),
+		hasWorkspaceChanges: (workspace) => {
+			const status = defaultRunGit(workspace, ['status', '--porcelain']);
+			return status.exitCode !== 0 || status.stdout.trim().length > 0;
+		},
 		preflight: createGitRuntimePreflight(cwd),
 		evidenceCheck: new GitEvidenceChecker(),
 		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF, stateDir),

@@ -199,6 +199,23 @@ describe('durable web run API', () => {
 			payload: { status: 'pending' },
 			createdAt: '2026-08-21T20:02:00.000Z',
 		});
+		store.appendEvent({
+			runId: 'run-pr-delivery',
+			kind: 'run.ci-fix-requested',
+			payload: {
+				origin: 'ci',
+				evidence: {
+					prNumber: 685,
+					headSha: 'abc123',
+					logExcerpt: 'legacy persisted log must not reach the browser',
+					check: {
+						name: 'verify',
+						url: 'https://github.com/gateship-dev/gateship/actions/runs/720',
+					},
+				},
+			},
+			createdAt: '2026-08-21T20:03:00.000Z',
+		});
 		const runtime = new RunRuntime({ cwd: '/project', store });
 		const handle = startWebServer({
 			port: 0,
@@ -207,7 +224,8 @@ describe('durable web run API', () => {
 		});
 		try {
 			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/runs`);
-			expect(await response.json()).toMatchObject({
+			const body = await response.json() as { runs: Array<{ ciCorrection?: Record<string, unknown> }> };
+			expect(body).toMatchObject({
 				runs: [{
 					id: 'run-pr-delivery',
 					pullRequest: {
@@ -215,8 +233,17 @@ describe('durable web run API', () => {
 						url: 'https://github.com/gateship-dev/gateship/pull/685',
 						ciStatus: 'pending',
 					},
+					ciCorrection: {
+						prNumber: 685,
+						headSha: 'abc123',
+						check: {
+							name: 'verify',
+							url: 'https://github.com/gateship-dev/gateship/actions/runs/720',
+						},
+					},
 				}],
 			});
+			expect(body.runs[0]?.ciCorrection).not.toHaveProperty('logExcerpt');
 		} finally {
 			await handle.stop();
 			runtime.close();

@@ -320,6 +320,38 @@ describe('Codex CLI runtime executor', () => {
 		expect(input).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
 	});
 
+	// GSHIP-720: the ephemeral CI diagnosis guidance is role-specific, and both
+	// executors share buildWorkPrompt, so the real Codex child receives it too.
+	test('forwards the CI correction diagnosis guidance into the prompt the real child receives', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-720"}',
+		});
+		const ciFeedback = [
+			'PR: #581',
+			'Head: aaaa',
+			'Required check: ci/build',
+			'Check URL: https://github.com/acme/repo/actions/runs/7',
+		].join('\n');
+		const result = await executor.execute({
+			runId: 'run-720',
+			issueId: 'CAM-720',
+			sessionId: 'provisional',
+			resume: true,
+			ciFeedback,
+			cwd: createTestTmpdir('gship-codex-ci-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { input } = JSON.parse(result.summary as string) as { input: string };
+		expect(input).toContain('A required CI check failed on the current pull request head.');
+		expect(input).toContain('`gh run view <check-url> --log-failed`');
+		expect(input).toContain(
+			'Do not copy log output into run events, summaries, proposals, metrics or any operator-visible field; keep it in this session only.',
+		);
+		expect(input).toContain(ciFeedback);
+	});
+
 	// GSHIP-620: saving a model choice probes the CLI itself before persisting it.
 	describe('probeCodexModel', () => {
 		test('accepts a clean read-only turn for the probed model and effort', async () => {

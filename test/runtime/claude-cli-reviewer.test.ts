@@ -323,10 +323,11 @@ describe('independent Claude CLI reviewer', () => {
 	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
 		const reviewer = fixtureReviewer('FINDINGS');
 		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
-		const result = await reviewer.review(reviewInput({ operatorDecisions: decisions }));
+		const ciFeedback = 'Required check: ci/build';
+		const result = await reviewer.review(reviewInput({ operatorDecisions: decisions, ciFeedback }));
 		const change = collectChange(() => ({ exitCode: 0, stdout: 'M src/a.ts\n', stderr: '' }), 'ignored');
 		expect(promptFromReview(result)).toBe(
-			buildReviewPrompt('CAM-577', '{"id":"CAM-577"}', change, decisions),
+			buildReviewPrompt('CAM-577', '{"id":"CAM-577"}', change, decisions, ciFeedback),
 		);
 	});
 });
@@ -490,5 +491,31 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 		expect(first).toBeGreaterThanOrEqual(0);
 		expect(second).toBeGreaterThan(first);
 		expect(third).toBeGreaterThan(second);
+	});
+});
+
+// GSHIP-720: the reviewer receives the same durable CI evidence the executor
+// does, and nothing else. It is read-only by contract -- no Bash, no
+// delegation -- so a `gh run view --log-failed` instruction would be an order
+// it is forbidden to carry out. That guidance lives in the executors' prompt.
+describe('buildReviewPrompt CI correction evidence (GSHIP-720)', () => {
+	const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n' };
+	const ciFeedback = [
+		'PR: #581',
+		'Head: aaaa',
+		'Required check: ci/build',
+		'Check URL: https://github.com/acme/repo/actions/runs/7',
+	].join('\n');
+
+	test('carries the durable evidence verbatim', () => {
+		const prompt = buildReviewPrompt('CAM-720', '{"id":"CAM-720"}', change, [], ciFeedback);
+		expect(prompt).toContain('This review belongs to a bounded CI correction round.');
+		expect(prompt).toContain(ciFeedback);
+	});
+
+	test('carries no command the read-only reviewer cannot run', () => {
+		const prompt = buildReviewPrompt('CAM-720', '{"id":"CAM-720"}', change, [], ciFeedback);
+		expect(prompt).not.toContain('--log-failed');
+		expect(prompt).not.toContain('gh run view');
 	});
 });

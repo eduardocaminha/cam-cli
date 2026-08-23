@@ -899,6 +899,14 @@ describe('runs surface', () => {
 
 	test('the current-run card and runs surface link the pull request and show compact CI state', () => {
 		const run = runIn('shipping', {
+			ciCorrection: {
+				prNumber: 685,
+				headSha: 'abc123',
+				check: {
+					name: 'required/verify',
+					url: 'https://github.com/gateship-dev/gateship/actions/runs/720',
+				},
+			},
 			pullRequest: {
 				prNumber: 685,
 				url: 'https://github.com/gateship-dev/gateship/pull/685',
@@ -915,6 +923,8 @@ describe('runs surface', () => {
 			expect(html).toContain('CI failed');
 			expect(html).toContain('href="https://github.com/gateship-dev/gateship/actions/runs/685"');
 			expect(html).toContain('verify');
+			expect(html).toContain('href="https://github.com/gateship-dev/gateship/actions/runs/720"');
+			expect(html).toContain('CI correction: required/verify');
 			expect(html).not.toContain('>Merged<');
 		}
 	});
@@ -1313,6 +1323,36 @@ describe('runs surface', () => {
 		expect(summary).toContain('2 after human decisions');
 		expect(summary).toContain('$');
 		expect(summary).not.toContain('Score');
+	});
+
+	// GSHIP-720: a CI correction is a correction round like any other. A run
+	// whose only round came from CI reports it in the card, in the workflow
+	// totals and in the cohort totals, instead of reading as a run that was
+	// never corrected.
+	test('counts a CI-only correction in the card, the workflow totals and the cohort totals', () => {
+		const runs = [runIn('done', {
+			id: 'run-ci',
+			roundOrigins: { executor: 0, ci: 1, decision: 0, indeterminate: 0 },
+			evaluation: evaluation('revision-ci', 'shipped'),
+		})];
+		expect(summarizeWorkflow(runs)).toMatchObject({
+			corrections: { executor: 0, ci: 1, decision: 0, indeterminate: 0, runCount: 1 },
+		});
+
+		const html = runsPage({ runs });
+		expect(html).toContain('Correction round:');
+		expect(html).toContain('1 from CI correction');
+
+		const summary = panel(html, 'Workflow signals');
+		expect(summary).toContain('1 round across 1 run');
+		expect(summary).toContain('1 from CI correction');
+
+		// The cohort reports the same single round: its total is not a
+		// per-origin sum that silently drops the CI one.
+		expect(summarizeWorkflowCohorts(runs)[0]).toMatchObject({
+			corrections: { executor: 0, ci: 1, decision: 0, indeterminate: 0, runCount: 1 },
+		});
+		expect(panel(html, 'Replayable benchmarks')).toContain('1 round across 1 run');
 	});
 
 	test('keeps absent provider cost explicit instead of fabricating zero', () => {

@@ -117,11 +117,17 @@ describe('independent Codex reviewer', () => {
 			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
 		});
 
-		expect(await reviewer.review({ ...input(), operatorDecisions: decisions }))
+		const ciFeedback = 'Required check: ci/build';
+		expect(await reviewer.review({ ...input(), operatorDecisions: decisions, ciFeedback }))
 			.toEqual({ verdict: 'clean' });
 
 		const change = collectChange(() => ({ exitCode: 0, stdout: '', stderr: '' }), 'ignored');
-		expect(capturedPrompt).toBe(buildReviewPrompt('CAM-1', '{"id":"CAM-1"}', change, decisions));
+		expect(capturedPrompt).toBe(
+			buildReviewPrompt('CAM-1', '{"id":"CAM-1"}', change, decisions, ciFeedback),
+		);
+		// GSHIP-720: this provider's reviewer is read-only too, so the CI round
+		// reaches it as evidence only, never as a command to fetch failed logs.
+		expect(capturedPrompt).not.toContain('gh run view');
 		// GSHIP-703: same shared builder, so this reviewer's findings carry the
 		// one operator language contract, not a Codex-specific copy of it.
 		expect(capturedPrompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
