@@ -1,7 +1,8 @@
+import { EXECUTOR_HANDOFF_EVENT } from './agent-executor-router.ts';
 import { REVIEW_FALLBACK_EVENT } from './agent-reviewer-router.ts';
 import type { AgentProviderId } from './agent-session.ts';
-import type { RunCostRole, RunEvent, RunRecord } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
+import type { RunCostRole, RunEvent, RunRecord } from './run-store.ts';
 
 export type RunEvaluationOutcome = 'shipped' | 'failed' | 'cancelled' | 'incomplete';
 
@@ -79,13 +80,14 @@ interface RoleConfigurationAccumulator {
 }
 
 /**
- * Both providers one review fallback names. The event is written only once the
- * alternative reviewer has actually been invoked, so the target counts as
- * invoked even when it refused: its own spawn already reported the model and
- * effort it ran with, and dropping the provider alone would leave the role
- * showing a model no listed provider ever ran.
+ * Both providers one review fallback or executor handoff names (GSHIP-709,
+ * GSHIP-722). Either event is written only once the alternative actually
+ * settled, so the target counts as invoked even when it refused: its own
+ * spawn already reported the model and effort it ran with, and dropping the
+ * provider alone would leave the role showing a model no listed provider ever
+ * ran.
  */
-function foldReviewFallback(
+function foldProviderPair(
 	entry: RoleConfigurationAccumulator,
 	payload: Record<string, unknown>,
 ): void {
@@ -111,7 +113,11 @@ function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRol
 	};
 	for (const event of events) {
 		if (event.kind === REVIEW_FALLBACK_EVENT) {
-			foldReviewFallback(entryFor('reviewer'), event.payload);
+			foldProviderPair(entryFor('reviewer'), event.payload);
+			continue;
+		}
+		if (event.kind === EXECUTOR_HANDOFF_EVENT) {
+			foldProviderPair(entryFor('executor'), event.payload);
 			continue;
 		}
 		const role = MODEL_EVENT_ROLES[event.kind];

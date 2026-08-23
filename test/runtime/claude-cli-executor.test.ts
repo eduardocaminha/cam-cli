@@ -867,3 +867,50 @@ describe('buildWorkPrompt CI correction guidance (GSHIP-720)', () => {
 		expect(prompt).not.toContain('A required CI check failed');
 	});
 });
+
+describe('buildWorkPrompt executor handoff (GSHIP-722)', () => {
+	const issueId = 'CAM-722';
+	const issue = '{"id":"CAM-722"}';
+
+	function handoffPrompt(): string {
+		return buildWorkPrompt(issueId, issue, false, undefined, undefined, [], undefined, undefined, {
+			fromProvider: 'claude',
+			reason: 'usage-limit',
+			status: 'M src/a.ts',
+			diff: 'diff --git a/src/a.ts b/src/a.ts',
+		});
+	}
+
+	test('a handoff opens with taking over rather than a blind initial prompt or a resume', () => {
+		const prompt = handoffPrompt();
+		expect(prompt).toContain(`Take over execution of Gateship issue ${issueId} in a new session.`);
+		expect(prompt).not.toContain(`Implement Gateship issue ${issueId}.`);
+		expect(prompt).not.toContain('Continue the existing Gateship work session');
+	});
+
+	test('a handoff carries the origin, reason and the current diff and status', () => {
+		const prompt = handoffPrompt();
+		expect(prompt).toContain('This work transferred to you from claude after it reported usage-limit.');
+		expect(prompt).toContain('Working tree status at handoff:');
+		expect(prompt).toContain('M src/a.ts');
+		expect(prompt).toContain('Diff against HEAD at handoff:');
+		expect(prompt).toContain('diff --git a/src/a.ts b/src/a.ts');
+	});
+
+	test('a resumed turn never carries a handoff opening, even with one supplied', () => {
+		const prompt = buildWorkPrompt(issueId, issue, true, undefined, undefined, [], undefined, undefined, {
+			fromProvider: 'claude',
+			reason: 'usage-limit',
+			status: '',
+			diff: '',
+		});
+		expect(prompt).toContain('Continue the existing Gateship work session');
+		expect(prompt).not.toContain('Take over execution');
+	});
+
+	test('without a handoff the prompt carries no takeover section', () => {
+		const prompt = buildWorkPrompt(issueId, issue, false, undefined, undefined, []);
+		expect(prompt).not.toContain('This work transferred to you from');
+		expect(prompt).not.toContain('Working tree status at handoff:');
+	});
+});

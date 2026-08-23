@@ -24,6 +24,7 @@ import {
 	type DiagnosticCadenceView,
 	type DiagnosticFindingView,
 	type DiagnosticsView,
+	type ExecutorHandoffSettingView,
 	emptyModelSettings,
 	type GitIdentityView,
 	type IssueReviewDraft,
@@ -40,10 +41,10 @@ import {
 	type OperatorProfileView,
 	type OperatorSpecDraft,
 	type ProjectBriefView,
-	type RegisteredProjectView,
 	type ProjectStatusView,
 	type ProposalView,
 	type ProviderStatusView,
+	type RegisteredProjectView,
 	type ResolvedProposalView,
 	type SelfUpdateView,
 	type StaleServiceView,
@@ -93,6 +94,7 @@ import {
 	type RunCostRole,
 	type RunCostRoleUsage,
 	type RunEventView,
+	type RunExecutorHandoffView,
 	type RunProviderWaitView,
 	type RunView,
 	summarizeWorkflow,
@@ -204,6 +206,8 @@ export interface AppProps {
 	modelSettings: ModelSettingsView;
 	/** Off by default: autonomy never turns itself on (GSHIP-638). */
 	chainRuns: ChainRunsView;
+	/** Off by default: the operator opts in to a run transferring its executor role once (GSHIP-722). */
+	executorHandoff: ExecutorHandoffSettingView;
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
 	/** Whether each remote channel resolved a secret; never the secret itself (GSHIP-652). */
@@ -276,6 +280,7 @@ export interface AppProps {
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
 	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
 	onSetChainRuns: (enabled: boolean) => void;
+	onSetExecutorHandoff: (enabled: boolean) => void;
 	onSetSelfUpdate: (enabled: boolean) => void;
 	/**
 	 * Import a GitHub repository into a checkout Gateship manages, by
@@ -639,6 +644,39 @@ function ProviderWaitCallout({
 }
 
 /**
+ * Discloses that a run's executor role handed off between providers
+ * (GSHIP-722) and its origin -- never an invented balance, only the fact, the
+ * direction and why. Shown regardless of the run's current state: once a
+ * handoff happened, it stays a fact about the run.
+ */
+function ExecutorHandoffCallout({
+	catalog,
+	handoff,
+}: {
+	catalog: RunInspectorCatalog;
+	handoff: RunExecutorHandoffView | null;
+}): React.ReactElement | null {
+	if (handoff === null) return null;
+	const fromProviderName = handoff.from === 'claude' ? 'Claude Code' : 'Codex';
+	const toProviderName = handoff.to === 'claude' ? 'Claude Code' : 'Codex';
+	// A refused attempt never transferred anything: the run stayed on its own
+	// origin, so the title says the attempt was refused instead of claiming a
+	// handoff that did not happen.
+	const title = handoff.outcome === 'refused'
+		? catalog.executorHandoff.refusedTitle(fromProviderName, toProviderName)
+		: catalog.executorHandoff.title(fromProviderName, toProviderName);
+	return (
+		<section
+			aria-label={catalog.executorHandoff.accessibleLabel}
+			className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-muted-foreground text-sm"
+		>
+			<span className="font-medium">{title}</span>
+			<p className="text-xs">{catalog.executorHandoff.reasonPrefix}{catalog.providerHold.waitReasons[handoff.reason]}</p>
+		</section>
+	);
+}
+
+/**
  * The commands the run admits right now, and only those: a command the runtime
  * would refuse is not rendered as a dead button. `pending` still holds the ones
  * that are offered, so a command in flight cannot be issued twice.
@@ -764,6 +802,7 @@ function RunCardContent({
 			<RunProgress catalog={catalog} run={run} />
 			<PullRequestDelivery catalog={catalog} run={run} />
 			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
+			<ExecutorHandoffCallout catalog={catalog} handoff={run.executorHandoff} />
 			{run.cost.totalCostUsd === null ? null : (
 				<p className="text-muted-foreground text-sm">
 					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
@@ -1805,6 +1844,39 @@ function ChainRunsPanel({
 					type="checkbox"
 				/>
 				<span className="font-medium">{catalog.chain.label}</span>
+			</label>
+		</ContextPanel>
+	);
+}
+
+/**
+ * The executor handoff opt-in (GSHIP-722): off by default, same shape as
+ * `ChainRunsPanel`. Turning it on lets a run transfer only its executor role
+ * to the other provider, once, when the primary reports a subscription usage
+ * limit or a rate limit while implementing.
+ */
+function ExecutorHandoffPanel({
+	executorHandoff,
+	pending,
+	onSetExecutorHandoff,
+	catalog,
+}: Pick<AppProps, 'executorHandoff' | 'pending' | 'onSetExecutorHandoff'> & { catalog: SettingsCatalog }): React.ReactElement {
+	return (
+		<ContextPanel
+			actionLabels={catalog.disclosure}
+			description={catalog.executorHandoff.description}
+			open
+			title={catalog.executorHandoff.title}
+		>
+			<label className="flex items-center gap-2 text-sm">
+				<input
+					checked={executorHandoff.enabled}
+					disabled={pending}
+					onChange={(event) =>
+						onSetExecutorHandoff((event.currentTarget as unknown as { checked: boolean }).checked)}
+					type="checkbox"
+				/>
+				<span className="font-medium">{catalog.executorHandoff.label}</span>
 			</label>
 		</ContextPanel>
 	);
@@ -4187,6 +4259,12 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				catalog={catalog}
 				chainRuns={props.chainRuns}
 				onSetChainRuns={props.onSetChainRuns}
+				pending={props.pending}
+			/>
+			<ExecutorHandoffPanel
+				catalog={catalog}
+				executorHandoff={props.executorHandoff}
+				onSetExecutorHandoff={props.onSetExecutorHandoff}
 				pending={props.pending}
 			/>
 			<SelfUpdatePanel

@@ -21,23 +21,25 @@ import {
 	cancelDiagnostic,
 	commandRun,
 	connectClaudeCredential,
-	createProject,
 	createIssue,
-	describeClaudeCredentialConfirmation,
+	createProject,
 	type DiagnosticsView,
+	describeClaudeCredentialConfirmation,
 	disconnectClaudeCredential,
 	dismissDiagnosticFinding,
 	dismissProposal,
-	eventsPathOf,
+	type ExecutorHandoffSettingView,
 	emptyDiagnostics,
 	emptyModelSettings,
 	emptyNotificationChannels,
 	emptySelfUpdate,
+	eventsPathOf,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
 	fetchDiagnostics,
+	fetchExecutorHandoff,
 	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
@@ -50,27 +52,28 @@ import {
 	fetchRuns,
 	fetchSelfUpdate,
 	type GitIdentityView,
-	importProject,
 	type IssueReviewDraft,
+	importProject,
 	type ModelSettingsView,
 	type NotificationChannelsView,
 	type OperatorProfileView,
 	type ProjectBriefView,
 	type ProjectStatusView,
-	type RegisteredProjectView,
 	type ProposalView,
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
-	registerProject,
-	removeResendCredential,
+	type RegisteredProjectView,
 	type ResolvedProposalView,
 	type RunAction,
+	registerProject,
+	removeResendCredential,
 	type SelfUpdateView,
 	type StaleServiceView,
 	saveBrief,
 	saveChainRuns,
 	saveDiagnosticSchedule,
+	saveExecutorHandoff,
 	saveModelSettings,
 	saveOperatorProfile,
 	saveResendSettings,
@@ -116,6 +119,9 @@ const EMPTY_BRIEF: ProjectBriefView = {
 /** Off by default, same as a fresh install that never toggled it (GSHIP-638). */
 const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
 
+/** Off by default, same as a fresh install that never toggled it (GSHIP-722). */
+const EMPTY_EXECUTOR_HANDOFF: ExecutorHandoffSettingView = { enabled: false };
+
 const CHECKING_PROJECT: ProjectStatusView = {
 	state: 'checking',
 	name: '',
@@ -160,6 +166,7 @@ function useOperationalRun(): {
 	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
 	chainRuns: ChainRunsView;
+	executorHandoff: ExecutorHandoffSettingView;
 	notificationChannels: NotificationChannelsView;
 	project: ProjectStatusView;
 	projects: RegisteredProjectView[];
@@ -196,6 +203,7 @@ function useOperationalRun(): {
 	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
 	const [chainRuns, setChainRuns] = useState<ChainRunsView>(EMPTY_CHAIN_RUNS);
+	const [executorHandoff, setExecutorHandoff] = useState<ExecutorHandoffSettingView>(EMPTY_EXECUTOR_HANDOFF);
 	const [notificationChannels, setNotificationChannels] = useState<NotificationChannelsView>(
 		emptyNotificationChannels,
 	);
@@ -225,6 +233,7 @@ function useOperationalRun(): {
 			fetchResolvedProposals(),
 			fetchModelSettings(),
 			fetchChainRuns(),
+			fetchExecutorHandoff(),
 			fetchNotificationChannels(),
 			fetchProjectStatus(),
 			fetchProjects(),
@@ -242,6 +251,7 @@ function useOperationalRun(): {
 				resolvedProposalSnapshot,
 				modelSnapshot,
 				chainRunsSnapshot,
+				executorHandoffSnapshot,
 				notificationChannelsSnapshot,
 				projectSnapshot,
 				projectsSnapshot,
@@ -271,6 +281,7 @@ function useOperationalRun(): {
 				setHandoff(briefSnapshot.handoff);
 				setModelSettings(modelSnapshot);
 				setChainRuns(chainRunsSnapshot);
+				setExecutorHandoff(executorHandoffSnapshot);
 				setNotificationChannels(notificationChannelsSnapshot);
 				setProject(projectSnapshot);
 				setProjects(projectsSnapshot);
@@ -412,6 +423,7 @@ function useOperationalRun(): {
 		handoff,
 		modelSettings,
 		chainRuns,
+		executorHandoff,
 		notificationChannels,
 		project,
 		projects,
@@ -450,6 +462,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		handoff,
 		modelSettings,
 		chainRuns,
+		executorHandoff,
 		notificationChannels,
 		project,
 		projects,
@@ -488,6 +501,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		<App
 			backlog={backlog}
 			chainRuns={chainRuns}
+			executorHandoff={executorHandoff}
 			diagnostics={diagnostics}
 			drafts={drafts}
 			brief={brief}
@@ -555,6 +569,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => saveDiagnosticSchedule(enabled, cadence))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled))}
+			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled))}
 			// GSHIP-718: importing clones into a checkout Gateship manages and
 			// registers it, so success navigates the same way a fresh registration
 			// does -- straight to the imported project's own URL.
