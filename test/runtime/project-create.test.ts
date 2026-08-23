@@ -21,6 +21,14 @@ function result(exitCode = 0, stdout = '', stderr = '') {
 	return { exitCode, stdout, stderr };
 }
 
+const TEST_GIT_IDENTITY_ENV = {
+	...process.env,
+	GIT_AUTHOR_NAME: 'Gateship Test',
+	GIT_AUTHOR_EMAIL: 'gateship@example.test',
+	GIT_COMMITTER_NAME: 'Gateship Test',
+	GIT_COMMITTER_EMAIL: 'gateship@example.test',
+};
+
 function localRunner(
 	calls: ProjectCreateCommandInput[],
 	create: (input: ProjectCreateCommandInput) => ReturnType<typeof result> | Promise<ReturnType<typeof result>> =
@@ -33,7 +41,12 @@ function localRunner(
 	return async (input) => {
 		calls.push({ cmd: [...input.cmd], cwd: input.cwd });
 		if (input.cmd[0] === 'git') {
-			const command = Bun.spawnSync(input.cmd, { cwd: input.cwd, stdout: 'pipe', stderr: 'pipe' });
+			const command = Bun.spawnSync(input.cmd, {
+				cwd: input.cwd,
+				env: TEST_GIT_IDENTITY_ENV,
+				stdout: 'pipe',
+				stderr: 'pipe',
+			});
 			return result(command.exitCode, command.stdout.toString(), command.stderr.toString());
 		}
 		if (input.cmd[2] === 'view') {

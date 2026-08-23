@@ -339,7 +339,18 @@ describe('POST /api/projects/create', () => {
 		const runCommand: ProjectCreateCommandRunner = async (input) => {
 			commands.push([...input.cmd]);
 			if (input.cmd[0] === 'git') {
-				const child = Bun.spawnSync(input.cmd, { cwd: input.cwd, stdout: 'pipe', stderr: 'pipe' });
+				const child = Bun.spawnSync(input.cmd, {
+					cwd: input.cwd,
+					env: {
+						...process.env,
+						GIT_AUTHOR_NAME: 'Gateship Test',
+						GIT_AUTHOR_EMAIL: 'gateship@example.test',
+						GIT_COMMITTER_NAME: 'Gateship Test',
+						GIT_COMMITTER_EMAIL: 'gateship@example.test',
+					},
+					stdout: 'pipe',
+					stderr: 'pipe',
+				});
 				return { exitCode: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() };
 			}
 			if (input.cmd[2] === 'view') {
