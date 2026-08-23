@@ -60,6 +60,14 @@ function runsPathOf(scope: ProjectScope): string {
 	return scope === null ? RUNS_PATH : projectApiPath(scope, '/runs');
 }
 
+function chatPathOf(scope: ProjectScope): string {
+	return scope === null ? CHAT_PATH : projectApiPath(scope, '/chat');
+}
+
+function briefPathOf(scope: ProjectScope): string {
+	return scope === null ? BRIEF_PATH : projectApiPath(scope, '/brief');
+}
+
 /**
  * The issue collection of the selected project (GSHIP-712), derived from the
  * same scope runs already use so intake, specification, approval and abandon
@@ -872,13 +880,13 @@ export async function fetchProviders(): Promise<ProvidersSnapshot> {
 	return { providers: payload.providers ?? [], selected: payload.selected ?? 'claude' };
 }
 
-export async function fetchChat(): Promise<ChatMessageView[]> {
-	const payload = await readJson<ChatPayload>(await fetch(CHAT_PATH), 'Conversation');
+export async function fetchChat(scope: ProjectScope = null): Promise<ChatMessageView[]> {
+	const payload = await readJson<ChatPayload>(await fetch(chatPathOf(scope)), 'Conversation');
 	return payload.messages ?? [];
 }
 
-export async function sendChat(message: string): Promise<string> {
-	const response = await fetch(CHAT_PATH, {
+export async function sendChat(message: string, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(chatPathOf(scope), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ message }),
@@ -899,8 +907,8 @@ function briefRecord(record: Partial<ProjectBriefView> | undefined): ProjectBrie
 }
 
 /** One read for both records: the brief to edit and the handoff to read. */
-export async function fetchBrief(): Promise<BriefSnapshot> {
-	const payload = await readJson<BriefPayload>(await fetch(BRIEF_PATH), 'Brief');
+export async function fetchBrief(scope: ProjectScope = null): Promise<BriefSnapshot> {
+	const payload = await readJson<BriefPayload>(await fetch(briefPathOf(scope)), 'Brief');
 	return { brief: briefRecord(payload.brief), handoff: briefRecord(payload.handoff) };
 }
 
@@ -909,8 +917,8 @@ export async function fetchBrief(): Promise<BriefSnapshot> {
  * service invalidates it as part of the successful brief write. A refusal
  * surfaces the server's own validation message.
  */
-export async function saveBrief(brief: ProjectBriefView): Promise<string> {
-	const response = await fetch(BRIEF_PATH, {
+export async function saveBrief(brief: ProjectBriefView, scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(briefPathOf(scope), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(brief),

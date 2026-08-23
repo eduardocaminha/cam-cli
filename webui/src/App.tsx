@@ -3271,7 +3271,7 @@ function UnavailableProjectSurface({
 	);
 }
 
-function HomeSurface(props: AppProps): React.ReactElement {
+function HomeSurface(props: AppProps & { projectId: string }): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	return (
@@ -3293,7 +3293,7 @@ function HomeSurface(props: AppProps): React.ReactElement {
 				<RunCard
 					catalog={localeCatalog.runInspector}
 					footer={
-						<a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(props.projects.find((project) => project.current)?.id ?? '')}/runs`}>
+						<a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(props.projectId)}/runs`}>
 							{localeCatalog.runInspector.viewDetailsLabel}
 						</a>
 					}
@@ -4303,10 +4303,10 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 }
 
 /**
- * GSHIP-707, GSHIP-712: runs and work are operational for any registered ready
- * project, reading and commanding that project's own runtime. Conversation and
- * settings still belong to the boot project alone, and a project the registry
- * does not report ready keeps the same typed answer it always had.
+ * GSHIP-707, GSHIP-712, GSHIP-723: every registered ready project has its own
+ * conversation, runs and work surfaces. Settings and the remaining extras stay
+ * on the boot project, and a project the registry does not report ready keeps
+ * the same typed answer it always had.
  */
 function NonCurrentProjectSurface({
 	props,
@@ -4318,6 +4318,7 @@ function NonCurrentProjectSurface({
 	surface: RouteSelection['surface'];
 }): React.ReactElement {
 	if (selectedProject.readiness === 'ready') {
+		if (surface === 'conversation') return <HomeSurface {...props} projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} bootRuntimeExtras={false} />;
 	}
@@ -4373,7 +4374,7 @@ function SelectedRouteSurface({
 	if (selection.surface === 'runs') return <RunsSurface {...props} />;
 	if (selection.surface === 'work') return <WorkSurface {...props} bootRuntimeExtras />;
 	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
-	return <HomeSurface {...props} />;
+	return <HomeSurface {...props} projectId={selectedProject.id} />;
 }
 
 export function App(props: AppProps): React.ReactElement {
