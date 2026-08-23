@@ -8,13 +8,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import { readBacklogFromMain } from '../../src/issues/backlog.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
+import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { projectIdOf } from '../../webui/src/App.tsx';
 import {
 	commandRun,
@@ -30,6 +32,10 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 interface ProjectList {
 	projects: Array<{ id: string; current: boolean }>;
+}
+
+interface ProposalResponse {
+	proposals: Array<{ id: string; status: string }>;
 }
 
 function readyProject(root: string): void {
@@ -68,6 +74,41 @@ function seedRun(store: RunStore, runId: string, issueId: string): void {
 		kind: 'run.interrupted',
 		createdAt: '2026-08-22T10:01:00.000Z',
 	});
+}
+
+function seedProposal(store: RunStore, runId: string, issueId: string, title: string): void {
+	store.createRun({
+		id: runId,
+		issueId,
+		sessionId: `session-${runId}`,
+		workspacePath: `/tmp/${runId}`,
+		createdAt: '2026-08-22T10:00:00.000Z',
+	});
+	store.recordProposals({
+		runId,
+		issueId,
+		proposals: [{ title, evidence: `Evidência de ${title}.` }],
+		createdAt: '2026-08-22T10:01:00.000Z',
+	});
+}
+
+function publishableProject(prefix: string): { local: string; remote: string } {
+	const root = createTestTmpdir(prefix);
+	const seed = join(root, 'seed');
+	mkdirSync(seed, { recursive: true });
+	execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: seed });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: seed });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: seed });
+	writeFileSync(join(seed, 'README.md'), '# Test\n');
+	execFileSync('git', ['add', '.'], { cwd: seed });
+	execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: seed });
+	const remote = join(root, 'remote.git');
+	execFileSync('git', ['clone', '-q', '--bare', seed, remote], { cwd: root });
+	const local = join(root, 'local');
+	execFileSync('git', ['clone', '-q', remote, local], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: local });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: local });
+	return { local, remote };
 }
 
 async function currentProjectId(origin: string): Promise<string> {
@@ -149,6 +190,103 @@ describe('project-scoped browser runs', () => {
 				runs: Array<{ id: string }>;
 			};
 			expect(bootRuns.runs.map((run) => run.id)).toEqual(['run-boot']);
+		} finally {
+			await handle.stop();
+			bootRuntime.close();
+			registry.close();
+		}
+	});
+
+	test('proposal reads and decisions stay in the named project, including promotion', async () => {
+		const boot = publishableProject('gship-browser-proposals-boot-');
+		const foreign = publishableProject('gship-browser-proposals-foreign-');
+		const bootState = createTestTmpdir('gship-browser-proposals-boot-state-');
+		const foreignState = createTestTmpdir('gship-browser-proposals-foreign-state-');
+		const bootStore = new RunStore(join(bootState, 'runtime.sqlite'));
+		seedProposal(bootStore, 'run-boot-proposal', 'GSHIP-737-boot', 'Ideia do projeto boot');
+		const foreignStore = new RunStore(join(foreignState, 'runtime.sqlite'));
+		seedProposal(foreignStore, 'run-foreign-proposal', 'GSHIP-737-foreign', 'Ideia do projeto estrangeiro');
+		foreignStore.close();
+		const bootRuntime = new RunRuntime({ cwd: boot.local, store: bootStore });
+		const registry = openProjectRegistry(createTestTmpdir('gship-browser-proposals-home-'));
+		const registered = registry.reconcile({
+			root: foreign.local,
+			stateDir: foreignState,
+			readiness: {
+				state: 'ready',
+				name: 'foreign',
+				repository: 'acme/foreign',
+				remoteUrl: foreign.remote,
+				sourceRef: RUNTIME_SOURCE_REF,
+			},
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: boot.local,
+			stateDir: bootState,
+			projectRegistry: registry,
+			runRuntime: bootRuntime,
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const bootId = (await fetch(`${origin}/api/projects`).then((response) => response.json()) as {
+			projects: Array<{ id: string; current: boolean }>;
+		}).projects.find((project) => project.current)?.id;
+		expect(bootId).toBeDefined();
+		const base = (projectId: string) => `${origin}/api/projects/${encodeURIComponent(projectId)}`;
+		const proposal = (runId: string) => `${runId}-proposal-1`;
+		const body = {
+			title: 'Draft promovido no projeto estrangeiro',
+			scope: 'Escopo do projeto estrangeiro.',
+			verificationCommand: 'bun test focused',
+		};
+
+		try {
+			const bootPending = await fetch(`${base(bootId!)}/proposals`).then((response) => response.json()) as ProposalResponse;
+			const foreignPending = await fetch(`${base(registered.id)}/proposals`).then((response) => response.json()) as ProposalResponse;
+			expect(bootPending.proposals.map((item: { id: string }) => item.id)).toEqual([proposal('run-boot-proposal')]);
+			expect(foreignPending.proposals.map((item: { id: string }) => item.id)).toEqual([proposal('run-foreign-proposal')]);
+
+			const dismissed = await fetch(`${base(bootId!)}/proposals/${proposal('run-boot-proposal')}/dismiss`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(dismissed.status).toBe(200);
+			expect((await dismissed.json() as { proposal: { status: string } }).proposal).toMatchObject({ status: 'dismissed' });
+			const foreignStillPending = await fetch(`${base(registered.id)}/proposals`);
+			expect(foreignStillPending.status).toBe(200);
+			expect(await foreignStillPending.json()).toMatchObject({
+				proposals: [{ id: proposal('run-foreign-proposal'), status: 'pending' }],
+			});
+
+			const promoted = await fetch(`${base(registered.id)}/proposals/${proposal('run-foreign-proposal')}/promote`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			expect(promoted.status).toBe(200);
+			const promotedPayload = await promoted.json();
+			expect(promotedPayload).toMatchObject({
+				ok: true,
+				proposal: { id: proposal('run-foreign-proposal'), status: 'promoted' },
+				issue: { title: body.title },
+			});
+
+			const bootResolved = await fetch(`${base(bootId!)}/proposals/resolved`).then((response) => response.json()) as ProposalResponse;
+			const foreignResolved = await fetch(`${base(registered.id)}/proposals/resolved`).then((response) => response.json()) as ProposalResponse;
+			expect(bootResolved.proposals.map(({ id, status }) => ({ id, status }))).toEqual([
+				{ id: proposal('run-boot-proposal'), status: 'dismissed' },
+			]);
+			expect(foreignResolved.proposals.map(({ id, status }) => ({ id, status }))).toEqual([
+				{ id: proposal('run-foreign-proposal'), status: 'promoted' },
+			]);
+
+			const bootBacklog = readBacklogFromMain(boot.local, undefined, RUNTIME_SOURCE_REF);
+			const foreignBacklog = readBacklogFromMain(foreign.local, undefined, RUNTIME_SOURCE_REF);
+			expect(bootBacklog).toEqual([]);
+			expect(foreignBacklog).toContainEqual(expect.objectContaining({
+				title: body.title,
+				stage: 'specified',
+				status: 'open',
+			}));
 		} finally {
 			await handle.stop();
 			bootRuntime.close();
