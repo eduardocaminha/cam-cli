@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-721",
+  "title": "Completar fallback read-only entre revisores",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T07:53:03.595Z",
+  "updatedAt": "2026-08-23T07:53:03.595Z",
+  "description": "Completar o fallback de revisão read-only introduzido na GSHIP-709 sem alterar executor, provider principal da run ou política global. Quando o revisor Codex falhar antes de produzir veredito com usage-limit ou rate-limited, tentar exatamente uma revisão nova no Claude, simétrico ao caminho Claude para Codex já existente. Preservar o erro original quando a alternativa falhar, não aplicar fallback para auth, model-refused, transport, protocol, cancelamento ou erro desconhecido, e impedir ping-pong. Registrar o mesmo evento durável run.review-fallback com from, to, reason, outcome e retryAt quando conhecido. Garantir que replay, API e UI atribuam os providers realmente invocados ao papel reviewer sem reescrever providerId histórico da run. Cobrir sucesso, recusa, aborto e não admissibilidade nas duas direções. Fora do escopo: fallback do executor, seleção automática de modelo, nova configuração, mudança de sessão da run ou revisão incremental.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Completar o fallback de revisão read-only introduzido na GSHIP-709 sem alterar executor, provider principal da run ou política global. Quando o revisor Codex falhar antes de produzir veredito com usage-limit ou rate-limited, tentar exatamente uma revisão nova no Claude, simétrico ao caminho Claude para Codex já existente. Preservar o erro original quando a alternativa falhar, não aplicar fallback para auth, model-refused, transport, protocol, cancelamento ou erro desconhecido, e impedir ping-pong. Registrar o mesmo evento durável run.review-fallback com from, to, reason, outcome e retryAt quando conhecido. Garantir que replay, API e UI atribuam os providers realmente invocados ao papel reviewer sem reescrever providerId histórico da run. Cobrir sucesso, recusa, aborto e não admissibilidade nas duas direções. Fora do escopo: fallback do executor, seleção automática de modelo, nova configuração, mudança de sessão da run ou revisão incremental.",
+    "verify": [
+      "bun test test/runtime/agent-reviewer-router.test.ts test/runtime/run-evaluation.test.ts && bun run typecheck"
+    ]
+  }
+}
