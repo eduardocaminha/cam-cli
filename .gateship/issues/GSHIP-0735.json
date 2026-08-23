@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-735",
+  "title": "Separar ajustes globais e compartilhar notificações",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T16:49:34.644Z",
+  "updatedAt": "2026-08-23T16:49:34.644Z",
+  "description": "Criar uma rota global /settings, independente do projeto selecionado, para os ajustes que pertencem ao operador e à instalação: perfil do operador, atualização automática, permissão de notificações do navegador e canais remotos. Remover esses painéis da condição especial do projeto de boot; as rotas /projects/:projectId/settings devem continuar contendo apenas o contexto do projeto: estado/readiness, seleção de provider e modelos, chain runs, executor handoff, brief e handoff.\n\nTornar ntfy e Resend configurações da instalação, persistidas sob GATESHIP_HOME e consumidas por todos os RunRuntime registrados. Variáveis de ambiente continuam com precedência. Preservar a configuração já existente no projeto de boot por migração ou fallback explícito, sem expor segredos em respostas, logs, eventos ou UI.\n\nAdicionar navegação inequívoca para Ajustes globais e testes que provem: a rota global independe do projeto atual; projetos atual e não atual não exibem dados globais como se fossem locais; notificações emitidas por dois projetos usam a mesma configuração global; credenciais continuam write-only; nenhum banco, serviço, processo ou dependência nova é criado.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Criar uma rota global /settings, independente do projeto selecionado, para os ajustes que pertencem ao operador e à instalação: perfil do operador, atualização automática, permissão de notificações do navegador e canais remotos. Remover esses painéis da condição especial do projeto de boot; as rotas /projects/:projectId/settings devem continuar contendo apenas o contexto do projeto: estado/readiness, seleção de provider e modelos, chain runs, executor handoff, brief e handoff.\n\nTornar ntfy e Resend configurações da instalação, persistidas sob GATESHIP_HOME e consumidas por todos os RunRuntime registrados. Variáveis de ambiente continuam com precedência. Preservar a configuração já existente no projeto de boot por migração ou fallback explícito, sem expor segredos em respostas, logs, eventos ou UI.\n\nAdicionar navegação inequívoca para Ajustes globais e testes que provem: a rota global independe do projeto atual; projetos atual e não atual não exibem dados globais como se fossem locais; notificações emitidas por dois projetos usam a mesma configuração global; credenciais continuam write-only; nenhum banco, serviço, processo ou dependência nova é criado.",
+    "verify": [
+      "bun test test/web/notifications-api.test.ts test/runtime/remote-notifier.test.ts test/web/operator-profile-api.test.ts test/web/update-api.test.ts test/web/ui-client.test.tsx test/web/embedded-ui.test.ts && bun run typecheck"
+    ]
+  }
+}
