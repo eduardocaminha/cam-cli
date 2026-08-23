@@ -637,7 +637,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			}}
 			onSaveBrief={(draft) => send(() => saveBrief(draft, SELECTED_PROJECT_ID))}
 			onSaveDiagnosticSchedule={(enabled, cadence) =>
-				send(() => saveDiagnosticSchedule(enabled, cadence))}
+				send(() => saveDiagnosticSchedule(enabled, cadence, SELECTED_PROJECT_ID))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft, SELECTED_PROJECT_ID))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled, SELECTED_PROJECT_ID))}
 			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled, SELECTED_PROJECT_ID))}

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-741",
   "title": "Expor agenda de diagnósticos nos ajustes do projeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T18:07:26.116Z",
-  "updatedAt": "2026-08-23T18:07:36.044Z",
+  "updatedAt": "2026-08-23T19:11:16.162Z",
   "description": "Conectar à UI somente a agenda project-scoped entregue pela GSHIP-740. Fazer o cliente derivar o path de saveDiagnosticSchedule do ProjectScope selecionado. Recolocar o painel de agenda em Settings de qualquer projeto ready, usando o snapshot de diagnóstico daquele projeto; mantê-lo ausente dos ajustes globais e dos projetos ainda não ready. Ao trocar de projeto, campos, estado due/busy e confirmação de salvamento devem refletir apenas o projeto selecionado.\n\nPreservar os textos e catálogos pt-BR/en-US existentes, o painel ad hoc em Work e as rotas sem escopo de compatibilidade. Não alterar scheduler, SQLite, runtime, processo, schema ou dependências. Provar paths do cliente e renderização para dois projetos sem duplicar as provas de cadência do backend.",
   "specSource": "operator",
   "spec": {

@@ -2320,8 +2320,8 @@ describe('settings surface', () => {
 		const globalPortuguese = globalSettingsPage({ ...overrides, locale: 'pt-BR' });
 
 		for (const [html, labels] of [
-			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Project brief', 'Automatic handoff', 'open', 'close']],
-			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Brief do projeto', 'Handoff automático', 'abrir', 'fechar']],
+			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief', 'Automatic handoff', 'open', 'close']],
+			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto', 'Handoff automático', 'abrir', 'fechar']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
@@ -2335,7 +2335,7 @@ describe('settings surface', () => {
 			expectNotContainsAll(html, ['Project runtime', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Automatic handoff', 'Project brief']);
 		}
 		for (const html of [english, portuguese]) {
-			expectNotContainsAll(html, ['Operator profile', 'Notifications', 'Gateship updates', 'Diagnostic schedule']);
+			expectNotContainsAll(html, ['Operator profile', 'Notifications', 'Gateship updates']);
 		}
 		expect(english).toContain('78% used');
 		expect(portuguese).toContain('78% usados');
@@ -3486,6 +3486,27 @@ describe('operator shell', () => {
 		expect(settings).not.toContain('CAM-900');
 		expect(settings).not.toContain('acme/gateship');
 		expect(settings).not.toContain('Operator profile');
+	});
+
+	test('ready project settings render only the selected diagnostic schedule snapshot', () => {
+		const currentDiagnostics = { ...emptyDiagnostics(), schedule: { ...emptyDiagnostics().schedule, enabled: true, cadence: 'daily' as const, overdue: true } };
+		const otherDiagnostics = { ...emptyDiagnostics(), schedule: { ...emptyDiagnostics().schedule, enabled: false, cadence: 'weekly' as const } };
+		const current = renderAt('/projects/project-current/settings', { projects: [CURRENT_PROJECT, OTHER_PROJECT], diagnostics: currentDiagnostics });
+		const other = renderAt('/projects/project-other/settings', { projects: [CURRENT_PROJECT, OTHER_PROJECT], diagnostics: otherDiagnostics });
+
+		expect(current).toContain('Diagnostic schedule');
+		expect(current).toContain('overdue');
+		expect(other).toContain('Diagnostic schedule');
+		expect(other).toContain('Disabled.');
+	});
+
+	test('settings omit the diagnostic schedule until the selected project is ready', () => {
+		const html = renderAt('/projects/project-other/settings', {
+			projects: [CURRENT_PROJECT, { ...OTHER_PROJECT, readiness: 'empty' as const }],
+			project: { state: 'empty', name: 'other', detail: 'not ready' },
+		});
+		expect(html).toContain('Project runtime not loaded');
+		expect(html).not.toContain('Diagnostic schedule');
 	});
 
 	// GSHIP-717: removal is offered on the selected non-current project, states
@@ -5209,9 +5230,9 @@ describe('same-origin transport', () => {
 			}]);
 		});
 		await withRecordedFetch({ ok: true, outcome: 'started' }, 200, async (calls) => {
-			expect(await saveDiagnosticSchedule(true, 'daily')).toContain('overdue diagnostic started');
+			expect(await saveDiagnosticSchedule(true, 'daily', 'project current')).toContain('overdue diagnostic started');
 			expect(calls).toEqual([{
-				url: DIAGNOSTIC_SCHEDULE_PATH,
+				url: '/api/projects/project%20current/diagnostics/schedule',
 				method: 'PUT',
 				body: JSON.stringify({ enabled: true, cadence: 'daily' }),
 			}]);
