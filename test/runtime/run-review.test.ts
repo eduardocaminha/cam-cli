@@ -149,10 +149,12 @@ describe('independent review stage', () => {
 			questionId: 'run-review',
 			issueId: 'CAM-577',
 			finding: 'still broken in src/a.ts',
+			origin: 'review',
 		});
 		expect(events.at(-1)?.payload).toEqual({
 			questionId: 'run-review',
 			findings: 'still broken in src/a.ts',
+			origin: 'review',
 			reason: 'Cycle question resolver is unavailable.',
 		});
 		expect(executions).toHaveLength(2);
@@ -205,6 +207,42 @@ describe('independent review stage', () => {
 
 		expect(shipCalls).toBe(0);
 		expect(runtime.listEvents().map((event) => event.kind)).not.toContain('run.ship-started');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('routes more findings than the former ceiling through internal cycle responses', async () => {
+		let reviews = 0;
+		let nextId = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => `cycle-${++nextId}`,
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => {
+				reviews += 1;
+				return reviews < 5
+					? { verdict: 'findings', detail: `technical finding ${reviews}` }
+					: { verdict: 'clean' };
+			} },
+			cycleQuestionResolver: { resolve: async (input) => {
+				expect(input.origin).toBe('review');
+				return {
+					outcome: 'continue', guidance: `Apply ${input.finding}.`,
+					usage: { model: 'model', effort: 'high' },
+				};
+			} },
+		});
+
+		const run = runtime.startRun('GSHIP-732');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(runtime.getRun(run.id)?.fixRounds).toBe(4);
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response'))
+			.toHaveLength(3);
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 0, operatorInterventions: 0, resolvedCycleQuestions: 3,
+		});
 		await runtime.stop();
 		runtime.close();
 	});

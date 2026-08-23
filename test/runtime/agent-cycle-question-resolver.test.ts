@@ -27,6 +27,7 @@ function questionInput(
 		issueId: 'CAM-703',
 		workspace: '/workspace',
 		finding: '1. src/a.ts: o contrato quebrou',
+		origin: 'review',
 		priorResponses: [],
 		providerId: 'claude',
 		signal: new AbortController().signal,
@@ -55,14 +56,19 @@ describe('agent cycle question resolver', () => {
 	test('carries the shared operator language contract, with and without prior responses', () => {
 		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
 		expect(buildCycleQuestionPrompt(questionInput())).toContain(contract);
-		expect(buildCycleQuestionPrompt(questionInput({
+		const prompt = buildCycleQuestionPrompt(questionInput({
 			priorResponses: [{
 				questionId: 'q-1',
 				outcome: 'continue',
+				finding: 'src/a.ts: o contrato quebrou',
+				origin: 'review',
 				text: 'Mantenha o seam menor.',
 				createdAt: '2026-08-22T19:31:05.522Z',
 			}],
-		}))).toContain(contract);
+		}));
+		expect(prompt).toContain(contract);
+		expect(prompt).toContain('"finding":"src/a.ts: o contrato quebrou"');
+		expect(prompt).toContain('"origin":"review"');
 	});
 
 	// GSHIP-708: this turn holds no Issue record, so the contract's fallback

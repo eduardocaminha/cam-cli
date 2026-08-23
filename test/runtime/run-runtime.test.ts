@@ -97,9 +97,8 @@ describe('durable run runtime', () => {
 
 	test('allows exactly one automatic review fix round', () => {
 		expect(nextFixRounds({ state: 'review', fixRounds: 0 }, 'working')).toBe(1);
-		expect(() => nextFixRounds({ state: 'review', fixRounds: 1 }, 'working')).toThrow(
-			'limited to one round',
-		);
+		expect(nextFixRounds({ state: 'review', fixRounds: 1 }, 'working')).toBe(2);
+		expect(nextFixRounds({ state: 'full-verify', fixRounds: 2 }, 'working')).toBe(3);
 		expect(() => nextFixRounds({ state: 'queued', fixRounds: 0 }, 'review')).toThrow(
 			'queued -> review',
 		);
@@ -2278,7 +2277,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		const resolver = new AgentCycleQuestionResolver({ claude: session, codex: { ...session, provider: 'codex' } });
 		const result = await resolver.resolve({
 			runId: 'run-adapter', issueId: 'GSHIP-675', workspace: '/project',
-			finding: 'finding', priorResponses: [], providerId: 'claude',
+			finding: 'finding', origin: 'review', priorResponses: [], providerId: 'claude',
 			signal: new AbortController().signal, emit: () => {},
 		});
 
@@ -2400,6 +2399,42 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		expect(resolutions).toBe(2);
 	});
 
+	test('a full-verify cycle question provider hold resumes the same durable question', async () => {
+		let fullVerifications = 0;
+		let resolutions = 0;
+		const ids = ['run-full-verify-hold', 'question-full-verify'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session-full-verify-hold',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			fullVerifier: { verify: async () => {
+				fullVerifications += 1;
+				if (fullVerifications < 3) return { ok: false, detail: 'full verify finding' };
+				return { ok: true };
+			} },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				if (resolutions === 1) {
+					throw new ProviderCallError('claude', 'usage-limit', 'Subscription window exhausted.');
+				}
+				return { outcome: 'continue', guidance: 'Apply the full verify correction.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		const run = runtime.startRun('GSHIP-732');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'full-verify', kind: 'usage-limit' });
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(resolutions).toBe(2);
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-question'))
+			.toHaveLength(1);
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response'))
+			.toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('restart replays durable continue guidance before another review or response', async () => {
 		const dbPath = join(createTestTmpdir('gship-cycle-restart-'), 'runtime.sqlite');
 		const store = new RunStore(dbPath);
@@ -2422,7 +2457,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		store.appendEvent({
 			runId: 'run-cycle-restart', kind: 'run.cycle-question',
 			createdAt: '2026-08-21T12:00:02.000Z',
-			payload: { questionId: 'question-restart', finding: 'durable finding' },
+			payload: { questionId: 'question-restart', finding: 'durable finding', origin: 'review' },
 		});
 		transition('working', 'run.cycle-response', {
 			questionId: 'question-restart', responder: 'orchestrator', source: 'internal',
@@ -2465,10 +2500,111 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		});
 	});
 
-	test('two durable continue responses exhaust the budget and an invalid resolver fails safe', async () => {
+	test('a legacy unanswered question resumes as review without duplicating it', async () => {
+		const dbPath = join(createTestTmpdir('gship-cycle-legacy-question-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.createRun({
+			id: 'run-legacy-question', issueId: 'GSHIP-732', sessionId: 'session-legacy-question',
+			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+		});
+		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
+			store.transition({
+				runId: 'run-legacy-question', toState, kind,
+				createdAt: '2026-08-21T12:00:01.000Z',
+				...(payload === undefined ? {} : { payload }),
+			});
+		transition('working', 'run.started');
+		transition('verify', 'run.work-completed');
+		transition('review', 'run.review-started');
+		store.appendEvent({
+			runId: 'run-legacy-question', kind: 'run.cycle-question',
+			createdAt: '2026-08-21T12:00:02.000Z',
+			payload: { questionId: 'question-legacy', finding: 'legacy finding' },
+		});
+		store.close();
+
+		let resolutions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath),
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'recovered' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			cycleQuestionResolver: { resolve: async (input) => {
+				resolutions += 1;
+				expect(input.origin).toBe('review');
+				return { outcome: 'continue', guidance: 'Apply the legacy guidance.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		runtime.resumeRun('run-legacy-question');
+		await waitFor(() => runtime.getRun('run-legacy-question')?.state === 'ready-to-ship');
+		expect(resolutions).toBe(1);
+		expect(runtime.listRunDecisionEvents('run-legacy-question').filter((event) => event.kind === 'run.cycle-question'))
+			.toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('restart restores full-verify guidance in its own executor field', async () => {
+		const dbPath = join(createTestTmpdir('gship-cycle-full-verify-restart-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.createRun({
+			id: 'run-full-verify-restart', issueId: 'GSHIP-732', sessionId: 'session-full-verify-restart',
+			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+		});
+		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
+			store.transition({
+				runId: 'run-full-verify-restart', toState, kind,
+				createdAt: '2026-08-21T12:00:01.000Z',
+				...(payload === undefined ? {} : { payload }),
+			});
+		transition('working', 'run.started');
+		transition('verify', 'run.work-completed');
+		transition('review', 'run.review-started');
+		transition('full-verify', 'run.review-clean');
+		store.appendEvent({
+			runId: 'run-full-verify-restart', kind: 'run.cycle-question',
+			createdAt: '2026-08-21T12:00:02.000Z',
+			payload: { questionId: 'question-full-verify-restart', finding: 'full verify finding', origin: 'full-verify' },
+		});
+		transition('working', 'run.cycle-response', {
+			questionId: 'question-full-verify-restart', responder: 'orchestrator', source: 'internal',
+			outcome: 'continue', guidance: 'full verify guidance', findings: 'full verify finding',
+			origin: 'full-verify', provider: 'claude', model: 'opus', effort: 'high', latencyMs: 5,
+		});
+		store.close();
+
+		let fullVerifyFeedback: string | undefined;
+		let reviewFeedback: string | undefined;
+		let resolutions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath),
+			executor: { execute: async (input) => {
+				fullVerifyFeedback = input.fullVerifyFeedback;
+				reviewFeedback = input.reviewFeedback;
+				return { outcome: 'completed', summary: 'recovered' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				return { outcome: 'continue', guidance: 'must not be called', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		runtime.resumeRun('run-full-verify-restart');
+		await waitFor(() => runtime.getRun('run-full-verify-restart')?.state === 'ready-to-ship');
+		expect(fullVerifyFeedback).toContain('full verify finding');
+		expect(fullVerifyFeedback).toContain('full verify guidance');
+		expect(reviewFeedback).toBeUndefined();
+		expect(resolutions).toBe(0);
+		expect(runtime.listRunDecisionEvents('run-full-verify-restart')
+			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('distinct findings continue, then a recurring finding stalls safely', async () => {
 		let reviews = 0;
 		let resolutions = 0;
-		const ids = ['run-ceiling', 'question-1', 'question-2'];
+		const ids = ['run-stall', 'question-1', 'question-2', 'question-3'];
 		const runtime = new RunRuntime({
 			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'unexpected',
 			newSessionId: () => 'session',
@@ -2476,18 +2612,37 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			reviewer: { review: async () => {
 				reviews += 1;
-				return { verdict: 'findings', detail: `finding ${reviews}` };
+				return { verdict: 'findings', detail: reviews < 4 ? `finding ${reviews}` : 'finding 3' };
 			} },
-			cycleQuestionResolver: { resolve: async () => {
+			cycleQuestionResolver: { resolve: async (input) => {
 				resolutions += 1;
+				if (input.finding === 'finding 3' && input.priorResponses.some((response) =>
+					response.finding === input.finding && response.origin === input.origin)) {
+					return {
+						outcome: 'operator',
+						reason: 'The same finding returned without new executable guidance.',
+						usage: CYCLE_AUDIT_USAGE,
+					};
+				}
 				return { outcome: 'continue', guidance: `bounded fix ${resolutions}`, usage: CYCLE_AUDIT_USAGE };
 			} },
 		});
 		const run = runtime.startRun('GSHIP-675');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
-		expect(resolutions).toBe(2);
-		expect(runtime.listRunDecisionEvents(run.id).filter((event) =>
-			event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue')).toHaveLength(2);
+		expect(resolutions).toBe(3);
+		const responses = runtime.listRunDecisionEvents(run.id).filter((event) =>
+			event.kind === 'run.cycle-response');
+		expect(responses.filter((event) => event.payload['outcome'] === 'continue')).toHaveLength(2);
+		expect(responses.at(-1)?.payload).toMatchObject({
+			questionId: 'question-3',
+			outcome: 'operator',
+			reason: 'The same finding returned without new executable guidance.',
+		});
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 1,
+			operatorInterventions: 0,
+			resolvedCycleQuestions: 3,
+		});
 
 		let invalidReviews = 0;
 		const invalidIds = ['run-invalid', 'question-invalid'];

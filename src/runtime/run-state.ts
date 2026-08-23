@@ -32,10 +32,10 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	// optionality `review` already has for an unconfigured reviewer.
 	verify: ['review', 'full-verify', 'ready-to-ship', 'failed', 'interrupted'],
 	review: ['working', 'full-verify', 'ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted'],
-	// A full-project verification failure (GSHIP-649) sends the run back for
-	// one fix round, exactly like a review finding does; a second failure ends
-	// the run at waiting-user instead of shipping.
-	'full-verify': ['working', 'ready-to-ship', 'waiting-user', 'failed', 'interrupted'],
+	// A full-project verification failure sends the run back for another
+	// correction, exactly like a review finding does. The cycle resolver decides
+	// when a correction needs the operator.
+	'full-verify': ['working', 'ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted'],
 	// A resting state again now that full verification has its own phase
 	// (GSHIP-649): every path that reaches it has already been fully cleared,
 	// so the only ways out are shipping it or ending the run.
@@ -47,7 +47,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	'waiting-user': ['working', 'interrupted'],
 	// Availability is a resting condition, not a terminal outcome. A retry of
 	// executor work returns to working; a reviewer retry returns to review.
-	'waiting-provider': ['working', 'review', 'interrupted'],
+	'waiting-provider': ['working', 'review', 'full-verify', 'interrupted'],
 	failed: [],
 	// An interrupted run is the only one the operator can still end instead of
 	// resume: abandoning it is the explicit way out of the provider session.
@@ -72,19 +72,13 @@ export function canTransition(fromState: RunState, toState: RunState): boolean {
 export function nextFixRounds(
 	current: RunStateSnapshot,
 	nextState: RunState,
-	kind?: string,
+	_kind?: string,
 ): number {
 	if (!canTransition(current.state, nextState)) {
 		throw new Error(`invalid run transition: ${current.state} -> ${nextState}`);
 	}
-	if (current.state !== 'review' || nextState !== 'working') {
+	if (!['review', 'full-verify'].includes(current.state) || nextState !== 'working') {
 		return current.fixRounds;
-	}
-	if (current.fixRounds >= 1 && kind !== 'run.cycle-response') {
-		throw new Error('automatic review fixes are limited to one round');
-	}
-	if (current.fixRounds >= 3) {
-		throw new Error('review fixes are limited to three rounds');
 	}
 	return current.fixRounds + 1;
 }
