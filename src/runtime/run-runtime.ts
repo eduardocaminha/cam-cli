@@ -1,26 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import {
-	PROVIDER_ERROR_KINDS,
-	ProviderCallError,
-	type AgentProviderId,
-	type ProviderErrorKind,
-} from './agent-session.ts';
 import { isPlannable } from '../issues/plannable.ts';
 import type { IssueEntry } from '../issues/types.ts';
+import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
+import {
+	type AgentProviderId,
+	PROVIDER_ERROR_KINDS,
+	ProviderCallError,
+	type ProviderErrorKind,
+} from './agent-session.ts';
 import type {
 	RuntimeWorkspace,
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
 import type { ModelSettings } from './model-settings.ts';
-import type { OperatorProfile } from './operator-profile.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
+import type { OperatorProfile } from './operator-profile.ts';
 import {
 	type PullRequestCiStatus,
 	type PullRequestDelivery,
 	selectPullRequestDelivery,
 } from './pull-request-delivery.ts';
-import { selectRunRoundOrigins, type RunRoundOrigins } from './round-origin.ts';
+import { type RunRoundOrigins, selectRunRoundOrigins } from './round-origin.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
@@ -41,6 +42,9 @@ import {
 function commandPayload(payload: Record<string, unknown>, source?: string): Record<string, unknown> {
 	return { ...payload, ...(source === undefined ? {} : { source }) };
 }
+
+/** Single `runtime_settings` row holding the executor handoff opt-in (GSHIP-722), beside `chain-runs`. */
+const EXECUTOR_HANDOFF_ENABLED_KEY = 'executor-handoff-enabled';
 
 export interface RuntimeExecutionInput {
 	runId: string;
@@ -80,6 +84,41 @@ export interface RuntimeExecutionInput {
 	 * is not re-litigated on the next review; empty on a run's first review.
 	 */
 	operatorDecisions?: readonly string[];
+	/**
+	 * Durable-state-and-diff handoff (GSHIP-722), present only on the one turn
+	 * that opens the alternate provider's brand new native session after the
+	 * primary hit a subscription limit. Never a resume: the alternate has no
+	 * memory of the primary's reasoning, so this is the only channel that puts
+	 * the run's current state in front of it instead of the blind initial
+	 * prompt.
+	 */
+	executorHandoff?: RuntimeExecutorHandoff;
+	/**
+	 * Whether this run may still spend its one executor handoff (GSHIP-722):
+	 * the operator's opt-in is on and no handoff, successful or refused, has
+	 * been recorded for this run yet. Computed once per round from durable
+	 * state; the router decides everything else -- reason, direction, outcome
+	 * -- but never whether it is allowed to try at all.
+	 */
+	executorHandoffAllowed?: boolean;
+	/**
+	 * The alternate provider and its own native session (GSHIP-722), present
+	 * only once a prior handoff already succeeded for this run. Read only by
+	 * `AgentExecutorRouter`, which routes the executor call there instead of
+	 * `providerId`/`sessionId` above. Those two stay the run's own historical
+	 * origin for every other reader -- the reviewer included -- because only
+	 * the executor role ever transfers; a run's review keeps running on the
+	 * provider the run started on regardless of where its executor now sits.
+	 */
+	executorRoute?: { providerId: AgentProviderId; sessionId: string };
+}
+
+/** See `RuntimeExecutionInput.executorHandoff` (GSHIP-722). */
+export interface RuntimeExecutorHandoff {
+	fromProvider: AgentProviderId;
+	reason: ProviderErrorKind;
+	status: string;
+	diff: string;
 }
 
 export type RuntimeExecutionResult =
@@ -686,6 +725,17 @@ export class RunRuntime {
 		return selectPullRequestDelivery(this.#store.listRunDecisionEvents(runId));
 	}
 
+	/**
+	 * The run's one executor handoff (GSHIP-722), present once it was tried --
+	 * successfully or not -- and absent while the run never spent it. Read
+	 * unconditionally from the complete decision log, like
+	 * `getPullRequestDelivery`: a handoff, once it happened, stays a fact about
+	 * the run regardless of its current state.
+	 */
+	getRunExecutorHandoff(runId: string): ExecutorHandoffRecord | null {
+		return selectExecutorHandoff(this.#store.listRunDecisionEvents(runId));
+	}
+
 	/** Replay the run's objective evaluation from its unbounded decision log. */
 	getRunEvaluation(runId: string): RunEvaluation | null {
 		const run = this.#store.getRun(runId);
@@ -787,6 +837,20 @@ export class RunRuntime {
 
 	setChainRuns(enabled: boolean): void {
 		this.#store.setChainRunsEnabled(enabled);
+	}
+
+	/**
+	 * The operator's opt-in for the executor handoff (GSHIP-722): off by
+	 * default, same as every other autonomy switch, stored beside the chain
+	 * switch in the runtime's own opaque settings row rather than a dedicated
+	 * column.
+	 */
+	getExecutorHandoffEnabled(): boolean {
+		return this.#store.getRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY) === 'true';
+	}
+
+	setExecutorHandoffEnabled(enabled: boolean): void {
+		this.#store.setRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY, enabled ? 'true' : 'false');
 	}
 
 	/**
@@ -1715,11 +1779,26 @@ export class RunRuntime {
 		}
 	}
 
+	/**
+	 * `providerId` and `sessionId` always name the run's own historical origin
+	 * -- the reviewer, the verifier and everything else this input reaches read
+	 * only those, unaffected by any executor handoff. Once this run has spent
+	 * its one executor handoff (GSHIP-722) -- win or refusal, `selectExecutorHandoff`
+	 * reads either -- `executorRoute` carries where the executor role alone
+	 * keeps running: a successful handoff keeps resuming the alternate's own
+	 * native session, forever, on this run; a refused one leaves `executorRoute`
+	 * absent, exactly as if the handoff had never existed. Either way
+	 * `executorHandoffAllowed` is false, so the router never spends a second
+	 * one and never pings back to the provider this run started on.
+	 */
 	#executionInput(
 		run: RunRecord,
 		signal: AbortSignal,
 		attempt: RunAttempt,
 	): RuntimeExecutionInput {
+		const decisionEvents = this.#store.listRunDecisionEvents(run.id);
+		const handoff = selectExecutorHandoff(decisionEvents);
+		const onAlternate = handoff !== null && handoff.outcome !== 'refused';
 		return {
 			runId: run.id,
 			issueId: run.issueId,
@@ -1729,8 +1808,10 @@ export class RunRuntime {
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
-			setSessionId: (sessionId) => this.#setSessionId(run, sessionId),
-			operatorDecisions: selectOperatorDecisions(this.#store.listRunDecisionEvents(run.id)),
+			setSessionId: (sessionId: string) => this.#setSessionId(run, sessionId),
+			operatorDecisions: selectOperatorDecisions(decisionEvents),
+			executorHandoffAllowed: handoff === null && this.#store.getRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY) === 'true',
+			...(onAlternate ? { executorRoute: { providerId: handoff.to, sessionId: handoff.sessionId } } : {}),
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),

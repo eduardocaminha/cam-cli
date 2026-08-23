@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import {
-	ProviderCallError,
 	type AgentSession,
 	type AgentSessionInput,
 	type AgentSessionResult,
+	ProviderCallError,
 } from './agent-session.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import {
@@ -27,6 +27,7 @@ import type {
 	RuntimeExecutionInput,
 	RuntimeExecutionResult,
 	RuntimeExecutor,
+	RuntimeExecutorHandoff,
 } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
@@ -158,6 +159,8 @@ export function buildWorkPrompt(
 	// full-verify gate (GSHIP-649) pass it.
 	fullVerifyFeedback: string | undefined = undefined,
 	ciFeedback: string | undefined = undefined,
+	/** Present only on the one turn opening the alternate's new session (GSHIP-722). */
+	handoff: RuntimeExecutorHandoff | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -195,6 +198,23 @@ export function buildWorkPrompt(
 		'CI failure evidence:',
 		ciFeedback,
 	];
+	// A handoff (GSHIP-722) opens a brand new native session with no memory of
+	// the primary provider's own reasoning: the current diff and status stand
+	// in for it, so the alternative continues the change instead of restarting
+	// it or waiting to be told what already happened.
+	const handoffSection = handoff === undefined ? [] : [
+		'',
+		`This work transferred to you from ${handoff.fromProvider} after it reported ${handoff.reason}.`,
+		'You are a new session with no memory of that provider\'s own reasoning. Inspect the current',
+		'working tree state below and continue the issue from there; do not restart the implementation',
+		'from scratch and do not wait for further instructions before continuing it.',
+		'',
+		'Working tree status at handoff:',
+		handoff.status.length === 0 ? '(clean)' : handoff.status,
+		'',
+		'Diff against HEAD at handoff:',
+		handoff.diff.trim().length === 0 ? '(empty)' : handoff.diff,
+	];
 	const guidanceSection = operatorGuidance === undefined ? [] : [
 		'',
 		'The operator answered your previous request. Treat this as the decision for the current turn:',
@@ -214,7 +234,9 @@ export function buildWorkPrompt(
 	return [
 		resume
 			? `Continue the existing Gateship work session for ${issueId}.`
-			: `Implement Gateship issue ${issueId}.`,
+			: handoff === undefined
+				? `Implement Gateship issue ${issueId}.`
+				: `Take over execution of Gateship issue ${issueId} in a new session.`,
 		'Inspect the current working tree before editing and keep the change limited to this issue.',
 		'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
 		"Run only the smallest relevant checks while editing, then run the human-approved issue verification command once before completion; do not add `bun run check:all`, the full test suite, or other broad gates unless that exact command is already in the human-approved verification, because the service runs the project's `verify` script once after a clean review at the ship boundary.",
@@ -222,6 +244,7 @@ export function buildWorkPrompt(
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
+		...handoffSection,
 		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
@@ -385,6 +408,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.operatorDecisions ?? [],
 			input.fullVerifyFeedback,
 			input.ciFeedback,
+			input.executorHandoff,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

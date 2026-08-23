@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,11 +8,11 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { runAgentProcess } from './agent-process.ts';
 import {
-	ProviderCallError,
-	providerErrorFromMessage,
 	type AgentSession,
 	type AgentSessionInput,
 	type AgentSessionResult,
+	ProviderCallError,
+	providerErrorFromMessage,
 } from './agent-session.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
 import {
@@ -406,6 +406,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.operatorDecisions ?? [],
 			input.fullVerifyFeedback,
 			input.ciFeedback,
+			input.executorHandoff,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

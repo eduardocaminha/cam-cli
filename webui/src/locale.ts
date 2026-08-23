@@ -155,6 +155,19 @@ export interface RunInspectorCatalog {
 		retryAfter: string;
 		waitReasons: Readonly<Record<RunProviderWaitView['kind'], string>>;
 	};
+	/**
+	 * GSHIP-722: reuses `providerHold.waitReasons` for the reason text -- the
+	 * same enum, the same wording. `title` is shown only once the transfer
+	 * actually happened; `refusedTitle` is shown when the one attempt was
+	 * refused and the run stayed on its own origin, so the screen never claims
+	 * a handoff that did not occur.
+	 */
+	executorHandoff: {
+		accessibleLabel: string;
+		title: (fromProviderName: string, toProviderName: string) => string;
+		refusedTitle: (fromProviderName: string, toProviderName: string) => string;
+		reasonPrefix: string;
+	};
 	report: {
 		title: string;
 		description: string;
@@ -414,6 +427,7 @@ export interface SettingsCatalog {
 		save: string;
 	};
 	chain: { title: string; description: string; label: string };
+	executorHandoff: { title: string; description: string; label: string };
 	updates: {
 		title: string;
 		description: string;
@@ -659,6 +673,14 @@ export const LOCALE_CATALOG = {
 					unknown: 'Provider unavailable',
 				},
 			},
+			executorHandoff: {
+				accessibleLabel: 'Executor handoff',
+				title: (fromProviderName, toProviderName) =>
+					`Executor handed off from ${fromProviderName} to ${toProviderName}`,
+				refusedTitle: (fromProviderName, toProviderName) =>
+					`Executor handoff to ${toProviderName} was refused; the run stayed on ${fromProviderName}`,
+				reasonPrefix: 'Reason: ',
+			},
 			report: {
 				title: 'Summary and diagnostics',
 				description: "The complete runtime report and the run's technical identifier.",
@@ -891,6 +913,11 @@ export const LOCALE_CATALOG = {
 			},
 			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Orchestrator', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
 			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
+			executorHandoff: {
+				title: 'Executor handoff between providers',
+				description: 'When the primary provider reports a subscription usage limit or a rate limit while implementing, transfers only the executor role to the other provider once for that run. Off by default; the run keeps its issue, worktree, branch, pull request, decisions and evidence, and the alternate opens its own new session.',
+				label: 'Allow one executor handoff per run',
+			},
 			updates: { title: 'Gateship updates', description: 'Checks official releases at most daily and applies a verified native binary only while the project is idle.', label: 'Install verified native updates automatically', guidance: 'Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.', available: 'Available', unknown: 'unknown', statusLabels: { success: 'success', rollback: 'rollback', failed: 'failed', 'check-failed': 'check-failed', deferred: 'deferred' }, result: (previous, target, at) => `${previous} → ${target} at ${at}` },
 			diagnostics: { title: 'Diagnostic schedule', description: 'Runs at most one overdue diagnostic, and only while this project is idle.', label: 'Run diagnostics periodically', cadence: 'Cadence', cadenceLabels: { daily: 'Daily', weekly: 'Weekly' }, disabled: 'Disabled.', overdue: 'overdue', nextRun: (value) => `Next run: ${value}`, calculating: 'calculating', guidance: 'A manual scan also resets the window. Missed periods do not create catch-up runs.', save: 'Save schedule' },
 			notifications: {
@@ -1076,6 +1103,14 @@ export const LOCALE_CATALOG = {
 					cancelled: 'Chamada cancelada',
 					unknown: 'Provedor indisponível',
 				},
+			},
+			executorHandoff: {
+				accessibleLabel: 'Transferência de executor',
+				title: (fromProviderName, toProviderName) =>
+					`Executor transferido de ${fromProviderName} para ${toProviderName}`,
+				refusedTitle: (fromProviderName, toProviderName) =>
+					`Transferência de executor para ${toProviderName} foi recusada; a execução permaneceu em ${fromProviderName}`,
+				reasonPrefix: 'Motivo: ',
 			},
 			report: {
 				title: 'Resumo e diagnósticos',
@@ -1309,6 +1344,11 @@ export const LOCALE_CATALOG = {
 			},
 			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Orquestrador', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
 			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },
+			executorHandoff: {
+				title: 'Transferência de executor entre provedores',
+				description: 'Quando o provedor primário reporta limite de uso da assinatura ou limite de taxa durante a implementação, transfere apenas o papel executor para o outro provedor, uma única vez por execução. Desabilitado por padrão; a execução preserva issue, worktree, branch, pull request, decisões e evidências, e o provedor alternativo abre sua própria sessão nova.',
+				label: 'Permitir uma transferência de executor por execução',
+			},
 			updates: { title: 'Atualizações do Gateship', description: 'Verifica lançamentos oficiais no máximo uma vez por dia e aplica um binário nativo verificado somente enquanto o projeto está ocioso.', label: 'Instalar atualizações nativas verificadas automaticamente', guidance: 'Cadência fixa: diária. Execuções, estados de espera preservados, diagnósticos, contêineres e checkouts de código-fonte nunca são atualizados no lugar.', available: 'Disponível', unknown: 'desconhecida', statusLabels: { success: 'sucesso', rollback: 'reversão', failed: 'falhou', 'check-failed': 'verificação falhou', deferred: 'adiada' }, result: (previous, target, at) => `${previous} → ${target} em ${at}` },
 			diagnostics: { title: 'Agenda de diagnósticos', description: 'Executa no máximo um diagnóstico atrasado e somente enquanto este projeto está ocioso.', label: 'Executar diagnósticos periodicamente', cadence: 'Cadência', cadenceLabels: { daily: 'Diária', weekly: 'Semanal' }, disabled: 'Desativada.', overdue: 'atrasado', nextRun: (value) => `Próxima execução: ${value}`, calculating: 'calculando', guidance: 'Uma análise manual também reinicia a janela. Períodos perdidos não criam execuções de compensação.', save: 'Salvar agenda' },
 			notifications: {

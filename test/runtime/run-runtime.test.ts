@@ -3,15 +3,16 @@ import { join } from 'node:path';
 
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
+import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
+import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import { RunRuntime, type RuntimeShipInput, type RuntimeTimer } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
-import { RunStore, type RunEvent, type RunRecord } from '../../src/runtime/run-store.ts';
+import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 async function waitFor(
@@ -552,6 +553,204 @@ describe('durable run runtime', () => {
 			'run.verified',
 		]);
 		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({ text: 'Use the smaller seam.' });
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
+const NO_CHANGE = () => ({ exitCode: 0, stdout: '', stderr: '' });
+
+// GSHIP-722: transferring only the executor role between Claude and Codex on
+// a subscription limit, opt-in, at most once per run, never ping-ponging back
+// to the provider the run started on.
+describe('executor handoff between providers (GSHIP-722)', () => {
+	test('the opt-in is off by default and survives a service restart', () => {
+		const dbPath = join(createTestTmpdir('gship-run-runtime-handoff-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		expect(runtime.getExecutorHandoffEnabled()).toBe(false);
+		runtime.setExecutorHandoffEnabled(true);
+		expect(runtime.getExecutorHandoffEnabled()).toBe(true);
+		runtime.close();
+
+		const reopened = new RunRuntime({ cwd: '/project', store: new RunStore(dbPath) });
+		expect(reopened.getExecutorHandoffEnabled()).toBe(true);
+		reopened.close();
+	});
+
+	test('never transfers the executor role while the operator has not opted in', async () => {
+		let codexCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-handoff-disabled',
+			executor: new AgentExecutorRouter({
+				executors: {
+					claude: {
+						execute: async () => {
+							throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+						},
+					},
+					codex: { execute: async () => { codexCalls += 1; return { outcome: 'completed' }; } },
+				},
+				runGit: NO_CHANGE,
+			}),
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-722');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(codexCalls).toBe(0);
+		expect(runtime.getRunExecutorHandoff(run.id)).toBeNull();
+		expect(runtime.getRunProviderWait(run.id)?.provider).toBe('claude');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('transfers to Codex on a Claude usage limit, once, and keeps continuing there', async () => {
+		const executions: Array<{ providerId?: string; sessionId: string; resume: boolean }> = [];
+		let claudeCalls = 0;
+		let codexCalls = 0;
+		let claudeReviews = 0;
+		let codexReviews = 0;
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			newId: () => 'run-handoff',
+			newSessionId: () => 'session-origin',
+			executor: new AgentExecutorRouter({
+				executors: {
+					claude: {
+						execute: async (input) => {
+							claudeCalls += 1;
+							executions.push({ providerId: input.providerId, sessionId: input.sessionId, resume: input.resume });
+							throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+						},
+					},
+					codex: {
+						execute: async (input) => {
+							codexCalls += 1;
+							executions.push({ providerId: input.providerId, sessionId: input.sessionId, resume: input.resume });
+							return { outcome: 'completed', summary: `codex round ${codexCalls}` };
+						},
+					},
+				},
+				newSessionId: () => 'session-alt',
+				runGit: NO_CHANGE,
+			}),
+			verifier: { verify: async () => ({ ok: true }) },
+			// The review fallback router, not a bare mock: only the executor role
+			// may transfer (GSHIP-722), so the review after the executor's own
+			// handoff must still route by the run's own origin provider, never by
+			// wherever the executor now sits.
+			reviewer: new AgentReviewerRouter({
+				claude: {
+					review: async () => {
+						claudeReviews += 1;
+						return claudeReviews === 1 ? { verdict: 'findings', detail: 'missing a test' } : { verdict: 'clean' };
+					},
+				},
+				codex: { review: async () => { codexReviews += 1; return { verdict: 'clean' }; } },
+			}),
+		});
+
+		runtime.setExecutorHandoffEnabled(true);
+		const run = runtime.startRun('GSHIP-722');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(claudeCalls).toBe(1);
+		expect(codexCalls).toBe(2);
+		// Every review ran on Claude, the run's own origin -- the executor
+		// handoff to Codex never routed the reviewer role along with it.
+		expect(claudeReviews).toBe(2);
+		expect(codexReviews).toBe(0);
+		expect(executions).toEqual([
+			{ providerId: 'claude', sessionId: 'session-origin', resume: false },
+			{ providerId: 'codex', sessionId: 'session-alt', resume: false },
+			{ providerId: 'codex', sessionId: 'session-alt', resume: true },
+		]);
+		// The origin's own historical provider and session stay exactly as
+		// the run started with: the handoff never overwrites them.
+		expect(runtime.getRun(run.id)).toMatchObject({ providerId: 'claude', sessionId: 'session-origin' });
+		expect(runtime.getRunExecutorHandoff(run.id)).toMatchObject({
+			from: 'claude',
+			to: 'codex',
+			reason: 'usage-limit',
+			sessionId: 'session-alt',
+			outcome: 'completed',
+		});
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.executor-handoff'))
+			.toHaveLength(1);
+		expect(runtime.getRunEvaluation(run.id)?.roles).toContainEqual({
+			role: 'executor',
+			models: [],
+			efforts: [],
+			providers: ['claude', 'codex'],
+		});
+		// No review fallback ever fired -- Codex never reviewed, so the
+		// reviewer role carries no configuration to report at all, rather than
+		// a Codex entry the executor handoff would have caused wrongly.
+		expect(runtime.getRunEvaluation(run.id)?.roles.map((role) => role.role)).not.toContain('reviewer');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('keeps the Claude executor hold when the Codex handoff is refused, and never retries the handoff', async () => {
+		let claudeCalls = 0;
+		let codexCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-handoff-refused',
+			now: () => '2026-08-23T12:00:00.000Z',
+			executor: new AgentExecutorRouter({
+				executors: {
+					claude: {
+						execute: async () => {
+							claudeCalls += 1;
+							if (claudeCalls === 1) {
+								throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+									retryAt: '2026-08-23T12:10:00.000Z',
+								});
+							}
+							return { outcome: 'completed', summary: 'recovered on Claude' };
+						},
+					},
+					codex: {
+						execute: async () => {
+							codexCalls += 1;
+							throw new ProviderCallError('codex', 'auth-required', 'Codex is not authenticated.');
+						},
+					},
+				},
+				runGit: NO_CHANGE,
+			}),
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		runtime.setExecutorHandoffEnabled(true);
+		const run = runtime.startRun('GSHIP-722');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toEqual({
+			provider: 'claude',
+			kind: 'usage-limit',
+			message: 'Claude usage limit reached.',
+			phase: 'working',
+			retryAt: '2026-08-23T12:10:00.000Z',
+		});
+		expect(runtime.getRunExecutorHandoff(run.id)).toMatchObject({ from: 'claude', to: 'codex', outcome: 'refused' });
+		expect(runtime.getRun(run.id)?.providerId).toBe('claude');
+
+		// No ping-pong: once the one handoff was spent -- refused or not -- a
+		// later Claude failure never offers Codex a second time; the run only
+		// ever waits on the provider it started with.
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(claudeCalls).toBe(2);
+		expect(codexCalls).toBe(1);
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.executor-handoff'))
+			.toHaveLength(1);
 		await runtime.stop();
 		runtime.close();
 	});

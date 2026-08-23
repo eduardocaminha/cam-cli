@@ -30,6 +30,7 @@ export const PROPOSALS_PATH = '/api/proposals';
 export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
 export const CHAIN_RUNS_PATH = '/api/chain-runs';
+export const EXECUTOR_HANDOFF_PATH = '/api/executor-handoff';
 export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
 
@@ -1117,6 +1118,31 @@ export async function saveChainRuns(enabled: boolean): Promise<string> {
 	const payload = (await response.json()) as ChainRunsPayload;
 	if (!response.ok) return payload.message ?? `Run chaining rejected (${response.status}).`;
 	return enabled ? 'Automatic run chaining enabled.' : 'Automatic run chaining disabled.';
+}
+
+/** The executor handoff opt-in (GSHIP-722), off by default like the chain switch. */
+export interface ExecutorHandoffSettingView {
+	enabled: boolean;
+}
+
+interface ExecutorHandoffPayload extends CommandPayload {
+	enabled?: boolean;
+}
+
+export async function fetchExecutorHandoff(): Promise<ExecutorHandoffSettingView> {
+	const payload = await readJson<ExecutorHandoffPayload>(await fetch(EXECUTOR_HANDOFF_PATH), 'Executor handoff');
+	return { enabled: payload.enabled === true };
+}
+
+export async function saveExecutorHandoff(enabled: boolean): Promise<string> {
+	const response = await fetch(EXECUTOR_HANDOFF_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ enabled }),
+	});
+	const payload = (await response.json()) as ExecutorHandoffPayload;
+	if (!response.ok) return payload.message ?? `Executor handoff rejected (${response.status}).`;
+	return enabled ? 'Executor handoff enabled.' : 'Executor handoff disabled.';
 }
 
 /** ntfy and Resend (GSHIP-653), neither depending on the other for the panel to show it. */

@@ -29,15 +29,17 @@ import {
 	cancelDiagnostic,
 	commandRun,
 	connectClaudeCredential,
-	createProject,
 	createIssue,
-	describeClaudeCredentialConfirmation,
+	createProject,
 	DIAGNOSTIC_FINDINGS_PATH,
 	DIAGNOSTIC_SCHEDULE_PATH,
 	DIAGNOSTICS_PATH,
+	describeClaudeCredentialConfirmation,
 	dismissDiagnosticFinding,
 	dismissProposal,
 	EVENTS_PATH,
+	EXECUTOR_HANDOFF_PATH,
+	type ExecutorHandoffSettingView,
 	emptyDiagnostics,
 	emptyModelSettings,
 	emptyNotificationChannels,
@@ -47,6 +49,7 @@ import {
 	fetchChainRuns,
 	fetchChat,
 	fetchDiagnostics,
+	fetchExecutorHandoff,
 	fetchModelSettings,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
@@ -58,8 +61,8 @@ import {
 	fetchRunEvents,
 	fetchRuns,
 	fetchSelfUpdate,
-	importProject,
 	ISSUES_PATH,
+	importProject,
 	MODEL_SETTINGS_PATH,
 	type ModelSettingsView,
 	NOTIFICATIONS_PATH,
@@ -72,19 +75,20 @@ import {
 	PROVIDERS_PATH,
 	type ProjectBriefView,
 	type ProjectStatusView,
-	type RegisteredProjectView,
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
-	registerProject,
-	removeResendCredential,
 	RESOLVED_PROPOSALS_PATH,
+	type RegisteredProjectView,
 	type ResolvedProposalView,
 	RUNS_PATH,
+	registerProject,
+	removeResendCredential,
 	SNAPSHOT_PATH,
 	saveBrief,
 	saveChainRuns,
 	saveDiagnosticSchedule,
+	saveExecutorHandoff,
 	saveModelSettings,
 	saveOperatorProfile,
 	saveResendSettings,
@@ -96,8 +100,8 @@ import {
 	startCodexLogin,
 	startDiagnostic,
 	startRun,
-	unregisterProject,
 	UPDATE_PATH,
+	unregisterProject,
 } from '../../webui/src/client.ts';
 import {
 	createLiveEdgeController,
@@ -162,6 +166,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		roundOrigins: EMPTY_ROUND_ORIGINS,
 		providerWait: null,
 		pullRequest: null,
+		executorHandoff: null,
 		...overrides,
 	};
 }
@@ -200,6 +205,8 @@ function eventIn(fromState: RunState, toState: RunState, kind: string): RunEvent
 const EMPTY_MODEL_SETTINGS: ModelSettingsView = emptyModelSettings();
 
 const EMPTY_CHAIN_RUNS: ChainRunsView = { enabled: false, pause: null };
+
+const EMPTY_EXECUTOR_HANDOFF: ExecutorHandoffSettingView = { enabled: false };
 
 const EMPTY_NOTIFICATION_CHANNELS: NotificationChannelsView = emptyNotificationChannels();
 
@@ -284,6 +291,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 		<App
 			backlog={BACKLOG}
 			chainRuns={EMPTY_CHAIN_RUNS}
+			executorHandoff={EMPTY_EXECUTOR_HANDOFF}
 			diagnostics={emptyDiagnostics()}
 			drafts={[]}
 			brief={EMPTY_BRIEF}
@@ -325,6 +333,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSaveDiagnosticSchedule={() => {}}
 			onSaveModelSettings={() => {}}
 			onSetChainRuns={() => {}}
+			onSetExecutorHandoff={() => {}}
 			onSetSelfUpdate={() => {}}
 			onSelectIssue={() => {}}
 			onSelectLocale={() => {}}
@@ -962,6 +971,53 @@ describe('runs surface', () => {
 		expect(html).toContain('Claude five hour usage limit reached.');
 		expect(html).toContain('dateTime="2026-08-20T12:10:00.000Z"');
 		expect(buttonIsEnabled(html, 'Resume')).toBe(true);
+	});
+
+	// GSHIP-722: the executor handoff is disclosed regardless of the run's
+	// current state -- shown here on a run already back to working on the
+	// alternate provider, well past the hold that triggered the transfer.
+	test('an executor handoff shows its origin, destination and reason', () => {
+		const html = runsPage({
+			runs: [runIn('working', {
+				executorHandoff: {
+					from: 'claude',
+					to: 'codex',
+					reason: 'usage-limit',
+					message: 'Claude usage limit reached.',
+					outcome: 'completed',
+					createdAt: '2026-08-20T12:10:00.000Z',
+				},
+			})],
+		});
+
+		expect(html).toContain('Executor handed off from Claude Code to Codex');
+		expect(html).toContain('Reason: Subscription usage limit reached');
+	});
+
+	test('a run with no executor handoff shows no handoff disclosure', () => {
+		const html = runsPage({ runs: [runIn('working')] });
+		expect(html).not.toContain('Executor handed off');
+	});
+
+	// GSHIP-722 review: a refused attempt never transferred anything -- the run
+	// stayed on Claude, its own origin -- so the disclosure must say the
+	// attempt was refused, never that a handoff to Codex happened.
+	test('a refused executor handoff discloses the refusal, not a transfer that did not happen', () => {
+		const html = runsPage({
+			runs: [runIn('waiting-provider', {
+				executorHandoff: {
+					from: 'claude',
+					to: 'codex',
+					reason: 'usage-limit',
+					message: 'Claude usage limit reached.',
+					outcome: 'refused',
+					createdAt: '2026-08-20T12:10:00.000Z',
+				},
+			})],
+		});
+
+		expect(html).toContain('Executor handoff to Codex was refused; the run stayed on Claude Code');
+		expect(html).not.toContain('Executor handed off from Claude Code to Codex');
 	});
 
 	test('an explicit pt-BR locale translates the shared run inspector and preserves runtime text', () => {
@@ -2963,6 +3019,20 @@ describe('settings surface', () => {
 		expect(checkbox).toContain('disabled=""');
 	});
 
+	// GSHIP-722: off by default, same as chain runs.
+	test('the executor handoff switch is off by default', () => {
+		const executorHandoff = panel(settingsPage(), 'Executor handoff between providers');
+		expect(executorHandoff).not.toContain('checked=""');
+	});
+
+	test('the executor handoff switch reflects the stored setting', () => {
+		const on = panel(
+			settingsPage({ executorHandoff: { enabled: true } }),
+			'Executor handoff between providers',
+		);
+		expect(on).toContain('checked=""');
+	});
+
 	test('native self update is off by default with one fixed daily policy', () => {
 		const updates = panel(settingsPage({
 			selfUpdate: {
@@ -4430,6 +4500,36 @@ describe('same-origin transport', () => {
 			message: '"enabled" must be a boolean.',
 		}, 400, async () => {
 			expect(await saveChainRuns(true)).toBe('"enabled" must be a boolean.');
+		});
+	});
+
+	// GSHIP-722: the executor handoff opt-in, read and written the same way.
+	test('the executor handoff switch is read and written on one same-origin route', async () => {
+		await withRecordedFetch({ enabled: true }, 200, async (calls) => {
+			expect(await fetchExecutorHandoff()).toEqual({ enabled: true });
+			expect(calls).toEqual([{ url: EXECUTOR_HANDOFF_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchExecutorHandoff()).toEqual(EMPTY_EXECUTOR_HANDOFF);
+		});
+
+		await withRecordedFetch({ ok: true, enabled: true }, 200, async (calls) => {
+			expect(await saveExecutorHandoff(true)).toBe('Executor handoff enabled.');
+			expect(calls).toEqual([{
+				url: EXECUTOR_HANDOFF_PATH,
+				method: 'PUT',
+				body: JSON.stringify({ enabled: true }),
+			}]);
+		});
+		await withRecordedFetch({ ok: true, enabled: false }, 200, async () => {
+			expect(await saveExecutorHandoff(false)).toBe('Executor handoff disabled.');
+		});
+		await withRecordedFetch({
+			ok: false,
+			code: 'invalid-request',
+			message: '"enabled" must be a boolean.',
+		}, 400, async () => {
+			expect(await saveExecutorHandoff(true)).toBe('"enabled" must be a boolean.');
 		});
 	});
 

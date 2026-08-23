@@ -13,12 +13,19 @@ import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { fingerprintSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
-import { ProviderCallError, type AgentProviderId } from '../runtime/agent-session.ts';
-import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
+import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
+import { type AgentProviderId, ProviderCallError } from '../runtime/agent-session.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
+import {
+	captureBootClaudeToken,
+	removeClaudeCredential,
+	resolveClaudeCredential,
+	resolveClaudeCredentialStatus,
+	writeClaudeCredential,
+} from '../runtime/claude-credential.ts';
 import {
 	CodexAgentSession,
 	CodexCliExecutor,
@@ -28,8 +35,8 @@ import {
 import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
 import {
 	ConversationalOrchestrator,
-	type OrchestratorCommand,
 	OrchestratorBusyError,
+	type OrchestratorCommand,
 	type OrchestratorTurnResult,
 } from '../runtime/conversational-orchestrator.ts';
 import { DiagnosticTransitionError } from '../runtime/diagnostic-finding.ts';
@@ -38,8 +45,8 @@ import {
 	type DiagnosticCadence,
 } from '../runtime/diagnostic-schedule.ts';
 import {
-	DiagnosticsRuntime,
 	DiagnosticRuntimeError,
+	DiagnosticsRuntime,
 	GitDiagnosticWorkspace,
 	ReactDoctorAdapter,
 } from '../runtime/diagnostics.ts';
@@ -82,6 +89,39 @@ import {
 	type OperatorProfile,
 } from '../runtime/operator-profile.ts';
 import {
+	createProject,
+	type ProjectCreateCommandRunner,
+	ProjectCreateError,
+} from '../runtime/project-create.ts';
+import {
+	type GitCloneRunner,
+	importRepository,
+	ProjectImportError,
+} from '../runtime/project-import.ts';
+import { inspectProject } from '../runtime/project-readiness.ts';
+import {
+	PROJECT_STATE_DIRECTORY,
+	ProjectRegistrationError,
+	registerExistingCheckout,
+} from '../runtime/project-registration.ts';
+import {
+	openProjectRegistry,
+	type ProjectRegistry,
+	type RegisteredProject,
+	resolveGateshipHome,
+} from '../runtime/project-registry.ts';
+import {
+	ProjectRuntimeLookupError,
+	ProjectRuntimeManager,
+} from '../runtime/project-runtime-manager.ts';
+import { readProjectOperationalStatus } from '../runtime/project-status.ts';
+import {
+	ProjectUnregistrationError,
+	unregisterProject,
+} from '../runtime/project-unregistration.ts';
+import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
+import { ensureCodexHome } from '../runtime/provider-env.ts';
+import {
 	createRemoteNotifier,
 	isNtfyConfigured,
 	RESEND_FIELD_LABELS,
@@ -101,6 +141,7 @@ import {
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
+import { isTerminalRunState } from '../runtime/run-state.ts';
 import {
 	type OrchestratorMessage,
 	PROJECT_BRIEF_LIMITS,
@@ -109,49 +150,8 @@ import {
 	type RunRecord,
 	RunStore,
 } from '../runtime/run-store.ts';
-import { isTerminalRunState } from '../runtime/run-state.ts';
-import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
-import { ensureCodexHome } from '../runtime/provider-env.ts';
-import {
-	captureBootClaudeToken,
-	removeClaudeCredential,
-	resolveClaudeCredential,
-	resolveClaudeCredentialStatus,
-	writeClaudeCredential,
-} from '../runtime/claude-credential.ts';
-import { inspectProject } from '../runtime/project-readiness.ts';
-import {
-	createProject,
-	type ProjectCreateCommandRunner,
-	ProjectCreateError,
-} from '../runtime/project-create.ts';
-import {
-	type GitCloneRunner,
-	importRepository,
-	ProjectImportError,
-} from '../runtime/project-import.ts';
-import {
-	PROJECT_STATE_DIRECTORY,
-	ProjectRegistrationError,
-	registerExistingCheckout,
-} from '../runtime/project-registration.ts';
-import {
-	openProjectRegistry,
-	type RegisteredProject,
-	type ProjectRegistry,
-	resolveGateshipHome,
-} from '../runtime/project-registry.ts';
-import {
-	ProjectUnregistrationError,
-	unregisterProject,
-} from '../runtime/project-unregistration.ts';
-import {
-	ProjectRuntimeLookupError,
-	ProjectRuntimeManager,
-} from '../runtime/project-runtime-manager.ts';
-import { readProjectOperationalStatus } from '../runtime/project-status.ts';
-import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
+import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { GSHIP_VERSION } from '../version.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
@@ -548,6 +548,35 @@ async function writeChainRuns(request: Request, runtime: RunRuntime): Promise<Re
 	}
 	runtime.setChainRuns(enabled);
 	return Response.json({ ok: true, ...chainRunsSnapshot(runtime) });
+}
+
+/** The executor handoff opt-in (GSHIP-722): off by default, same shape as chain runs. */
+function executorHandoffSnapshot(runtime: RunRuntime): { enabled: boolean } {
+	return { enabled: runtime.getExecutorHandoffEnabled() };
+}
+
+async function writeExecutorHandoff(request: Request, runtime: RunRuntime): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	const enabled = body !== null && typeof body === 'object'
+		? (body as { enabled?: unknown }).enabled
+		: undefined;
+	if (typeof enabled !== 'boolean') {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: '"enabled" must be a boolean.' },
+			{ status: 400 },
+		);
+	}
+	runtime.setExecutorHandoffEnabled(enabled);
+	return Response.json({ ok: true, ...executorHandoffSnapshot(runtime) });
 }
 
 /** Safe notification status; the Resend key itself is structurally absent. */
@@ -1854,6 +1883,7 @@ function runWithInsights(runtime: RunRuntime, run: RunRecord): unknown {
 		evaluation: runtime.getRunEvaluation(run.id),
 		providerWait: runtime.getRunProviderWait(run.id),
 		pullRequest: runtime.getPullRequestDelivery(run.id),
+		executorHandoff: runtime.getRunExecutorHandoff(run.id),
 	};
 }
 
@@ -2202,8 +2232,11 @@ export function createDefaultRunRuntimeOptions(
 		store,
 		workflowRevision,
 		executor: new AgentExecutorRouter({
-			claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor'), resolveClaudeCredential }),
-			codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
+			executors: {
+				claude: new ClaudeCliExecutor({ resolveModel: model('claude', 'executor'), resolveClaudeCredential }),
+				codex: new CodexCliExecutor({ resolveModel: model('codex', 'executor') }),
+			},
+			resolveModel: (providerId) => model(providerId, 'executor')(),
 		}),
 		verifier: new GitIssueVerifier(),
 		fullVerifier: new GitFullVerifier(),
@@ -3025,6 +3058,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/chain-runs': {
 				GET: () => Response.json(chainRunsSnapshot(runRuntime)),
 				PUT: (request) => writeChainRuns(request, runRuntime),
+			},
+			// The executor handoff opt-in (GSHIP-722), stored beside the chain
+			// switch: off by default, and it only flips the gate the run's own
+			// executor router reads on its next qualifying failure.
+			'/api/executor-handoff': {
+				GET: () => Response.json(executorHandoffSnapshot(runRuntime)),
+				PUT: (request) => writeExecutorHandoff(request, runRuntime),
 			},
 			// The remote notification channels (GSHIP-652, GSHIP-653): the read is
 			// unguarded like every other GET and returns a boolean plus any named

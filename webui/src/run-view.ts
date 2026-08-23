@@ -99,6 +99,23 @@ export interface RunProviderWaitView {
 	retryAt?: string;
 }
 
+/**
+ * One run's executor handoff (GSHIP-722), present once it was tried --
+ * successfully or not. Mirrors ExecutorHandoffRecord in
+ * src/runtime/agent-executor-router.ts. Never a stand-in for a balance: the
+ * screen shows origin, destination, reason and outcome, and nothing else.
+ */
+export interface RunExecutorHandoffView {
+	from: 'claude' | 'codex';
+	to: 'claude' | 'codex';
+	reason: RunProviderWaitView['kind'];
+	message: string;
+	outcome: string;
+	createdAt: string;
+	model?: string;
+	effort?: string;
+}
+
 export interface PullRequestDeliveryView {
 	prNumber: number;
 	url: string;
@@ -179,6 +196,7 @@ export interface RunView {
 	evaluation?: RunEvaluationView | null;
 	providerWait: RunProviderWaitView | null;
 	pullRequest: PullRequestDeliveryView | null;
+	executorHandoff: RunExecutorHandoffView | null;
 }
 
 /** A cost total plus exactly how many runs it spans (GSHIP-628). */

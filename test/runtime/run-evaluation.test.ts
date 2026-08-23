@@ -134,6 +134,50 @@ describe('replayable run evaluation', () => {
 		]);
 	});
 
+	// GSHIP-722: an executor handoff is attributed to the executor role, the
+	// same way a review fallback is attributed to the reviewer role, keeping
+	// the run's own origin provider unchanged.
+	test('adds the executor handoff provider to the executor role, keeping its origin', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('provider.model', 'working', 'working', { model: 'sonnet', effort: 'high' }),
+			event('run.executor-handoff', 'working', 'working', {
+				from: 'claude',
+				to: 'codex',
+				role: 'executor',
+				reason: 'usage-limit',
+				attempt: 1,
+				sessionId: 'session-alt',
+				outcome: 'completed',
+			}),
+			event('provider.model', 'working', 'working', { model: 'gpt-5-codex' }),
+		]);
+
+		expect(evaluation.provider).toBe('claude');
+		expect(evaluation.roles).toEqual([
+			{ role: 'executor', models: ['gpt-5-codex', 'sonnet'], efforts: ['high'], providers: ['claude', 'codex'] },
+		]);
+	});
+
+	test('lists a refused executor handoff provider without erasing what its own spawn reported', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('provider.model', 'working', 'working', { model: 'opus' }),
+			event('run.executor-handoff', 'working', 'working', {
+				from: 'claude',
+				to: 'codex',
+				role: 'executor',
+				reason: 'rate-limited',
+				attempt: 1,
+				sessionId: 'session-alt',
+				outcome: 'refused',
+				error: 'codex is not authenticated',
+			}),
+		]);
+
+		expect(evaluation.roles).toEqual([
+			{ role: 'executor', models: ['opus'], efforts: [], providers: ['claude', 'codex'] },
+		]);
+	});
+
 	test('keeps legacy revision and non-terminal wall time explicitly unknown', () => {
 		expect(evaluateRun({ ...RUN, state: 'working' }, [event('run.created', null, 'queued')]))
 			.toMatchObject({ workflowRevision: null, outcome: 'incomplete', wallTimeMs: null });
