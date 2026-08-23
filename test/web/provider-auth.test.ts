@@ -76,6 +76,9 @@ describe('provider auth web API', () => {
 			cwd: createTestTmpdir('gship-provider-availability-runtime-'),
 			store: new RunStore(':memory:'),
 			newId: () => 'run-provider-availability',
+			// Before the hold's own retryAt, so the run rests on it for the
+			// whole test instead of taking its automatic retry (GSHIP-711).
+			now: () => '2026-08-20T12:00:00.000Z',
 			executor: {
 				execute: async () => {
 					throw new ProviderCallError(

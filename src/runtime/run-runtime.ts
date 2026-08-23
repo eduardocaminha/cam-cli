@@ -211,6 +211,12 @@ export interface RunRuntimeOptions {
 	fullVerifier?: RuntimeVerifier;
 	shipper?: RuntimeShipper;
 	now?: () => string;
+	/**
+	 * The one-shot timer the automatic provider retry is armed on (GSHIP-711),
+	 * paired with `now`: both are injected together so a scheduled retry is
+	 * exercised deterministically instead of by waiting for the clock.
+	 */
+	timer?: RuntimeTimer;
 	newId?: () => string;
 	newSessionId?: () => string;
 	preflight?: (issueId: string) => void;
@@ -276,6 +282,43 @@ export interface RunProviderWait {
 	message: string;
 	phase: 'working' | 'review';
 	retryAt?: string;
+}
+
+/** Opaque handle of one armed automatic retry, owned by the timer that made it. */
+export type RuntimeTimerHandle = unknown;
+
+/**
+ * The one-shot timer the automatic provider retry runs on (GSHIP-711). A seam
+ * so the schedule is testable without wall-clock waiting; the process default
+ * below is the host timer.
+ */
+export interface RuntimeTimer {
+	set: (callback: () => void, delayMs: number) => RuntimeTimerHandle;
+	clear: (handle: RuntimeTimerHandle) => void;
+}
+
+const HOST_TIMER: RuntimeTimer = {
+	set: (callback, delayMs) => {
+		const handle = setTimeout(callback, delayMs);
+		// A pending retry is not a reason to keep the process alive; it only
+		// matters while the service that owns the run is running anyway.
+		(handle as { unref?: () => void }).unref?.();
+		return handle;
+	},
+	clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** One armed automatic retry: the run it resumes and the hold it answers. */
+interface ArmedProviderRetry {
+	runId: string;
+	waitSeq: number;
+	handle: RuntimeTimerHandle;
+}
+
+/** The last automatic retry already spent for a run, so none is ever spent twice. */
+interface SpentProviderRetry {
+	waitSeq: number;
+	retryAtMs: number;
 }
 
 function isChainPauseReason(value: unknown): value is ChainPauseReason {
@@ -357,6 +400,7 @@ export class RunRuntime {
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #now: () => string;
+	readonly #timer: RuntimeTimer;
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
 	readonly #preflight: ((issueId: string) => void) | undefined;
@@ -365,6 +409,8 @@ export class RunRuntime {
 	readonly #listBacklog: (() => IssueEntry[]) | undefined;
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
+	readonly #spentProviderRetries = new Map<string, SpentProviderRetry>();
+	#armedProviderRetry: ArmedProviderRetry | null = null;
 	#workspaceNotices: WorkspaceNotice[] = [];
 	#admissionBlockedReason: string | null = null;
 
@@ -382,6 +428,7 @@ export class RunRuntime {
 		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
 		this.#now = options.now ?? (() => new Date().toISOString());
+		this.#timer = options.timer ?? HOST_TIMER;
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
 		this.#preflight = options.preflight;
@@ -391,6 +438,10 @@ export class RunRuntime {
 		this.#store.recoverUnownedRuns(this.#now());
 		this.#reconcileFinishedWorkspaces();
 		this.#refreshWorkspaceNotices();
+		// The scheduler starts with the runtime and owns nothing else: a retry
+		// whose instant already passed while this process was down is armed
+		// here at zero delay rather than waiting for the next hold.
+		this.#armProviderRetryForWaitingRun();
 	}
 
 	startRun(issueId: string, source?: string): RunRecord {
@@ -592,9 +643,8 @@ export class RunRuntime {
 	/** Latest structured provider hold, present only while that run is resting on it. */
 	getRunProviderWait(runId: string): RunProviderWait | null {
 		if (this.#store.getRun(runId)?.state !== 'waiting-provider') return null;
-		const event = this.#store.listRunDecisionEvents(runId)
-			.findLast((candidate) => candidate.kind === 'run.provider-waiting');
-		if (event === undefined) return null;
+		const event = this.#latestProviderWaitEvent(runId);
+		if (event === null) return null;
 		const { provider, kind, message, phase, retryAt } = event.payload;
 		if ((provider !== 'claude' && provider !== 'codex')
 			|| typeof kind !== 'string'
@@ -811,6 +861,7 @@ export class RunRuntime {
 	}
 
 	async stop(): Promise<void> {
+		this.#cancelProviderRetry();
 		const active = [...this.#active.values()];
 		for (const run of active) run.controller.abort();
 		await Promise.allSettled(active.map((run) => run.promise));
@@ -818,13 +869,21 @@ export class RunRuntime {
 
 	close(): void {
 		if (this.#active.size > 0) throw new Error('cannot close a runtime with active runs');
+		this.#cancelProviderRetry();
 		this.#store.close();
 	}
 
 	#launch(run: RunRecord, attempt: RunAttempt): void {
+		// Whoever launches the run owns it; an armed retry for it is moot.
+		this.#cancelProviderRetry(run.id);
 		const controller = new AbortController();
 		const promise = this.#drive(run, controller.signal, attempt)
-			.finally(() => this.#active.delete(run.id));
+			.finally(() => {
+				this.#active.delete(run.id);
+				// Only now is the run unowned, so a hold this pass just recorded
+				// is the first moment an automatic retry can be armed for it.
+				this.#armProviderRetry(run.id);
+			});
 		this.#active.set(run.id, { controller, promise });
 	}
 
@@ -928,6 +987,93 @@ export class RunRuntime {
 
 	#providerWaitPhase(runId: string): 'working' | 'review' {
 		return this.getRunProviderWait(runId)?.phase ?? 'working';
+	}
+
+	#latestProviderWaitEvent(runId: string): RunEvent | null {
+		return this.#store.listRunDecisionEvents(runId)
+			.findLast((event) => event.kind === 'run.provider-waiting')
+			?? null;
+	}
+
+	/** The one waiting-provider run there can be, since only one run is ever live. */
+	#armProviderRetryForWaitingRun(): void {
+		const waiting = this.#store.listRuns(10_000)
+			.find((run) => run.state === 'waiting-provider');
+		if (waiting !== undefined) this.#armProviderRetry(waiting.id);
+	}
+
+	/**
+	 * Arm the single automatic resume the run's latest provider hold admits
+	 * (GSHIP-711). The hold's own `retryAt` is the whole schedule: absent or
+	 * unparseable it stays armed for nobody and the run keeps waiting for the
+	 * operator. A retry already spent is never armed again -- neither for the
+	 * same wait event nor for a repeated `retryAt` a new refusal carries -- so
+	 * a provider that keeps refusing produces at most one automatic attempt
+	 * per genuinely new instant instead of a tight loop.
+	 */
+	#armProviderRetry(runId: string): void {
+		this.#cancelProviderRetry(runId);
+		if (this.#executor === undefined || this.#verifier === undefined) return;
+		if (this.#active.has(runId)) return;
+		if (this.#store.getRun(runId)?.state !== 'waiting-provider') return;
+		const event = this.#latestProviderWaitEvent(runId);
+		if (event === null) return;
+		const retryAt = event.payload['retryAt'];
+		const retryAtMs = typeof retryAt === 'string' ? Date.parse(retryAt) : Number.NaN;
+		if (!Number.isFinite(retryAtMs)) return;
+		const spent = this.#spentProviderRetries.get(runId);
+		if (spent !== undefined
+			&& (event.seq <= spent.waitSeq || retryAtMs <= spent.retryAtMs)) {
+			return;
+		}
+		const nowMs = Date.parse(this.#now());
+		const delayMs = Number.isFinite(nowMs) ? Math.max(0, retryAtMs - nowMs) : 0;
+		const waitSeq = event.seq;
+		const handle = this.#timer.set(() => this.#retryAfterProviderWait(runId, waitSeq), delayMs);
+		this.#armedProviderRetry = { runId, waitSeq, handle };
+	}
+
+	/** Drop the armed retry, for this run or -- with no run named -- for any. */
+	#cancelProviderRetry(runId?: string): void {
+		const armed = this.#armedProviderRetry;
+		if (armed === null) return;
+		if (runId !== undefined && armed.runId !== runId) return;
+		this.#timer.clear(armed.handle);
+		this.#armedProviderRetry = null;
+	}
+
+	/**
+	 * The retry instant arrived. Everything the wait promised is re-read here
+	 * rather than trusted from when it was armed: the run must still be resting
+	 * on a provider, nothing else may own it -- a manual resume that took the
+	 * run first wins outright -- and the hold answered must still be the latest
+	 * one. The resume itself is the ordinary one, without guidance, so the
+	 * provider, the session, the worktree and the working-or-review phase are
+	 * exactly those `resumeRun` already preserves.
+	 */
+	#retryAfterProviderWait(runId: string, waitSeq: number): void {
+		if (this.#armedProviderRetry?.runId === runId) this.#armedProviderRetry = null;
+		if (this.#active.has(runId)) return;
+		if (this.#store.getRun(runId)?.state !== 'waiting-provider') return;
+		const event = this.#latestProviderWaitEvent(runId);
+		if (event === null || event.seq !== waitSeq) return;
+		const retryAt = event.payload['retryAt'];
+		const retryAtMs = typeof retryAt === 'string' ? Date.parse(retryAt) : Number.NaN;
+		if (!Number.isFinite(retryAtMs)) return;
+		this.#spentProviderRetries.set(runId, { waitSeq, retryAtMs });
+		// The automatic source and the hold this answers, durable and apart
+		// from any operator record: no guidance, no state change, so neither
+		// the run's attention requests nor its operator interventions move.
+		this.#emit(runId, 'run.provider-retry-automatic', {
+			source: 'automatic',
+			waitSeq,
+			retryAt,
+		});
+		try {
+			this.resumeRun(runId);
+		} catch (error) {
+			this.#emit(runId, 'run.provider-retry-unavailable', { error: errorMessage(error) });
+		}
 	}
 
 	/**
