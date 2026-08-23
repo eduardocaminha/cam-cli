@@ -459,6 +459,10 @@ interface ProjectsPayload {
 	projects?: unknown[];
 }
 
+interface RegisterProjectPayload extends CommandPayload {
+	project?: unknown;
+}
+
 interface OperatorProfilePayload extends CommandPayload {
 	profile?: Partial<OperatorProfileView>;
 }
@@ -645,6 +649,26 @@ export async function fetchProjects(): Promise<RegisteredProjectView[]> {
 	return (payload.projects ?? [])
 		.map(registeredProjectRecord)
 		.filter((project): project is RegisteredProjectView => project !== null);
+}
+
+/**
+ * Register a checkout that already exists on disk (GSHIP-716). The service
+ * resolves the path to its repository top level and refuses anything that is
+ * not ready, so the typed refusal message is what the operator has to act on.
+ */
+export async function registerProject(root: string): Promise<RegisteredProjectView> {
+	const response = await fetch(PROJECTS_PATH, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ root }),
+	});
+	const payload = (await response.json()) as RegisterProjectPayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Project registration rejected (${response.status}).`);
+	}
+	const project = registeredProjectRecord(payload.project);
+	if (project === null) throw new Error('Gateship returned an unreadable project registration.');
+	return project;
 }
 
 function operatorProfileRecord(record: Partial<OperatorProfileView> | undefined): OperatorProfileView {

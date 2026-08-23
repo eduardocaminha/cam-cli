@@ -74,6 +74,7 @@ import {
 	type ProviderStatusView,
 	promoteDiagnosticFinding,
 	promoteProposal,
+	registerProject,
 	removeResendCredential,
 	RESOLVED_PROPOSALS_PATH,
 	type ResolvedProposalView,
@@ -312,6 +313,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSendNotificationTest={() => {}}
 			onPromoteProposal={() => {}}
 			onPromoteDiagnosticFinding={() => {}}
+			onRegisterProject={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
 			onSaveDiagnosticSchedule={() => {}}
@@ -3013,6 +3015,44 @@ describe('operator shell', () => {
 		}
 	});
 
+	// GSHIP-716: onboarding a checkout the operator already has is one absolute
+	// path, offered on the overview beside the list that stays the selection.
+	test('the overview offers registering an existing checkout by absolute path in both locales', () => {
+		for (const expected of [
+			{
+				locale: 'en-US' as const,
+				title: 'Register an existing checkout',
+				label: 'Absolute path',
+				submit: 'Register project',
+				topLevel: 'Gateship registers its real top level',
+				docker: 'In Docker the path must exist inside the container',
+			},
+			{
+				locale: 'pt-BR' as const,
+				title: 'Registrar um checkout existente',
+				label: 'Caminho absoluto',
+				submit: 'Registrar projeto',
+				topLevel: 'o Gateship registra o top-level real',
+				docker: 'No Docker o caminho precisa existir dentro do contêiner',
+			},
+		]) {
+			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT] });
+			expect(html).toContain(`>${expected.title}</h2>`);
+			expect(html).toContain(`>${expected.label}</span>`);
+			expect(html).toContain(expected.topLevel);
+			expect(html).toContain(expected.docker);
+			expect(html).toContain('name="project-root"');
+			expect(buttonIsEnabled(html, expected.submit)).toBe(true);
+			// No file picker, no clone and no new-project command joins it.
+			expect(html).not.toContain('type="file"');
+		}
+		// A typed refusal reaches the operator on the surface that asked for it.
+		expect(renderAt('/overview', {
+			status: 'The origin remote must point to a repository on GitHub.com.',
+		})).toContain('The origin remote must point to a repository on GitHub.com.');
+		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Register project')).toBe(false);
+	});
+
 	test('a non-current project keeps conversation and settings unavailable', () => {
 		for (const suffix of ['', '/settings']) {
 			const html = renderAt(`/projects/project-other${suffix}` as OperatorRoute, {
@@ -3809,6 +3849,29 @@ describe('same-origin transport', () => {
 		});
 		await withRecordedFetch({}, 200, async () => {
 			expect(await fetchProjects()).toEqual([]);
+		});
+	});
+
+	test('registers an existing checkout through the registry route and surfaces its refusal', async () => {
+		await withRecordedFetch({ ok: true, project: OTHER_PROJECT }, 200, async (calls) => {
+			expect(await registerProject('/other-product/packages/app')).toEqual(OTHER_PROJECT);
+			expect(calls).toEqual([{
+				url: PROJECTS_PATH,
+				method: 'POST',
+				body: JSON.stringify({ root: '/other-product/packages/app' }),
+			}]);
+		});
+		await withRecordedFetch(
+			{ ok: false, code: 'project-not-ready', message: 'The repository does not have a remote named origin.' },
+			409,
+			async () => {
+				await expect(registerProject('/other-product'))
+					.rejects.toThrow('The repository does not have a remote named origin.');
+			},
+		);
+		await withRecordedFetch({ ok: true, project: { id: false } }, 200, async () => {
+			await expect(registerProject('/other-product'))
+				.rejects.toThrow('unreadable project registration');
 		});
 	});
 

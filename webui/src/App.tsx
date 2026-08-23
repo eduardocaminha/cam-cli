@@ -70,6 +70,7 @@ import {
 	LOCALE_CATALOG,
 	type Locale,
 	type OnboardingCatalog,
+	type ProjectsCatalog,
 	type RunInspectorCatalog,
 	type RunsOperationalCatalog,
 	type RunsWorkflowCatalog,
@@ -274,6 +275,12 @@ export interface AppProps {
 	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
 	onSetChainRuns: (enabled: boolean) => void;
 	onSetSelfUpdate: (enabled: boolean) => void;
+	/**
+	 * Register a checkout that already exists on disk, by absolute path
+	 * (GSHIP-716). Selection stays with the list and the sidebar; this only
+	 * adds a project to them.
+	 */
+	onRegisterProject: (root: string) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -2818,6 +2825,53 @@ function SurfaceColumn({
 	);
 }
 
+/**
+ * The one onboarding write the overview offers: an absolute path to a checkout
+ * the operator already has. No file picker, no clone and no new repository --
+ * the service reads local Git metadata and refuses anything not ready.
+ */
+function RegisterProjectPanel({
+	catalog,
+	pending,
+	onRegisterProject,
+}: Pick<AppProps, 'pending' | 'onRegisterProject'> & {
+	catalog: ProjectsCatalog;
+}): React.ReactElement {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{catalog.register.title}</CardTitle>
+				<CardDescription>{catalog.register.description}</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<form
+					className="flex flex-col gap-3"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const root = fieldReader(event.currentTarget)('project-root');
+						if (root !== '') onRegisterProject(root);
+					}}
+				>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="project-root">
+						<span className="font-medium">{catalog.register.rootLabel}</span>
+						<input
+							className={FIELD_CLASS}
+							id="project-root"
+							name="project-root"
+							placeholder={catalog.register.rootPlaceholder}
+						/>
+						<span className="text-muted-foreground text-xs">{catalog.register.rootGuidance}</span>
+						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+						{catalog.register.submit}
+					</button>
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
 function OverviewSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].projects;
 	return (
@@ -2844,6 +2898,11 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 					</li>
 				))}
 			</ul>
+			<RegisterProjectPanel
+				catalog={catalog}
+				onRegisterProject={props.onRegisterProject}
+				pending={props.pending}
+			/>
 		</SurfaceColumn>
 	);
 }

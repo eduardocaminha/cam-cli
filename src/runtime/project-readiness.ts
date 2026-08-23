@@ -42,7 +42,8 @@ export interface ProjectCommandResult {
 
 export type ProjectCommandRunner = (cwd: string, args: readonly string[]) => ProjectCommandResult;
 
-const runGit: ProjectCommandRunner = (cwd, args) => {
+/** The one local-metadata reader every readiness and registration path shares. */
+export const readLocalGitMetadata: ProjectCommandRunner = (cwd, args) => {
 	const result = spawnSync('git', args, {
 		cwd,
 		encoding: 'utf8',
@@ -77,7 +78,7 @@ function hasProjectContent(cwd: string): boolean {
  */
 export function inspectProject(
 	cwd: string,
-	run: ProjectCommandRunner = runGit,
+	run: ProjectCommandRunner = readLocalGitMetadata,
 ): ProjectStatus {
 	const requestedName = basename(resolve(cwd));
 	const rootResult = run(cwd, ['rev-parse', '--show-toplevel']);
