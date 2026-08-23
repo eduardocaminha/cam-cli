@@ -340,6 +340,66 @@ describe('Claude CLI runtime executor', () => {
 		)).toContain(contract);
 	});
 
+	// GSHIP-708: the contract names the Issue record as the source of the
+	// operator's language, so every turn shape has to deliver the two
+	// together. A resume turn carrying review findings, operator guidance,
+	// decisions and a failed verify log is the longest prompt the executor
+	// ever sees, and the contract still ends up directly above the record.
+	test('keeps the contract directly above the issue record in every turn shape', () => {
+		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
+		const tail = `${contract}\n\nIssue record:\n{"id":"CAM-708"}`;
+		expect(buildWorkPrompt('CAM-708', '{"id":"CAM-708"}', false, undefined, undefined))
+			.toEndWith(tail);
+		expect(buildWorkPrompt('CAM-708', '{"id":"CAM-708"}', true, undefined, undefined))
+			.toEndWith(tail);
+		expect(buildWorkPrompt(
+			'CAM-708',
+			'{"id":"CAM-708"}',
+			true,
+			'1. src/a.ts: quebra o contrato',
+			'Responda em português.',
+			['Manter o seam menor.'],
+			'verify failed',
+		)).toEndWith(tail);
+	});
+
+	// The variable sections a resume turn adds sit above the contract, not
+	// between it and the record: that ordering is the whole point of GSHIP-708.
+	test('orders the variable sections ahead of the contract and the record', () => {
+		const prompt = buildWorkPrompt(
+			'CAM-708',
+			'{"id":"CAM-708"}',
+			true,
+			'1. src/a.ts: quebra o contrato',
+			'Responda em português.',
+			['Manter o seam menor.'],
+			'verify failed',
+		);
+		for (const section of [
+			'Decisions the operator has already made in this run',
+			'The operator answered your previous request',
+			'Review findings:',
+			'Full verification output:',
+		]) {
+			expect(prompt.indexOf(section)).toBeGreaterThan(-1);
+			expect(prompt.indexOf(section)).toBeLessThan(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]));
+		}
+		expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))
+			.toBeLessThan(prompt.indexOf('Issue record:'));
+	});
+
+	// The contract has to say where the operator's language comes from, and
+	// that its own English is not the answer; without both lines the executor
+	// is back to the ambiguity GSHIP-703 left behind.
+	test('names the issue record as the language source and excludes its own language', () => {
+		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
+		expect(contract).toContain("the natural language of this run's Issue record");
+		expect(contract).toContain('including its title, description and approved spec');
+		expect(contract).toContain('When a turn carries no Issue record');
+		expect(contract).toContain('The language of these workflow instructions never participates');
+		expect(contract).toContain('textual progress');
+	});
+
 	test('asks for bounded proposals and keeps them out of a paused turn', () => {
 		expect(EXECUTION_RESULT_SCHEMA.required).toContain('proposals');
 		expect(EXECUTION_RESULT_SCHEMA.properties.proposals.maxItems)
