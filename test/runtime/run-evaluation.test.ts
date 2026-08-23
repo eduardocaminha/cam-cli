@@ -59,10 +59,55 @@ describe('replayable run evaluation', () => {
 			providerHolds: 1,
 			resolvedCycleQuestions: 0,
 			roles: [
-				{ role: 'executor', models: ['opus', 'sonnet'], efforts: ['high', 'xhigh'] },
-				{ role: 'reviewer', models: ['opus'], efforts: ['medium'] },
+				{ role: 'executor', models: ['opus', 'sonnet'], efforts: ['high', 'xhigh'], providers: ['claude'] },
+				{ role: 'reviewer', models: ['opus'], efforts: ['medium'], providers: ['claude'] },
 			],
 		});
+	});
+
+	// GSHIP-709: a review answered by the fallback is attributed to the
+	// provider that produced it without erasing the origin it started from.
+	test('adds the review fallback provider to the reviewer role, keeping its origin', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('review.model', 'review', 'review', { effort: 'medium' }),
+			event('run.review-fallback', 'review', 'review', {
+				from: 'claude',
+				to: 'codex',
+				phase: 'review',
+				reason: 'usage-limit',
+				outcome: 'findings',
+			}),
+		]);
+
+		expect(evaluation.provider).toBe('claude');
+		expect(evaluation.roles).toEqual([
+			{ role: 'reviewer', models: [], efforts: ['medium'], providers: ['claude', 'codex'] },
+		]);
+	});
+
+	// A refused attempt still spawned the alternative, which reported its own
+	// model before failing: the provider stays listed beside that model, and
+	// the fallback event's outcome is what says the attempt produced nothing.
+	test('lists the refused fallback provider beside the model its own spawn reported', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('review.model', 'review', 'review', { model: 'opus' }),
+			event('review.model', 'review', 'review', { model: 'gpt-5-codex', effort: 'medium' }),
+			event('run.review-fallback', 'review', 'review', {
+				from: 'claude',
+				to: 'codex',
+				phase: 'review',
+				reason: 'rate-limited',
+				outcome: 'refused',
+				error: 'codex is not authenticated',
+			}),
+		]);
+
+		expect(evaluation.roles).toEqual([{
+			role: 'reviewer',
+			models: ['gpt-5-codex', 'opus'],
+			efforts: ['medium'],
+			providers: ['claude', 'codex'],
+		}]);
 	});
 
 	test('keeps legacy revision and non-terminal wall time explicitly unknown', () => {
