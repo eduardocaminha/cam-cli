@@ -5,6 +5,12 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import type { ProjectStatus } from './project-readiness.ts';
+import {
+	emptyOperatorProfile,
+	normalizeOperatorProfile,
+	OPERATOR_PROFILE_KEY,
+	type OperatorProfile,
+} from './operator-profile.ts';
 
 export const GATESHIP_HOME_ENV_VAR = 'GATESHIP_HOME';
 export const PROJECT_REGISTRY_DATABASE = 'projects.sqlite';
@@ -82,6 +88,47 @@ export class ProjectRegistry {
 				updated_at TEXT NOT NULL
 			);
 		`);
+		this.#db.exec(`
+			CREATE TABLE IF NOT EXISTS settings (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			);
+		`);
+	}
+
+	/** Reads the one product-wide operator profile, independent of project. */
+	getOperatorProfile(): OperatorProfile {
+		const row = this.#db.query(`
+			SELECT value FROM settings WHERE key = $key
+		`).get({ key: OPERATOR_PROFILE_KEY }) as { value: string } | null;
+		if (row === null) return emptyOperatorProfile();
+		try {
+			return normalizeOperatorProfile(JSON.parse(row.value) as unknown);
+		} catch {
+			return emptyOperatorProfile();
+		}
+	}
+
+	/** Persists the normalized profile without touching any project database. */
+	setOperatorProfile(profile: OperatorProfile): void {
+		this.#db.query(`
+			INSERT INTO settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({
+			key: OPERATOR_PROFILE_KEY,
+			value: JSON.stringify(normalizeOperatorProfile(profile)),
+		});
+	}
+
+	/** Copies the legacy boot value only while the global setting is absent. */
+	initializeOperatorProfile(legacyProfile: OperatorProfile): void {
+		const row = this.#db.query(
+			'SELECT 1 FROM settings WHERE key = $key',
+		).get({ key: OPERATOR_PROFILE_KEY });
+		if (row !== null) return;
+		const profile = normalizeOperatorProfile(legacyProfile);
+		if (profile.name === '' && profile.timezone === '') return;
+		this.setOperatorProfile(profile);
 	}
 
 	reconcile(input: ProjectRegistration): RegisteredProject {

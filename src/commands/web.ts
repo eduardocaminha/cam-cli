@@ -279,6 +279,8 @@ interface ProjectCycleContext {
 	close(): Promise<void>;
 }
 
+type OperatorProfileAccess = Pick<ProjectRegistry, 'getOperatorProfile' | 'setOperatorProfile'>;
+
 function briefList(value: unknown, label: string): string[] {
 	if (!Array.isArray(value)) {
 		throw new IssueIntakeError('invalid-request', `${label} must be a list of strings.`, 400);
@@ -769,7 +771,7 @@ async function writeProjectBrief(
 	}
 }
 
-async function writeOperatorProfile(request: Request, runtime: RunRuntime): Promise<Response> {
+async function writeOperatorProfile(request: Request, profileAccess: OperatorProfileAccess): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
 	try {
@@ -781,8 +783,8 @@ async function writeOperatorProfile(request: Request, runtime: RunRuntime): Prom
 		);
 	}
 	try {
-		runtime.setOperatorProfile(parseOperatorProfileInput(body));
-		return Response.json({ ok: true, profile: runtime.getOperatorProfile() });
+		profileAccess.setOperatorProfile(parseOperatorProfileInput(body));
+		return Response.json({ ok: true, profile: profileAccess.getOperatorProfile() });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -2394,11 +2396,15 @@ function readPendingProposalsContext(runtime: RunRuntime): OrchestratorPendingPr
  * direct unit coverage: the production context lives inside a closure that
  * also wires a live provider CLI, which a unit test has no reason to spin up.
  */
-export function buildOrchestratorContext(cwd: string, runtime: RunRuntime) {
+export function buildOrchestratorContext(
+	cwd: string,
+	runtime: RunRuntime,
+	operatorProfile: Pick<ProjectRegistry, 'getOperatorProfile'> = runtime,
+) {
 	const pendingProposals = readPendingProposalsContext(runtime);
 	return {
 		provider: runtime.getSelectedProvider(),
-		operatorProfile: runtime.getOperatorProfile(),
+		operatorProfile: operatorProfile.getOperatorProfile(),
 		backlog: readIdleSnapshotState(cwd).backlog,
 		runs: runtime.listRuns(10),
 		workspaceNotices: runtime.listWorkspaceNotices(),
@@ -2409,9 +2415,10 @@ export function buildOrchestratorContext(cwd: string, runtime: RunRuntime) {
 function createDefaultOrchestrator(
 	cwd: string,
 	runtime: RunRuntime,
-	execute: (command: OrchestratorCommand) => Promise<string>,
+		execute: (command: OrchestratorCommand) => Promise<string>,
 	/** See `createDefaultRunRuntimeOptions`'s own parameter of the same name (GSHIP-704). */
 	resolveClaudeCredential: () => string | undefined = () => undefined,
+	operatorProfile: Pick<ProjectRegistry, 'getOperatorProfile'> = runtime,
 ): ConversationalOrchestrator {
 	const model = (providerId: AgentProviderId) =>
 		modelResolver(() => runtime.getModelSettings(), providerId, 'orchestrator');
@@ -2422,7 +2429,7 @@ function createDefaultOrchestrator(
 			claude: new ClaudeAgentSession({ resolveModel: model('claude'), resolveClaudeCredential }),
 			codex: new CodexAgentSession({ resolveModel: model('codex') }),
 		},
-		context: () => buildOrchestratorContext(cwd, runtime),
+		context: () => buildOrchestratorContext(cwd, runtime, operatorProfile),
 		execute,
 	});
 }
@@ -2649,6 +2656,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			stateDir,
 			resolveClaudeCredentialForSpawn,
 		));
+	// The registry is authoritative after this one-time import of the legacy
+	// boot runtime value. An existing empty global row is intentionally kept.
+	projectRegistry.initializeOperatorProfile(runRuntime.getOperatorProfile());
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
@@ -2714,6 +2724,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 		),
 		resolveClaudeCredentialForSpawn,
+		projectRegistry,
 	);
 	bootContext.close = async () => {
 		if (options.orchestrator === undefined) await bootContext.orchestrator.stop();
@@ -2772,6 +2783,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				},
 			),
 			resolveClaudeCredentialForSpawn,
+			projectRegistry,
 		);
 		context.close = async () => {
 			unsubscribe();
@@ -3047,8 +3059,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				PUT: (request) => updateSelfUpdate(request, selfUpdate),
 			},
 			'/api/operator-profile': {
-				GET: () => Response.json({ profile: runRuntime.getOperatorProfile() }),
-				PUT: (request) => writeOperatorProfile(request, runRuntime),
+				GET: () => Response.json({ profile: projectRegistry.getOperatorProfile() }),
+				PUT: (request) => writeOperatorProfile(request, projectRegistry),
 			},
 			'/api/diagnostics': {
 				GET: () => Response.json(diagnostics.snapshot()),

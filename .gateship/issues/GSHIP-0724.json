@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-724",
   "title": "Tornar perfil do operador global ao produto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-23T12:48:27.619Z",
-  "updatedAt": "2026-08-23T12:50:15.636Z",
+  "updatedAt": "2026-08-23T12:54:26.204Z",
   "description": "Persistir o perfil opcional do operador, nome e fuso IANA, como um único ajuste product-wide no banco já existente GATESHIP_HOME/projects.sqlite, em vez de tratá-lo como estado do runtime.sqlite do projeto de boot. No startup, somente quando o ajuste global ainda não existir, copiar uma vez o perfil legado não vazio do runtime de boot; depois disso o valor global é autoritativo e nenhuma troca de projeto ou de diretório de boot pode alterá-lo. Fazer GET e PUT /api/operator-profile lerem e gravarem esse valor global e injetar o mesmo perfil read-only no contexto conversacional de todos os projetos. Preservar exatamente o schema, a validação, a UI e as rotas atuais. Não apagar nem reescrever bancos de projeto, não migrar modelo, provider, brief, handoff, notificações, diagnósticos, chain-runs ou executor-handoff, não criar outro arquivo, banco, endpoint ou serviço global e não generalizar um settings framework além da pequena linha chave/valor necessária no banco do registry.",
   "specSource": "operator",
   "spec": {
