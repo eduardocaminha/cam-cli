@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-736",
+  "title": "Escopar propostas ao projeto selecionado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-23T17:20:32.910Z",
+  "updatedAt": "2026-08-23T17:20:32.910Z",
+  "description": "Completar o seam multiprojeto das propostas derivadas de runs. Adicionar rotas /api/projects/:projectId/proposals, /resolved e ações de dismiss/promote, todas resolvidas pelo ProjectRuntimeManager e pelo RunRuntime/issueIntake do projeto nomeado. Manter as rotas sem escopo somente como compatibilidade do projeto de boot.\n\nFazer o cliente derivar os paths de propostas do mesmo ProjectScope usado por runs e issues. Na superfície Work de qualquer projeto ready, exibir propostas pendentes e resolvidas do projeto selecionado, sem a condição bootRuntimeExtras. Dismiss e promote devem escrever somente no projeto selecionado e promotion deve criar o draft no repositório desse projeto.\n\nProvar isolamento com dois projetos/runtimes: listar, dispensar e promover em um não pode ler nem alterar o outro. Cobrir cliente e UI de projeto não atual. Não alterar diagnósticos nesta issue e não criar tabela, processo, serviço ou dependência nova.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Completar o seam multiprojeto das propostas derivadas de runs. Adicionar rotas /api/projects/:projectId/proposals, /resolved e ações de dismiss/promote, todas resolvidas pelo ProjectRuntimeManager e pelo RunRuntime/issueIntake do projeto nomeado. Manter as rotas sem escopo somente como compatibilidade do projeto de boot.\n\nFazer o cliente derivar os paths de propostas do mesmo ProjectScope usado por runs e issues. Na superfície Work de qualquer projeto ready, exibir propostas pendentes e resolvidas do projeto selecionado, sem a condição bootRuntimeExtras. Dismiss e promote devem escrever somente no projeto selecionado e promotion deve criar o draft no repositório desse projeto.\n\nProvar isolamento com dois projetos/runtimes: listar, dispensar e promover em um não pode ler nem alterar o outro. Cobrir cliente e UI de projeto não atual. Não alterar diagnósticos nesta issue e não criar tabela, processo, serviço ou dependência nova.",
+    "verify": [
+      "bun test test/web/issue-intake-api.test.ts test/web/project-scoped-browser-runs.test.ts test/web/ui-client.test.tsx test/web/embedded-ui.test.ts && bun run typecheck"
+    ]
+  }
+}
