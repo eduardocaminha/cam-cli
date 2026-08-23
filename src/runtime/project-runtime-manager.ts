@@ -94,22 +94,23 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 		};
 	}
 
-	/** Admit a new run only when the whole registered project set is idle. */
+	/** Admit a new run only when the requested project is idle. */
 	admitStart(projectId: string): T {
 		const requested = this.#contexts.get(projectId) ?? this.get(projectId).context;
-		const blocking = this.#firstBlockingRun();
-		if (blocking !== null) throw globalAdmissionConflict(blocking.project, blocking.run);
+		const blocking = this.#firstBlockingRun(projectId);
+		if (blocking !== null) throw projectAdmissionConflict(projectId, blocking);
 		return requested;
 	}
 
 	/**
 	 * An interrupted run is itself non-terminal. Resuming it is allowed when it
-	 * is the sole global owner; any other non-terminal run keeps admission.
+	 * is the sole non-terminal run in its project; another project does not
+	 * affect its admission.
 	 */
 	admitResume(projectId: string, runId: string): T {
 		const requested = this.#contexts.get(projectId) ?? this.get(projectId).context;
-		const blocking = this.#firstBlockingRun({ projectId, runId });
-		if (blocking !== null) throw globalAdmissionConflict(blocking.project, blocking.run);
+		const blocking = this.#firstBlockingRun(projectId, runId);
+		if (blocking !== null) throw projectAdmissionConflict(projectId, blocking);
 		return requested;
 	}
 
@@ -119,10 +120,20 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 		await Promise.all(contexts.map((context) => context.close()));
 	}
 
-	#firstBlockingRun(except?: { projectId: string; runId: string }): {
+	#firstBlockingRun(projectId?: string, exceptRunId?: string): {
 		project: RegisteredProject;
 		run: RunRecord;
 	} | null {
+		if (projectId !== undefined) {
+			const context = this.#contexts.get(projectId) ?? this.get(projectId).context;
+			const project = this.registry.get(projectId, this.currentRoot);
+			if (project === null) return null;
+			const run = context.runtime.listRuns().find((candidate) =>
+				!isTerminalRunState(candidate.state) && candidate.id !== exceptRunId,
+			);
+			return run === undefined ? null : { project, run };
+		}
+
 		// Admission is the only operation that must observe every project. Compose
 		// ready registrations here so an unopened project's durable non-terminal
 		// run cannot be bypassed after a service restart.
@@ -132,11 +143,7 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 				if (project.readiness !== 'ready') continue;
 				context = this.get(project.id).context;
 			}
-			const run = context.runtime.listRuns().find((candidate) =>
-				!isTerminalRunState(candidate.state)
-				&& (except === undefined
-					|| project.id !== except.projectId
-					|| candidate.id !== except.runId));
+			const run = context.runtime.listRuns().find((candidate) => !isTerminalRunState(candidate.state));
 			if (run !== undefined) return { project, run };
 		}
 		return null;
@@ -151,8 +158,8 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	}
 }
 
-function globalAdmissionConflict(project: RegisteredProject, run: RunRecord): RuntimeConflictError {
+function projectAdmissionConflict(projectId: string, blocking: { run: RunRecord }): RuntimeConflictError {
 	return new RuntimeConflictError(
-		`run ${run.id} in project ${project.id} is still ${run.state}; resume or finish it first`,
+		`run ${blocking.run.id} in project ${projectId} is still ${blocking.run.state}; resume or finish it first`,
 	);
 }

@@ -124,7 +124,7 @@ describe('ProjectRuntimeManager', () => {
 		registry.close();
 	});
 
-	test('admits only the sole global non-terminal run for resume', () => {
+	test('admits runs per project and keeps resume scoped to its project', () => {
 		const firstRoot = createTestTmpdir('gship-runtime-manager-first-');
 		const secondRoot = createTestTmpdir('gship-runtime-manager-second-');
 		const registry = openProjectRegistry(createTestTmpdir('gship-runtime-manager-admission-home-'));
@@ -144,9 +144,14 @@ describe('ProjectRuntimeManager', () => {
 			close: () => undefined,
 		}));
 
-		expect(() => manager.admitStart(second.id)).toThrow(RuntimeConflictError);
+		expect(() => manager.admitStart(first.id)).toThrow(RuntimeConflictError);
+		expect(manager.admitStart(second.id)).toBeDefined();
 		expect(manager.admitResume(first.id, 'run-first')).toBeDefined();
-		expect(() => manager.admitResume(second.id, 'run-second')).toThrow(RuntimeConflictError);
+		expect(manager.admitResume(second.id, 'run-second')).toBeDefined();
+		runs.set(second.id, [run('run-second')]);
+		expect(() => manager.admitStart(second.id)).toThrow(RuntimeConflictError);
+		expect(() => manager.admitResume(second.id, 'run-other')).toThrow(RuntimeConflictError);
+		expect(manager.admitResume(second.id, 'run-second')).toBeDefined();
 		registry.close();
 	});
 
