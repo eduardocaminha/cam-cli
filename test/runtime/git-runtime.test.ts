@@ -12,6 +12,7 @@ import {
 	runVerificationCommand,
 	VERIFICATION_COMMAND_TIMEOUT_MS,
 } from '../../src/runtime/git-runtime.ts';
+import { readProjectVerificationManifest } from '../../src/runtime/project-verification.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -39,6 +40,14 @@ const verificationInput = {
 
 function issueWithVerification(commands: string[]): string {
 	return JSON.stringify({ spec: { scope: 'Expected outcome.', verify: commands } });
+}
+
+function fullVerifyGitRunner(): GitCommandRunner {
+	return (_cwd, args) => args[0] === 'merge-base'
+		? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+		: args[0] === 'ls-tree'
+			? { exitCode: 0, stdout: '', stderr: '' }
+			: { exitCode: 1, stdout: '', stderr: 'unexpected Git call' };
 }
 
 describe('git runtime boundary', () => {
@@ -326,14 +335,14 @@ describe('GitFullVerifier', () => {
 
 	test('skips without running any command when package.json is missing', async () => {
 		const dir = createTestTmpdir('gship-full-verify-no-file-');
-		const verifier = new GitFullVerifier({ runCommand: () => neverRunCommand() });
+		const verifier = new GitFullVerifier({ runGit: fullVerifyGitRunner(), runCommand: () => neverRunCommand() });
 		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true, skipped: true });
 	});
 
 	test('skips without running any command when package.json is invalid JSON', async () => {
 		const dir = createTestTmpdir('gship-full-verify-bad-json-');
 		writePackageJson(dir, '{ not valid json');
-		const verifier = new GitFullVerifier({ runCommand: () => neverRunCommand() });
+		const verifier = new GitFullVerifier({ runGit: fullVerifyGitRunner(), runCommand: () => neverRunCommand() });
 		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true, skipped: true });
 	});
 
@@ -348,6 +357,7 @@ describe('GitFullVerifier', () => {
 			const dir = createTestTmpdir('gship-full-verify-skip-');
 			writePackageJson(dir, JSON.stringify(content));
 			const verifier = new GitFullVerifier({
+				runGit: fullVerifyGitRunner(),
 				runCommand: () => { throw new Error(`must not run any command: ${label}`); },
 			});
 			expect(await verifier.verify({ ...verificationInput, cwd: dir }))
@@ -361,6 +371,7 @@ describe('GitFullVerifier', () => {
 		const commands: Array<{ cwd: string; command: string; timeoutMs: number | undefined }> = [];
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const verifier = new GitFullVerifier({
+			runGit: fullVerifyGitRunner(),
 			runCommand: async ({ cwd, command, timeoutMs }) => {
 				commands.push({ cwd, command, timeoutMs });
 				return { exitCode: 0, stdout: '', stderr: '' };
@@ -379,9 +390,72 @@ describe('GitFullVerifier', () => {
 		// the project declared, it only asks bun to resolve the script by name.
 		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify', timeoutMs: undefined }]);
 		expect(events).toEqual([
-			{ kind: 'full-verify.command.started' },
-			{ kind: 'full-verify.command.completed', payload: { exitCode: 0 } },
+			{ kind: 'full-verify.command.started', payload: { commandIndex: 1, origin: 'package.json' } },
+			{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'package.json' } },
 		]);
+	});
+
+	test('reads the versioned manifest and rejects invalid contracts', () => {
+		expect(readProjectVerificationManifest(JSON.stringify({ version: 1, verify: ['bun test', 'python -m pytest'] })))
+			.toEqual({ version: 1, verify: ['bun test', 'python -m pytest'] });
+		for (const value of [
+			{ version: 2, verify: ['bun test'] },
+			{ version: 1, verify: [] },
+			{ version: 1, verify: ['   '] },
+			{ version: 1, verify: ['bun test', 42] },
+		]) {
+			expect(() => readProjectVerificationManifest(JSON.stringify(value))).toThrow();
+		}
+	});
+
+	test('uses the immutable merge-base manifest and ignores worktree edits', async () => {
+		const commands: string[] = [];
+		const verifier = new GitFullVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: args[0] === 'ls-tree'
+					? { exitCode: 0, stdout: '.gateship/project.json\n', stderr: '' }
+					: args[0] === 'show' && args[1] === 'base-sha:.gateship/project.json'
+				? { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: ['bun test', 'python -m pytest'] }), stderr: '' }
+				: { exitCode: 0, stdout: '', stderr: '' },
+			runCommand: async ({ command }) => {
+				commands.push(command);
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: '/edited-worktree' })).toEqual({ ok: true });
+		expect(commands).toEqual(['bun test', 'python -m pytest']);
+	});
+
+	test('preserves the worktree package.json fallback when the base has no manifest', async () => {
+		const dir = createTestTmpdir('gship-full-verify-worktree-fallback-');
+		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
+		const commands: string[] = [];
+		const verifier = new GitFullVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: args[0] === 'ls-tree'
+					? { exitCode: 0, stdout: '', stderr: '' }
+					: { exitCode: 1, stdout: '', stderr: 'unexpected Git call' },
+			runCommand: async ({ command }) => {
+				commands.push(command);
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		expect(commands).toEqual(['bun run verify']);
+	});
+
+	test('fails closed when Git cannot prove the manifest is absent', async () => {
+		const dir = createTestTmpdir('gship-full-verify-git-error-');
+		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
+		const verifier = new GitFullVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: { exitCode: 1, stdout: '', stderr: 'cannot inspect tree' },
+			runCommand: async () => { throw new Error('fallback must not run'); },
+		});
+		expect(verifier.verify({ ...verificationInput, cwd: dir })).rejects.toThrow('cannot inspect');
 	});
 
 	test('fails with a prefixed detail carrying the command output when the exit code is not zero', async () => {
@@ -389,6 +463,7 @@ describe('GitFullVerifier', () => {
 		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
 		const events: string[] = [];
 		const verifier = new GitFullVerifier({
+			runGit: fullVerifyGitRunner(),
 			runCommand: async () => ({
 				exitCode: 1,
 				stdout: 'stale bundle\n',
@@ -415,6 +490,7 @@ describe('GitFullVerifier', () => {
 		const dir = createTestTmpdir('gship-full-verify-capped-');
 		writePackageJson(dir, JSON.stringify({ scripts: { verify: 'bun run check:all' } }));
 		const verifier = new GitFullVerifier({
+			runGit: fullVerifyGitRunner(),
 			runCommand: async () => ({ exitCode: 1, stdout: 'x'.repeat(3_000), stderr: '' }),
 		});
 
@@ -430,7 +506,7 @@ describe('GitFullVerifier', () => {
 			scripts: { verify: "trap 'exit 0' TERM; while :; do sleep 0.1; done" },
 		}));
 		const controller = new AbortController();
-		const verifier = new GitFullVerifier({ terminationGraceMs: 50 });
+		const verifier = new GitFullVerifier({ runGit: fullVerifyGitRunner(), terminationGraceMs: 50 });
 		const pending = verifier.verify({
 			...verificationInput,
 			cwd: dir,
