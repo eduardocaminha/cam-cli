@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-31T16:08:35.036Z",
-  "updatedAt": "2026-08-31T16:08:35.036Z",
+  "updatedAt": "2026-08-31T16:08:59.423Z",
   "description": "Substituir a especialização exclusiva de GitFullVerifier em package.json e Bun por um contrato explícito, versionado e multistack pertencente ao repositório. Adicionar um leitor puro para .gateship/project.json na forma mínima {\"version\":1,\"verify\":[\"comando\", \"...\"]}. Quando o arquivo existir na base imutável da run, exigir exatamente a versão suportada e uma lista não vazia de comandos não vazios; contrato existente mas inválido falha fechado e nunca cai em fallback. Executar os comandos declarados em ordem pelo mesmo caminho cancelável já usado na verificação, emitir início e conclusão com índice e exitCode, interromper no primeiro erro e preservar o limite atual de diagnóstico. Resolver o manifesto a partir do commit base da worktree, não de alterações ainda não commitadas pelo executor, de modo que a própria run não possa trocar sua autoridade de full verify. Quando o manifesto não existir, preservar temporariamente e sem mudança observável o comportamento atual de package.json scripts.verify executando bun run verify; registrar internamente qual origem escolheu o comando sem criar banco ou estado novo. Adicionar .gateship/project.json ao próprio Gateship com version 1 e verify [\"bun run verify\"], fazendo o projeto consumir o novo contrato nas runs seguintes. Cobrir leitura válida, múltiplos comandos, ordem, cancelamento/falha, manifesto ausente com fallback, manifesto inválido sem fallback, base imutável ignorando edição da worktree e ausência de ambos resultando em skip. Atualizar HANDOFF.md apenas para registrar que o contrato explícito foi entregue e que a próxima etapa continua sendo a prova ponta a ponta JavaScript/Python. Não adicionar detecção ou instalação de runtimes, UI, banco, tabela, score, policy engine, pacote, formato por linguagem ou execução paralela; a prontidão stack-aware e a prova Python pertencem à próxima fatia.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "439:function hasVerifyScript(cwd: string): boolean {"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "ea3d9f151ee7ba70eb25280ac8b32a9fd3e9d95ae8d54fbbea407eb05effe2e0",
+    "approvedAt": "2026-08-31T16:08:59.423Z"
   }
 }
