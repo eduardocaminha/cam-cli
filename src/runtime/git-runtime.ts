@@ -7,6 +7,7 @@ import { getIssueOnMain } from '../commands/issue-get.ts';
 import { issueFilePath } from '../issues/backlog.ts';
 import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts';
 import { terminateProcessGroup } from './process-group.ts';
+import { readProjectVerificationManifest } from './project-verification.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type {
 	RuntimeEvidenceCheck,
@@ -429,13 +430,7 @@ export class GitIssueVerifier implements RuntimeVerifier {
 	}
 }
 
-/**
- * Whether the workspace's own `package.json` declares a `verify` script
- * (GSHIP-649). A missing or unreadable `package.json`, invalid JSON, or a
- * `scripts.verify` of the wrong shape all read the same way as "no script
- * declared" -- this only ever decides whether to run `bun run verify`, never
- * fails the run on its own.
- */
+/** Whether a package.json blob declares a verify script for the legacy fallback. */
 function hasVerifyScript(cwd: string): boolean {
 	let raw: string;
 	try {
@@ -455,6 +450,36 @@ function hasVerifyScript(cwd: string): boolean {
 	return typeof (scripts as Record<string, unknown>).verify === 'string';
 }
 
+const PROJECT_VERIFICATION_PATH = '.gateship/project.json';
+
+function baseFile(runGit: GitCommandRunner, cwd: string, path: string): string | null {
+	const base = runGit(cwd, ['merge-base', 'HEAD', RUNTIME_SOURCE_REF]);
+	if (base.exitCode !== 0 || base.stdout.trim().length === 0) {
+		throw commandFailure(`cannot resolve the run base with ${RUNTIME_SOURCE_REF}`, base);
+	}
+	const baseSha = base.stdout.trim();
+	const entry = runGit(cwd, ['ls-tree', '-r', '--name-only', baseSha, '--', path]);
+	if (entry.exitCode !== 0) throw commandFailure(`cannot inspect ${path} in the run base`, entry);
+	if (entry.stdout.trim().length === 0) return null;
+	const result = runGit(cwd, ['show', `${baseSha}:${path}`]);
+	if (result.exitCode !== 0) throw commandFailure(`cannot read ${path} from the run base`, result);
+	return result.stdout;
+}
+
+function projectVerificationCommands(
+	options: GitRuntimeOptions,
+	inputCwd: string,
+): { commands: string[]; origin: 'manifest' | 'package.json' | 'none' } {
+	const runGit = options.runGit ?? defaultRunGit;
+	const manifest = baseFile(runGit, inputCwd, PROJECT_VERIFICATION_PATH);
+	if (manifest !== null) {
+		return { commands: readProjectVerificationManifest(manifest).verify, origin: 'manifest' };
+	}
+	return hasVerifyScript(inputCwd)
+		? { commands: ['bun run verify'], origin: 'package.json' }
+		: { commands: [], origin: 'none' };
+}
+
 /**
  * The project's full verification gate (GSHIP-649): whatever `package.json`
  * already declares as its `verify` script -- e.g. `bun run check:all` --
@@ -466,24 +491,34 @@ function hasVerifyScript(cwd: string): boolean {
  * already agree on.
  */
 export class GitFullVerifier implements RuntimeVerifier {
+	readonly #options: GitRuntimeOptions;
 	readonly #runCommand: VerificationCommandRunner;
+	#origin: 'manifest' | 'package.json' | 'none' = 'none';
 
 	constructor(options: GitRuntimeOptions = {}) {
+		this.#options = options;
 		this.#runCommand = runtimeVerificationCommandRunner(options);
 	}
 
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
-		if (!hasVerifyScript(input.cwd)) return { ok: true, skipped: true };
+		const selected = projectVerificationCommands(this.#options, input.cwd);
+		this.#origin = selected.origin;
+		if (selected.commands.length === 0) return { ok: true, skipped: true };
 
-		input.emit('full-verify.command.started');
-		const result = await this.#runCommand({
-			cwd: input.cwd,
-			command: 'bun run verify',
-			signal: input.signal,
-		});
-		input.emit('full-verify.command.completed', { exitCode: result.exitCode });
-		if (result.exitCode !== 0) {
-			return { ok: false, detail: `full verification failed: ${outputTail(result)}` };
+		for (const [commandIndex, command] of selected.commands.entries()) {
+			input.emit('full-verify.command.started', {
+				commandIndex: commandIndex + 1,
+				origin: this.#origin,
+			});
+			const result = await this.#runCommand({ cwd: input.cwd, command, signal: input.signal });
+			input.emit('full-verify.command.completed', {
+				commandIndex: commandIndex + 1,
+				exitCode: result.exitCode,
+				origin: this.#origin,
+			});
+			if (result.exitCode !== 0) {
+				return { ok: false, detail: `full verification failed: ${outputTail(result)}` };
+			}
 		}
 		return { ok: true };
 	}

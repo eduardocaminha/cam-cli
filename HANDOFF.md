@@ -139,8 +139,7 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-1. An explicit multistack contract per project.
-2. End-to-end proof for JavaScript and Python, followed by stack-aware
+1. End-to-end proof for JavaScript and Python, followed by stack-aware
    readiness.
 3. Typed diagnostic and measurement adapters.
 4. External validation of onboarding.
@@ -152,6 +151,10 @@ threshold before the runs exist to derive one.
 
 Change this order only when product evidence supports it and an approved issue
 authorizes the bounded next slice.
+
+The explicit versioned multistack verification contract is now delivered in
+`.gateship/project.json` with version 1 and `bun run verify`. The next stage
+continues to be the end-to-end JavaScript/Python proof.
 
 ## Product radar
 
