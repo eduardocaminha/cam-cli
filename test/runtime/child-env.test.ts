@@ -97,10 +97,8 @@ describe('child-process environment boundary', () => {
 });
 
 // GSHIP-704: the dedicated Claude credential's own boot-time environment
-// variable must never stay ambient in the service's `process.env` -- a task
-// verification command or a git invocation that never passes its own `env`
-// falls back to `process.env` wholesale (git-runtime.ts's `runOwnedCommand`),
-// so an ambient CLAUDE_CODE_OAUTH_TOKEN would otherwise reach both.
+// variable must never stay ambient in the service's `process.env`, including
+// for owned commands that might explicitly forward their caller environment.
 describe('captureBootClaudeToken (GSHIP-704)', () => {
 	test('removes the token from the given environment and returns it as a snapshot', () => {
 		const env: Record<string, string | undefined> = { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-boot' };

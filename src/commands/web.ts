@@ -2649,8 +2649,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const globalNotificationStateDir = join(gateshipHome, PROJECT_STATE_DIRECTORY);
 	// Captured once, here, before anything else reads `process.env`: a token
 	// provisioned through the service's own boot environment must not stay
-	// ambient for `runOwnedCommand`'s `env: input.env ?? process.env` default
-	// to hand to the project's verification command or to git. Every later
+	// ambient for a child command. Project verification builds its own
+	// allowlisted environment, while git and other owned commands receive
+	// their explicit environment at their own boundary. Every later
 	// read of this value -- credential resolution and the `envManaged` status
 	// Ajustes shows -- uses this snapshot, never `process.env` again.
 	const bootClaudeEnv = captureBootClaudeToken();

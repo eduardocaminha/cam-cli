@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-746",
   "title": "Isolar ambiente dos comandos do projeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-31T18:14:39.558Z",
-  "updatedAt": "2026-08-31T18:15:06.288Z",
+  "updatedAt": "2026-08-31T18:19:55.124Z",
   "description": "Isolar o ambiente de todos os comandos definidos pelo projeto antes da prova multistack. Fazer runVerificationCommand passar explicitamente buildAllowlistedEnv(process.env) para runOwnedCommand, usando a allowlist existente de PATH, HOME, identidade básica, shell, temporários, locale, terminal, XDG e certificados. Como GitEvidenceChecker, GitIssueVerifier e GitFullVerifier convergem nesse runner, comprovar que evidence, spec.verify e o full verify declarado em .gateship/project.json recebem o mesmo ambiente mínimo. Variáveis internas e credenciais do serviço, incluindo GSHIP_WEB_DIR, GATESHIP_HOME, RESEND_API_KEY, RESEND_FROM_EMAIL, NTFY, CLAUDE_CODE_OAUTH_TOKEN, GH_TOKEN e qualquer chave arbitrária, não podem chegar aos comandos do projeto por herança ambiente. Preservar injeções explícitas de runCommand usadas pelos testes e não alterar os ambientes próprios de providers, GitHub CLI, atualização ou notificações. Adicionar teste de subprocesso real que coloque uma variável permitida e variáveis sentinela proibidas no processo pai, confirme que a permitida continua disponível e as proibidas ficam ausentes; cobrir ao menos o runner comum e a integração de full verify. Atualizar comentários que ainda descrevem a herança ampla e registrar em HANDOFF.md que a fronteira foi fechada e que a próxima etapa continua sendo a prova ponta a ponta JavaScript/Python. Não adicionar UI, banco, configuração de pass-through, novo segredo, sandbox de container ou política por linguagem.",
   "specSource": "operator",
   "spec": {

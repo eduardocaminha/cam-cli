@@ -197,6 +197,32 @@ describe('git runtime boundary', () => {
 		expect(result).toMatchObject({ exitCode: 124, timedOut: true });
 		expect(result.stderr).toContain('timed out after 20ms');
 	});
+
+	test('passes only the allowlisted environment to a real verification subprocess', async () => {
+		const keys = ['LANG', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
+		const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		Object.assign(process.env, {
+			LANG: 'allowed-locale',
+			GSHIP_WEB_DIR: 'forbidden-web-dir',
+			GATESHIP_HOME: 'forbidden-gateship-home',
+			RESEND_API_KEY: 'forbidden-resend-key',
+			GH_TOKEN: 'forbidden-gh-token',
+			ARBITRARY_SENTINEL: 'forbidden-arbitrary',
+		});
+		try {
+			const result = await runVerificationCommand({
+				cwd: process.cwd(),
+				command: 'printf "%s|%s|%s|%s|%s|%s\\n" "$LANG" "$GSHIP_WEB_DIR" "$GATESHIP_HOME" "$RESEND_API_KEY" "$GH_TOKEN" "$ARBITRARY_SENTINEL"',
+				signal: new AbortController().signal,
+			});
+			expect(result).toMatchObject({ exitCode: 0, stdout: 'allowed-locale|||||\n' });
+		} finally {
+			for (const key of keys) {
+				if (previous[key] === undefined) delete process.env[key];
+				else process.env[key] = previous[key];
+			}
+		}
+	});
 });
 
 // GSHIP-629: the spec's executable premise. Checked by GitEvidenceChecker in
@@ -425,6 +451,36 @@ describe('GitFullVerifier', () => {
 		});
 		expect(await verifier.verify({ ...verificationInput, cwd: '/edited-worktree' })).toEqual({ ok: true });
 		expect(commands).toEqual(['bun test', 'python -m pytest']);
+	});
+
+	test('passes the same allowlisted environment to a real manifest full-verify subprocess', async () => {
+		const keys = ['LANG', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
+		const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		Object.assign(process.env, {
+			LANG: 'allowed-locale',
+			GSHIP_WEB_DIR: 'forbidden-web-dir',
+			GATESHIP_HOME: 'forbidden-gateship-home',
+			RESEND_API_KEY: 'forbidden-resend-key',
+			GH_TOKEN: 'forbidden-gh-token',
+			ARBITRARY_SENTINEL: 'forbidden-arbitrary',
+		});
+		try {
+			const verifier = new GitFullVerifier({
+				runGit: (_cwd, args) => args[0] === 'merge-base'
+					? { exitCode: 0, stdout: 'base-sha\\n', stderr: '' }
+					: args[0] === 'ls-tree'
+						? { exitCode: 0, stdout: '.gateship/project.json\\n', stderr: '' }
+						: { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: [
+							'test "$LANG" = allowed-locale && test -z "$GSHIP_WEB_DIR" && test -z "$GATESHIP_HOME" && test -z "$RESEND_API_KEY" && test -z "$GH_TOKEN" && test -z "$ARBITRARY_SENTINEL"',
+						] }), stderr: '' },
+			});
+			expect(await verifier.verify({ ...verificationInput, cwd: process.cwd() })).toEqual({ ok: true });
+		} finally {
+			for (const key of keys) {
+				if (previous[key] === undefined) delete process.env[key];
+				else process.env[key] = previous[key];
+			}
+		}
 	});
 
 	test('preserves the worktree package.json fallback when the base has no manifest', async () => {

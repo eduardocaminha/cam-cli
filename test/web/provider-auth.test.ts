@@ -434,9 +434,8 @@ describe('dedicated Claude credential web API', () => {
 
 	// GSHIP-704: a token provisioned through the service's own boot
 	// environment (the supported automated-install path) must be captured and
-	// removed from `process.env` at composition, not left ambient for
-	// `runOwnedCommand`'s own `env: input.env ?? process.env` default to hand
-	// to the project's verification command or to git.
+	// removed from `process.env` at composition, not left ambient for an owned
+	// child command to receive through an explicitly forwarded environment.
 	test('captures a boot-provisioned token out of process.env instead of leaving it ambient', async () => {
 		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-boot-provisioned';
 		let handle: Awaited<ReturnType<typeof serverWithHome>>['handle'] | undefined;
@@ -447,7 +446,7 @@ describe('dedicated Claude credential web API', () => {
 			runtime = server.runtime;
 			// The composition root already captured and deleted it by the time
 			// `startWebServer` returns -- a verification command or git spawned
-			// afterward, which falls back to `process.env` wholesale, cannot see it.
+			// afterward, which builds a child allowlist, cannot see it.
 			expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
 			expect('CLAUDE_CODE_OAUTH_TOKEN' in process.env).toBe(false);
 

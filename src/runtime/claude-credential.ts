@@ -99,10 +99,8 @@ export function removeClaudeCredential(gateshipHome: string): boolean {
  * environment exactly once, at boot, and removes it immediately -- mirroring
  * the same rationale `test/helpers/reap-preload.ts`'s suite-wide guard
  * already documents. Without this, the value stays ambient in
- * `process.env` for the rest of the process's life, and `runOwnedCommand`'s
- * own `env: input.env ?? process.env` default (git-runtime.ts) would hand it
- * straight to the project's verification command and to git -- exactly the
- * propagation GSHIP-704 forbids. The two callers that legitimately need this
+ * `process.env` for the rest of the process's life and could reach an owned
+ * child that explicitly forwards it. The two callers that legitimately need this
  * value, `resolveClaudeCredential` and `resolveClaudeCredentialStatus`, take
  * the returned snapshot explicitly instead of reading `process.env` again,
  * so deleting the live variable here does not change what either of them

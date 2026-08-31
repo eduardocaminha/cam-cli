@@ -9,6 +9,7 @@ import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts
 import { terminateProcessGroup } from './process-group.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
+import { buildAllowlistedEnv } from './child-env.ts';
 import type {
 	RuntimeEvidenceCheck,
 	RuntimeExecutionInput,
@@ -98,7 +99,7 @@ export interface OwnedCommandInput {
 	cmd: string[];
 	cwd: string;
 	signal: AbortSignal;
-	/** Child environment; defaults to the ambient one. */
+	/** Child environment; callers that own a boundary should pass it explicitly. */
 	env?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
 }
@@ -151,6 +152,7 @@ export async function runVerificationCommand(
 			cmd: [shellCommand(), '-lc', input.command],
 			cwd: input.cwd,
 			signal: input.signal,
+			env: buildAllowlistedEnv(process.env),
 			terminationGraceMs,
 		});
 	}
@@ -169,6 +171,7 @@ export async function runVerificationCommand(
 			cmd: [shellCommand(), '-lc', input.command],
 			cwd: input.cwd,
 			signal: controller.signal,
+			env: buildAllowlistedEnv(process.env),
 			terminationGraceMs,
 		});
 	} catch (error) {
