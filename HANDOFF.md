@@ -154,7 +154,11 @@ authorizes the bounded next slice.
 
 The explicit versioned multistack verification contract is now delivered in
 `.gateship/project.json` with version 1 and `bun run verify`. The next stage
-continues to be the end-to-end JavaScript/Python proof.
+continues to be the end-to-end JavaScript/Python proof. Project-defined
+commands now cross a closed child-environment boundary: evidence, issue
+verification and full verification receive the shared minimum allowlist, not
+the service's ambient environment. Provider, GitHub CLI, update and
+notification environments remain independently owned.
 
 ## Product radar
 
