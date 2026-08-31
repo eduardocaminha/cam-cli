@@ -64,6 +64,11 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 });
 
 describe('container provider CLI installation', () => {
+	test('includes python3 in the minimal runtime package set', () => {
+		expect(dockerfile).toMatch(/apt-get install -y --no-install-recommends[\s\S]*\n\s+python3 \\\n/);
+		expect(dockerfile).not.toContain('python ');
+	});
+
 	test('pins both provider CLIs to complete releases instead of mutable latest', () => {
 		expect(dockerfile).toMatch(
 			/https:\/\/claude\.ai\/install\.sh \| bash -s \d+\.\d+\.\d+\n/,

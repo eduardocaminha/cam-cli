@@ -139,11 +139,9 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-1. End-to-end proof for JavaScript and Python, followed by stack-aware
-   readiness.
-3. Typed diagnostic and measurement adapters.
-4. External validation of onboarding.
-5. Only then, a soft ratchet or statistical policy.
+1. Typed diagnostic and measurement adapters.
+2. External validation of onboarding.
+3. Only then, a soft ratchet or statistical policy.
 
 Accumulating comparable revision-tagged terminal runs stays ahead of every
 threshold, cohort rule, and self-tuning behaviour in this list. Do not invent a
@@ -153,8 +151,11 @@ Change this order only when product evidence supports it and an approved issue
 authorizes the bounded next slice.
 
 The explicit versioned multistack verification contract is now delivered in
-`.gateship/project.json` with version 1 and `bun run verify`. The next stage
-continues to be the end-to-end JavaScript/Python proof. Project-defined
+`.gateship/project.json` with version 1 and `bun run verify`. The end-to-end
+JavaScript/Python proof now runs through the real GitFullVerifier runner: the
+manifest is read from the immutable run base and its command validates the
+current worktree for both Bun and `python3 -m unittest`. Stack-aware readiness
+stays deferred until real runs demonstrate that it is needed. Project-defined
 commands now cross a closed child-environment boundary: evidence, issue
 verification and full verification receive the shared minimum allowlist, not
 the service's ambient environment. Provider, GitHub CLI, update and

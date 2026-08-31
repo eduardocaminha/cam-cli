@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-747",
   "title": "Provar verificação JavaScript e Python",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-31T21:49:00.691Z",
-  "updatedAt": "2026-08-31T21:49:23.494Z",
+  "updatedAt": "2026-08-31T21:54:16.738Z",
   "description": "Provar o contrato multistack genérico com JavaScript e Python sem criar adapters por linguagem. Adicionar python3 à lista mínima de pacotes da imagem Docker de runtime, mantendo a imagem de um processo, read-only e sem novo serviço. Criar um teste de integração que monte dois repositórios Git temporários reais, cada um com origin/main local, commit base e .gateship/project.json version 1: um projeto JavaScript verificado por Bun e um projeto Python verificado por python3 e unittest. Em cada caso, deixar o manifesto no commit base, alterar a implementação somente na worktree e executar GitFullVerifier pelo runner real, comprovando que o comando autorizado vem da base imutável e valida o conteúdo atual da worktree. O teste deve falhar se Bun ou Python não estiverem disponíveis e deve observar início e conclusão verdes do comando. Cobrir no teste de configuração que a imagem de runtime contém python3 sem adicionar daemon, serviço ou volume. Atualizar HANDOFF.md para registrar a prova JavaScript/Python, retirar stack-aware readiness da fila imediata até runs reais demonstrarem essa necessidade e deixar typed diagnostic and measurement adapters como próximo seam. Não adicionar descoberta de stack, parser de comandos, catálogo de runtimes, instalação dinâmica, Docker socket, UI, banco, score ou políticas por linguagem; outros toolchains continuam pertencendo ao host nativo ou a uma imagem explicitamente preparada.",
   "specSource": "operator",
   "spec": {

@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 		ca-certificates \
 		curl \
 		git \
+		python3 \
 	&& mkdir -p -m 755 /etc/apt/keyrings \
 	&& curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 		| tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
