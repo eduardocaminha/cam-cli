@@ -199,10 +199,10 @@ describe('git runtime boundary', () => {
 	});
 
 	test('passes only the allowlisted environment to a real verification subprocess', async () => {
-		const keys = ['LANG', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
+		const keys = ['COLORTERM', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
 		const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 		Object.assign(process.env, {
-			LANG: 'allowed-locale',
+			COLORTERM: 'allowed-terminal',
 			GSHIP_WEB_DIR: 'forbidden-web-dir',
 			GATESHIP_HOME: 'forbidden-gateship-home',
 			RESEND_API_KEY: 'forbidden-resend-key',
@@ -212,10 +212,10 @@ describe('git runtime boundary', () => {
 		try {
 			const result = await runVerificationCommand({
 				cwd: process.cwd(),
-				command: 'printf "%s|%s|%s|%s|%s|%s\\n" "$LANG" "$GSHIP_WEB_DIR" "$GATESHIP_HOME" "$RESEND_API_KEY" "$GH_TOKEN" "$ARBITRARY_SENTINEL"',
+				command: 'printf "%s|%s|%s|%s|%s|%s\\n" "$COLORTERM" "$GSHIP_WEB_DIR" "$GATESHIP_HOME" "$RESEND_API_KEY" "$GH_TOKEN" "$ARBITRARY_SENTINEL"',
 				signal: new AbortController().signal,
 			});
-			expect(result).toMatchObject({ exitCode: 0, stdout: 'allowed-locale|||||\n' });
+			expect(result).toMatchObject({ exitCode: 0, stdout: 'allowed-terminal|||||\n' });
 		} finally {
 			for (const key of keys) {
 				if (previous[key] === undefined) delete process.env[key];
@@ -454,10 +454,10 @@ describe('GitFullVerifier', () => {
 	});
 
 	test('passes the same allowlisted environment to a real manifest full-verify subprocess', async () => {
-		const keys = ['LANG', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
+		const keys = ['COLORTERM', 'GSHIP_WEB_DIR', 'GATESHIP_HOME', 'RESEND_API_KEY', 'GH_TOKEN', 'ARBITRARY_SENTINEL'];
 		const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 		Object.assign(process.env, {
-			LANG: 'allowed-locale',
+			COLORTERM: 'allowed-terminal',
 			GSHIP_WEB_DIR: 'forbidden-web-dir',
 			GATESHIP_HOME: 'forbidden-gateship-home',
 			RESEND_API_KEY: 'forbidden-resend-key',
@@ -471,7 +471,7 @@ describe('GitFullVerifier', () => {
 					: args[0] === 'ls-tree'
 						? { exitCode: 0, stdout: '.gateship/project.json\\n', stderr: '' }
 						: { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: [
-							'test "$LANG" = allowed-locale && test -z "$GSHIP_WEB_DIR" && test -z "$GATESHIP_HOME" && test -z "$RESEND_API_KEY" && test -z "$GH_TOKEN" && test -z "$ARBITRARY_SENTINEL"',
+							'test "$COLORTERM" = allowed-terminal && test -z "$GSHIP_WEB_DIR" && test -z "$GATESHIP_HOME" && test -z "$RESEND_API_KEY" && test -z "$GH_TOKEN" && test -z "$ARBITRARY_SENTINEL"',
 						] }), stderr: '' },
 			});
 			expect(await verifier.verify({ ...verificationInput, cwd: process.cwd() })).toEqual({ ok: true });
