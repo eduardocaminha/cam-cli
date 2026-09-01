@@ -6,8 +6,8 @@
 // or Git mutation belongs here -- so registering a project can never change
 // the project being registered.
 
-import { realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import {
 	inspectProject,
@@ -19,6 +19,33 @@ import type { ProjectRegistry, RegisteredProject } from './project-registry.ts';
 
 /** Project-owned mutable state lives beside the checkout, never in the global home. */
 export const PROJECT_STATE_DIRECTORY = '.gship';
+
+/**
+ * Keep project-owned runtime state out of tracked changes without hiding the
+ * separate `.gateship/project.json` contract. Registration alone never calls
+ * this; a runtime calls it immediately before it can write project state.
+ */
+export function ensureProjectStateIgnored(projectRoot: string, stateDir: string): void {
+	const expectedStateDir = resolve(projectRoot, PROJECT_STATE_DIRECTORY);
+	if (resolve(stateDir) !== expectedStateDir) return;
+
+	mkdirSync(stateDir, { recursive: true });
+	const ignorePath = join(stateDir, '.gitignore');
+	let contents: string;
+	try {
+		contents = readFileSync(ignorePath, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		contents = '';
+	}
+	const lines = contents.split(/\r?\n/);
+	if (lines.at(-1) === '') lines.pop();
+	if (lines.at(-1) === '*') return;
+	writeFileSync(
+		ignorePath,
+		`${contents}${contents.length > 0 && !contents.endsWith('\n') ? '\n' : ''}*\n`,
+	);
+}
 
 export type ProjectRegistrationErrorCode =
 	/** Missing, blank, or non-absolute `root`. */

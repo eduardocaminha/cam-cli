@@ -101,6 +101,7 @@ import {
 } from '../runtime/project-import.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
 import {
+	ensureProjectStateIgnored,
 	PROJECT_STATE_DIRECTORY,
 	ProjectRegistrationError,
 	registerExistingCheckout,
@@ -2661,6 +2662,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		stateDir,
 		readiness: inspectProject(projectRoot),
 	});
+	ensureProjectStateIgnored(projectRoot, stateDir);
 	const bootSourceSha = resolveBootSourceSha(
 		buildSha,
 		containerBuild,
@@ -2781,6 +2783,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		if (options.orchestrator === undefined) await bootContext.orchestrator.stop();
 	};
 	const composeProjectRuntime = (project: RegisteredProject): ProjectCycleContext => {
+		ensureProjectStateIgnored(project.root, project.stateDir);
 		const ensureIdentity = cachedGitIdentity(() => ensureGitIdentity(project.root));
 		const runtime = new RunRuntime(createDefaultRunRuntimeOptions(
 			project.root,

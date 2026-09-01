@@ -1,12 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 
 import type { ProjectCommandRunner } from '../../src/runtime/project-readiness.ts';
 import {
 	PROJECT_STATE_DIRECTORY,
 	ProjectRegistrationError,
+	ensureProjectStateIgnored,
 	registerExistingCheckout,
 } from '../../src/runtime/project-registration.ts';
 import { openProjectRegistry, type RegisteredProject } from '../../src/runtime/project-registry.ts';
@@ -30,6 +39,44 @@ function readyCheckout(root: string, remoteUrl = 'git@github.com:acme/product.gi
 }
 
 describe('registering an existing checkout', () => {
+	test('protects runtime state without hiding the tracked project contract', () => {
+		const root = scratchRoot('gship-register-ignore-');
+		readyCheckout(root);
+		mkdirSync(join(root, '.gateship'), { recursive: true });
+		writeFileSync(join(root, '.gateship', 'project.json'), '{}\n');
+		execFileSync('git', ['add', '.gateship/project.json'], { cwd: root });
+		execFileSync('git', ['commit', '-m', 'tracked project contract'], { cwd: root });
+
+		const stateDir = join(root, PROJECT_STATE_DIRECTORY);
+		ensureProjectStateIgnored(root, stateDir);
+		expect(readFileSync(join(stateDir, '.gitignore'), 'utf8')).toBe('*\n');
+		ensureProjectStateIgnored(root, stateDir);
+		expect(readFileSync(join(stateDir, '.gitignore'), 'utf8')).toBe('*\n');
+
+		writeFileSync(join(stateDir, '.gitignore'), 'runtime.sqlite');
+		ensureProjectStateIgnored(root, stateDir);
+		expect(readFileSync(join(stateDir, '.gitignore'), 'utf8')).toBe('runtime.sqlite\n*\n');
+		ensureProjectStateIgnored(root, stateDir);
+		expect(readFileSync(join(stateDir, '.gitignore'), 'utf8')).toBe('runtime.sqlite\n*\n');
+
+		writeFileSync(join(stateDir, 'runtime.sqlite'), 'runtime');
+		expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })).toBe('');
+		expect(execFileSync('git', ['ls-files', '.gateship/project.json'], {
+			cwd: root,
+			encoding: 'utf8',
+		})).toBe('.gateship/project.json\n');
+	});
+
+	test('propagates non-ENOENT read failures without replacing the path', () => {
+		const root = scratchRoot('gship-register-ignore-error-');
+		readyCheckout(root);
+		const ignorePath = join(root, PROJECT_STATE_DIRECTORY, '.gitignore');
+		mkdirSync(ignorePath, { recursive: true });
+
+		expect(() => ensureProjectStateIgnored(root, join(root, PROJECT_STATE_DIRECTORY))).toThrow();
+		expect(statSync(ignorePath).isDirectory()).toBe(true);
+	});
+
 	test('project-owned mutable state lives beside the checkout, as .gship', () => {
 		expect(PROJECT_STATE_DIRECTORY).toBe('.gship');
 	});

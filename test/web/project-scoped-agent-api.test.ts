@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
@@ -114,6 +114,51 @@ async function approveProjectIssue(options: {
 }
 
 describe('project-scoped agent API', () => {
+	test('opens and reopens external context without dirtying its checkout', async () => {
+		const cwd = createTestTmpdir('gship-project-context-current-');
+		const foreignRoot = createTestTmpdir('gship-project-context-foreign-');
+		const registry = openProjectRegistry(createTestTmpdir('gship-project-context-home-'));
+		readyProject(cwd);
+		readyProject(foreignRoot);
+		const foreign = registry.reconcile({
+			root: foreignRoot,
+			stateDir: join(foreignRoot, '.gship'),
+			readiness: {
+				state: 'ready',
+				name: 'test',
+				repository: 'acme/test',
+				remoteUrl: 'git@github.com:acme/test.git',
+				sourceRef: 'origin/main',
+			},
+		});
+		const open = async (): Promise<void> => {
+			const runtime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
+			const handle = startWebServer({ port: 0, cwd, projectRegistry: registry, runRuntime: runtime });
+			try {
+				const response = await fetch(
+					`http://${handle.hostname}:${handle.port}/api/projects/${foreign.id}/snapshot`,
+				);
+				expect(response.status).toBe(200);
+			} finally {
+				await handle.stop();
+				runtime.close();
+			}
+		};
+
+		try {
+			await open();
+			await open();
+			expect(existsSync(join(foreignRoot, '.gship', 'runtime.sqlite'))).toBe(true);
+			expect(readFileSync(join(foreignRoot, '.gship', '.gitignore'), 'utf8')).toBe('*\n');
+			expect(execFileSync('git', ['status', '--porcelain'], {
+				cwd: foreignRoot,
+				encoding: 'utf8',
+			})).toBe('');
+		} finally {
+			registry.close();
+		}
+	});
+
 	test('approval wakes the idle project chain through the project-scoped route', async () => {
 		const result = await approveProjectIssue({ backlog: [approvedIssue('GSHIP-733')], chainRuns: true });
 		try {
