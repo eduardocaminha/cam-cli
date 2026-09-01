@@ -839,7 +839,7 @@ export class GithubShipper implements RuntimeShipper {
 		prNumber: number,
 		branch: string,
 		initialHeadSha: string,
-		directMergeFallback: boolean,
+		autoMergeUnavailable: boolean,
 	): Promise<RuntimeShipResult> {
 		const deadline = Date.now() + this.#mergeTimeoutMs;
 		let lastStatus = '';
@@ -855,7 +855,7 @@ export class GithubShipper implements RuntimeShipper {
 				headSha,
 				branchUpdates,
 				lastCiStatus,
-				directMergeFallback,
+				autoMergeUnavailable,
 				directMergeRequested,
 			);
 			if ('result' in step) return step.result;
@@ -899,7 +899,7 @@ export class GithubShipper implements RuntimeShipper {
 		headSha: string,
 		branchUpdates: number,
 		lastCiStatus: CiAggregate['status'],
-		directMergeFallback: boolean,
+		autoMergeUnavailable: boolean,
 		directMergeRequested: boolean,
 	): Promise<
 		| { result: RuntimeShipResult }
@@ -947,7 +947,7 @@ export class GithubShipper implements RuntimeShipper {
 			headSha,
 			view,
 			ci,
-			directMergeFallback,
+			autoMergeUnavailable,
 			directMergeRequested,
 		);
 		return {
@@ -965,16 +965,26 @@ export class GithubShipper implements RuntimeShipper {
 		headSha: string,
 		view: PullRequestView,
 		ci: CiAggregate,
-		enabled: boolean,
+		autoMergeUnavailable: boolean,
 		requested: boolean,
 	): Promise<boolean> {
 		const ciReady = ci.status === 'not-reported' || ci.status === 'passed';
-		if (!enabled || requested || view.mergeStateStatus !== 'CLEAN' || !ciReady) return requested;
+		if (
+			requested ||
+			view.state !== 'OPEN' ||
+			view.headRefOid !== headSha ||
+			view.mergeStateStatus !== 'CLEAN' ||
+			!ciReady
+		) return requested;
 		await this.#checked(input, 'gh', [
 			'pr', 'merge', String(prNumber), '--squash', '--match-head-commit', headSha,
 			...(input.deleteBranch === true ? ['--delete-branch'] : []),
-		]);
-		input.emit('ship.direct-merge-requested', { prNumber, headSha });
+		], { retryIdempotent: true });
+		input.emit('ship.direct-merge-requested', {
+			prNumber,
+			headSha,
+			reason: autoMergeUnavailable ? 'auto-merge-unavailable' : 'auto-merge-stalled',
+		});
 		return true;
 	}
 

@@ -96,8 +96,12 @@ interface FakeRepo {
 	armUnavailableRemaining: number;
 	/** A decision failure `gh pr merge --auto` reports immediately, never retried. */
 	armDecisionFailure: string | null;
-	/** Times direct squash merge is attempted after GitHub refuses auto-merge. */
+	/** Times direct squash merge is attempted after GitHub arms or refuses auto-merge. */
 	directMergeAttempts: number;
+	/** Times direct squash merge reports HTTP 503 before succeeding. */
+	directMergeUnavailableRemaining: number;
+	/** A decision failure direct squash merge reports immediately, never retried. */
+	directMergeDecisionFailure: string | null;
 	/** True while `gh pr view` keeps reporting HTTP 503 (GSHIP-625). */
 	viewUnavailableAlways: boolean;
 	/** `gh pr view` reports HTTP 503 from this poll onwards (GSHIP-632). */
@@ -141,6 +145,8 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		armUnavailableRemaining: 0,
 		armDecisionFailure: null,
 		directMergeAttempts: 0,
+		directMergeUnavailableRemaining: 0,
+		directMergeDecisionFailure: null,
 		viewUnavailableAlways: false,
 		viewUnavailableFromView: Number.POSITIVE_INFINITY,
 		armAttempts: 0,
@@ -218,6 +224,13 @@ function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
 		return result(0);
 	}
 	repo.directMergeAttempts += 1;
+	if (repo.directMergeDecisionFailure !== null) {
+		return result(1, '', repo.directMergeDecisionFailure);
+	}
+	if (repo.directMergeUnavailableRemaining > 0) {
+		repo.directMergeUnavailableRemaining -= 1;
+		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+	}
 	repo.prState = 'MERGED';
 	return result(0);
 }
@@ -666,6 +679,115 @@ describe('the GitHub shipper', () => {
 		const direct = findCall(calls, 'gh', 'pr', 'merge').find((call) => !call.args.includes('--auto'));
 		expect(direct?.args).toEqual(['pr', 'merge', '385', '--squash', '--match-head-commit', HEAD_SHA]);
 		expect(direct?.args).not.toContain('--admin');
+	});
+
+	test('requests a direct merge for a clean PR even while auto-merge remains armed', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			openMergeState: 'CLEAN',
+			statusCheckRollups: [[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }]],
+			directMergeUnavailableRemaining: 2,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipped = await new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			unavailableRetryDelaysMs: [0, 0, 0],
+		}).ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.armAttempts).toBe(1);
+		expect(repo.directMergeAttempts).toBe(3);
+		expect(events.filter((kind) => kind === 'ship.github-unavailable')).toHaveLength(2);
+		expect(payloads.get('ship.direct-merge-requested')).toEqual({
+			prNumber: 385,
+			headSha: HEAD_SHA,
+			reason: 'auto-merge-stalled',
+		});
+		const direct = findCall(calls, 'gh', 'pr', 'merge').find((call) => !call.args.includes('--auto'));
+		expect(direct?.args).toEqual(['pr', 'merge', '385', '--squash', '--match-head-commit', HEAD_SHA]);
+		expect(direct?.args).not.toContain('--admin');
+	});
+
+	test('records auto-merge-unavailable when a clean PR needs the direct merge recovery', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Pull request Auto merge is not allowed for this repository',
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			openMergeState: 'CLEAN',
+		});
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, [], new AbortController().signal, payloads));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(payloads.get('ship.direct-merge-requested')).toEqual({
+			prNumber: 385,
+			headSha: HEAD_SHA,
+			reason: 'auto-merge-unavailable',
+		});
+	});
+
+	test('fails closed when GitHub refuses the direct merge', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			openMergeState: 'CLEAN',
+			directMergeDecisionFailure: 'GraphQL: merge queue is required',
+		});
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, [], new AbortController().signal));
+
+		expect(shipped).toEqual({
+			outcome: 'failed',
+			detail: 'gh pr merge failed: GraphQL: merge queue is required',
+		});
+		expect(repo.directMergeAttempts).toBe(1);
+	});
+
+	test('never directly merges a non-clean, non-open, unverified, or unfinished PR', async () => {
+		const scenarios: Array<{
+			name: string;
+			repo: Partial<FakeRepo>;
+			options?: { maxBranchUpdates?: number };
+		}> = [
+			{ name: 'BLOCKED', repo: { openMergeState: 'BLOCKED' } },
+			{ name: 'BEHIND', repo: { behindWhileUpdatesBelow: Number.MAX_SAFE_INTEGER }, options: { maxBranchUpdates: 0 } },
+			{ name: 'DIRTY', repo: { openMergeState: 'DIRTY' } },
+			{ name: 'UNKNOWN', repo: { openMergeState: 'UNKNOWN' } },
+			{
+				name: 'CI pending',
+				repo: {
+					openMergeState: 'CLEAN',
+					statusCheckRollups: [[{ name: 'verify', status: 'IN_PROGRESS', conclusion: null }]],
+				},
+			},
+			{
+				name: 'CI failed',
+				repo: {
+					openMergeState: 'CLEAN',
+					statusCheckRollups: [[{ name: 'verify', status: 'COMPLETED', conclusion: 'FAILURE' }]],
+				},
+			},
+			{ name: 'head divergente', repo: { openMergeState: 'CLEAN', headMovedOnView: 1 } },
+		];
+
+		for (const scenario of scenarios) {
+			const cwd = createWorkspace();
+			const repo = createRepo({ mergedOnView: Number.MAX_SAFE_INTEGER, ...scenario.repo });
+			const shipped = await new GithubShipper({
+				runCommand: createRunner(repo, []),
+				pollIntervalMs: 0,
+				mergeTimeoutMs: 0,
+				...scenario.options,
+			}).ship(createShipInput(cwd, [], new AbortController().signal));
+
+			expect(shipped.outcome, scenario.name).not.toBe('merged');
+			expect(repo.directMergeAttempts, scenario.name).toBe(0);
+		}
 	});
 
 	test('direct fallback merges a clean PR with no reported checks and preserves branch deletion', async () => {
