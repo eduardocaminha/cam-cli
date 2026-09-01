@@ -63,22 +63,31 @@ describe('independent Codex reviewer', () => {
 		expect(await review()).toEqual({ verdict: 'clean' });
 		expect(events).toContainEqual({
 			kind: 'review.model',
-			payload: { model: 'gpt-5-codex', effort: 'high' },
+			payload: { model: 'gpt-5-codex', effort: 'high', provider: 'codex' },
 		});
 
 		slot = { effort: 'minimal' };
 		expect(await review()).toEqual({ verdict: 'clean' });
-		expect(events).toContainEqual({ kind: 'review.model', payload: { effort: 'minimal' } });
+		expect(events).toContainEqual({
+			kind: 'review.model',
+			payload: { model: 'provider-default', effort: 'minimal', provider: 'codex' },
+		});
 
 		const bare = new CodexCliReviewer({
 			command: ['bun', FIXTURE, '--fixture-mode=review'],
 			loadIssue: () => '{"id":"CAM-1"}',
 			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
 		});
-		const bareEvents: string[] = [];
-		expect(await bare.review({ ...input(), emit: (kind) => bareEvents.push(kind) }))
+		const bareEvents: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		expect(await bare.review({
+			...input(),
+			emit: (kind, payload) => bareEvents.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		}))
 			.toEqual({ verdict: 'clean' });
-		expect(bareEvents).not.toContain('review.model');
+		expect(bareEvents).toContainEqual({
+			kind: 'review.model',
+			payload: { model: 'provider-default', effort: 'provider-default', provider: 'codex' },
+		});
 	});
 
 	test('returns clean and findings verdicts from fresh fixture sessions', async () => {

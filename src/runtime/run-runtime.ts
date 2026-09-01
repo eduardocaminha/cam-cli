@@ -13,7 +13,12 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
-import type { ModelSettings } from './model-settings.ts';
+import {
+	emptyModelSettings,
+	type AgentDefaults,
+	type AgentSettingSource,
+	type ModelSettings,
+} from './model-settings.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
 import type { OperatorProfile } from './operator-profile.ts';
 import {
@@ -300,6 +305,8 @@ export interface RunRuntimeOptions {
 	 * at one.
 	 */
 	listBacklog?: () => IssueEntry[];
+	/** Read fresh at each use so registry settings apply without a restart. */
+	agentDefaults?: () => AgentDefaults;
 }
 
 export class RuntimeUnavailableError extends Error {
@@ -465,6 +472,7 @@ export class RunRuntime {
 	readonly #cwd: string;
 	readonly #store: RunStore;
 	readonly #workflowRevision: string | undefined;
+	#agentDefaults: () => AgentDefaults;
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
@@ -496,6 +504,7 @@ export class RunRuntime {
 		this.#workflowRevision = workflowRevision === undefined || workflowRevision.length === 0
 			? undefined
 			: workflowRevision.slice(0, 200);
+		this.#agentDefaults = options.agentDefaults ?? (() => ({}));
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
@@ -518,6 +527,11 @@ export class RunRuntime {
 		// whose instant already passed while this process was down is armed
 		// here at zero delay rather than waiting for the next hold.
 		this.#armProviderRetryForWaitingRun();
+	}
+
+	/** Binds the registry-owned defaults for an injected boot runtime. */
+	setAgentDefaultsResolver(agentDefaults: () => AgentDefaults): void {
+		this.#agentDefaults = agentDefaults;
 	}
 
 	async startRun(issueId: string, source?: string): Promise<RunRecord> {
@@ -857,11 +871,26 @@ export class RunRuntime {
 	}
 
 	getSelectedProvider(): AgentProviderId {
-		return this.#store.getSelectedProvider();
+		return this.#store.getSelectedProviderOverride()
+			?? this.#agentDefaults().provider
+			?? 'claude';
+	}
+
+	getSelectedProviderSource(): AgentSettingSource {
+		return this.#store.getSelectedProviderOverride() !== null ? 'project'
+			: this.#agentDefaults().provider !== undefined ? 'global' : 'provider-default';
+	}
+
+	getSelectedProviderOverride(): AgentProviderId | null {
+		return this.#store.getSelectedProviderOverride();
 	}
 
 	selectProvider(providerId: AgentProviderId): void {
 		this.#store.setSelectedProvider(providerId);
+	}
+
+	clearSelectedProviderOverride(): void {
+		this.#store.clearSelectedProviderOverride();
 	}
 
 	/**
@@ -869,11 +898,26 @@ export class RunRuntime {
 	 * again -- so a change takes effect without restarting the service.
 	 */
 	getModelSettings(): ModelSettings {
-		return this.#store.getModelSettings();
+		return this.#store.getModelSettingsOverride()
+			?? this.#agentDefaults().modelSettings
+			?? emptyModelSettings();
+	}
+
+	getModelSettingsSource(): AgentSettingSource {
+		return this.#store.getModelSettingsOverride() !== null ? 'project'
+			: this.#agentDefaults().modelSettings !== undefined ? 'global' : 'provider-default';
+	}
+
+	getModelSettingsOverride(): ModelSettings | null {
+		return this.#store.getModelSettingsOverride();
 	}
 
 	setModelSettings(settings: ModelSettings): void {
 		this.#store.setModelSettings(settings);
+	}
+
+	clearModelSettingsOverride(): void {
+		this.#store.clearModelSettingsOverride();
 	}
 
 	/**

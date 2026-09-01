@@ -127,7 +127,7 @@ function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRol
 		const effort = normalizedText(event.payload['effort']);
 		if (model !== null) entry.models.add(model);
 		if (effort !== null) entry.efforts.add(effort);
-		entry.providers.add(run.providerId);
+		entry.providers.add(providerOf(event.payload['provider']) ?? run.providerId);
 	}
 	return [...configurations.entries()]
 		.sort(([left], [right]) => left.localeCompare(right))

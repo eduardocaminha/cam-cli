@@ -303,14 +303,16 @@ describe('Claude CLI runtime executor', () => {
 		expect(first.summary).toContain('"--effort","xhigh"');
 		expect(events).toContainEqual({
 			kind: 'provider.model',
-			payload: { model: 'opus', effort: 'xhigh' },
+			payload: { model: 'opus', effort: 'xhigh', provider: 'claude' },
 		});
 
 		slot = { effort: 'low' };
 		const second = await execute();
 		expect(second.summary).not.toContain('--model');
 		expect(second.summary).toContain('"--effort","low"');
-		expect(events).toContainEqual({ kind: 'provider.model', payload: { effort: 'low' } });
+		expect(events).toContainEqual({
+			kind: 'provider.model', payload: { model: 'provider-default', effort: 'low', provider: 'claude' },
+		});
 	});
 
 	test('an unconfigured slot spawns and reads exactly as before the setting existed', async () => {
@@ -332,7 +334,7 @@ describe('Claude CLI runtime executor', () => {
 
 		expect(result.summary).not.toContain('--model');
 		expect(result.summary).not.toContain('--effort');
-		expect(events.map((event) => event.kind)).not.toContain('provider.model');
+		expect(events.map((event) => event.kind)).toContain('provider.model');
 	});
 
 	test('accepts only the two structured executor outcomes', () => {

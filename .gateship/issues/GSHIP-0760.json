@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-760",
   "title": "Herdar defaults globais de agentes com telemetria completa por run",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T19:45:50.891Z",
-  "updatedAt": "2026-09-01T19:45:50.891Z",
+  "updatedAt": "2026-09-01T20:10:58.628Z",
   "description": "Problema medido: a run externa do Reporter usou Codex, mas como o projeto não tinha model-settings locais sua avaliação terminou com roles vazio, enquanto o projeto Gateship já tinha modelos e esforços configurados. Implementar uma única configuração global de agentes no settings de projects.sqlite, contendo provider e ModelSettings, sem novo banco. Na primeira inicialização, se a configuração global estiver ausente, importar uma única vez os valores explícitos do projeto de boot; não sobrescrever um global existente. Para cada runtime, provider e conjunto de modelos efetivos devem usar o override local quando a respectiva linha existe e, quando não existe, herdar o global; se ambos faltarem, preservar os defaults atuais do CLI. Não copiar defaults para cada runtime.sqlite. Expor no runtime e nas respostas de leitura se o valor efetivo veio de project, global ou provider-default, preparando a UI posterior. A escrita project-scoped continua criando override local. Adicionar operação para remover os overrides locais de provider e modelos e voltar a herdar, protegida pelas mesmas fronteiras de escrita existentes. Em toda chamada de executor e reviewer, emitir o evento de modelo mesmo quando um campo depende do CLI, usando o marcador honesto provider-default para model e effort ausentes; nunca inventar o nome real do modelo. A run deve sempre registrar provider e as funções efetivamente invocadas. Preservar validação pelo CLI, fallback, troca de provider e bancos existentes. Não adicionar policy engine, catálogo de modelos, sincronização entre projetos ou UI nesta issue.",
   "specSource": "operator",
   "spec": {

@@ -213,7 +213,7 @@ describe('independent Claude CLI reviewer', () => {
 		expect(flagValue(first, '--effort')).toBe('high');
 		expect(events).toContainEqual({
 			kind: 'review.model',
-			payload: { model: 'sonnet', effort: 'high' },
+			payload: { model: 'sonnet', effort: 'high', provider: 'claude' },
 		});
 
 		// Resolved per review, so the next one already carries the new choice.

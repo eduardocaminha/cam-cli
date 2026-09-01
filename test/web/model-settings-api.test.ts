@@ -63,7 +63,7 @@ describe('per-role model settings web API', () => {
 		try {
 			const response = await fetch(`${harness.origin}/api/model-settings`);
 			expect(response.status).toBe(200);
-			expect(await response.json()).toEqual({ settings: emptyModelSettings() });
+			expect(await response.json()).toEqual({ settings: emptyModelSettings(), source: 'provider-default' });
 		} finally {
 			await harness.stop();
 		}
@@ -83,6 +83,7 @@ describe('per-role model settings web API', () => {
 			expect(written.status).toBe(200);
 			expect(await written.json()).toEqual({
 				ok: true,
+				source: 'project',
 				settings: {
 					claude: {
 						orchestrator: { model: 'sonnet' },
@@ -119,7 +120,9 @@ describe('per-role model settings web API', () => {
 				claude: { executor: { model: '  ', effort: '' } },
 			});
 			expect(cleared.status).toBe(200);
-			expect(await cleared.json()).toEqual({ ok: true, settings: emptyModelSettings(), probes: {} });
+			expect(await cleared.json()).toEqual({
+				ok: true, settings: emptyModelSettings(), source: 'project', probes: {},
+			});
 			expect(harness.runtime.getModelSettings()).toEqual(emptyModelSettings());
 		} finally {
 			await harness.stop();

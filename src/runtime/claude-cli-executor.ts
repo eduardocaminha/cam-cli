@@ -352,7 +352,7 @@ export class ClaudeAgentSession implements AgentSession {
 		const argv = input.access === 'read-only'
 			? buildClaudeReadOnlyArgv(invocation)
 			: buildClaudeCliArgv(invocation);
-		emitModelSelection(input.emit, input.eventPrefix, slot);
+		emitModelSelection(input.emit, input.eventPrefix, slot, 'claude');
 		return runClaudeCli({
 			argv,
 			cwd: input.cwd,

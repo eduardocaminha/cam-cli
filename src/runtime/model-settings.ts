@@ -33,6 +33,15 @@ export interface ModelSlot {
 
 export type ModelSettings = Record<AgentProviderId, Record<ModelRole, ModelSlot>>;
 
+/** Where a runtime obtained one effective agent setting. */
+export type AgentSettingSource = 'project' | 'global' | 'provider-default';
+
+/** The one global record kept by the project registry, not by project runtimes. */
+export interface AgentDefaults {
+	provider?: AgentProviderId;
+	modelSettings?: ModelSettings;
+}
+
 /**
  * Read at every spawn instead of at boot, so changing the setting in Ajustes
  * takes effect on the next child without restarting the service.
@@ -145,11 +154,12 @@ export function emitModelSelection(
 	emit: (kind: string, payload?: Record<string, unknown>) => void,
 	eventPrefix: string,
 	slot: ModelSlot,
+	provider?: AgentProviderId,
 ): void {
-	if (slot.model === undefined && slot.effort === undefined) return;
 	emit(`${eventPrefix}.model`, {
-		...(slot.model === undefined ? {} : { model: slot.model }),
-		...(slot.effort === undefined ? {} : { effort: slot.effort }),
+		model: slot.model ?? 'provider-default',
+		effort: slot.effort ?? 'provider-default',
+		...(provider === undefined ? {} : { provider }),
 	});
 }
 

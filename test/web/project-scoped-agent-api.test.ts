@@ -400,4 +400,53 @@ describe('project-scoped agent API', () => {
 			await handle.stop();
 		}
 	});
+
+	test('inherits global agent defaults and removes project overrides back to inheritance', async () => {
+		const cwd = createTestTmpdir('gship-project-agent-defaults-');
+		readyProject(cwd);
+		const registry = openProjectRegistry(createTestTmpdir('gship-project-agent-defaults-home-'));
+		registry.setAgentDefaults({
+			provider: 'codex',
+			modelSettings: {
+				claude: { orchestrator: {}, executor: {}, reviewer: {} },
+				codex: { orchestrator: {}, executor: { model: 'gpt-5-codex', effort: 'high' }, reviewer: {} },
+			},
+		});
+		const runtime = new RunRuntime({ cwd, store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd,
+			projectRegistry: registry,
+			runRuntime: runtime,
+			modelProber: { probe: async () => ({ outcome: 'accepted' }) },
+			providerAuth: {
+				list: async () => [], startCodexLogin: async () => ({ loginId: 'unused', authUrl: 'https://unused' }),
+				validateClaudeCredential: async () => ({ ok: false, message: 'unused' }), close: async () => {},
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			expect(runtime.getSelectedProvider()).toBe('codex');
+			expect(runtime.getSelectedProviderSource()).toBe('global');
+			runtime.selectProvider('claude');
+			expect(await fetch(`${origin}/api/providers/claude/select`, {
+				method: 'DELETE', headers: { origin },
+			}).then((response) => response.json())).toMatchObject({
+				source: 'global', selected: 'codex',
+			});
+			expect(await fetch(`${origin}/api/model-settings`).then((response) => response.json()))
+				.toMatchObject({ source: 'global', settings: { codex: { executor: { model: 'gpt-5-codex' } } } });
+			const saved = await fetch(`${origin}/api/model-settings`, {
+				method: 'PUT', headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ codex: { executor: { model: 'local-model' } } }),
+			});
+			expect(await saved.json()).toMatchObject({ source: 'project', settings: { codex: { executor: { model: 'local-model' } } } });
+			const cleared = await fetch(`${origin}/api/model-settings`, { method: 'DELETE', headers: { origin } });
+			expect(await cleared.json()).toMatchObject({ source: 'global', settings: { codex: { executor: { model: 'gpt-5-codex' } } } });
+		} finally {
+			await handle.stop();
+			runtime.close();
+			registry.close();
+		}
+	});
 });
