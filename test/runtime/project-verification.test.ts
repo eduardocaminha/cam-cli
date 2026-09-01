@@ -33,4 +33,17 @@ describe('project verification manifest', () => {
 			}))).toThrow('project verification manifest has invalid preparation commands');
 		}
 	});
+
+	test('accepts one optional project diagnostic command and rejects extra configuration', () => {
+		expect(readProjectVerificationManifest(JSON.stringify({
+			version: 1,
+			verify: ['bun test'],
+			diagnostic: { command: 'bun run diagnose' },
+		}))).toMatchObject({ diagnostic: { command: 'bun run diagnose' } });
+		for (const diagnostic of [null, {}, { command: '' }, { command: '  ' }, { command: 42 }, { command: 'bun test', extra: true }]) {
+			expect(() => readProjectVerificationManifest(JSON.stringify({
+				version: 1, verify: ['bun test'], diagnostic,
+			}))).toThrow('project verification manifest has invalid diagnostic command');
+		}
+	});
 });

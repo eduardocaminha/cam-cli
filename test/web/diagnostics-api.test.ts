@@ -530,6 +530,7 @@ describe('diagnostics web API', () => {
 			const foreignSnapshot = await fetch(`${base(foreign.id)}/diagnostics`).then((response) => response.json()) as DiagnosticsSnapshot;
 			expect(currentSnapshot.findings.map((finding) => finding.rule)).toEqual(['current-rule']);
 			expect(foreignSnapshot.findings.map((finding) => finding.rule)).toEqual(['foreign-dismiss-rule', 'foreign-promote-rule']);
+			expect(foreignSnapshot.analyzers.map((analyzer) => analyzer.id)).toEqual(['react', 'project']);
 			const currentContext = serverProjectRuntimes.get(current.id).context;
 			const foreignContext = serverProjectRuntimes.get(foreign.id).context;
 			const currentScheduleBefore = currentSnapshot.schedule;
