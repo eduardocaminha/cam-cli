@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-757",
   "title": "Integrar PR CLEAN mesmo com auto-merge armado",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T18:43:41.624Z",
-  "updatedAt": "2026-09-01T18:44:01.505Z",
+  "updatedAt": "2026-09-01T18:48:13.137Z",
   "description": "Eliminar o stall observado em três PRs nas quais o GitHub manteve auto-merge armado, CI verde e mergeStateStatus CLEAN sem integrar.\n\nContrato:\n- Manter o armamento de auto-merge como mecanismo de recuperação caso o serviço pare.\n- No monitor, para qualquer PR OPEN que ainda carregue exatamente o headSha verificado, solicitar merge direto pinado quando mergeStateStatus for CLEAN e o CI agregado estiver passed ou not-reported, independentemente de o armamento ter sido aceito ou recusado.\n- Usar gh pr merge --squash --match-head-commit e preservar deleteBranch quando solicitado.\n- Nunca usar --admin.\n- Não solicitar merge em BLOCKED, BEHIND, DIRTY, UNKNOWN, CI pending/failed ou head divergente.\n- Emitir ship.direct-merge-requested com reason auto-merge-stalled ou auto-merge-unavailable para telemetria.\n- Uma recusa genérica do merge direto continua fail closed; indisponibilidade transitória segue a política de retry existente.\n- Remover somente a condição booleana que restringe o merge direto ao fallback, sem duplicar monitores.\n- Adicionar testes para auto-merge aceito + CLEAN, auto-merge indisponível + CLEAN e todos os estados negativos.\n- A comunicação da run com o operador deve ser em português.",
   "specSource": "operator",
   "spec": {
