@@ -5,11 +5,11 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T00:59:16.570Z",
-  "updatedAt": "2026-09-01T00:59:36.895Z",
+  "updatedAt": "2026-09-01T12:34:07.885Z",
   "description": "Corrigir a primeira falha observada no onboarding real do Reporter. Antes de qualquer contexto de projeto criar runtime.sqlite ou outro estado em um stateDir igual a <projectRoot>/.gship, o runtime deve tornar esse diretório autoignorado por Git com um .gship/.gitignore contendo um catch-all. A operação deve ser idempotente, não deve alterar o .gitignore rastreado, índice, branch, refs ou arquivos do produto e não deve esconder o contrato rastreável .gateship/project.json, que é outro diretório. Preserve conteúdo preexistente do .gship/.gitignore e acrescente apenas o necessário quando ainda não houver um catch-all. Registrar sozinho continua sem criar stateDir; a proteção acontece imediatamente antes da primeira escrita de estado. Adicione testes com um repositório Git real sem regra .gship, comprovando que criar e reabrir o contexto produz runtime.sqlite mas mantém git status --porcelain vazio. Atualize HANDOFF.md com a evidência do Reporter e mantenha fora do escopo migração de estado, alteração de .git/info/exclude, UI e qualquer mudança no Reporter.",
   "specSource": "operator",
   "spec": {
-    "scope": "Corrigir a primeira falha observada no onboarding real do Reporter. Antes de qualquer contexto de projeto criar runtime.sqlite ou outro estado em um stateDir igual a <projectRoot>/.gship, o runtime deve tornar esse diretório autoignorado por Git com um .gship/.gitignore contendo um catch-all. A operação deve ser idempotente, não deve alterar o .gitignore rastreado, índice, branch, refs ou arquivos do produto e não deve esconder o contrato rastreável .gateship/project.json, que é outro diretório. Preserve conteúdo preexistente do .gship/.gitignore e acrescente apenas o necessário quando ainda não houver um catch-all. Registrar sozinho continua sem criar stateDir; a proteção acontece imediatamente antes da primeira escrita de estado. Adicione testes com um repositório Git real sem regra .gship, comprovando que criar e reabrir o contexto produz runtime.sqlite mas mantém git status --porcelain vazio. Atualize HANDOFF.md com a evidência do Reporter e mantenha fora do escopo migração de estado, alteração de .git/info/exclude, UI e qualquer mudança no Reporter.",
+    "scope": "Corrigir a primeira falha observada no onboarding real do Reporter. Registrar um projeto continua sem criar diretório de estado. Imediatamente antes de qualquer contexto gravar estado em um stateDir exatamente igual a projectRoot/.gship, crie o diretório e garanta um .gship/.gitignore com uma linha terminal exata contendo apenas asterisco. Preserve integralmente o conteúdo preexistente; se ele já terminar nessa linha exata, não escreva, e caso contrário acrescente a quebra necessária e a linha terminal. Uma redundância única sobre regras preexistentes é aceitável e preferível a interpretar a semântica de .gitignore. Não implemente parser de negações, comentários, escapes, globs ou espaços. Apenas ENOENT representa arquivo ausente; outros erros de leitura devem ser propagados sem escrita. A operação deve ser idempotente e não pode alterar o .gitignore rastreado, índice, branch, refs ou arquivos do produto, nem esconder .gateship/project.json, que é outro diretório. Adicione testes com repositório Git real comprovando criação e reabertura do contexto, runtime.sqlite presente, git status --porcelain vazio, prefixo preexistente preservado, idempotência e .gateship/project.json visível. Os testes devem ser portáveis entre macOS, Linux e Windows e não depender de chmod. Atualize HANDOFF.md com a evidência do Reporter. Fora do escopo: migração, .git/info/exclude, UI, mudança no Reporter e qualquer parser de .gitignore.",
     "verify": [
       "bun test test/runtime/project-registration.test.ts test/web/project-scoped-agent-api.test.ts test/web/project-status-api.test.ts && bun run typecheck"
     ],
@@ -19,9 +19,5 @@
         "output": "1"
       }
     ]
-  },
-  "approval": {
-    "fingerprint": "7ae9b84a84f50b913f21986c79b1fd05747362d38b0bf4a9f223d2cdab8e8d7e",
-    "approvedAt": "2026-09-01T00:59:36.895Z"
   }
 }
