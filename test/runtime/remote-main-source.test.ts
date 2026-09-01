@@ -19,13 +19,13 @@ import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createGitRuntimePreflight, RuntimePreflightError } from '../../src/runtime/git-runtime.ts';
 import {
 	GitWorkspaceManager,
-	type WorkspaceInstallRunner,
+	type WorkspacePrepareRunner,
 } from '../../src/runtime/git-workspace.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 /** Install is the one step of prepare() that is not git; never shell out to bun. */
-const noopInstall: WorkspaceInstallRunner = () => ({ exitCode: 0, stdout: '', stderr: '' });
+const noopInstall: WorkspacePrepareRunner = () => ({ exitCode: 0, stdout: '', stderr: '' });
 
 function git(cwd: string, args: string[]): string {
 	const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });

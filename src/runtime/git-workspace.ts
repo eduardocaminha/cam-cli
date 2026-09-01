@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import process from 'node:process';
+
+import { buildAllowlistedEnv } from './child-env.ts';
+import { readProjectVerificationManifest } from './project-verification.ts';
 
 interface CommandResult {
 	exitCode: number;
@@ -10,7 +14,7 @@ interface CommandResult {
 
 export type WorkspaceGitRunner = (cwd: string, args: string[]) => CommandResult;
 
-export type WorkspaceInstallRunner = (cwd: string, args: string[]) => CommandResult;
+export type WorkspacePrepareRunner = (cwd: string, command: string) => CommandResult;
 
 export interface PrepareWorkspaceInput {
 	runId: string;
@@ -88,14 +92,29 @@ function defaultRunGit(cwd: string, args: string[]): CommandResult {
 	};
 }
 
-function defaultRunInstall(cwd: string, args: string[]): CommandResult {
-	const result = spawnSync('bun', args, { cwd, encoding: 'utf8' });
+function defaultRunPrepare(cwd: string, command: string): CommandResult {
+	const result = spawnSync(command, {
+		cwd,
+		encoding: 'utf8',
+		env: buildAllowlistedEnv(process.env),
+		shell: true,
+	});
 	if (result.error) throw result.error;
 	return {
 		exitCode: result.status ?? 1,
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 	};
+}
+
+const PROJECT_MANIFEST_PATH = join('.gateship', 'project.json');
+const LEGACY_PREPARE_COMMAND = 'bun install --frozen-lockfile';
+
+/** `undefined` preserves the pre-manifest Bun install; `[]` explicitly does nothing. */
+function projectPrepareCommands(workspacePath: string): string[] | undefined {
+	const path = join(workspacePath, PROJECT_MANIFEST_PATH);
+	if (!existsSync(path)) return undefined;
+	return readProjectVerificationManifest(readFileSync(path, 'utf8')).prepare;
 }
 
 function safeSegment(value: string, fallback: string): string {
@@ -181,7 +200,7 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 	readonly #projectRoot: string;
 	readonly #stateDir: string;
 	readonly #runGit: WorkspaceGitRunner;
-	readonly #runInstall: WorkspaceInstallRunner;
+	readonly #runPrepare: WorkspacePrepareRunner;
 	readonly #baseRef: string;
 
 	/**
@@ -193,14 +212,14 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 	constructor(
 		projectRoot: string,
 		runGit: WorkspaceGitRunner = defaultRunGit,
-		runInstall: WorkspaceInstallRunner = defaultRunInstall,
+		runPrepare: WorkspacePrepareRunner = defaultRunPrepare,
 		baseRef = 'main',
 		stateDir = resolve(projectRoot, '.gship'),
 	) {
 		this.#projectRoot = resolve(projectRoot);
 		this.#stateDir = resolve(stateDir);
 		this.#runGit = runGit;
-		this.#runInstall = runInstall;
+		this.#runPrepare = runPrepare;
 		this.#baseRef = baseRef;
 	}
 
@@ -237,22 +256,20 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 			throw new RuntimeWorkspaceError(`cannot create run workspace: ${failureDetail(added)}`);
 		}
 
-		let installed: CommandResult;
 		try {
-			installed = this.#runInstall(workspacePath, ['install', '--frozen-lockfile']);
+			const commands = projectPrepareCommands(workspacePath) ?? [LEGACY_PREPARE_COMMAND];
+			for (const command of commands) {
+				const prepared = this.#runPrepare(workspacePath, command);
+				if (prepared.exitCode !== 0) {
+					throw new Error(`preparation command failed: ${failureDetail(prepared)}`);
+				}
+			}
 		} catch (error) {
 			const detail = error instanceof Error ? error.message : String(error);
 			throw new RuntimeWorkspaceError(this.#prepareFailure(
 				input,
 				workspacePath,
-				`cannot start workspace install: ${detail}`,
-			));
-		}
-		if (installed.exitCode !== 0) {
-			throw new RuntimeWorkspaceError(this.#prepareFailure(
-				input,
-				workspacePath,
-				`cannot install workspace dependencies: ${failureDetail(installed)}`,
+				`cannot prepare workspace: ${detail}`,
 			));
 		}
 		return workspacePath;
