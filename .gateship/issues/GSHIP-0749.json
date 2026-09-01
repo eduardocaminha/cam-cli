@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-749",
   "title": "Eliminar corrida do bundle no check completo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T07:31:47.614Z",
-  "updatedAt": "2026-09-01T07:32:18.907Z",
+  "updatedAt": "2026-09-01T14:06:29.000Z",
   "description": "Corrigir a falha determinística observada duas vezes no full verify da GSHIP-748. test/webui-scaffold.test.ts não pode reconstruir o webui/dist compartilhado enquanto test/web/embedded-ui.test.ts compara a cópia resolvida no carregamento do mesmo processo. Isole a saída do build do teste de scaffold em um diretório temporário próprio, usando a capacidade existente do Vite, e faça as asserções contra essa saída; o webui/dist canônico e os imports embutidos não devem ser escritos por esse teste. Preserve o contrato real de build:ui, os nomes estáveis dos assets e o teste do bundle embutido. Adicione limpeza segura do diretório temporário e comprove que os dois arquivos de teste passam juntos repetidamente. Não serialize toda a suíte, não adicione retry, não altere check:all, não relaxe as asserções e não toque na UI do produto.",
   "specSource": "operator",
   "spec": {

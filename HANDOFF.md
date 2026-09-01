@@ -47,6 +47,12 @@ separate database service. The container is the native deployment's isolation
 boundary; provider and GitHub authentication happens inside it and persists on
 the single state volume.
 
+The first real Reporter onboarding exposed one checkout hygiene gap: opening an
+external project created one untracked `.gship/` entry when the checkout had no
+rule for it. Project-owned runtime state now installs an idempotent nested
+catch-all immediately before the first state write; `.gateship/project.json`
+remains a separate tracked contract.
+
 ## Multiproject state and its limits
 
 A global `GATESHIP_HOME` holds a durable, automatically reconciled project
