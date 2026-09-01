@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -76,7 +76,78 @@ function seedFixture(
 	return { root, seed, remote, local };
 }
 
+function requirePullRequestForMain(remote: string): void {
+	const hook = join(remote, 'hooks', 'pre-receive');
+	writeFileSync(hook, `#!/bin/sh
+while read old new ref; do
+  if [ "$ref" = refs/heads/main ]; then
+    echo 'remote: error: GH006: Protected branch update failed for refs/heads/main.' >&2
+    echo 'remote: error: Changes must be made through a pull request.' >&2
+    exit 1
+  fi
+done
+`);
+	chmodSync(hook, 0o755);
+}
+
 describe('remote-main operator issue intake', () => {
+	test('uses the shared PR lifecycle only for an explicit protected-main refusal, across every intake write', async () => {
+		const fixture = seedFixture();
+		requirePullRequestForMain(fixture.remote);
+		const calls: Array<{ issueId: string; branch: string; headSha: string; deleteBranch?: boolean }> = [];
+		const shipper = {
+			mergePullRequest: async (input: {
+				issueId: string; branch: string; headSha: string; deleteBranch?: boolean;
+			}) => {
+				calls.push(input);
+				// The fake stands in for GithubShipper's confirmed merge, making the
+				// bare remote's main reflect only the head it was given.
+				git(fixture.remote, ['update-ref', 'refs/heads/main', input.headSha]);
+				return { outcome: 'merged' as const, prNumber: calls.length };
+			},
+		};
+
+		const created = await createOperatorIssue(fixture.local, {
+			title: 'PR protected intake', scope: 'Use a protected main.', verificationCommand: 'true',
+		}, { shipper });
+		await specifyOperatorIssue(fixture.local, 'CAM-2', {
+			scope: 'Specify through the same PR.', verificationCommand: 'true',
+		}, undefined, undefined, { shipper });
+		await approveOperatorIssue(fixture.local, 'CAM-2', undefined, undefined, { shipper });
+		await abandonOperatorIssue(fixture.local, 'CAM-1', { reason: 'No longer needed.' }, undefined, undefined, { shipper });
+
+		expect(calls.map((call) => ({
+			issueId: call.issueId,
+			branch: call.branch,
+			deleteBranch: call.deleteBranch,
+		}))).toEqual([
+			{ issueId: created.id, branch: `gship/intake/${created.id.toLowerCase()}-${calls[0]?.headSha.slice(0, 12)}`, deleteBranch: true },
+			{ issueId: 'CAM-2', branch: `gship/intake/cam-2-${calls[1]?.headSha.slice(0, 12)}`, deleteBranch: true },
+			{ issueId: 'CAM-2', branch: `gship/intake/cam-2-${calls[2]?.headSha.slice(0, 12)}`, deleteBranch: true },
+			{ issueId: 'CAM-1', branch: `gship/intake/cam-1-${calls[3]?.headSha.slice(0, 12)}`, deleteBranch: true },
+		]);
+		expect(new Set(calls.map((call) => call.branch)).size).toBe(calls.length);
+		for (const call of calls) {
+			expect(git(fixture.remote, ['diff-tree', '--no-commit-id', '--name-only', '-r', call.headSha]))
+				.toBe(`.gateship/issues/${call.issueId.replace(/\d+$/, (number) => number.padStart(4, '0'))}.json`);
+		}
+		expect(git(fixture.local, ['worktree', 'list', '--porcelain'])).not.toContain('gship-intake-');
+	});
+
+	test('does not take the PR fallback for generic or authentication push rejections', async () => {
+		for (const rejection of ['denied', 'remote: Authentication failed']) {
+			const fixture = seedFixture();
+			const hook = join(fixture.remote, 'hooks', 'pre-receive');
+			writeFileSync(hook, `#!/bin/sh\necho '${rejection}' >&2\nexit 1\n`);
+			chmodSync(hook, 0o755);
+			let merged = false;
+			await expect(createOperatorIssue(fixture.local, {
+				title: 'No fallback', scope: 'A generic rejection is closed.', verificationCommand: 'true',
+			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
+				.rejects.toMatchObject({ code: 'source-unavailable' });
+			expect(merged).toBe(false);
+		}
+	});
 	test('records approval for the exact published spec when requested', async () => {
 		const fixture = seedFixture();
 		await createOperatorIssue(fixture.local, {
