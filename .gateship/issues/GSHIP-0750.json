@@ -1,0 +1,23 @@
+{
+  "id": "GSHIP-750",
+  "title": "Preparação de worktree declarada pelo projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T14:19:39.495Z",
+  "updatedAt": "2026-09-01T14:19:39.495Z",
+  "description": "Tornar a preparação da worktree pertencente ao projeto, sem adapters por linguagem. Estender o manifesto versionado .gateship/project.json com prepare opcional: uma lista ordenada de comandos não vazios. Se prepare estiver presente, inclusive como lista vazia, executar exatamente esses comandos em ordem dentro da worktree recém-criada, antes do executor, pelo shell e ambiente allowlisted já usados nos comandos do projeto; parar no primeiro erro e desfazer com segurança a worktree e o branch preparados. Se prepare estiver ausente, preservar o fallback legado bun install --frozen-lockfile para compatibilidade. Ler o manifesto da própria worktree cortada de origin/main, antes de qualquer edição do agente; manifesto inválido falha fechado. Atualizar o manifesto do Gateship para declarar explicitamente bun install --frozen-lockfile. Cobrir parser, ordem, lista vazia, fallback ausente, falha/cleanup e ausência de vazamento de ambiente. Atualizar HANDOFF.md com a evidência do Reporter: package-lock.json não é admitido pelo preparo Bun fixo. Fora do escopo: detecção de stack, instalação de runtimes, catálogo, UI, Docker customizado, alteração no Reporter, execução paralela, banco ou novos adapters.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tornar a preparação da worktree pertencente ao projeto, sem adapters por linguagem. Estender o manifesto versionado .gateship/project.json com prepare opcional: uma lista ordenada de comandos não vazios. Se prepare estiver presente, inclusive como lista vazia, executar exatamente esses comandos em ordem dentro da worktree recém-criada, antes do executor, pelo shell e ambiente allowlisted já usados nos comandos do projeto; parar no primeiro erro e desfazer com segurança a worktree e o branch preparados. Se prepare estiver ausente, preservar o fallback legado bun install --frozen-lockfile para compatibilidade. Ler o manifesto da própria worktree cortada de origin/main, antes de qualquer edição do agente; manifesto inválido falha fechado. Atualizar o manifesto do Gateship para declarar explicitamente bun install --frozen-lockfile. Cobrir parser, ordem, lista vazia, fallback ausente, falha/cleanup e ausência de vazamento de ambiente. Atualizar HANDOFF.md com a evidência do Reporter: package-lock.json não é admitido pelo preparo Bun fixo. Fora do escopo: detecção de stack, instalação de runtimes, catálogo, UI, Docker customizado, alteração no Reporter, execução paralela, banco ou novos adapters.",
+    "verify": [
+      "bun test test/runtime/project-verification.test.ts test/runtime/git-workspace.test.ts test/runtime/run-ship.test.ts && bun run typecheck"
+    ],
+    "evidence": [
+      {
+        "command": "sed -n '242p' src/runtime/git-workspace.ts | tr -d '\\t'",
+        "output": "installed = this.#runInstall(workspacePath, ['install', '--frozen-lockfile']);"
+      }
+    ]
+  }
+}
