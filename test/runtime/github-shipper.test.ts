@@ -63,6 +63,8 @@ interface FakeRepo {
 	closedOnView: number;
 	/** `gh pr view` reports BEHIND while fewer than this many updates have run (GSHIP-632). */
 	behindWhileUpdatesBelow: number;
+	/** Mergeability reported for an open PR when it is not behind or updating. */
+	openMergeState: string;
 	/** Times `gh pr update-branch` has been called. */
 	branchUpdates: number;
 	/**
@@ -94,6 +96,8 @@ interface FakeRepo {
 	armUnavailableRemaining: number;
 	/** A decision failure `gh pr merge --auto` reports immediately, never retried. */
 	armDecisionFailure: string | null;
+	/** Times direct squash merge is attempted after GitHub refuses auto-merge. */
+	directMergeAttempts: number;
 	/** True while `gh pr view` keeps reporting HTTP 503 (GSHIP-625). */
 	viewUnavailableAlways: boolean;
 	/** `gh pr view` reports HTTP 503 from this poll onwards (GSHIP-632). */
@@ -125,6 +129,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		headMovedOnView: Number.MAX_SAFE_INTEGER,
 		closedOnView: Number.MAX_SAFE_INTEGER,
 		behindWhileUpdatesBelow: 0,
+		openMergeState: 'BLOCKED',
 		branchUpdates: 0,
 		branchUpdateDelayViews: 0,
 		pendingHeadSha: null,
@@ -135,6 +140,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		pushFails: false,
 		armUnavailableRemaining: 0,
 		armDecisionFailure: null,
+		directMergeAttempts: 0,
 		viewUnavailableAlways: false,
 		viewUnavailableFromView: Number.POSITIVE_INFINITY,
 		armAttempts: 0,
@@ -200,14 +206,19 @@ function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
 			? result(1, '', 'failed to disable auto-merge: not enabled')
 			: result(0);
 	}
-	repo.armAttempts += 1;
-	if (repo.armDecisionFailure !== null) {
-		return result(1, '', repo.armDecisionFailure);
+	if (args.includes('--auto')) {
+		repo.armAttempts += 1;
+		if (repo.armDecisionFailure !== null) {
+			return result(1, '', repo.armDecisionFailure);
+		}
+		if (repo.armUnavailableRemaining > 0) {
+			repo.armUnavailableRemaining -= 1;
+			return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
+		}
+		return result(0);
 	}
-	if (repo.armUnavailableRemaining > 0) {
-		repo.armUnavailableRemaining -= 1;
-		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
-	}
+	repo.directMergeAttempts += 1;
+	repo.prState = 'MERGED';
 	return result(0);
 }
 
@@ -228,6 +239,7 @@ function ghUpdateBranch(repo: FakeRepo): CommandResult {
  * does elsewhere in this double.
  */
 function resolvePullRequestState(repo: FakeRepo): { state: string; mergeStateStatus: string } {
+	if (repo.prState === 'MERGED') return { state: 'MERGED', mergeStateStatus: 'CLEAN' };
 	if (repo.views >= repo.mergedOnView) {
 		repo.prState = 'MERGED';
 		return { state: 'MERGED', mergeStateStatus: 'CLEAN' };
@@ -244,7 +256,7 @@ function resolvePullRequestState(repo: FakeRepo): { state: string; mergeStateSta
 		return { state: 'OPEN', mergeStateStatus: repo.mergeStateWhilePending };
 	}
 	const behind = repo.branchUpdates < repo.behindWhileUpdatesBelow;
-	return { state: 'OPEN', mergeStateStatus: behind ? 'BEHIND' : 'BLOCKED' };
+	return { state: 'OPEN', mergeStateStatus: behind ? 'BEHIND' : repo.openMergeState };
 }
 
 function ghView(repo: FakeRepo): CommandResult {
@@ -628,6 +640,84 @@ describe('the GitHub shipper', () => {
 		expect(repo.armAttempts).toBe(1);
 		expect(armCalls(calls)).toHaveLength(1);
 		expect(events).not.toContain('ship.github-unavailable');
+		expect(repo.directMergeAttempts).toBe(0);
+	});
+
+	test('falls back through the same monitor after GitHub explicitly disallows auto-merge, waiting for CI', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Pull request Auto merge is not allowed for this repository',
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			openMergeState: 'CLEAN',
+			statusCheckRollups: [
+				[{ name: 'verify', status: 'IN_PROGRESS', conclusion: null }],
+				[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+			],
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.armAttempts).toBe(1);
+		expect(repo.directMergeAttempts).toBe(1);
+		expect(events).toContain('ship.direct-merge-fallback');
+		const direct = findCall(calls, 'gh', 'pr', 'merge').find((call) => !call.args.includes('--auto'));
+		expect(direct?.args).toEqual(['pr', 'merge', '385', '--squash', '--match-head-commit', HEAD_SHA]);
+		expect(direct?.args).not.toContain('--admin');
+	});
+
+	test('direct fallback merges a clean PR with no reported checks and preserves branch deletion', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Pull request Auto merge is not allowed for this repository',
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			openMergeState: 'CLEAN',
+		});
+		const calls: RecordedCall[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest({
+				runId: 'intake-CAM-579',
+				evidence: { workflowRevision: 'intake', review: 'not-applicable', fullVerification: 'not-applicable' },
+				cwd, issueId: 'CAM-579', title: 'intake control', branch: 'gship/intake/cam-579',
+				headSha: HEAD_SHA, verificationCommands: ['true'], signal: new AbortController().signal,
+				emit: () => {}, initialCiStatus: 'not-reported', deleteBranch: true,
+			});
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		const direct = findCall(calls, 'gh', 'pr', 'merge').find((call) => !call.args.includes('--auto'));
+		expect(direct?.args).toContain('--delete-branch');
+	});
+
+	test('direct fallback refuses a diverged head before requesting a merge', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Pull request Auto merge is not allowed for this repository',
+			openMergeState: 'CLEAN',
+			headMovedOnView: 1,
+		});
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, [], new AbortController().signal));
+
+		expect(shipped).toMatchObject({ outcome: 'failed' });
+		expect(repo.directMergeAttempts).toBe(0);
+		expect(repo.disarms).toBe(1);
+	});
+
+	test('direct fallback never merges while a reported required check has failed', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			armDecisionFailure: 'GraphQL: Pull request Auto merge is not allowed for this repository',
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			statusCheckRollups: [[{ name: 'verify', status: 'COMPLETED', conclusion: 'FAILURE' }]],
+			requiredChecks: [{ name: 'verify', bucket: 'fail' }],
+		});
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, [], new AbortController().signal));
+
+		expect(shipped).toMatchObject({ outcome: 'ci-failed' });
+		expect(repo.directMergeAttempts).toBe(0);
 	});
 
 	test('a repeated ship reuses the commit and the pull request instead of duplicating them', async () => {

@@ -156,6 +156,8 @@ const HTTP_5XX_PATTERN = /\bHTTP\/?\s*5\d{2}\b/i;
 const TIMEOUT_PATTERN = /\b(timed?\s?-?out|timeout|deadline exceeded)\b/i;
 const NETWORK_PATTERN =
 	/\b(dial tcp|no such host|could not resolve host|connection refused|connection reset|network is unreachable|temporary failure in name resolution|TLS handshake timeout)\b/i;
+/** GitHub's explicit refusal to enable a repository's auto-merge feature. */
+const AUTO_MERGE_NOT_ALLOWED_PATTERN = /\bauto[ -]?merge\b.*\bnot allowed\b/i;
 
 /**
  * GitHub being unavailable — HTTP 5xx, a timeout, or a network or name
@@ -606,18 +608,23 @@ export class GithubShipper implements RuntimeShipper {
 		if (settled !== null) return settled;
 
 		const prNumber = pullRequest.number;
-		await this.#checked(
-			input,
-			'gh',
-			[
-				'pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', input.headSha,
-				...(input.deleteBranch === true ? ['--delete-branch'] : []),
-			],
-			{ retryIdempotent: true },
-		);
-		input.emit('ship.automerge-armed', { prNumber, headSha: input.headSha });
-
-		return await this.#awaitMerge(input, prNumber, input.branch, input.headSha);
+		try {
+			await this.#checked(
+				input,
+				'gh',
+				[
+					'pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', input.headSha,
+					...(input.deleteBranch === true ? ['--delete-branch'] : []),
+				],
+				{ retryIdempotent: true },
+			);
+			input.emit('ship.automerge-armed', { prNumber, headSha: input.headSha });
+			return await this.#awaitMerge(input, prNumber, input.branch, input.headSha, false);
+		} catch (error) {
+			if (!AUTO_MERGE_NOT_ALLOWED_PATTERN.test(errorMessage(error))) throw error;
+			input.emit('ship.direct-merge-fallback', { prNumber, headSha: input.headSha });
+			return await this.#awaitMerge(input, prNumber, input.branch, input.headSha, true);
+		}
 	}
 
 	/**
@@ -828,16 +835,18 @@ export class GithubShipper implements RuntimeShipper {
 	 * updated head, not the one originally pushed.
 	 */
 	async #awaitMerge(
-		input: RuntimeShipInput,
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
 		prNumber: number,
 		branch: string,
 		initialHeadSha: string,
+		directMergeFallback: boolean,
 	): Promise<RuntimeShipResult> {
 		const deadline = Date.now() + this.#mergeTimeoutMs;
 		let lastStatus = '';
 		let lastCiStatus = input.initialCiStatus;
 		let headSha = initialHeadSha;
 		let branchUpdates = 0;
+		let directMergeRequested = false;
 		for (;;) {
 			const step = await this.#pollOnce(
 				input,
@@ -846,11 +855,14 @@ export class GithubShipper implements RuntimeShipper {
 				headSha,
 				branchUpdates,
 				lastCiStatus,
+				directMergeFallback,
+				directMergeRequested,
 			);
 			if ('result' in step) return step.result;
 			headSha = step.headSha;
 			branchUpdates = step.branchUpdates;
 			lastCiStatus = step.ciStatus;
+			directMergeRequested = step.directMergeRequested;
 			// A poll that resolved BEHIND already reported its own event; it is
 			// not a pending status and does not spend the merge timeout.
 			if (step.pending === null) continue;
@@ -881,15 +893,23 @@ export class GithubShipper implements RuntimeShipper {
 	 * count as a pending status or spend the merge timeout.
 	 */
 	async #pollOnce(
-		input: RuntimeShipInput,
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
 		prNumber: number,
 		branch: string,
 		headSha: string,
 		branchUpdates: number,
 		lastCiStatus: CiAggregate['status'],
+		directMergeFallback: boolean,
+		directMergeRequested: boolean,
 	): Promise<
 		| { result: RuntimeShipResult }
-		| { headSha: string; branchUpdates: number; pending: string | null; ciStatus: CiAggregate['status'] }
+		| {
+			headSha: string;
+			branchUpdates: number;
+			pending: string | null;
+			ciStatus: CiAggregate['status'];
+			directMergeRequested: boolean;
+		}
 	> {
 		let view: PullRequestView;
 		try {
@@ -912,12 +932,50 @@ export class GithubShipper implements RuntimeShipper {
 			});
 		}
 		const behind = await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view);
-		if (behind !== null) return 'result' in behind ? behind : { ...behind, ciStatus: ci.status };
+		if (behind !== null) {
+			return 'result' in behind
+				? behind
+				: { ...behind, ciStatus: ci.status, directMergeRequested };
+		}
 		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
 		if (blocked !== null) return { result: blocked };
 		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 		if (verdict !== null) return { result: verdict };
-		return { headSha, branchUpdates, pending: view.mergeStateStatus, ciStatus: ci.status };
+		directMergeRequested = await this.#requestDirectMerge(
+			input,
+			prNumber,
+			headSha,
+			view,
+			ci,
+			directMergeFallback,
+			directMergeRequested,
+		);
+		return {
+			headSha,
+			branchUpdates,
+			pending: view.mergeStateStatus,
+			ciStatus: ci.status,
+			directMergeRequested,
+		};
+	}
+
+	async #requestDirectMerge(
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
+		prNumber: number,
+		headSha: string,
+		view: PullRequestView,
+		ci: CiAggregate,
+		enabled: boolean,
+		requested: boolean,
+	): Promise<boolean> {
+		const ciReady = ci.status === 'not-reported' || ci.status === 'passed';
+		if (!enabled || requested || view.mergeStateStatus !== 'CLEAN' || !ciReady) return requested;
+		await this.#checked(input, 'gh', [
+			'pr', 'merge', String(prNumber), '--squash', '--match-head-commit', headSha,
+			...(input.deleteBranch === true ? ['--delete-branch'] : []),
+		]);
+		input.emit('ship.direct-merge-requested', { prNumber, headSha });
+		return true;
 	}
 
 	/**
