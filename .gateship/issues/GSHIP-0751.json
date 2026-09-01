@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-751",
   "title": "Interromper chamadas de agente sem atividade",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T14:48:12.190Z",
-  "updatedAt": "2026-09-01T14:48:28.854Z",
+  "updatedAt": "2026-09-01T15:04:06.000Z",
   "description": "Impor no processo compartilhado de Claude e Codex um limite determinístico de 10 minutos sem qualquer linha de protocolo em stdout. Cada linha recebida reinicia o prazo; mensagens de retry apenas em stderr não contam como progresso. Ao expirar, encerrar todo o grupo de processos com a mesma graça já usada no cancelamento e converter o resultado em ProviderCallError transport-unavailable do provider correto. No ciclo, a run deve ir para waiting-provider com provider, kind, phase e mensagem duráveis, preservando worktree e sessão para retomada manual; não inventar retryAt, não alternar executor e não criar configuração ou UI. Cancelamento externo continua sendo interrupção, e conclusões normais permanecem inalteradas. Cobrir o relógio reiniciável, a terminação e a classificação em Claude e Codex com testes focados.",
   "specSource": "operator",
   "spec": {
