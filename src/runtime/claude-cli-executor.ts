@@ -173,6 +173,8 @@ export function buildWorkPrompt(
 	ciFeedback: string | undefined = undefined,
 	/** Present only on the one turn opening the alternate's new session (GSHIP-722). */
 	handoff: RuntimeExecutorHandoff | undefined = undefined,
+	/** The failed human-approved issue verification, for one mechanical correction only. */
+	verificationFeedback: string | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -183,6 +185,14 @@ export function buildWorkPrompt(
 		'',
 		'Review findings:',
 		reviewFeedback,
+	];
+	const verificationSection = verificationFeedback === undefined ? [] : [
+		'',
+		'A human-approved issue verification command failed after your change.',
+		'Apply only the mechanical correction needed for this approved command; do not widen the issue scope.',
+		'',
+		'Issue verification failure:',
+		verificationFeedback,
 	];
 	// The full-project verification's own single automatic fix round
 	// (GSHIP-649): a rejection here is the project's whole manifest, not the
@@ -264,6 +274,7 @@ export function buildWorkPrompt(
 		...decisionsSection,
 		...guidanceSection,
 		...reviewSection,
+		...verificationSection,
 		...fullVerifySection,
 		...ciSection,
 		'',
@@ -446,6 +457,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.fullVerifyFeedback,
 			input.ciFeedback,
 			input.executorHandoff,
+			input.verificationFeedback,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

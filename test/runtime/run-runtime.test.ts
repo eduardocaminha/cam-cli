@@ -96,12 +96,125 @@ describe('durable run runtime', () => {
 	});
 
 	test('allows exactly one automatic review fix round', () => {
+		expect(nextFixRounds({ state: 'verify', fixRounds: 0 }, 'working')).toBe(1);
 		expect(nextFixRounds({ state: 'review', fixRounds: 0 }, 'working')).toBe(1);
 		expect(nextFixRounds({ state: 'review', fixRounds: 1 }, 'working')).toBe(2);
 		expect(nextFixRounds({ state: 'full-verify', fixRounds: 2 }, 'working')).toBe(3);
 		expect(() => nextFixRounds({ state: 'queued', fixRounds: 0 }, 'review')).toThrow(
 			'queued -> review',
 		);
+	});
+
+	test('corrects the first issue verification failure, then verifies, reviews and runs full verification before shipping', async () => {
+		const executions: Array<{ resume: boolean; verificationFeedback?: string }> = [];
+		let verificationCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-verification-fix',
+			executor: { execute: async (input) => {
+				executions.push({ resume: input.resume, verificationFeedback: input.verificationFeedback });
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: ++verificationCalls > 1, detail: 'teste aprovado falhou' }) },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+		});
+		const run = runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executions).toEqual([
+			{ resume: false, verificationFeedback: undefined },
+			{ resume: true, verificationFeedback: 'teste aprovado falhou' },
+		]);
+		expect({ verificationCalls, reviews, fullVerifications }).toEqual({ verificationCalls: 2, reviews: 1, fullVerifications: 1 });
+		expect(runtime.getRun(run.id)?.fixRounds).toBe(1);
+		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain('run.verification-fix-requested');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('fails on a persistent issue verification failure while preserving the second detail', async () => {
+		let attempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => { attempts += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: `falha ${attempts}` }) },
+		});
+		const run = runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect(attempts).toBe(2);
+		expect(runtime.getRun(run.id)).toMatchObject({ error: 'falha 2', fixRounds: 1 });
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.verification-failed')).toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('restores unconsumed issue verification feedback after interruption', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-verification-recovery', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z' });
+		store.transition({ runId: 'run-verification-recovery', toState: 'working', kind: 'run.started', createdAt: '2026-09-01T00:00:01Z' });
+		store.transition({ runId: 'run-verification-recovery', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-01T00:00:02Z' });
+		store.transition({ runId: 'run-verification-recovery', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'falha durável' }, createdAt: '2026-09-01T00:00:03Z' });
+		let feedback: string | undefined;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => { feedback = input.verificationFeedback; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		expect(runtime.getRun('run-verification-recovery')?.state).toBe('interrupted');
+		runtime.resumeRun('run-verification-recovery');
+		await waitFor(() => runtime.getRun('run-verification-recovery')?.state === 'ready-to-ship');
+		expect(feedback).toBe('falha durável');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('keeps issue verification feedback through a provider hold during its correction', async () => {
+		const feedback: Array<string | undefined> = [];
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async (input) => {
+				executions += 1;
+				feedback.push(input.verificationFeedback);
+				if (executions === 2) throw new ProviderCallError('claude', 'usage-limit', 'limite atingido');
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: executions > 1, detail: 'falha aprovada' }) },
+		});
+		const run = runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(feedback).toEqual([undefined, 'falha aprovada', 'falha aprovada']);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('cancels an issue verification correction with the existing interruption path', async () => {
+		let correctionStarted = (): void => {};
+		const started = new Promise<void>((resolve) => { correctionStarted = resolve; });
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: (input) => {
+				executions += 1;
+				if (executions === 1) return Promise.resolve({ outcome: 'completed' });
+				correctionStarted();
+				return new Promise((_resolve, reject) => input.signal.addEventListener(
+					'abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true },
+				));
+			} },
+			verifier: { verify: async () => ({ ok: false, detail: 'falha aprovada' }) },
+		});
+		const run = runtime.startRun('GSHIP-756');
+		await started;
+		await runtime.cancelRun(run.id);
+		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain('run.verification-fix-requested');
+		await runtime.stop();
+		runtime.close();
 	});
 
 	test('moves a fake execution through work and verification', async () => {
@@ -1875,6 +1988,8 @@ describe('releasing a failed run workspace', () => {
 		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
 			'run.created',
 			'run.started',
+			'run.work-completed',
+			'run.verification-fix-requested',
 			'run.work-completed',
 			'run.verification-failed',
 			'run.chain-paused',

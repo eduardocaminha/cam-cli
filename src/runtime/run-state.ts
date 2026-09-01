@@ -30,7 +30,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	// `ready-to-ship` is reached directly, skipping `full-verify` entirely, when
 	// no full verifier is configured for this runtime (GSHIP-649) -- the same
 	// optionality `review` already has for an unconfigured reviewer.
-	verify: ['review', 'full-verify', 'ready-to-ship', 'failed', 'interrupted'],
+	verify: ['working', 'review', 'full-verify', 'ready-to-ship', 'failed', 'interrupted'],
 	review: ['working', 'full-verify', 'ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted'],
 	// A full-project verification failure sends the run back for another
 	// correction, exactly like a review finding does. The cycle resolver decides
@@ -77,7 +77,7 @@ export function nextFixRounds(
 	if (!canTransition(current.state, nextState)) {
 		throw new Error(`invalid run transition: ${current.state} -> ${nextState}`);
 	}
-	if (!['review', 'full-verify'].includes(current.state) || nextState !== 'working') {
+	if (!['verify', 'review', 'full-verify'].includes(current.state) || nextState !== 'working') {
 		return current.fixRounds;
 	}
 	return current.fixRounds + 1;

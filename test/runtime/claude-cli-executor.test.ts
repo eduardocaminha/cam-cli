@@ -918,6 +918,20 @@ describe('buildWorkPrompt CI correction guidance (GSHIP-720)', () => {
 	});
 });
 
+describe('buildWorkPrompt issue verification correction guidance (GSHIP-756)', () => {
+	test('presents the approved verification failure as a mechanical scoped correction', () => {
+		const prompt = buildWorkPrompt(
+			'GSHIP-756', '{"id":"GSHIP-756"}', true, undefined, undefined, [], undefined, undefined, undefined,
+			'bun test: expected 0 failures',
+		);
+		expect(prompt).toContain('A human-approved issue verification command failed after your change.');
+		expect(prompt).toContain('Apply only the mechanical correction needed for this approved command; do not widen the issue scope.');
+		expect(prompt).toContain('Issue verification failure:\nbun test: expected 0 failures');
+		expect(prompt).not.toContain('Review findings:');
+		expect(prompt).not.toContain('Full verification output:');
+	});
+});
+
 describe('buildWorkPrompt executor handoff (GSHIP-722)', () => {
 	const issueId = 'CAM-722';
 	const issue = '{"id":"CAM-722"}';
