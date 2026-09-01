@@ -53,6 +53,12 @@ rule for it. Project-owned runtime state now installs an idempotent nested
 catch-all immediately before the first state write; `.gateship/project.json`
 remains a separate tracked contract.
 
+The same onboarding proved that multistack verification alone was insufficient:
+Reporter owns `package-lock.json`, so the former unconditional `bun install
+--frozen-lockfile` failed before an agent could start. The versioned project
+manifest can now declare ordered preparation commands, including an explicit
+empty list, while an absent field preserves the legacy Bun preparation.
+
 ## Multiproject state and its limits
 
 A global `GATESHIP_HOME` holds a durable, automatically reconciled project

@@ -1,18 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 import {
 	GitWorkspaceManager,
 	RuntimeWorkspaceError,
-	type WorkspaceInstallRunner,
+	type WorkspacePrepareRunner,
 } from '../../src/runtime/git-workspace.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
-function recordingInstall(calls: Array<{ cwd: string; args: string[] }>): WorkspaceInstallRunner {
-	return (cwd, args) => {
-		calls.push({ cwd, args });
+function recordingPrepare(calls: Array<{ cwd: string; args: string[] }>): WorkspacePrepareRunner {
+	return (cwd, command) => {
+		calls.push({ cwd, args: [command] });
 		return { exitCode: 0, stdout: '', stderr: '' };
 	};
 }
@@ -57,7 +57,7 @@ describe('git workspace manager', () => {
 		writeFileSync(join(root, 'operator-notes.txt'), 'keep me\n');
 		const beforeStatus = git(root, ['status', '--porcelain', '--untracked-files=all']);
 		const installs: Array<{ cwd: string; args: string[] }> = [];
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall(installs));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare(installs));
 
 		const workspacePath = manager.prepare({
 			runId: 'run-12345678-aaaa',
@@ -80,7 +80,7 @@ describe('git workspace manager', () => {
 		const manager = new GitWorkspaceManager(
 			root,
 			undefined,
-			recordingInstall([]),
+			recordingPrepare([]),
 			'main',
 			stateDir,
 		);
@@ -98,8 +98,8 @@ describe('git workspace manager', () => {
 	test('installs locked dependencies in the isolated workspace before returning', () => {
 		const root = seedRepository();
 		const calls: Array<{ cwd: string; args: string[]; hostNodeModules: boolean }> = [];
-		const manager = new GitWorkspaceManager(root, undefined, (cwd, args) => {
-			calls.push({ cwd, args, hostNodeModules: existsSync(join(root, 'node_modules')) });
+		const manager = new GitWorkspaceManager(root, undefined, (cwd, command) => {
+			calls.push({ cwd, args: [command], hostNodeModules: existsSync(join(root, 'node_modules')) });
 			mkdirSync(join(cwd, 'node_modules'), { recursive: true });
 			return { exitCode: 0, stdout: '', stderr: '' };
 		});
@@ -112,7 +112,7 @@ describe('git workspace manager', () => {
 		expect(calls).toEqual([
 			{
 				cwd: workspacePath,
-				args: ['install', '--frozen-lockfile'],
+				args: ['bun install --frozen-lockfile'],
 				hostNodeModules: false,
 			},
 		]);
@@ -134,7 +134,7 @@ describe('git workspace manager', () => {
 			issueId: 'CAM-578',
 		})).toThrow(
 			new RuntimeWorkspaceError(
-				'cannot install workspace dependencies: lockfile had changes, but lockfile is frozen',
+				'cannot prepare workspace: preparation command failed: lockfile had changes, but lockfile is frozen',
 			),
 		);
 		expect(existsSync(join(root, '.gship', 'worktrees', 'run-12345678-bbbb'))).toBe(false);
@@ -152,8 +152,83 @@ describe('git workspace manager', () => {
 			runId: 'run-12345678-cccc',
 			issueId: 'CAM-578',
 		})).toThrow(
-			new RuntimeWorkspaceError('cannot start workspace install: spawn bun ENOENT'),
+			new RuntimeWorkspaceError('cannot prepare workspace: spawn bun ENOENT'),
 		);
+	});
+
+	test('runs project-owned preparation in order and honors an explicit empty list', () => {
+		const root = seedRepository();
+		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: ['npm ci', 'python3 -m venv .venv'],
+			verify: ['npm test'],
+		}));
+		git(root, ['add', '.gateship/project.json']);
+		git(root, ['commit', '-m', 'declare project preparation']);
+		const calls: Array<{ cwd: string; args: string[] }> = [];
+		new GitWorkspaceManager(root, undefined, recordingPrepare(calls)).prepare({
+			runId: 'run-project-prepare',
+			issueId: 'CAM-578',
+		});
+		expect(calls.map((call) => call.args[0])).toEqual(['npm ci', 'python3 -m venv .venv']);
+
+		const emptyRoot = seedRepository();
+		writeFileSync(join(emptyRoot, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: [],
+			verify: ['true'],
+		}));
+		git(emptyRoot, ['add', '.gateship/project.json']);
+		git(emptyRoot, ['commit', '-m', 'skip project preparation']);
+		const emptyCalls: Array<{ cwd: string; args: string[] }> = [];
+		new GitWorkspaceManager(emptyRoot, undefined, recordingPrepare(emptyCalls)).prepare({
+			runId: 'run-empty-prepare',
+			issueId: 'CAM-578',
+		});
+		expect(emptyCalls).toEqual([]);
+	});
+
+	test('fails closed and cleans up when the project manifest is invalid', () => {
+		const root = seedRepository();
+		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: [''],
+			verify: ['bun test'],
+		}));
+		git(root, ['add', '.gateship/project.json']);
+		git(root, ['commit', '-m', 'invalid project preparation']);
+
+		expect(() => new GitWorkspaceManager(root, undefined, recordingPrepare([])).prepare({
+			runId: 'run-invalid-prepare',
+			issueId: 'CAM-578',
+		})).toThrow('project verification manifest has invalid preparation commands');
+		expect(existsSync(join(root, '.gship', 'worktrees', 'run-invalid-prepare'))).toBe(false);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', 'refs/heads/gship/cam-578-run-inva']))
+			.toBe(1);
+	});
+
+	test('gives preparation commands only the project command environment', () => {
+		const root = seedRepository();
+		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: [
+				'bun -e "if (!process.env.PATH || process.env.GSHIP_WEB_DIR) process.exit(1)"',
+			],
+			verify: ['bun test'],
+		}));
+		git(root, ['add', '.gateship/project.json']);
+		git(root, ['commit', '-m', 'check preparation environment']);
+		const previous = process.env.GSHIP_WEB_DIR;
+		process.env.GSHIP_WEB_DIR = '/private/service/ui';
+		try {
+			expect(() => new GitWorkspaceManager(root).prepare({
+				runId: 'run-prepare-env',
+				issueId: 'CAM-578',
+			})).not.toThrow();
+		} finally {
+			if (previous === undefined) delete process.env.GSHIP_WEB_DIR;
+			else process.env.GSHIP_WEB_DIR = previous;
+		}
 	});
 
 	test('fails before mutation when main cannot be resolved', () => {
@@ -171,7 +246,7 @@ describe('git workspace manager', () => {
 
 	test('releases the exact clean workspace, local branch and stale tracking ref', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-dddd', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -202,7 +277,7 @@ describe('git workspace manager', () => {
 	test('pushes a delete for the published remote branch on a safe release', () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-3333', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -217,7 +292,7 @@ describe('git workspace manager', () => {
 	test('leaves the published remote branch alone when the release is preserved', () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-4444', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -242,7 +317,7 @@ describe('git workspace manager', () => {
 			}
 			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
-		}, recordingInstall([]));
+		}, recordingPrepare([]));
 		const input = { runId: 'run-12345678-5555', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -265,7 +340,7 @@ describe('git workspace manager', () => {
 	test('preserves both the local and the remote branch when it carries a commit missing from the base ref', () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-8888', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -288,7 +363,7 @@ describe('git workspace manager', () => {
 	test('releases both the local and the remote branch when it has no commit missing from the base ref', () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-9999', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -315,7 +390,7 @@ describe('git workspace manager', () => {
 	test('releases and deletes the remote branch on a merge, even though it carries a commit missing from the base ref', () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-ccdd', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -336,7 +411,7 @@ describe('git workspace manager', () => {
 	// `retryRemoteDelete` is the caller's durable record that a retry is owed.
 	test('retries the remote branch delete when asked, even though nothing is left to release locally', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-aaab', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -366,7 +441,7 @@ describe('git workspace manager', () => {
 			if (args[0] === 'push' || args[0] === 'ls-remote') networkCalls.push(args);
 			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
-		}, recordingInstall([]));
+		}, recordingPrepare([]));
 		const input = { runId: 'run-12345678-bbbc', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -388,7 +463,7 @@ describe('git workspace manager', () => {
 	// ref, so a commit made just before the failure is not thrown away with it.
 	test('releases a failed run workspace whose branch has no commit missing from the base ref', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-ffff', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -403,7 +478,7 @@ describe('git workspace manager', () => {
 
 	test('preserves a failed run workspace whose branch has a commit missing from the base ref', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-1111', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
@@ -429,7 +504,7 @@ describe('git workspace manager', () => {
 
 	test('preserves a dirty failed run workspace instead of releasing it', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-2222', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
@@ -444,7 +519,7 @@ describe('git workspace manager', () => {
 
 	test('preserves a dirty workspace and reports it for operator inspection', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-87654321-aaaa', issueId: 'CAM-578' };
 		const workspacePath = manager.prepare(input);
 		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
@@ -466,7 +541,7 @@ describe('git workspace manager', () => {
 
 	test('never releases a path that does not match the run-owned location', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 
 		expect(manager.release({
 			runId: 'run-12345678-eeee',
@@ -482,7 +557,7 @@ describe('git workspace manager', () => {
 
 	test('surfaces an unowned managed worktree without deleting it', () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const workspacePath = manager.prepare({
 			runId: 'run-orphan00-aaaa',
 			issueId: 'CAM-578',
