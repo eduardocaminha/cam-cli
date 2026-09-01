@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-754",
+  "title": "Reconhecer proteção local de main no intake",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T17:52:44.603Z",
+  "updatedAt": "2026-09-01T17:52:44.603Z",
+  "description": "Ampliar o fallback de intake protegido para reconhecer a recusa determinística de um pre-push hook que proíbe push direto à main.\n\nContrato:\n- Tratar como política de main protegida apenas mensagens explícitas equivalentes a \"BLOCKED: direct push to refs/heads/main is not allowed\" ou master.\n- Nesse caso, usar o mesmo lifecycle de PR pinada já implementado para rejeições remotas.\n- Não usar correspondências genéricas por \"blocked\", \"not allowed\" ou qualquer falha de hook.\n- Falhas de autenticação, rede, hooks arbitrários e push de outras refs continuam fail closed.\n- Cobrir create, specify, approve e abandon pelo helper compartilhado sem duplicar o fluxo.\n- Adicionar teste positivo com a mensagem real do Reporter e testes negativos para bloqueio genérico, outra ref e falha arbitrária.\n- A comunicação da run com o operador deve ser em português.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Ampliar o fallback de intake protegido para reconhecer a recusa determinística de um pre-push hook que proíbe push direto à main.\n\nContrato:\n- Tratar como política de main protegida apenas mensagens explícitas equivalentes a \"BLOCKED: direct push to refs/heads/main is not allowed\" ou master.\n- Nesse caso, usar o mesmo lifecycle de PR pinada já implementado para rejeições remotas.\n- Não usar correspondências genéricas por \"blocked\", \"not allowed\" ou qualquer falha de hook.\n- Falhas de autenticação, rede, hooks arbitrários e push de outras refs continuam fail closed.\n- Cobrir create, specify, approve e abandon pelo helper compartilhado sem duplicar o fluxo.\n- Adicionar teste positivo com a mensagem real do Reporter e testes negativos para bloqueio genérico, outra ref e falha arbitrária.\n- A comunicação da run com o operador deve ser em português.",
+    "verify": [
+      "bun test test/runtime/issue-intake.test.ts"
+    ]
+  }
+}
