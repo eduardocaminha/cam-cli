@@ -1555,11 +1555,23 @@ export class RunStore {
 		return row?.value === 'codex' ? 'codex' : 'claude';
 	}
 
+	/** The project-local row, distinguished from the legacy Claude fallback. */
+	getSelectedProviderOverride(): AgentProviderId | null {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = 'provider'
+		`).get() as { value: string } | null;
+		return row?.value === 'claude' || row?.value === 'codex' ? row.value : null;
+	}
+
 	setSelectedProvider(providerId: AgentProviderId): void {
 		this.#db.query(`
 			INSERT INTO runtime_settings (key, value) VALUES ('provider', $providerId)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value
 		`).run({ providerId });
+	}
+
+	clearSelectedProviderOverride(): void {
+		this.#db.query("DELETE FROM runtime_settings WHERE key = 'provider'").run();
 	}
 
 	/** Opaque storage for a bounded runtime that owns its own JSON schema. */
@@ -1632,6 +1644,19 @@ export class RunStore {
 		}
 	}
 
+	/** `null` means inherit; an explicit empty record means use CLI defaults locally. */
+	getModelSettingsOverride(): ModelSettings | null {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: MODEL_SETTINGS_KEY }) as { value: string } | null;
+		if (row === null) return null;
+		try {
+			return normalizeModelSettings(JSON.parse(row.value) as unknown);
+		} catch {
+			return emptyModelSettings();
+		}
+	}
+
 	setModelSettings(settings: ModelSettings): void {
 		this.#db.query(`
 			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
@@ -1640,6 +1665,10 @@ export class RunStore {
 			key: MODEL_SETTINGS_KEY,
 			value: JSON.stringify(normalizeModelSettings(settings)),
 		});
+	}
+
+	clearModelSettingsOverride(): void {
+		this.#db.query('DELETE FROM runtime_settings WHERE key = $key').run({ key: MODEL_SETTINGS_KEY });
 	}
 
 	/** One optional human profile beside the other process-wide runtime settings. */

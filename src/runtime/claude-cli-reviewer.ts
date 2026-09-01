@@ -316,7 +316,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			jsonSchema: REVIEW_RESULT_SCHEMA,
 			...slot,
 		});
-		emitModelSelection(input.emit, 'review', slot);
+		emitModelSelection(input.emit, 'review', slot, 'claude');
 		const result = await runClaudeCli({
 			argv,
 			cwd: input.cwd,

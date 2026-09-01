@@ -8,6 +8,7 @@ import {
 	resolveGateshipHome,
 } from '../../src/runtime/project-registry.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
+import { emptyModelSettings } from '../../src/runtime/model-settings.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 /** A scratch directory whose own path carries no symlink of its own. */
@@ -44,6 +45,31 @@ describe('global project registry', () => {
 		expect(registry.getOperatorProfile()).toEqual({ name: 'Global', timezone: 'UTC' });
 		registry.close();
 		runtime.close();
+	});
+
+	test('imports explicit boot agent overrides once and keeps global defaults separate', () => {
+		const registry = openProjectRegistry(createTestTmpdir('gship-project-registry-agent-defaults-'));
+		const settings = emptyModelSettings();
+		settings.codex.executor = { model: 'gpt-5-codex', effort: 'high' };
+		registry.initializeAgentDefaults({ provider: 'codex', modelSettings: settings });
+		expect(registry.getAgentDefaults()).toEqual({ provider: 'codex', modelSettings: settings });
+
+		registry.initializeAgentDefaults({ provider: 'claude' });
+		expect(registry.getAgentDefaults().provider).toBe('codex');
+		registry.close();
+	});
+
+	test('marks an empty first agent import complete across a registry restart', () => {
+		const home = createTestTmpdir('gship-project-registry-empty-agent-defaults-');
+		const first = openProjectRegistry(home);
+		first.initializeAgentDefaults({});
+		expect(first.getAgentDefaults()).toEqual({});
+		first.close();
+
+		const restarted = openProjectRegistry(home);
+		restarted.initializeAgentDefaults({ provider: 'codex', modelSettings: emptyModelSettings() });
+		expect(restarted.getAgentDefaults()).toEqual({});
+		restarted.close();
 	});
 	test('requires an explicit GATESHIP_HOME to be absolute and defaults native mode to ~/.gateship', () => {
 		expect(() => resolveGateshipHome({ env: { GATESHIP_HOME: 'relative/home' } }))

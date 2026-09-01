@@ -5,6 +5,11 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import type { ProjectStatus } from './project-readiness.ts';
+import type { AgentProviderId } from './agent-session.ts';
+import {
+	normalizeModelSettings,
+	type AgentDefaults,
+} from './model-settings.ts';
 import {
 	emptyOperatorProfile,
 	normalizeOperatorProfile,
@@ -14,6 +19,7 @@ import {
 
 export const GATESHIP_HOME_ENV_VAR = 'GATESHIP_HOME';
 export const PROJECT_REGISTRY_DATABASE = 'projects.sqlite';
+export const AGENT_DEFAULTS_KEY = 'agent-defaults';
 
 export interface GateshipHomeOptions {
 	env?: Record<string, string | undefined>;
@@ -129,6 +135,46 @@ export class ProjectRegistry {
 		const profile = normalizeOperatorProfile(legacyProfile);
 		if (profile.name === '' && profile.timezone === '') return;
 		this.setOperatorProfile(profile);
+	}
+
+	/** The product-wide agent defaults. A missing record deliberately means CLI defaults. */
+	getAgentDefaults(): AgentDefaults {
+		const row = this.#db.query('SELECT value FROM settings WHERE key = $key')
+			.get({ key: AGENT_DEFAULTS_KEY }) as { value: string } | null;
+		if (row === null) return {};
+		try {
+			const value = JSON.parse(row.value) as Record<string, unknown>;
+			if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+			return {
+				...(value.provider === 'claude' || value.provider === 'codex'
+					? { provider: value.provider as AgentProviderId } : {}),
+				...(Object.hasOwn(value, 'modelSettings')
+					? { modelSettings: normalizeModelSettings(value.modelSettings) } : {}),
+			};
+		} catch {
+			return {};
+		}
+	}
+
+	setAgentDefaults(defaults: AgentDefaults): void {
+		const value = {
+			...(defaults.provider === undefined ? {} : { provider: defaults.provider }),
+			...(defaults.modelSettings === undefined
+				? {}
+				: { modelSettings: normalizeModelSettings(defaults.modelSettings) }),
+		};
+		this.#db.query(`
+			INSERT INTO settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({ key: AGENT_DEFAULTS_KEY, value: JSON.stringify(value) });
+	}
+
+	/** Imports boot-project legacy rows once; an empty record durably marks that import complete. */
+	initializeAgentDefaults(legacy: AgentDefaults): void {
+		const row = this.#db.query('SELECT 1 FROM settings WHERE key = $key')
+			.get({ key: AGENT_DEFAULTS_KEY });
+		if (row !== null) return;
+		this.setAgentDefaults(legacy);
 	}
 
 	reconcile(input: ProjectRegistration): RegisteredProject {

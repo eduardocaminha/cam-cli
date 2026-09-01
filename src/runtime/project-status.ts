@@ -97,7 +97,11 @@ function modelProviderMap(item: PersistedRunHistory): Map<number, string> {
 	const modelProviders = new Map<number, string>();
 	for (const event of item.events) {
 		if (event.kind === 'provider.model' || event.kind === 'review.model') {
-			modelProviders.set(event.seq, item.run.providerId);
+			modelProviders.set(
+				event.seq,
+				event.payload['provider'] === 'claude' || event.payload['provider'] === 'codex'
+					? event.payload['provider'] : item.run.providerId,
+			);
 		}
 	}
 	return modelProviders;

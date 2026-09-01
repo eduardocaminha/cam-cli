@@ -669,6 +669,21 @@ describe('per-role model settings', () => {
 		rows.close();
 	});
 
+	test('distinguishes absent agent overrides from explicit project choices', () => {
+		const store = new RunStore(':memory:');
+		expect(store.getSelectedProviderOverride()).toBeNull();
+		expect(store.getModelSettingsOverride()).toBeNull();
+		store.setSelectedProvider('codex');
+		store.setModelSettings(EMPTY_MODEL_SETTINGS);
+		expect(store.getSelectedProviderOverride()).toBe('codex');
+		expect(store.getModelSettingsOverride()).toEqual(EMPTY_MODEL_SETTINGS);
+		store.clearSelectedProviderOverride();
+		store.clearModelSettingsOverride();
+		expect(store.getSelectedProviderOverride()).toBeNull();
+		expect(store.getModelSettingsOverride()).toBeNull();
+		store.close();
+	});
+
 	test('a corrupt or wrongly shaped row reads as no choice at all', () => {
 		const dbPath = join(createTestTmpdir('gship-run-store-models-corrupt-'), 'runtime.sqlite');
 		const store = new RunStore(dbPath);

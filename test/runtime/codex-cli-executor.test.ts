@@ -127,7 +127,7 @@ describe('Codex CLI runtime executor', () => {
 		expect(first.summary).toContain('model_reasoning_effort=\\"high\\"');
 		expect(events).toContainEqual({
 			kind: 'provider.model',
-			payload: { model: 'gpt-5-codex', effort: 'high' },
+			payload: { model: 'gpt-5-codex', effort: 'high', provider: 'codex' },
 		});
 
 		// An unconfigured slot spawns and reads exactly as it did before.
@@ -135,7 +135,10 @@ describe('Codex CLI runtime executor', () => {
 		const second = await execute();
 		expect(second.summary).not.toContain('"-m"');
 		expect(second.summary).not.toContain('model_reasoning_effort');
-		expect(events.filter((event) => event.kind === 'provider.model')).toHaveLength(1);
+		expect(events).toContainEqual({
+			kind: 'provider.model',
+			payload: { model: 'provider-default', effort: 'provider-default', provider: 'codex' },
+		});
 	});
 
 	test('allows only runtime paths and the operator Codex home', () => {

@@ -54,6 +54,7 @@ describe('provider auth web API', () => {
 						: provider
 				)),
 				selected: 'claude',
+				source: 'provider-default',
 			});
 
 			const login = await fetch(`${origin}/api/providers/codex/login`, {

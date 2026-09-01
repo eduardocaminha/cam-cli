@@ -250,7 +250,7 @@ async function runCodexTurn(
 		structuredOutput: undefined,
 	};
 	const slot = resolveModelSlot(options);
-	emitModelSelection(input.emit, input.eventPrefix, slot);
+	emitModelSelection(input.emit, input.eventPrefix, slot, 'codex');
 	let result: AgentProcessResult;
 	try {
 		result = await runAgentProcess({

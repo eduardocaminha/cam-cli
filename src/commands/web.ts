@@ -79,6 +79,7 @@ import {
 	isModelProvider,
 	isModelRole,
 	type ModelProbeResult,
+	type AgentDefaults,
 	type ModelRole,
 	type ModelSettings,
 	type ModelSlot,
@@ -538,7 +539,12 @@ async function writeModelSettings(
 		const previous = runtime.getModelSettings();
 		const { settings, probes } = await resolveModelSettingsWrite(previous, next, prober, cwd);
 		runtime.setModelSettings(settings);
-		return Response.json({ ok: true, settings: runtime.getModelSettings(), probes });
+		return Response.json({
+			ok: true,
+			settings: runtime.getModelSettings(),
+			source: runtime.getModelSettingsSource(),
+			probes,
+		});
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -546,6 +552,16 @@ async function writeModelSettings(
 			{ status: error.status },
 		);
 	}
+}
+
+function clearModelSettings(request: Request, runtime: RunRuntime): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	runtime.clearModelSettingsOverride();
+	return Response.json({
+		ok: true,
+		settings: runtime.getModelSettings(),
+		source: runtime.getModelSettingsSource(),
+	});
 }
 
 /** The switch plus, when the queue is stopped, why (GSHIP-638). */
@@ -1075,6 +1091,7 @@ async function listProviders(
 		return Response.json({
 			providers,
 			selected: runtime.getSelectedProvider(),
+			source: runtime.getSelectedProviderSource(),
 		});
 	} catch (error) {
 		return Response.json(
@@ -1113,7 +1130,17 @@ async function selectProvider(
 		);
 	}
 	runtime.selectProvider(providerId);
-	return Response.json({ ok: true, selected: providerId });
+	return Response.json({ ok: true, selected: providerId, source: runtime.getSelectedProviderSource() });
+}
+
+function clearSelectedProvider(request: Request, runtime: RunRuntime): Response {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	runtime.clearSelectedProviderOverride();
+	return Response.json({
+		ok: true,
+		selected: runtime.getSelectedProvider(),
+		source: runtime.getSelectedProviderSource(),
+	});
 }
 
 async function startCodexLogin(request: Request, providerAuth: ProviderAuth): Promise<Response> {
@@ -2304,10 +2331,15 @@ export function createDefaultRunRuntimeOptions(
 	 * this issue.
 	 */
 	resolveClaudeCredential: () => string | undefined = () => undefined,
+	agentDefaults: () => AgentDefaults = () => ({}),
 ): RunRuntimeOptions {
 	const store = new RunStore(join(stateDir, 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
-		modelResolver(() => store.getModelSettings(), providerId, role);
+		modelResolver(
+			() => store.getModelSettingsOverride() ?? agentDefaults().modelSettings ?? emptyModelSettings(),
+			providerId,
+			role,
+		);
 	return {
 		cwd,
 		store,
@@ -2329,6 +2361,7 @@ export function createDefaultRunRuntimeOptions(
 			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator'), resolveClaudeCredential }),
 			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),
+		agentDefaults,
 		shipper: new GithubShipper({ ensureIdentity }),
 		hasWorkspaceChanges: (workspace) => {
 			const status = defaultRunGit(workspace, ['status', '--porcelain']);
@@ -2667,6 +2700,19 @@ function composeProjectRegistry(
 	return { registry, close: () => registry.close() };
 }
 
+/** Imports the boot runtime's explicit legacy overrides once, including an empty completion marker. */
+function initializeAgentDefaultsFromBootRuntime(
+	projectRegistry: ProjectRegistry,
+	runtime: Pick<RunRuntime, 'getSelectedProviderOverride' | 'getModelSettingsOverride'>,
+): void {
+	const provider = runtime.getSelectedProviderOverride();
+	const modelSettings = runtime.getModelSettingsOverride();
+	projectRegistry.initializeAgentDefaults({
+		...(provider === null ? {} : { provider }),
+		...(modelSettings === null ? {} : { modelSettings }),
+	});
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const stateDir = resolveProjectStateDir(options);
@@ -2737,10 +2783,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			workflowRevision,
 			stateDir,
 			resolveClaudeCredentialForSpawn,
+			() => projectRegistry.getAgentDefaults(),
 		));
+	runRuntime.setAgentDefaultsResolver(() => projectRegistry.getAgentDefaults());
 	// The registry is authoritative after this one-time import of the legacy
 	// boot runtime value. An existing empty global row is intentionally kept.
 	projectRegistry.initializeOperatorProfile(runRuntime.getOperatorProfile());
+	initializeAgentDefaultsFromBootRuntime(projectRegistry, runRuntime);
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
@@ -2831,6 +2880,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			workflowRevision,
 			project.stateDir,
 			resolveClaudeCredentialForSpawn,
+			() => projectRegistry.getAgentDefaults(),
 		));
 		const diagnostics = new DiagnosticsRuntime({
 			store: new RunStore(join(project.stateDir, 'runtime.sqlite')),
@@ -3039,15 +3089,26 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						context.runtime,
 					),
 				),
+				DELETE: (request) => projectOperation(
+					request.params.projectId,
+					(context) => clearSelectedProvider(request, context.runtime),
+				),
 			},
 			'/api/projects/:projectId/model-settings': {
 				GET: (request) => projectOperation(
 					request.params.projectId,
-					(context) => Response.json({ settings: context.runtime.getModelSettings() }),
+					(context) => Response.json({
+						settings: context.runtime.getModelSettings(),
+						source: context.runtime.getModelSettingsSource(),
+					}),
 				),
 				PUT: (request) => projectOperation(
 					request.params.projectId,
 					(context) => writeModelSettings(request, context.runtime, modelProber, context.root),
+				),
+				DELETE: (request) => projectOperation(
+					request.params.projectId,
+					(context) => clearModelSettings(request, context.runtime),
 				),
 			},
 			'/api/projects/:projectId/chain-runs': {
@@ -3365,8 +3426,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// other GET; the write is same-origin, and an empty slot means the CLI
 			// default keeps deciding.
 			'/api/model-settings': {
-				GET: () => Response.json({ settings: runRuntime.getModelSettings() }),
+				GET: () => Response.json({
+					settings: runRuntime.getModelSettings(), source: runRuntime.getModelSettingsSource(),
+				}),
 				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, options.cwd),
+				DELETE: (request) => clearModelSettings(request, runRuntime),
 			},
 			// The chain switch (GSHIP-638), stored beside the provider and the model
 			// slots. The read is unguarded like every other GET; the write is
@@ -3418,6 +3482,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					providerAuth,
 					runRuntime,
 				),
+				DELETE: (request) => clearSelectedProvider(request, runRuntime),
 			},
 			'/api/providers/codex/login': {
 				POST: (request) => startCodexLogin(request, providerAuth),
