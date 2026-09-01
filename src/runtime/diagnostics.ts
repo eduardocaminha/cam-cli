@@ -1,16 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 
 import { buildAllowlistedEnv } from './child-env.ts';
-import type { DiagnosticDraft, DiagnosticFinding, DiagnosticScan } from './diagnostic-finding.ts';
+import {
+	type DiagnosticDraft,
+	type DiagnosticFinding,
+	type DiagnosticScan,
+	normalizeDiagnosticDrafts,
+} from './diagnostic-finding.ts';
 import {
 	type DiagnosticCadence,
 	type DiagnosticScheduleStatus,
 	diagnosticScheduleStatus,
 } from './diagnostic-schedule.ts';
-import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
+import {
+	type CommandResult,
+	runOwnedCommand,
+	runVerificationCommand,
+	type VerificationCommandRunner,
+} from './git-runtime.ts';
+import { readProjectVerificationManifest } from './project-verification.ts';
 import type { DiagnosticFindingStats, RunStore } from './run-store.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
@@ -20,6 +31,8 @@ const REACT_DOCTOR_MAX_SECONDS = 60;
 const DEFAULT_SCAN_TIMEOUT_MS = 75_000;
 const MAX_REPORT_BYTES = 20 * 1024 * 1024;
 const CLEANUP_TIMEOUT_MS = 10_000;
+const PROJECT_DIAGNOSTIC_SCHEMA_VERSION = 1;
+const PROJECT_DIAGNOSTIC_MANIFEST_PATH = '.gateship/project.json';
 
 export interface DiagnosticAdapterResult {
 	version: string;
@@ -246,6 +259,52 @@ function parseJsonObject(json: string): Record<string, unknown> {
 	throw new Error('React diagnostic report is not valid JSON.');
 }
 
+function parseProjectDiagnosticJson(json: string): Record<string, unknown> {
+	if (Buffer.byteLength(json) > MAX_REPORT_BYTES) throw new Error('Project diagnostic report is too large.');
+	try {
+		const parsed = object(JSON.parse(json));
+		if (parsed !== null) return parsed;
+	} catch {
+		// The single error below is the stable adapter failure.
+	}
+	throw new Error('Project diagnostic report is not valid JSON.');
+}
+
+function safeCheckoutPath(checkout: string, file: string): string | null {
+	if (!isAbsolute(checkout) || file.length === 0 || isAbsolute(file)) return null;
+	const normalized = file.replaceAll('\\', '/');
+	if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return null;
+	const path = resolve(checkout, normalized);
+	const relativePath = relative(checkout, path);
+	return relativePath === '' || relativePath === '..' || relativePath.startsWith(`..${sep}`)
+		? null
+		: relativePath.replaceAll('\\', '/');
+}
+
+/** Parse the repository-defined schema without accepting paths beyond the isolated checkout. */
+export function parseProjectDiagnosticReport(
+	json: string,
+	checkout: string,
+): DiagnosticAdapterResult {
+	const report = parseProjectDiagnosticJson(json);
+	if (report.schemaVersion !== PROJECT_DIAGNOSTIC_SCHEMA_VERSION) {
+		throw new Error('Unsupported project diagnostic report schema.');
+	}
+	const version = typeof report.version === 'string' ? report.version.trim() : '';
+	if (version.length === 0) throw new Error('Project diagnostic report omitted its version.');
+	if (typeof report.coverageComplete !== 'boolean') {
+		throw new Error('Project diagnostic report omitted coverage completeness.');
+	}
+	if (!Array.isArray(report.findings)) throw new Error('Project diagnostic report has invalid findings.');
+	const findings = normalizeDiagnosticDrafts(report.findings)
+		.map((finding) => {
+			const file = safeCheckoutPath(checkout, finding.file);
+			return file === null ? null : { ...finding, file };
+		})
+		.filter((finding): finding is DiagnosticDraft => finding !== null);
+	return { version, coverageComplete: report.coverageComplete, findings };
+}
+
 function diagnosticEvidence(diagnostic: Record<string, unknown>): string {
 	return [
 		string(diagnostic['title']),
@@ -369,6 +428,41 @@ export class ReactDoctorAdapter implements DiagnosticAdapter {
 			throw new Error(`React diagnostics exited ${result.exitCode}: ${commandDetail(result)}`);
 		}
 		return parseReactDoctorReport(result.stdout);
+	}
+}
+
+/** Optional project-defined diagnostics, run only from the immutable isolated checkout. */
+export class ProjectDiagnosticAdapter implements DiagnosticAdapter {
+	readonly id = 'project';
+	readonly label = 'Project';
+	readonly version = String(PROJECT_DIAGNOSTIC_SCHEMA_VERSION);
+	readonly description = 'Repository-defined diagnostics.';
+	readonly #run: VerificationCommandRunner;
+
+	constructor(run: VerificationCommandRunner = runVerificationCommand) {
+		this.#run = run;
+	}
+
+	async scan(input: { cwd: string; signal: AbortSignal }): Promise<DiagnosticAdapterResult> {
+		let content: string;
+		try {
+			content = readFileSync(resolve(input.cwd, PROJECT_DIAGNOSTIC_MANIFEST_PATH), 'utf8');
+		} catch {
+			throw new Error('Project diagnostic manifest is unavailable.');
+		}
+		const manifest = readProjectVerificationManifest(content);
+		if (manifest.diagnostic === undefined) {
+			throw new Error('Project diagnostic is not configured.');
+		}
+		const result = await this.#run({
+			cwd: input.cwd,
+			command: manifest.diagnostic.command,
+			signal: input.signal,
+		});
+		if (result.exitCode !== 0) {
+			throw new Error(`Project diagnostic exited ${result.exitCode}: ${commandDetail(result)}`);
+		}
+		return parseProjectDiagnosticReport(result.stdout, input.cwd);
 	}
 }
 

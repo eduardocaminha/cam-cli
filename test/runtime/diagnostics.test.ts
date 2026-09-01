@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DiagnosticDraft } from '../../src/runtime/diagnostic-finding.ts';
@@ -10,7 +10,9 @@ import {
 	DiagnosticsRuntime,
 	type DiagnosticWorkspace,
 	GitDiagnosticWorkspace,
+	parseProjectDiagnosticReport,
 	parseReactDoctorReport,
+	ProjectDiagnosticAdapter,
 	ReactDoctorAdapter,
 } from '../../src/runtime/diagnostics.ts';
 import type { CommandResult } from '../../src/runtime/git-runtime.ts';
@@ -171,6 +173,104 @@ describe('React diagnostic adapter boundary', () => {
 
 		expect(existsSync(join(stateDir, 'diagnostics', 'cache'))).toBe(true);
 		expect(existsSync(join(projectRoot, '.gship'))).toBe(false);
+	});
+});
+
+describe('project diagnostic adapter boundary', () => {
+	test('normalizes its strict report schema and drops paths outside the checkout', () => {
+		const checkout = '/tmp/project-diagnostic-checkout';
+		expect(parseProjectDiagnosticReport(JSON.stringify({
+			schemaVersion: 1,
+			version: '1.2.3',
+			coverageComplete: true,
+			findings: [
+				{ ...FINDING, file: 'src/../src/diagnostic.ts' },
+				{ ...FINDING, rule: 'outside', file: '../secret' },
+				{ ...FINDING, rule: 'absolute', file: '/secret' },
+			],
+		}), checkout)).toEqual({
+			version: '1.2.3',
+			coverageComplete: true,
+			findings: [{ ...FINDING, file: 'src/diagnostic.ts' }],
+		});
+		for (const reportValue of [
+			{ schemaVersion: 2, version: '1', coverageComplete: true, findings: [] },
+			{ schemaVersion: 1, version: '', coverageComplete: true, findings: [] },
+			{ schemaVersion: 1, version: '1', coverageComplete: 'yes', findings: [] },
+			{ schemaVersion: 1, version: '1', coverageComplete: true },
+		]) {
+			expect(() => parseProjectDiagnosticReport(JSON.stringify(reportValue), checkout)).toThrow();
+		}
+	});
+
+	test('rereads the checkout manifest and runs exactly its command through the cancellable runner', async () => {
+		const checkout = createTestTmpdir('gship-project-diagnostic-');
+		mkdirSync(join(checkout, '.gateship'));
+		writeFileSync(join(checkout, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			verify: ['bun test'],
+			diagnostic: { command: 'bun run diagnostic' },
+		}));
+		let invocation: { command: string; cwd: string; signal: AbortSignal } | undefined;
+		const adapter = new ProjectDiagnosticAdapter(async (input) => {
+			invocation = input;
+			return {
+				exitCode: 0,
+				stdout: JSON.stringify({ schemaVersion: 1, version: 'tool-1', coverageComplete: true, findings: [FINDING] }),
+				stderr: '',
+			};
+		});
+		await expect(adapter.scan({ cwd: checkout, signal: new AbortController().signal })).resolves.toEqual({
+			version: 'tool-1', coverageComplete: true, findings: [FINDING],
+		});
+		expect(invocation).toMatchObject({ command: 'bun run diagnostic', cwd: checkout });
+
+		writeFileSync(join(checkout, '.gateship', 'project.json'), JSON.stringify({ version: 1, verify: ['bun test'] }));
+		await expect(adapter.scan({ cwd: checkout, signal: new AbortController().signal }))
+			.rejects.toThrow('Project diagnostic is not configured');
+	});
+
+	test('surfaces a bounded command failure without affecting other adapters', async () => {
+		const checkout = createTestTmpdir('gship-project-diagnostic-failure-');
+		mkdirSync(join(checkout, '.gateship'));
+		writeFileSync(join(checkout, '.gateship', 'project.json'), JSON.stringify({
+			version: 1, verify: ['bun test'], diagnostic: { command: 'false' },
+		}));
+		const adapter = new ProjectDiagnosticAdapter(async () => ({
+			exitCode: 1, stdout: '', stderr: 'x'.repeat(2_500),
+		}));
+		await expect(adapter.scan({ cwd: checkout, signal: new AbortController().signal }))
+			.rejects.toThrow(new RegExp(`x{2000}$`));
+	});
+
+	test('forwards runtime cancellation to the project command runner', async () => {
+		const checkout = createTestTmpdir('gship-project-diagnostic-cancel-');
+		mkdirSync(join(checkout, '.gateship'));
+		writeFileSync(join(checkout, '.gateship', 'project.json'), JSON.stringify({
+			version: 1, verify: ['bun test'], diagnostic: { command: 'long-running-tool' },
+		}));
+		let aborted = false;
+		const adapter = new ProjectDiagnosticAdapter(async ({ signal }) => await new Promise((_, reject) => {
+			signal.addEventListener('abort', () => {
+				aborted = true;
+				reject(new DOMException('cancelled', 'AbortError'));
+			}, { once: true });
+		}));
+		const runtime = new DiagnosticsRuntime({
+			store: new RunStore(':memory:'),
+			workspace: {
+				prepare: async () => ({ path: checkout, sourceSha: SOURCE_SHA }),
+				release: async () => ({ outcome: 'released' as const }),
+				listNotices: () => [],
+			},
+			adapters: [adapter],
+			isProjectIdle: () => true, newId: () => 'project-cancelled',
+		});
+		const scan = runtime.start('project');
+		await Bun.sleep(5);
+		expect((await runtime.cancel(scan.id)).state).toBe('cancelled');
+		expect(aborted).toBe(true);
+		runtime.close();
 	});
 });
 

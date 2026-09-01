@@ -48,6 +48,7 @@ import {
 	DiagnosticRuntimeError,
 	DiagnosticsRuntime,
 	GitDiagnosticWorkspace,
+	ProjectDiagnosticAdapter,
 	ReactDoctorAdapter,
 } from '../runtime/diagnostics.ts';
 import { checkGitIdentity, ensureGitIdentity, type GitIdentityResult } from '../runtime/git-identity.ts';
@@ -2877,7 +2878,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
 		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
-		adapters: [new ReactDoctorAdapter(options.cwd, undefined, stateDir)],
+		adapters: [
+			new ReactDoctorAdapter(options.cwd, undefined, stateDir),
+			new ProjectDiagnosticAdapter(),
+		],
 		isProjectIdle: () => runRuntime.listRuns().every((run) => isTerminalRunState(run.state)),
 	});
 	let selfUpdate = options.selfUpdate;
@@ -2969,7 +2973,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		const diagnostics = new DiagnosticsRuntime({
 			store: new RunStore(join(project.stateDir, 'runtime.sqlite')),
 			workspace: new GitDiagnosticWorkspace(project.root, undefined, project.stateDir),
-			adapters: [new ReactDoctorAdapter(project.root, undefined, project.stateDir)],
+			adapters: [
+				new ReactDoctorAdapter(project.root, undefined, project.stateDir),
+				new ProjectDiagnosticAdapter(),
+			],
 			isProjectIdle: () => runtime.listRuns().every((run) => isTerminalRunState(run.state)),
 		});
 		const writers = defaultIssueWriters(project.root, ensureIdentity);
