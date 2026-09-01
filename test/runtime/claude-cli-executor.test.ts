@@ -716,7 +716,7 @@ describe('Claude CLI runtime executor', () => {
 			executor,
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-21');
+		const run = await runtime.startRun('CAM-21');
 		await waitFor(() => childPid > 0 && isProcessAlive(childPid));
 
 		const cancelled = await runtime.cancelRun(run.id);

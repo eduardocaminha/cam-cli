@@ -295,7 +295,7 @@ async function approveIssueAndWake(
 ): Promise<CreatedOperatorIssue> {
 	const issue = await issueApprover(id);
 	try {
-		runtime.startNextAdmissibleIssue(admit);
+		await runtime.startNextAdmissibleIssue(admit);
 	} catch {
 		// Approval is already durable. A temporary admission or start failure must
 		// not turn the successful approval into a failed transport response.
@@ -1826,7 +1826,7 @@ async function startDurableRun(
 	if (issueId instanceof Response) return issueId;
 	try {
 		admit?.();
-		return Response.json({ ok: true, run: runtime.startRun(issueId, commandSource(request)) }, { status: 202 });
+		return Response.json({ ok: true, run: await runtime.startRun(issueId, commandSource(request)) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
 		const rejected = error instanceof RuntimePreflightError
@@ -2368,7 +2368,7 @@ async function executeOrchestratorCommand(
 			// created id instead of escaping as a generic refusal.
 			try {
 				admission?.start();
-				const run = runtime.startRun(issue.id);
+				const run = await runtime.startRun(issue.id);
 				return `${issue.id} created in the backlog and run ${run.id} started.`;
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
@@ -2396,7 +2396,7 @@ async function executeOrchestratorCommand(
 		}
 		case 'start_run': {
 			admission?.start();
-			const run = runtime.startRun(command.issueId);
+			const run = await runtime.startRun(command.issueId);
 			return `Run ${run.id} started for ${run.issueId}.`;
 		}
 		case 'resume_run': {

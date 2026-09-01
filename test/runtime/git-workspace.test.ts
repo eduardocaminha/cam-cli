@@ -52,14 +52,14 @@ function seedRepository(): string {
 }
 
 describe('git workspace manager', () => {
-	test('creates an isolated run branch without switching or cleaning the host checkout', () => {
+	test('creates an isolated run branch without switching or cleaning the host checkout', async () => {
 		const root = seedRepository();
 		writeFileSync(join(root, 'operator-notes.txt'), 'keep me\n');
 		const beforeStatus = git(root, ['status', '--porcelain', '--untracked-files=all']);
 		const installs: Array<{ cwd: string; args: string[] }> = [];
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare(installs));
 
-		const workspacePath = manager.prepare({
+		const workspacePath = await manager.prepare({
 			runId: 'run-12345678-aaaa',
 			issueId: 'CAM-576',
 		});
@@ -74,7 +74,7 @@ describe('git workspace manager', () => {
 		expect(git(workspacePath, ['rev-parse', 'HEAD'])).toBe(git(root, ['rev-parse', 'main']));
 	});
 
-	test('places managed worktrees in an explicit state directory without touching project .gship', () => {
+	test('places managed worktrees in an explicit state directory without touching project .gship', async () => {
 		const root = seedRepository();
 		const stateDir = createTestTmpdir('gship-external-workspace-state-');
 		const manager = new GitWorkspaceManager(
@@ -85,7 +85,7 @@ describe('git workspace manager', () => {
 			stateDir,
 		);
 
-		const workspacePath = manager.prepare({
+		const workspacePath = await manager.prepare({
 			runId: 'run-external-state',
 			issueId: 'GSHIP-693',
 		});
@@ -95,7 +95,7 @@ describe('git workspace manager', () => {
 		expect(git(workspacePath, ['rev-parse', '--show-toplevel'])).toBe(workspacePath);
 	});
 
-	test('installs locked dependencies in the isolated workspace before returning', () => {
+	test('installs locked dependencies in the isolated workspace before returning', async () => {
 		const root = seedRepository();
 		const calls: Array<{ cwd: string; args: string[]; hostNodeModules: boolean }> = [];
 		const manager = new GitWorkspaceManager(root, undefined, (cwd, command) => {
@@ -104,7 +104,7 @@ describe('git workspace manager', () => {
 			return { exitCode: 0, stdout: '', stderr: '' };
 		});
 
-		const workspacePath = manager.prepare({
+		const workspacePath = await manager.prepare({
 			runId: 'run-12345678-aaaa',
 			issueId: 'CAM-578',
 		});
@@ -121,7 +121,7 @@ describe('git workspace manager', () => {
 		expect(git(root, ['status', '--porcelain', '--untracked-files=all'])).toBe('');
 	});
 
-	test('reports the install failure detail', () => {
+	test('reports the install failure detail', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, () => ({
 			exitCode: 1,
@@ -129,10 +129,10 @@ describe('git workspace manager', () => {
 			stderr: 'lockfile had changes, but lockfile is frozen',
 		}));
 
-		expect(() => manager.prepare({
+		await expect(manager.prepare({
 			runId: 'run-12345678-bbbb',
 			issueId: 'CAM-578',
-		})).toThrow(
+		})).rejects.toThrow(
 			new RuntimeWorkspaceError(
 				'cannot prepare workspace: preparation command failed: lockfile had changes, but lockfile is frozen',
 			),
@@ -142,21 +142,64 @@ describe('git workspace manager', () => {
 			.toBe(1);
 	});
 
-	test('reports the start failure detail', () => {
+	test('reports the start failure detail', async () => {
 		const root = seedRepository();
-		const manager = new GitWorkspaceManager(root, undefined, () => {
+		const manager = new GitWorkspaceManager(root, undefined, async () => {
 			throw new Error('spawn bun ENOENT');
 		});
 
-		expect(() => manager.prepare({
+		await expect(manager.prepare({
 			runId: 'run-12345678-cccc',
 			issueId: 'CAM-578',
-		})).toThrow(
+		})).rejects.toThrow(
 			new RuntimeWorkspaceError('cannot prepare workspace: spawn bun ENOENT'),
 		);
 	});
 
-	test('runs project-owned preparation in order and honors an explicit empty list', () => {
+	test('awaits asynchronous preparation and bounds its captured failure output', async () => {
+		const root = seedRepository();
+		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: ['bun -e "process.stderr.write(\'x\'.repeat(3000)); process.exit(1)"'],
+			verify: ['true'],
+		}));
+		git(root, ['add', '.gateship/project.json']);
+		git(root, ['commit', '-m', 'declare failing preparation']);
+
+		const result = new GitWorkspaceManager(root).prepare({
+			runId: 'run-async-failure',
+			issueId: 'CAM-578',
+		});
+		expect(result).toBeInstanceOf(Promise);
+		await expect(result).rejects.toThrow(/^cannot prepare workspace: preparation command failed: x{2000}$/);
+		expect(existsSync(join(root, '.gship', 'worktrees', 'run-async-failure'))).toBe(false);
+	});
+
+	test('rolls back only once when a later asynchronous preparation command fails', async () => {
+		const root = seedRepository();
+		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
+			version: 1,
+			prepare: ['first command', 'second command'],
+			verify: ['true'],
+		}));
+		git(root, ['add', '.gateship/project.json']);
+		git(root, ['commit', '-m', 'declare multiple preparation commands']);
+		let worktreeRemovals = 0;
+		const manager = new GitWorkspaceManager(root, (cwd, args) => {
+			if (args[0] === 'worktree' && args[1] === 'remove') worktreeRemovals += 1;
+			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+		}, async (_cwd, command) => command === 'first command'
+			? { exitCode: 0, stdout: '', stderr: '' }
+			: { exitCode: 1, stdout: '', stderr: 'second command failed' });
+
+		await expect(manager.prepare({ runId: 'run-later-async-failure', issueId: 'CAM-578' }))
+			.rejects.toThrow('cannot prepare workspace: preparation command failed: second command failed');
+		expect(worktreeRemovals).toBe(1);
+		expect(existsSync(join(root, '.gship', 'worktrees', 'run-later-async-failure'))).toBe(false);
+	});
+
+	test('runs project-owned preparation in order and honors an explicit empty list', async () => {
 		const root = seedRepository();
 		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
 			version: 1,
@@ -166,7 +209,7 @@ describe('git workspace manager', () => {
 		git(root, ['add', '.gateship/project.json']);
 		git(root, ['commit', '-m', 'declare project preparation']);
 		const calls: Array<{ cwd: string; args: string[] }> = [];
-		new GitWorkspaceManager(root, undefined, recordingPrepare(calls)).prepare({
+		await new GitWorkspaceManager(root, undefined, recordingPrepare(calls)).prepare({
 			runId: 'run-project-prepare',
 			issueId: 'CAM-578',
 		});
@@ -181,14 +224,14 @@ describe('git workspace manager', () => {
 		git(emptyRoot, ['add', '.gateship/project.json']);
 		git(emptyRoot, ['commit', '-m', 'skip project preparation']);
 		const emptyCalls: Array<{ cwd: string; args: string[] }> = [];
-		new GitWorkspaceManager(emptyRoot, undefined, recordingPrepare(emptyCalls)).prepare({
+		await new GitWorkspaceManager(emptyRoot, undefined, recordingPrepare(emptyCalls)).prepare({
 			runId: 'run-empty-prepare',
 			issueId: 'CAM-578',
 		});
 		expect(emptyCalls).toEqual([]);
 	});
 
-	test('fails closed and cleans up when the project manifest is invalid', () => {
+	test('fails closed and cleans up when the project manifest is invalid', async () => {
 		const root = seedRepository();
 		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
 			version: 1,
@@ -198,16 +241,16 @@ describe('git workspace manager', () => {
 		git(root, ['add', '.gateship/project.json']);
 		git(root, ['commit', '-m', 'invalid project preparation']);
 
-		expect(() => new GitWorkspaceManager(root, undefined, recordingPrepare([])).prepare({
+		await expect(new GitWorkspaceManager(root, undefined, recordingPrepare([])).prepare({
 			runId: 'run-invalid-prepare',
 			issueId: 'CAM-578',
-		})).toThrow('project verification manifest has invalid preparation commands');
+		})).rejects.toThrow('project verification manifest has invalid preparation commands');
 		expect(existsSync(join(root, '.gship', 'worktrees', 'run-invalid-prepare'))).toBe(false);
 		expect(gitExit(root, ['show-ref', '--verify', '--quiet', 'refs/heads/gship/cam-578-run-inva']))
 			.toBe(1);
 	});
 
-	test('gives preparation commands only the project command environment', () => {
+	test('gives preparation commands only the project command environment', async () => {
 		const root = seedRepository();
 		writeFileSync(join(root, '.gateship', 'project.json'), JSON.stringify({
 			version: 1,
@@ -221,34 +264,34 @@ describe('git workspace manager', () => {
 		const previous = process.env.GSHIP_WEB_DIR;
 		process.env.GSHIP_WEB_DIR = '/private/service/ui';
 		try {
-			expect(() => new GitWorkspaceManager(root).prepare({
+			await expect(new GitWorkspaceManager(root).prepare({
 				runId: 'run-prepare-env',
 				issueId: 'CAM-578',
-			})).not.toThrow();
+			})).resolves.toBe(join(root, '.gship', 'worktrees', 'run-prepare-env'));
 		} finally {
 			if (previous === undefined) delete process.env.GSHIP_WEB_DIR;
 			else process.env.GSHIP_WEB_DIR = previous;
 		}
 	});
 
-	test('fails before mutation when main cannot be resolved', () => {
+	test('fails before mutation when main cannot be resolved', async () => {
 		const calls: string[][] = [];
 		const manager = new GitWorkspaceManager('/project', (_cwd, args) => {
 			calls.push(args);
 			return { exitCode: 1, stdout: '', stderr: 'missing main' };
 		});
-		expect(() => manager.prepare({
+		await expect(manager.prepare({
 			runId: 'run-1',
 			issueId: 'CAM-1',
-		})).toThrow(RuntimeWorkspaceError);
+		})).rejects.toThrow(RuntimeWorkspaceError);
 		expect(calls).toEqual([['rev-parse', '--verify', 'main']]);
 	});
 
-	test('releases the exact clean workspace, local branch and stale tracking ref', () => {
+	test('releases the exact clean workspace, local branch and stale tracking ref', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-dddd', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, [
 			'update-ref',
@@ -274,12 +317,12 @@ describe('git workspace manager', () => {
 	// already dropped; a safe release must also push the delete so the branch
 	// stops existing on GitHub instead of merely disappearing from the local
 	// listing.
-	test('pushes a delete for the published remote branch on a safe release', () => {
+	test('pushes a delete for the published remote branch on a safe release', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-3333', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, ['push', 'origin', branch]);
 		expect(gitExit(remote, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(0);
@@ -289,12 +332,12 @@ describe('git workspace manager', () => {
 		expect(gitExit(remote, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(1);
 	});
 
-	test('leaves the published remote branch alone when the release is preserved', () => {
+	test('leaves the published remote branch alone when the release is preserved', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-4444', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, ['push', 'origin', branch]);
 		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
@@ -308,7 +351,7 @@ describe('git workspace manager', () => {
 		expect(gitExit(remote, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(0);
 	});
 
-	test('reports a failed remote branch delete as a warning without preserving the release', () => {
+	test('reports a failed remote branch delete as a warning without preserving the release', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, (cwd, args) => {
@@ -319,7 +362,7 @@ describe('git workspace manager', () => {
 			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 		}, recordingPrepare([]));
 		const input = { runId: 'run-12345678-5555', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, ['push', 'origin', branch]);
 
@@ -337,12 +380,12 @@ describe('git workspace manager', () => {
 	// not just failed -- previously only failed required it, so an abandoned
 	// run with its own commit could lose both the local branch (force-deleted)
 	// and, once the remote delete shipped, its only other copy.
-	test('preserves both the local and the remote branch when it carries a commit missing from the base ref', () => {
+	test('preserves both the local and the remote branch when it carries a commit missing from the base ref', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-8888', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		writeFileSync(join(workspacePath, 'attempt.txt'), 'partial work\n');
 		git(workspacePath, ['add', 'attempt.txt']);
@@ -360,12 +403,12 @@ describe('git workspace manager', () => {
 		expect(gitExit(remote, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(0);
 	});
 
-	test('releases both the local and the remote branch when it has no commit missing from the base ref', () => {
+	test('releases both the local and the remote branch when it has no commit missing from the base ref', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-9999', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, ['push', 'origin', branch]);
 
@@ -387,12 +430,12 @@ describe('git workspace manager', () => {
 	// release still fully proceeds on both sides regardless of the branch
 	// carrying what `#branchMissingFromBase` would otherwise call a missing
 	// commit.
-	test('releases and deletes the remote branch on a merge, even though it carries a commit missing from the base ref', () => {
+	test('releases and deletes the remote branch on a merge, even though it carries a commit missing from the base ref', async () => {
 		const root = seedRepository();
 		const remote = seedRemote(root);
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-ccdd', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		writeFileSync(join(workspacePath, 'attempt.txt'), 'shipped work\n');
 		git(workspacePath, ['add', 'attempt.txt']);
@@ -409,11 +452,11 @@ describe('git workspace manager', () => {
 	// GSHIP-658: a remote-delete failure must survive the call instead of going
 	// silently unretried forever once the local side is already released --
 	// `retryRemoteDelete` is the caller's durable record that a retry is owed.
-	test('retries the remote branch delete when asked, even though nothing is left to release locally', () => {
+	test('retries the remote branch delete when asked, even though nothing is left to release locally', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-aaab', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 
 		// No `origin` yet, so this first release only settles the local side.
@@ -433,7 +476,7 @@ describe('git workspace manager', () => {
 		expect(gitExit(remote, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(1);
 	});
 
-	test('never touches origin on a repeat release with no retry requested', () => {
+	test('never touches origin on a repeat release with no retry requested', async () => {
 		const root = seedRepository();
 		seedRemote(root);
 		const networkCalls: string[][] = [];
@@ -443,7 +486,7 @@ describe('git workspace manager', () => {
 			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 		}, recordingPrepare([]));
 		const input = { runId: 'run-12345678-bbbc', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		git(root, ['push', 'origin', branch]);
 
@@ -461,11 +504,11 @@ describe('git workspace manager', () => {
 	// GSHIP-621: a failed run's release adds one more gate the merged path does
 	// not need -- the branch itself must carry no commit missing from the base
 	// ref, so a commit made just before the failure is not thrown away with it.
-	test('releases a failed run workspace whose branch has no commit missing from the base ref', () => {
+	test('releases a failed run workspace whose branch has no commit missing from the base ref', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-ffff', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 
 		expect(manager.release({ ...input, workspacePath, requireUpstream: true })).toEqual({
@@ -476,11 +519,11 @@ describe('git workspace manager', () => {
 		expect(gitExit(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(1);
 	});
 
-	test('preserves a failed run workspace whose branch has a commit missing from the base ref', () => {
+	test('preserves a failed run workspace whose branch has a commit missing from the base ref', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-1111', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		const branch = 'gship/cam-578-run-1234';
 		writeFileSync(join(workspacePath, 'attempt.txt'), 'partial work\n');
 		git(workspacePath, ['add', 'attempt.txt']);
@@ -502,11 +545,11 @@ describe('git workspace manager', () => {
 		});
 	});
 
-	test('preserves a dirty failed run workspace instead of releasing it', () => {
+	test('preserves a dirty failed run workspace instead of releasing it', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-12345678-2222', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
 
 		expect(manager.release({ ...input, workspacePath, requireUpstream: true })).toEqual({
@@ -517,11 +560,11 @@ describe('git workspace manager', () => {
 		expect(existsSync(workspacePath)).toBe(true);
 	});
 
-	test('preserves a dirty workspace and reports it for operator inspection', () => {
+	test('preserves a dirty workspace and reports it for operator inspection', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 		const input = { runId: 'run-87654321-aaaa', issueId: 'CAM-578' };
-		const workspacePath = manager.prepare(input);
+		const workspacePath = await manager.prepare(input);
 		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
 
 		expect(manager.release({ ...input, workspacePath })).toEqual({
@@ -539,7 +582,7 @@ describe('git workspace manager', () => {
 		});
 	});
 
-	test('never releases a path that does not match the run-owned location', () => {
+	test('never releases a path that does not match the run-owned location', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
 
@@ -555,10 +598,10 @@ describe('git workspace manager', () => {
 		expect(git(root, ['branch', '--show-current'])).toBe('main');
 	});
 
-	test('surfaces an unowned managed worktree without deleting it', () => {
+	test('surfaces an unowned managed worktree without deleting it', async () => {
 		const root = seedRepository();
 		const manager = new GitWorkspaceManager(root, undefined, recordingPrepare([]));
-		const workspacePath = manager.prepare({
+		const workspacePath = await manager.prepare({
 			runId: 'run-orphan00-aaaa',
 			issueId: 'CAM-578',
 		});

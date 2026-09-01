@@ -588,7 +588,7 @@ describe('diagnostics web API', () => {
 			}
 			const originalForeignStartRun = foreignContext.runtime.startRun;
 			const foreignRunIssueIds: string[] = [];
-			foreignContext.runtime.startRun = (issueId: string): RunRecord => {
+			foreignContext.runtime.startRun = async (issueId: string): Promise<RunRecord> => {
 				foreignRunIssueIds.push(issueId);
 				return {
 					id: 'foreign-diagnostic-independent-run',

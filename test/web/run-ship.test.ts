@@ -102,7 +102,7 @@ describe('POST /api/runs/:runId/ship', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 
 		try {
-			const run = runtime.startRun('CAM-583');
+			const run = await runtime.startRun('CAM-583');
 			// The run shipped itself first, and only a failure put the button back.
 			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship'
 				&& attempts() === 1);
@@ -143,7 +143,7 @@ describe('POST /api/runs/:runId/ship', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 
 		try {
-			const run = runtime.startRun('CAM-583');
+			const run = await runtime.startRun('CAM-583');
 			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship'
 				&& attempts() === 1);
 
