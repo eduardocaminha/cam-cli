@@ -23,6 +23,7 @@ import {
 } from './git-runtime.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
 import type { DiagnosticFindingStats, RunStore } from './run-store.ts';
+import type { DiagnosticRatchet } from './diagnostic-ratchet.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
 const REACT_DOCTOR_VERSION = '0.9.12';
@@ -74,6 +75,7 @@ export interface DiagnosticsSnapshot {
 	resolvedFindings: DiagnosticFinding[];
 	resolvedFindingsOmittedCount: number;
 	stats: DiagnosticFindingStats;
+	ratchets: DiagnosticRatchet[];
 	schedule: DiagnosticScheduleStatus;
 	workspaceNotices: string[];
 }
@@ -588,6 +590,7 @@ export class DiagnosticsRuntime {
 			resolvedFindings: resolved.findings,
 			resolvedFindingsOmittedCount: resolved.omittedCount,
 			stats: this.#store.getDiagnosticFindingStats(),
+			ratchets: this.#store.listDiagnosticRatchets(),
 			schedule: this.getSchedule(),
 			workspaceNotices: this.#workspace.listNotices(this.#active?.workspacePath),
 		};

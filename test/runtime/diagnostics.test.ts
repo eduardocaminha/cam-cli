@@ -472,6 +472,75 @@ describe('diagnostics runtime and inbox', () => {
 		runtime.close();
 	});
 
+	test('keeps a complete-scan severity ratchet across improvements, regressions, versions and restart', async () => {
+		const dbPath = join(createTestTmpdir('gship-diagnostic-ratchet-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		const adapter = new QueueAdapter([
+			{ version: '1.0.0', coverageComplete: true, findings: [
+				{ ...FINDING, severity: 'error' }, { ...FINDING, rule: 'warning', severity: 'warning' },
+			] },
+			{ version: '1.0.0', coverageComplete: true, findings: [{ ...FINDING, rule: 'warning', severity: 'warning' }] },
+			{ version: '1.0.0', coverageComplete: true, findings: [
+				{ ...FINDING, severity: 'error' }, { ...FINDING, rule: 'warning', severity: 'warning' },
+				{ ...FINDING, rule: 'info', severity: 'info' },
+			] },
+			{ version: '1.0.0', coverageComplete: false, findings: [] },
+			{ version: '2.0.0', coverageComplete: true, findings: [] },
+		]);
+		let sequence = 0;
+		const runtime = new DiagnosticsRuntime({
+			store,
+			workspace: new FakeWorkspace(),
+			adapters: [adapter],
+			isProjectIdle: () => true,
+			newId: () => `ratchet-${sequence++}`,
+		});
+		const run = async (): Promise<void> => {
+			const scan = runtime.start();
+			for (let attempt = 0; attempt < 100; attempt += 1) {
+				const current = runtime.snapshot().scan;
+				if (current?.id === scan.id && current.state === 'completed') return;
+				await Bun.sleep(5);
+			}
+			throw new Error(`diagnostic ${scan.id} did not complete`);
+		};
+
+		for (const expected of ['baseline', 'improved', 'regressed'] as const) {
+			await run();
+			expect(runtime.snapshot().ratchets).toMatchObject([{ outcome: expected }]);
+		}
+		expect(runtime.snapshot().ratchets).toEqual([{
+			analyzer: 'react', analyzerVersion: '1.0.0', sourceSha: SOURCE_SHA,
+			baseline: { error: 0, warning: 1, info: 0 },
+			observation: { error: 1, warning: 1, info: 1 },
+			deltas: { error: 1, warning: 0, info: 1 }, outcome: 'regressed',
+		}]);
+
+		await run();
+		expect(runtime.snapshot().ratchets[0]?.outcome).toBe('regressed');
+
+		await run();
+		expect(runtime.snapshot().ratchets).toEqual([{
+			analyzer: 'react', analyzerVersion: '2.0.0', sourceSha: SOURCE_SHA,
+			baseline: { error: 0, warning: 0, info: 0 },
+			observation: { error: 0, warning: 0, info: 0 },
+			deltas: { error: 0, warning: 0, info: 0 }, outcome: 'baseline',
+		}]);
+		runtime.close();
+
+		const reopened = new DiagnosticsRuntime({
+			store: new RunStore(dbPath), workspace: new FakeWorkspace(), adapters: [new QueueAdapter([])],
+			isProjectIdle: () => true,
+		});
+		expect(reopened.snapshot().ratchets).toEqual([{
+			analyzer: 'react', analyzerVersion: '2.0.0', sourceSha: SOURCE_SHA,
+			baseline: { error: 0, warning: 0, info: 0 },
+			observation: { error: 0, warning: 0, info: 0 },
+			deltas: { error: 0, warning: 0, info: 0 }, outcome: 'baseline',
+		}]);
+		reopened.close();
+	});
+
 	test('refuses to compete with project work and owns cancellation and timeout', async () => {
 		const busy = new DiagnosticsRuntime({
 			store: new RunStore(':memory:'),
