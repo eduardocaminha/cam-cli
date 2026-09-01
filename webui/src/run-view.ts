@@ -458,7 +458,7 @@ export function progressOf(state: RunState): number {
 	return index / (RUN_PHASES.length - 1);
 }
 
-export type StateTone = 'default' | 'info' | 'success' | 'warning' | 'error';
+export type StateTone = 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'error';
 
 /** Badge variant for a state. The five families the theme declares. */
 export function toneOf(state: RunState): StateTone {
@@ -513,7 +513,9 @@ export function attentionOf(
 const ATTENTION_TONE: Readonly<Record<OperatorAttention, StateTone>> = {
 	'Needs you': 'warning',
 	Working: 'info',
-	Idle: 'default',
+	// Idle is the quiet state by definition; the solid primary chip read as a
+	// glowing button, worst on dark.
+	Idle: 'secondary',
 };
 
 /** Badge variant for a human state, which no longer follows a single run. */

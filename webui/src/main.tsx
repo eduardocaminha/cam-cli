@@ -737,6 +737,35 @@ if (!rootElement) {
 const locale = readLocalePreference(() => window.localStorage.getItem(LOCALE_STORAGE_KEY));
 document.documentElement.lang = locale;
 
+// Theme follows the system until the operator chooses: the sidebar toggle
+// stores an explicit 'light' | 'dark' under this key, and a stored choice
+// always beats the OS preference. The stylesheet's dark tokens hang off a
+// `.dark` class, the one switching mechanism this screen uses.
+const THEME_STORAGE_KEY = 'gship-theme';
+const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+const applyScheme = (): void => {
+	const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+	const dark = stored === null ? darkScheme.matches : stored === 'dark';
+	document.documentElement.classList.toggle('dark', dark);
+};
+applyScheme();
+// The content measure mirrors the theme mechanism: ShellControls stores an
+// explicit choice, and the surfaces read it through one root class.
+if (window.localStorage.getItem('gship-width') === 'wide') {
+	document.documentElement.classList.add('gship-wide');
+}
+darkScheme.addEventListener('change', () => {
+	// Theme swaps repaint everything at once; transitions are suppressed for
+	// the swap so colors cut over instead of cross-fading out of sync.
+	document.documentElement.setAttribute('data-theme-switching', '');
+	applyScheme();
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			document.documentElement.removeAttribute('data-theme-switching');
+		});
+	});
+});
+
 createRoot(rootElement).render(
 	<StrictMode>
 		<Screen initialLocale={locale} />

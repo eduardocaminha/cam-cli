@@ -1,19 +1,22 @@
 // webui/src/lib/cn.ts
 //
-// Class composition for this screen, and nothing else: the classes a primitive
-// declares, then whatever its call site adds, in that order.
+// Class composition for this screen: clsx flattens the truthy inputs and
+// tailwind-merge resolves competing utilities in favour of the caller.
 //
-// There is deliberately no Tailwind conflict resolution. Every call site here
-// adds a property its base does not already set, so no pair of classes competes
-// and the resolver would have nothing to do. A future override that DOES
-// compete belongs in the primitive as a variant, not in a merge step that
-// silently decides which of two utilities the screen meant.
+// The previous version deliberately skipped conflict resolution because no
+// call site competed with its base. That held while every primitive was
+// written here; it stops holding with shadcn-style components, whose variant
+// system leans on the caller overriding base utilities (operator decision,
+// 2026-08-24). Composition order is unchanged: base classes first, call-site
+// classes last.
+
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 /** What a call site may pass: a class name, or a branch that produced none. */
 export type ClassValue = string | false | null | undefined;
 
-/** The truthy class names, in order, separated by a single space. */
+/** The truthy class names in order, with conflicting utilities resolved. */
 export function cn(...values: readonly ClassValue[]): string {
-	return values.filter((value): value is string => typeof value === 'string' && value !== '')
-		.join(' ');
+	return twMerge(clsx(values));
 }

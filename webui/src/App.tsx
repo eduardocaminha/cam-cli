@@ -14,7 +14,7 @@
 // transcript is scrolled, which no prop can describe; it lives in
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
 	aggregateChatTurnCosts,
 	type ChainPauseReason,
@@ -52,8 +52,13 @@ import {
 	type StaleServiceView,
 	type WorkspaceNoticeView,
 } from './client.ts';
-import { GateshipLockup } from './components/gateship-logo.tsx';
+import { GateshipMark, GateshipWordmark } from './components/gateship-logo.tsx';
+import { AttentionCard } from './components/ui/attention-card.tsx';
+import { EmptyState } from './components/ui/empty-state.tsx';
+import { Input } from './components/ui/input.tsx';
 import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
+import { Button, buttonVariants } from './components/ui/button.tsx';
+import { Callout } from './components/ui/callout.tsx';
 import {
 	Card,
 	CardAction,
@@ -65,6 +70,39 @@ import {
 	CardTitle,
 } from './components/ui/card.tsx';
 import { Progress } from './components/ui/progress.tsx';
+import { SelectField } from './components/ui/select.tsx';
+import { Stat } from './components/ui/stat.tsx';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from './components/ui/table.tsx';
+import { Menu } from '@base-ui/react/menu';
+import {
+	Activity01Icon,
+	ArrowExpand01Icon,
+	ArrowLeft01Icon,
+	ArrowRight01Icon,
+	ArrowShrink01Icon,
+	CubeIcon,
+	Globe02Icon,
+	Grid2X2Icon,
+	ListViewIcon,
+	Message01Icon,
+	Moon02Icon,
+	Settings01Icon,
+	SidebarLeft01Icon,
+	SidebarLeftIcon,
+	Sun02Icon,
+	Tick02Icon,
+	UnfoldMoreIcon,
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from './components/ui/tabs.tsx';
+import { Textarea } from './components/ui/textarea.tsx';
 import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import { useLiveEdge } from './live-edge.ts';
@@ -88,7 +126,7 @@ import {
 	actionsFor,
 	activeRunIssueId,
 	attentionOf,
-	attentionToneOf,
+	type OperatorAttention,
 	type PlannableIssue,
 	type ProviderUsageView,
 	type ProviderUsageWindowView,
@@ -358,12 +396,16 @@ function isOperational(event: RunEventView): boolean {
  * as the expected cost an equivalent API call would have billed -- never as
  * an amount charged (GSHIP-623).
  */
-function formatCostUsd(value: number, locale: Locale = DEFAULT_LOCALE): string {
+function formatCostUsd(
+	value: number,
+	locale: Locale = DEFAULT_LOCALE,
+	maximumFractionDigits: 2 | 4 = 4,
+): string {
 	return new Intl.NumberFormat(locale, {
 		style: 'currency',
 		currency: 'USD',
 		minimumFractionDigits: 2,
-		maximumFractionDigits: 4,
+		maximumFractionDigits,
 	}).format(value);
 }
 
@@ -435,28 +477,29 @@ function formatRoleUsage(
 	return `${label}${suffix}${thinking}`;
 }
 
-const BUTTON_CLASS =
-	'inline-flex h-9 items-center justify-center rounded-md border px-3 font-medium text-sm ' +
-	'transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
-	'disabled:pointer-events-none disabled:opacity-50';
+const BUTTON_CLASS = buttonVariants({ variant: 'outline' });
 
-const PRIMARY_BUTTON_CLASS = cn(
-	BUTTON_CLASS,
-	'border-transparent bg-primary text-primary-foreground hover:bg-primary/90',
-);
+const PRIMARY_BUTTON_CLASS = buttonVariants({ variant: 'default' });
 
-const FIELD_CLASS =
-	'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ' +
-	'placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring';
-
+/*
+ * The active item is styled off aria-current, so state and appearance cannot
+ * drift apart: a subtle fill and weight, no marker.
+ */
 const NAV_LINK_CLASS =
-	'block whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none ' +
+	'flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
-	'focus-visible:ring-2 focus-visible:ring-sidebar-ring';
+	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
+	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
+	'aria-[current=page]:text-sidebar-accent-foreground';
 
 const TEXT_LINK_CLASS =
 	'w-fit rounded-md text-muted-foreground text-sm underline underline-offset-4 outline-none ' +
 	'hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring';
+
+/* A link that IS a title: full ink, underline only on intent. */
+const TITLE_LINK_CLASS =
+	'rounded-md text-foreground outline-none underline-offset-4 hover:underline ' +
+	'focus-visible:ring-2 focus-visible:ring-ring';
 
 function ActionButton({
 	label,
@@ -468,9 +511,9 @@ function ActionButton({
 	onClick: () => void;
 }): React.ReactElement {
 	return (
-		<button className={BUTTON_CLASS} disabled={!enabled} onClick={onClick} type="button">
+		<Button variant="outline" disabled={!enabled} onClick={onClick} type="button">
 			{label}
-		</button>
+		</Button>
 	);
 }
 
@@ -542,7 +585,7 @@ function RunActivity({
 							<div className="flex items-baseline justify-between gap-3">
 							<code className="min-w-0 break-all">{event.kind}</code>
 							{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
-								<time className="shrink-0 text-muted-foreground">
+								<time className="shrink-0 font-mono text-muted-foreground text-xs">
 									{formatEventTime(event.createdAt, locale)}
 								</time>
 							</div>
@@ -631,13 +674,11 @@ function ProviderWaitCallout({
 		: retryDate.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
 	const providerName = wait.provider === 'claude' ? 'Claude Code' : 'Codex';
 	return (
-		<section
+		<Callout
 			aria-label={catalog.providerHold.accessibleLabel}
-			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
+			title={catalog.providerHold.title(providerName)}
+			tone="warning"
 		>
-			<span className="font-medium text-sm">
-				{catalog.providerHold.title(providerName)}
-			</span>
 			<p className="text-sm">{catalog.providerHold.waitReasons[wait.kind]}.</p>
 			<p className="break-words text-xs">{wait.message}</p>
 			{retryText === undefined ? null : (
@@ -647,7 +688,7 @@ function ProviderWaitCallout({
 					{catalog.providerHold.retryAfter}
 				</p>
 			)}
-		</section>
+		</Callout>
 	);
 }
 
@@ -674,13 +715,9 @@ function ExecutorHandoffCallout({
 		? catalog.executorHandoff.refusedTitle(fromProviderName, toProviderName)
 		: catalog.executorHandoff.title(fromProviderName, toProviderName);
 	return (
-		<section
-			aria-label={catalog.executorHandoff.accessibleLabel}
-			className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-muted-foreground text-sm"
-		>
-			<span className="font-medium">{title}</span>
+		<Callout aria-label={catalog.executorHandoff.accessibleLabel} title={title}>
 			<p className="text-xs">{catalog.executorHandoff.reasonPrefix}{catalog.providerHold.waitReasons[handoff.reason]}</p>
-		</section>
+		</Callout>
 	);
 }
 
@@ -752,22 +789,35 @@ function RunCard({
 	onAbandon,
 	onCancel,
 	onShip,
+	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
 	locale: Locale;
 	run: RunView | null;
 	title: string;
 	footer?: React.ReactNode;
+	showCost?: boolean;
 }): React.ReactElement {
 	return (
 		<Card>
+			{/*
+			 * The issue is the run's identity, so it is the title; the section
+			 * label ("Latest run") demotes to a mono overline, and the state
+			 * badge holds the action corner. Same hierarchy in both themes.
+			 */}
 			<CardHeader>
-				<CardTitle>{title}</CardTitle>
-				<CardDescription className="break-all">
-					{run === null ? catalog.noRunLabel : run.issueId}
-				</CardDescription>
+				<div className="flex min-w-0 flex-col gap-1">
+					<span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+						{title}
+					</span>
+					<CardTitle className={cn('break-all text-sm', run !== null && 'font-mono')}>
+						{run === null ? catalog.noRunLabel : run.issueId}
+					</CardTitle>
+				</div>
 				{run === null ? null : (
-					<Badge variant={toneOf(run.state)}>{catalog.stateLabels[run.state]}</Badge>
+					<CardAction>
+						<Badge variant={toneOf(run.state)}>{catalog.stateLabels[run.state]}</Badge>
+					</CardAction>
 				)}
 			</CardHeader>
 			{run === null && footer === undefined ? null : (
@@ -782,6 +832,7 @@ function RunCard({
 							onShip={onShip}
 							pending={pending}
 							run={run}
+							showCost={showCost}
 						/>
 					)}
 					{footer}
@@ -800,10 +851,12 @@ function RunCardContent({
 	onAbandon,
 	onCancel,
 	onShip,
+	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
 	locale: Locale;
 	run: RunView;
+	showCost?: boolean;
 }): React.ReactElement {
 	return (
 		<>
@@ -811,11 +864,14 @@ function RunCardContent({
 			<PullRequestDelivery catalog={catalog} run={run} />
 			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
 			<ExecutorHandoffCallout catalog={catalog} handoff={run.executorHandoff} />
-			{run.cost.totalCostUsd === null ? null : (
+			{/* /runs shows the cost in its stat row, so the card yields the sentence
+			 * there. The round origins stay a sentence everywhere: their breakdown
+			 * is provenance and never collapses into one number. */}
+			{showCost && run.cost.totalCostUsd !== null ? (
 				<p className="text-muted-foreground text-sm">
 					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
 				</p>
-			)}
+			) : null}
 			{hasNoRounds(run.roundOrigins) ? null : (
 				<p className="text-muted-foreground text-sm">
 					{catalog.correctionRounds(
@@ -857,9 +913,9 @@ function RunReport({
 		>
 			<div className="flex flex-col gap-3">
 				{run.error === null ? null : (
-					<p className="whitespace-pre-wrap break-words rounded-md bg-destructive/8 p-3 text-destructive-foreground text-sm">
-						{run.error}
-					</p>
+					<Callout tone="destructive">
+						<p className="whitespace-pre-wrap break-words">{run.error}</p>
+					</Callout>
 				)}
 				{run.summary === null ? null : (
 					<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
@@ -915,13 +971,13 @@ function RunCostPanel({
 									return (
 										<li className="flex flex-col gap-1 text-sm" key={`${entry.role}-${entry.model}`}>
 										<div className="flex items-baseline justify-between gap-3">
-											<span className="min-w-0 break-all">{entry.model}</span>
-											<span className="shrink-0 text-muted-foreground">
+											<span className="min-w-0 break-all font-mono text-xs">{entry.model}</span>
+											<span className="shrink-0 font-mono text-muted-foreground text-xs tabular-nums">
 												{formatCostUsd(entry.costUsd, locale)}
 											</span>
 										</div>
 										{tokens === null ? null : (
-											<span className="text-muted-foreground text-xs">
+											<span className="font-mono text-muted-foreground text-xs tabular-nums">
 												{tokens} {catalog.cost.tokensSuffix}
 											</span>
 										)}
@@ -944,36 +1000,50 @@ function PreviousRunRow({
 	locale,
 	run,
 	runInspector,
+	showCost,
 }: {
 	locale: Locale;
 	run: RunView;
 	runInspector: RunInspectorCatalog;
+	showCost: boolean;
 }): React.ReactElement {
 	const delivery = run.pullRequest;
 	return (
-		<li className="flex items-baseline justify-between gap-3 text-sm">
-			<span className="min-w-0 break-all font-medium">{run.issueId}</span>
-			{delivery === null ? null : (
-				<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
-					{runInspector.pullRequestLabel(delivery.prNumber)}
-				</a>
-			)}
-			{delivery !== null && run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
-			<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
-			{delivery === null ? null : (
-				<Badge variant={ciBadgeVariant(delivery.ciStatus)}>
-					{runInspector.ciLabels[delivery.ciStatus]}
-				</Badge>
-			)}
-			{run.cost.totalCostUsd === null ? null : (
-				<span className="shrink-0 text-muted-foreground">
-					{runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+		<TableRow>
+			<TableCell className="break-all font-mono text-xs">{run.issueId}</TableCell>
+			<TableCell>
+				<span className="flex flex-wrap items-center gap-1.5">
+					<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
+					{delivery !== null && run.state === 'done'
+						? <Badge variant="merged">Merged</Badge>
+						: null}
 				</span>
-			)}
-			<time className="shrink-0 text-muted-foreground">
-				{formatRunTimestamp(run.updatedAt, locale)}
-			</time>
-		</li>
+			</TableCell>
+			<TableCell>
+				{delivery === null ? null : (
+					<span className="flex flex-wrap items-center gap-1.5">
+						<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
+							{runInspector.pullRequestLabel(delivery.prNumber)}
+						</a>
+						<Badge variant={ciBadgeVariant(delivery.ciStatus)}>
+							{runInspector.ciLabels[delivery.ciStatus]}
+						</Badge>
+					</span>
+				)}
+			</TableCell>
+			{showCost ? (
+				<TableCell className="text-right font-mono text-muted-foreground text-xs">
+					{run.cost.totalCostUsd === null
+						? null
+						: runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+				</TableCell>
+			) : null}
+			<TableCell className="text-right">
+				<time className="font-mono text-muted-foreground text-xs">
+					{formatRunTimestamp(run.updatedAt, locale)}
+				</time>
+			</TableCell>
+		</TableRow>
 	);
 }
 
@@ -996,16 +1066,31 @@ function PreviousRunsPanel({
 	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
 	if (previous.length === 0) return null;
 	const runInspector = LOCALE_CATALOG[locale].runInspector;
+	// A column with no datum in any row is not drawn.
+	const showCost = previous.some((run) => run.cost.totalCostUsd !== null);
 	return (
 		<ContextPanel
 			description={catalog.previousRuns.description(previous.length)}
 			title={catalog.previousRuns.title}
 		>
-			<ul className="flex flex-col gap-2">
-				{previous.map((run) => (
-					<PreviousRunRow key={run.id} locale={locale} run={run} runInspector={runInspector} />
-				))}
-			</ul>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>{catalog.previousRuns.columns.issue}</TableHead>
+						<TableHead>{catalog.previousRuns.columns.state}</TableHead>
+						<TableHead>{catalog.previousRuns.columns.delivery}</TableHead>
+						{showCost ? (
+							<TableHead className="text-right">{catalog.previousRuns.columns.cost}</TableHead>
+						) : null}
+						<TableHead className="text-right">{catalog.previousRuns.columns.updated}</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{previous.map((run) => (
+						<PreviousRunRow key={run.id} locale={locale} run={run} runInspector={runInspector} showCost={showCost} />
+					))}
+				</TableBody>
+			</Table>
 		</ContextPanel>
 	);
 }
@@ -1424,7 +1509,7 @@ function ClaudeCredentialConnectedCard({
 					<button className={BUTTON_CLASS} onClick={onDismissError} type="button">{text.cancel}</button>
 				)}
 				<button
-					className={BUTTON_CLASS}
+					className={cn(BUTTON_CLASS, 'self-end')}
 					disabled={pending}
 					onClick={onDisconnectClaudeCredential}
 					type="button"
@@ -1541,9 +1626,8 @@ function ClaudeCredentialSection({
 				>
 					<label className="flex flex-col gap-1" htmlFor="claude-credential-token">
 						<span className="font-medium">{text.tokenLabel}</span>
-						<input
+						<Input
 							autoComplete="off"
-							className={FIELD_CLASS}
 							disabled={pending}
 							id="claude-credential-token"
 							name="claude-credential-token"
@@ -1565,7 +1649,7 @@ function ClaudeCredentialSection({
 					</label>
 					<div className="flex flex-wrap gap-2">
 						<button
-							className={PRIMARY_BUTTON_CLASS}
+							className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
 							disabled={pending || token.trim().length === 0 || !confirmed}
 							type="submit"
 						>{connected ? text.rotate : text.connect}</button>
@@ -1752,8 +1836,8 @@ function ModelSlotFields({
 				htmlFor={`${providerId}-${role}-model`}
 			>
 				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.model}</span>
-				<input
-					className={cn(FIELD_CLASS, 'font-mono')}
+				<Input
+					className="font-mono"
 					defaultValue={slot.model}
 					id={`${providerId}-${role}-model`}
 					name={`${providerId}-${role}-model`}
@@ -1765,8 +1849,8 @@ function ModelSlotFields({
 				htmlFor={`${providerId}-${role}-effort`}
 			>
 				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.effort}</span>
-				<input
-					className={cn(FIELD_CLASS, 'font-mono')}
+				<Input
+					className="font-mono"
 					defaultValue={slot.effort}
 					id={`${providerId}-${role}-effort`}
 					name={`${providerId}-${role}-effort`}
@@ -1845,7 +1929,7 @@ function ModelSettingsPanel({
 						providerId={providerId}
 					/>
 				))}
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.models.save}
 				</button>
 			</form>
@@ -2038,8 +2122,7 @@ function NotificationChannelRow({
 						{catalog.notifications.resendFields[field]}
 						{channel.externallyManaged[field] ? ` · ${catalog.notifications.externallyManaged}` : null}
 					</span>
-					<input
-						className={FIELD_CLASS}
+					<Input
 						defaultValue={channel[field] ?? ''}
 						disabled={pending}
 						maxLength={512}
@@ -2054,9 +2137,8 @@ function NotificationChannelRow({
 					{catalog.notifications.resendFields.apiKey}
 					{channel.externallyManaged.apiKey ? ` · ${catalog.notifications.externallyManaged}` : null}
 				</span>
-				<input
+				<Input
 					autoComplete="new-password"
-					className={FIELD_CLASS}
 					disabled={pending}
 					name="resend-api-key"
 					placeholder={catalog.notifications.resendPlaceholders.apiKey}
@@ -2067,11 +2149,11 @@ function NotificationChannelRow({
 				{channel.fileCredentialExists ? catalog.notifications.fileCredentialPresent : catalog.notifications.fileCredentialAbsent}
 			</p>
 			<div className="flex flex-wrap gap-2 sm:col-span-2">
-				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.notifications.saveResend}
 				</button>
 				<button
-					className={BUTTON_CLASS}
+					className={cn(BUTTON_CLASS, 'self-end')}
 					disabled={pending || !channel.fileCredentialExists}
 					onClick={onRemoveResendCredential}
 					type="button"
@@ -2167,10 +2249,18 @@ function NotificationsPanel({
  * operator stands at the live edge (./live-edge.ts). The empty state lives
  * inside the same region so the region -- and its label -- never moves.
  */
+/*
+ * The transcript follows the chat-primitive grammar: system entries render as
+ * markers (a quiet centered status line between rules), the operator's turns
+ * are compact bubbles on the right, and the orchestrator's turns are
+ * documents, no bubble, because prose reads better as a page than as a
+ * terminal dump. Every header datum (provider, time) speaks mono.
+ */
 function ChatLog({
 	chatMessages,
 	catalog,
-}: Pick<AppProps, 'chatMessages'> & { catalog: ConversationCatalog }): React.ReactElement {
+	locale,
+}: Pick<AppProps, 'chatMessages'> & { catalog: ConversationCatalog; locale: Locale }): React.ReactElement {
 	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
 	return (
 		<section
@@ -2179,32 +2269,48 @@ function ChatLog({
 			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
 		>
 			{chatMessages.length === 0 ? (
-				<p className="flex min-h-24 items-center justify-center text-center text-muted-foreground text-sm">
-					{catalog.emptyStateGuidance}
-				</p>
+				<EmptyState>{catalog.emptyStateGuidance}</EmptyState>
 			) : (
-				<ol className="flex flex-col gap-3">
-					{chatMessages.map((message) => (
-						<li
-							className={cn(
-								'rounded-md p-3 text-sm',
-								message.role === 'operator' ? 'ml-8 bg-accent' : 'mr-8 bg-muted',
-							)}
-							key={message.seq}
-						>
-							<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
-								<span>
-									{message.role === 'operator'
-										? catalog.roleLabels.operator
-										: message.role === 'orchestrator'
-											? catalog.roleLabels.orchestrator
-											: message.role}
-								</span>
-								<span className="shrink-0">{message.providerId}</span>
-							</div>
-							<p className="whitespace-pre-wrap break-words">{message.text}</p>
-						</li>
-					))}
+				<ol className="flex flex-col gap-4">
+					{chatMessages.map((message) => {
+						if (message.role === 'system') {
+							return (
+								<li className="flex items-center gap-3 py-0.5 text-muted-foreground text-xs" key={message.seq}>
+									<span aria-hidden="true" className="h-px min-w-6 flex-1 bg-border" />
+									<span className="max-w-[75%] whitespace-pre-wrap break-words text-center">
+										{message.text}
+									</span>
+									<span aria-hidden="true" className="h-px min-w-6 flex-1 bg-border" />
+								</li>
+							);
+						}
+						const operator = message.role === 'operator';
+						return (
+							<li
+								className={cn('flex min-w-0 flex-col gap-1', operator && 'items-end')}
+								key={message.seq}
+							>
+								<div className="flex items-baseline gap-2 text-muted-foreground text-xs">
+									<span className="font-medium">
+										{operator ? catalog.roleLabels.operator : catalog.roleLabels.orchestrator}
+									</span>
+									<span className="font-mono text-[10px]">{message.providerId}</span>
+									<time className="font-mono text-[10px]">
+										{formatEventTime(message.createdAt, locale)}
+									</time>
+								</div>
+								{operator ? (
+									<p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border bg-secondary px-3.5 py-2.5 text-sm">
+										{message.text}
+									</p>
+								) : (
+									<p className="max-w-[92%] whitespace-pre-wrap break-words text-sm leading-relaxed">
+										{message.text}
+									</p>
+								)}
+							</li>
+						);
+					})}
 				</ol>
 			)}
 		</section>
@@ -2251,8 +2357,7 @@ function OperatorAnswer({
 }): React.ReactElement | null {
 	if (run === null || run.state !== 'waiting-user') return null;
 	return (
-		<section className="flex flex-col gap-2 rounded-md border border-warning/32 bg-warning/8 p-3">
-			<p className="font-medium text-sm">{catalog.waitingDecisionPrompt}</p>
+		<AttentionCard title={catalog.waitingDecisionPrompt}>
 			{run.summary === null ? null : (
 				<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
 					{run.summary}
@@ -2269,8 +2374,7 @@ function OperatorAnswer({
 				<label className="font-medium text-sm" htmlFor="operator-guidance">
 					{catalog.response.label}
 				</label>
-				<textarea
-					className={FIELD_CLASS}
+				<Textarea
 					disabled={pending}
 					id="operator-guidance"
 					name="operatorGuidance"
@@ -2278,11 +2382,11 @@ function OperatorAnswer({
 					required
 					rows={3}
 				/>
-				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<Button disabled={pending} type="submit" variant="attention">
 					{catalog.response.button}
-				</button>
+				</Button>
 			</form>
-		</section>
+		</AttentionCard>
 	);
 }
 
@@ -2321,13 +2425,13 @@ export function ConversationColumn({
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<Card className="flex min-h-0 flex-1 flex-col">
+			<Card className="mx-auto flex min-h-0 w-full max-w-(--content-measure) flex-1 flex-col">
 				<CardHeader>
 					<CardTitle>{catalog.title}</CardTitle>
 					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
 				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
-					<ChatLog catalog={catalog} chatMessages={chatMessages} />
+					<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
 					<StatusOutput status={status} />
@@ -2346,15 +2450,27 @@ export function ConversationColumn({
 						<label className="sr-only" htmlFor="orchestrator-message">
 							{catalog.composer.label}
 						</label>
-						<input
-							className={cn(FIELD_CLASS, 'min-w-0')}
+						<Textarea
+							className="max-h-40 min-w-0"
 							disabled={pending}
 							id="orchestrator-message"
 							name="message"
+							onKeyDown={(event) => {
+								if (event.key === 'Enter' && !event.shiftKey) {
+									event.preventDefault();
+									// Same idiom as the reset() cast below: the root tsconfig
+									// checks this file without the DOM lib.
+									const field = event.currentTarget as unknown as {
+										closest: (selector: string) => { requestSubmit: () => void } | null;
+									};
+									field.closest('form')?.requestSubmit();
+								}
+							}}
 							placeholder={catalog.composer.placeholder}
 							required
+							rows={1}
 						/>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+						<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 							{catalog.composer.button}
 						</button>
 					</form>
@@ -2390,20 +2506,26 @@ function BacklogPanel({
 							<button
 								aria-pressed={issue.id === selectedIssueId}
 								className={cn(
-									'w-full break-words rounded-md px-3 py-2 text-left text-sm outline-none',
+									'flex w-full items-baseline gap-3 break-words rounded-lg border border-transparent px-3 py-2 text-left text-sm outline-none',
 									'focus-visible:ring-2 focus-visible:ring-ring',
-									issue.id === selectedIssueId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+									issue.id === selectedIssueId
+										? 'border-border bg-secondary text-foreground'
+										: 'hover:bg-muted',
 								)}
 								onClick={() => onSelectIssue(issue.id)}
 								type="button"
 							>
-								<span className="font-medium">{issue.id}</span>
-								<span className="text-muted-foreground"> — {issue.title}</span>
+								<span className="shrink-0 font-mono text-muted-foreground text-xs">{issue.id}</span>
+								<span className="min-w-0 font-medium">{issue.title}</span>
 							</button>
 						</li>
 					))}
 				</ul>
-				<ActionButton enabled={canStart} label={catalog.start} onClick={onStart} />
+				<div className="flex justify-end">
+					<Button disabled={!canStart} onClick={onStart} type="button">
+						{catalog.start}
+					</Button>
+				</div>
 			</div>
 		</ContextPanel>
 	);
@@ -2433,23 +2555,23 @@ function IssueIntakePanel({
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-title">
 					<span className="font-medium">{catalog.form.title}</span>
-					<input className={FIELD_CLASS} id="issue-title" name="title" required />
+					<Input id="issue-title" name="title" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-scope">
 					<span className="font-medium">{catalog.form.scope}</span>
-					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="issue-scope" name="scope" required />
+					<Textarea className="min-h-24" id="issue-scope" name="scope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-command">
 					<span className="font-medium">{catalog.form.verificationCommand}</span>
-					<input
-						className={cn(FIELD_CLASS, 'font-mono')}
+					<Input
+						className="font-mono"
 						id="issue-command"
 						name="verificationCommand"
 						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
 				</label>
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.intake.create}
 				</button>
 			</form>
@@ -2482,27 +2604,29 @@ function IssueSpecifyPanel({
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-id">
 					<span className="font-medium">{catalog.specification.idea}</span>
-					<select className={FIELD_CLASS} id="idea-id" name="ideaId" required>
-						{ideas.map((idea) => (
-							<option key={idea.id} value={idea.id}>{idea.id} — {idea.title}</option>
-						))}
-					</select>
+					<SelectField
+						defaultValue={ideas[0]?.id}
+						id="idea-id"
+						items={ideas.map((idea) => ({ value: idea.id, label: `${idea.id} — ${idea.title}` }))}
+						name="ideaId"
+						required
+					/>
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-scope">
 					<span className="font-medium">{catalog.form.scope}</span>
-					<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="idea-scope" name="ideaScope" required />
+					<Textarea className="min-h-24" id="idea-scope" name="ideaScope" required />
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-command">
 					<span className="font-medium">{catalog.form.verificationCommand}</span>
-					<input
-						className={cn(FIELD_CLASS, 'font-mono')}
+					<Input
+						className="font-mono"
 						id="idea-command"
 						name="ideaVerificationCommand"
 						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
 				</label>
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.specification.submit}
 				</button>
 			</form>
@@ -2567,8 +2691,8 @@ function ProjectBriefPanel({
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
 					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
-					<textarea
-						className={cn(FIELD_CLASS, 'min-h-16')}
+					<Textarea
+						className="min-h-16"
 						defaultValue={brief.objective}
 						id="brief-objective"
 						name="objective"
@@ -2581,8 +2705,8 @@ function ProjectBriefPanel({
 						key={field.name}
 					>
 						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
-						<textarea
-							className={cn(FIELD_CLASS, 'min-h-20')}
+						<Textarea
+							className="min-h-20"
 							defaultValue={brief[field.name].join('\n')}
 							id={`brief-${field.name}`}
 							name={field.name}
@@ -2590,7 +2714,7 @@ function ProjectBriefPanel({
 						/>
 					</label>
 				))}
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.brief.save}
 				</button>
 			</form>
@@ -2657,15 +2781,11 @@ function StaleServiceCallout({
 }: Pick<AppProps, 'staleService'>): React.ReactElement | null {
 	if (staleService === null) return null;
 	return (
-		<section
-			aria-label="Outdated service"
-			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
-		>
-			<span className="font-medium text-sm">Restart the service</span>
+		<Callout aria-label="Outdated service" title="Restart the service" tone="warning">
 			<p className="break-words text-xs">{staleService.detail}</p>
 			<code className="break-all text-xs">boot {staleService.bootSha}</code>
 			<code className="break-all text-xs">origin/main {staleService.currentSha}</code>
-		</section>
+		</Callout>
 	);
 }
 
@@ -2684,13 +2804,9 @@ function GitIdentityCallout({
 }: Pick<AppProps, 'gitIdentity'>): React.ReactElement | null {
 	if (gitIdentity === null) return null;
 	return (
-		<section
-			aria-label="Missing Git identity"
-			className="flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16"
-		>
-			<span className="font-medium text-sm">Missing Git identity</span>
+		<Callout aria-label="Missing Git identity" title="Missing Git identity" tone="warning">
 			<p className="break-words text-xs">{gitIdentity.detail}</p>
-		</section>
+		</Callout>
 	);
 }
 
@@ -2738,15 +2854,13 @@ function ChainPauseCallout({
 		? CHAIN_PAUSE_LABELS[pause.reason]
 		: `${pause.issue.id}: ${pause.issue.title} — ${CHAIN_PAUSE_LABELS[pause.reason]}`;
 	return (
-		<section
+		<Callout
 			aria-label={complete ? 'Completed run queue' : 'Stopped run queue'}
-			className={complete
-				? 'flex flex-col gap-1 rounded-md bg-success/8 p-3 text-success-foreground dark:bg-success/16'
-				: 'flex flex-col gap-1 rounded-md bg-warning/8 p-3 text-warning-foreground dark:bg-warning/16'}
+			title={complete ? 'Queue complete' : 'Queue stopped'}
+			tone={complete ? 'success' : 'warning'}
 		>
-			<span className="font-medium text-sm">{complete ? 'Queue complete' : 'Queue stopped'}</span>
 			<p className="break-words text-xs">{named}</p>
-		</section>
+		</Callout>
 	);
 }
 
@@ -2755,50 +2869,155 @@ function humanVersionOf(version: string): string {
 	return buildMetadata === -1 ? version : version.slice(0, buildMetadata);
 }
 
-function ShellNavigation({
-	catalog,
+
+/**
+ * The nav glyphs, from Hugeicons' free set (operator decision, 2026-08-25:
+ * hugeicons is the product's icon source), muted beside their labels and
+ * held to one 16px slot so rows lane-align.
+ */
+const NAV_GLYPHS = {
+	overview: Grid2X2Icon,
+	project: CubeIcon,
+	conversation: Message01Icon,
+	runs: Activity01Icon,
+	work: ListViewIcon,
+	settings: Settings01Icon,
+	globalSettings: Globe02Icon,
+} as const;
+
+function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.ReactElement {
+	return (
+		<HugeiconsIcon
+			className="size-4 shrink-0 opacity-70"
+			icon={NAV_GLYPHS[name]}
+			size={16}
+			strokeWidth={2.25}
+		/>
+	);
+}
+
+/*
+ * The project switcher (operator decision, 2026-08-31, two-line
+ * team-switcher anatomy): the trigger scopes projects only -- the overview
+ * is a standing nav item, not a sibling scope -- and the status rides the
+ * second line as text, never as a chip beside the name. The acid dot on
+ * "Needs you" keeps the sidebar's one acid signal.
+ */
+const SWITCHER_ITEM_CLASS =
+	'flex w-full cursor-default select-none items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none ' +
+	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
+
+function ProjectSwitcher({
 	projects,
 	selection,
+	status,
+	catalog,
 }: {
-	catalog: ShellCatalog;
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
+	status: { label: string; acid: boolean } | null;
+	catalog: ShellCatalog;
 }): React.ReactElement {
-	return <>
-		<nav aria-label={catalog.projectNavigationLabel}>
-			<ul className="flex flex-col gap-1">
-				<li>
-					<a
-						aria-current={selection.surface === 'overview' ? 'page' : undefined}
-						className={cn(NAV_LINK_CLASS, selection.surface === 'overview' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-						href="/overview"
-					>
-						{catalog.allProjectsLabel}
-					</a>
-				</li>
+	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
+	return (
+		<>
+		<Menu.Root>
+			<Menu.Trigger className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left text-sidebar-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent">
+				<span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg border">
+					<NavGlyph name={selected === null ? 'overview' : 'project'} />
+				</span>
+				<span className="grid min-w-0 flex-1 leading-tight">
+					<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
+						{selected?.name ?? catalog.switcherPlaceholder}
+					</span>
+					{selected === null || status === null ? null : (
+						<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+							{status.acid ? <span className="size-1.5 shrink-0 rounded-full bg-attention" /> : null}
+							<span className="overflow-hidden text-ellipsis whitespace-nowrap">{status.label}</span>
+						</span>
+					)}
+				</span>
+				<HugeiconsIcon className="size-3.5 shrink-0 opacity-70" icon={UnfoldMoreIcon} size={14} strokeWidth={2.25} />
+			</Menu.Trigger>
+			<Menu.Portal>
+				<Menu.Positioner align="start" className="z-50" sideOffset={6}>
+					<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 duration-100 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+						<div className="px-2 pt-1.5 pb-1 font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+							{catalog.projectNavigationLabel}
+						</div>
+						{projects.map((project) => (
+							<Menu.Item
+								className={SWITCHER_ITEM_CLASS}
+								key={project.id}
+								render={<a href={`/projects/${encodeURIComponent(project.id)}`} />}
+							>
+								<NavGlyph name="project" />
+								<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+									{project.name}
+								</span>
+								{project.id === selection.projectId ? (
+									<HugeiconsIcon className="size-3.5 shrink-0" icon={Tick02Icon} size={14} strokeWidth={2.25} />
+								) : null}
+							</Menu.Item>
+						))}
+					</Menu.Popup>
+				</Menu.Positioner>
+			</Menu.Portal>
+		</Menu.Root>
+		{/* The registry as plain links (sr-only): a portal never reaches the
+		 * static render, so without this nav the closed menu would drop
+		 * every registry link from the no-JS document and from keyboard
+		 * reach before hydration. */}
+		<nav aria-label={catalog.projectNavigationLabel} className="sr-only">
+			<ul>
 				{projects.map((project) => (
 					<li key={project.id}>
-						<a
-							aria-current={selection.projectId === project.id && selection.surface === 'conversation' ? 'page' : undefined}
-							className={cn(NAV_LINK_CLASS, selection.projectId === project.id && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-							href={`/projects/${encodeURIComponent(project.id)}`}
-						>
-							{project.name}
-						</a>
+						<a href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a>
 					</li>
 				))}
 			</ul>
 		</nav>
-		<a
-			aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
-			className={cn(NAV_LINK_CLASS, selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-			href="/settings"
-		>
-			{catalog.routeLabels.globalSettings}
-		</a>
-		{selection.projectId === null ? null : <nav aria-label={catalog.operatorNavigationLabel}>
-			<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
-				{SURFACES.map((surface) => (
+		</>
+	);
+}
+
+function ShellNavigation({
+	catalog,
+	projects,
+	selection,
+	status,
+}: {
+	catalog: ShellCatalog;
+	projects: AppProps['projects'];
+	selection: ReturnType<typeof routeSelection>;
+	status: { label: string; acid: boolean } | null;
+}): React.ReactElement {
+	/* The overview is a standing destination, never a scope the switcher can
+	 * hold: it stays one click away from every project. The project surfaces
+	 * follow with no group label -- the switcher above already names the
+	 * scope (operator decision, 2026-08-31). */
+	return <>
+		<ProjectSwitcher
+			catalog={catalog}
+			projects={projects}
+			selection={selection}
+			status={status}
+		/>
+		<nav aria-label={catalog.operatorNavigationLabel}>
+			<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-0.5 lg:overflow-x-visible">
+				<li>
+					<a
+						aria-current={selection.surface === 'overview' ? 'page' : undefined}
+						className={cn(
+							NAV_LINK_CLASS,
+							selection.surface === 'overview' && 'bg-sidebar-accent text-sidebar-accent-foreground',
+						)}
+						href="/overview"
+					>
+						<NavGlyph name="overview" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.overview}</span>
+					</a>
+				</li>
+				{selection.projectId === null ? null : SURFACES.map((surface) => (
 					<li key={surface.surface}>
 						<a
 							aria-current={surface.surface === selection.surface ? 'page' : undefined}
@@ -2808,20 +3027,215 @@ function ShellNavigation({
 							)}
 							href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
 						>
-							{catalog.routeLabels[surface.label]}
+							<NavGlyph name={surface.surface} /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels[surface.label]}</span>
 						</a>
 					</li>
 				))}
 			</ul>
-		</nav>}
+		</nav>
 	</>;
+}
+
+/*
+ * The root tsconfig checks this file without the DOM lib (browser types are
+ * scoped to webui's own config), so the browser surface this screen touches
+ * is named here, the same idiom notifications.ts uses.
+ */
+interface PanelRuntime {
+	localStorage?: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void };
+	addEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
+	removeEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
+	matchMedia?: (query: string) => { matches: boolean };
+	document?: { documentElement: { classList: { toggle: (name: string, force: boolean) => void } } };
+}
+
+interface PanelKeyEvent {
+	key: string;
+	metaKey: boolean;
+	ctrlKey: boolean;
+	preventDefault: () => void;
+}
+
+function panelRuntime(): PanelRuntime {
+	return globalThis as unknown as PanelRuntime;
+}
+
+/**
+ * Collapse state for the two side panels, persisted per browser. Reading is
+ * guarded so static rendering (tests) sees the expanded default; writing
+ * happens only on a real toggle, in a real browser.
+ */
+function useStoredOpen(key: string): [boolean, () => void] {
+	const [open, setOpen] = useState(() => panelRuntime().localStorage?.getItem(key) !== 'closed');
+	const toggle = useCallback(() => {
+		setOpen((previous) => {
+			panelRuntime().localStorage?.setItem(key, previous ? 'closed' : 'open');
+			return !previous;
+		});
+	}, [key]);
+	return [open, toggle];
+}
+
+/**
+ * The shell's persistent preferences, one row at the top right of the
+ * content area (operator decision, 2026-08-25, replacing the segmented
+ * pills at the sidebar's foot): language, theme and content measure, each a
+ * single outline button whose face names the state it switches TO. Theme
+ * and measure store an explicit choice that main.tsx re-applies at boot.
+ */
+function ShellControls({
+	locale,
+	onSelectLocale,
+	catalog,
+	sidebarOpen,
+	onToggleSidebar,
+}: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
+	catalog: ShellCatalog;
+	sidebarOpen: boolean;
+	onToggleSidebar: () => void;
+}): React.ReactElement {
+	const [dark, setDark] = useState(() => {
+		const runtime = panelRuntime();
+		const stored = runtime.localStorage?.getItem('gship-theme') ?? null;
+		if (stored !== null) return stored === 'dark';
+		return runtime.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+	});
+	const [wide, setWide] = useState(
+		() => panelRuntime().localStorage?.getItem('gship-width') === 'wide',
+	);
+	const toggleTheme = (): void => {
+		const next = !dark;
+		const runtime = panelRuntime();
+		runtime.localStorage?.setItem('gship-theme', next ? 'dark' : 'light');
+		runtime.document?.documentElement.classList.toggle('dark', next);
+		setDark(next);
+	};
+	const toggleWidth = (): void => {
+		const next = !wide;
+		const runtime = panelRuntime();
+		runtime.localStorage?.setItem('gship-width', next ? 'wide' : 'centered');
+		runtime.document?.documentElement.classList.toggle('gship-wide', next);
+		setWide(next);
+	};
+	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
+	return (
+		<div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 lg:px-6">
+			{/* The sidebar toggle lives in the content area, not the sidebar
+			 * (operator decision, 2026-08-25): a panel glyph whose side bar is
+			 * wide while the sidebar is open and narrow while it is collapsed. */}
+			<Button
+				aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+				onClick={onToggleSidebar}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<HugeiconsIcon
+					className="size-3.5"
+					icon={sidebarOpen ? SidebarLeftIcon : SidebarLeft01Icon}
+					size={14}
+					strokeWidth={3}
+				/>
+			</Button>
+			<div aria-label={catalog.languageLabel} className="flex items-center gap-2" role="group">
+			<Button
+				aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
+				id="gateship-locale"
+				onClick={() => onSelectLocale(targetLocale)}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
+			</Button>
+			<Button
+				aria-label={dark ? catalog.themeToggle.light : catalog.themeToggle.dark}
+				onClick={toggleTheme}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<HugeiconsIcon
+					className="size-3.5"
+					icon={dark ? Sun02Icon : Moon02Icon}
+					size={14}
+					strokeWidth={3}
+				/>
+			</Button>
+			<Button
+				aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
+				onClick={toggleWidth}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<HugeiconsIcon
+					className="size-3.5"
+					icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon}
+					size={14}
+					strokeWidth={3}
+				/>
+			</Button>
+			</div>
+		</div>
+	);
+}
+
+/* The sidebar's group label: mono, tiny, quiet (dashboard-01's anatomy). */
+/* A chevron pointing where the panel will go; the label carries the meaning. */
+function PanelChevron({ direction }: { direction: 'left' | 'right' }): React.ReactElement {
+	return (
+		<HugeiconsIcon
+			className="size-3.5"
+			icon={direction === 'left' ? ArrowLeft01Icon : ArrowRight01Icon}
+			size={14}
+			strokeWidth={3}
+		/>
+	);
+}
+
+/**
+ * Run state, preserved workspaces and the callouts all describe the selected
+ * project, whose own scoped snapshot is what this document loaded
+ * (GSHIP-707). A queue pause is the one exception: run chaining is the boot
+ * runtime's switch, so it is only ever stated for the current project.
+ */
+function shellAttention(
+	selected: RegisteredProjectView | null,
+	chainRuns: ChainRunsView,
+	run: RunView | null,
+	workspaceNotices: AppProps['workspaceNotices'],
+): { operational: boolean; queuePause: ChainRunsView['pause']; attention: OperatorAttention } {
+	const operational = selected !== null && (selected.current || selected.readiness === 'ready');
+	const queuePause = selected?.current === true ? visibleQueuePause(chainRuns) : null;
+	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
+	return {
+		operational,
+		queuePause,
+		attention: attentionOf(operational ? run : null, operational ? workspaceNotices : [], stoppedQueue),
+	};
+}
+
+/**
+ * The collapsed shell: the mark, the attention signal if any, and the way
+ * back. Everything else waits behind the toggle (or Cmd/Ctrl+B).
+ */
+function ShellRail({ needsYou }: { needsYou: boolean }): React.ReactElement {
+	/* pt-6 at lg matches the expanded sidebar's own p-6 (operator decision,
+	 * 2026-08-25): the mark shares the same vertical anchor collapsed and
+	 * expanded, so toggling reads as a width change, not the logo jumping. */
+	return (
+		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:pt-8">
+			<GateshipMark className="size-6 translate-x-px" portal />
+			{needsYou ? <span aria-hidden="true" className="size-2 rounded-full bg-attention" /> : null}
+		</header>
+	);
 }
 
 function ShellSidebar({
 	chainRuns,
 	gitIdentity,
 	locale,
-	onSelectLocale,
 	runInspectorCatalog,
 	route,
 	projects,
@@ -2829,11 +3243,13 @@ function ShellSidebar({
 	staleService,
 	version,
 	workspaceNotices,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectLocale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
+	open,
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
+	open: boolean;
 }): React.ReactElement {
 	// The header answers one question -- is Gateship waiting on the operator --
 	// so it carries the human state alone. The run's own state stays on the
@@ -2844,47 +3260,51 @@ function ShellSidebar({
 	const currentId = projects.find((project) => project.current)?.id ?? null;
 	const selection = routeSelection(route, currentId);
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
-	// Run state, preserved workspaces and the two callouts all describe the
-	// selected project, whose own scoped snapshot is what this document loaded
-	// (GSHIP-707). A queue pause is the one exception: run chaining is the boot
-	// runtime's switch, so it is only ever stated for the current project.
-	const operational = selected !== null && (selected.current || selected.readiness === 'ready');
-	const queuePause = selected?.current === true ? visibleQueuePause(chainRuns) : null;
-	const stoppedQueue = queuePause !== null && queuePause.reason !== 'no-admissible-issue';
-	const attention = attentionOf(operational ? run : null, operational ? workspaceNotices : [], stoppedQueue);
+	const { operational, queuePause, attention } = shellAttention(
+		selected,
+		chainRuns,
+		run,
+		workspaceNotices,
+	);
 	const humanVersion = humanVersionOf(version);
+	if (!open) {
+		return <ShellRail needsYou={operational && attention === 'Needs you'} />;
+	}
+	/* The shell chrome deepens its own --sidebar one step (operator decision,
+	 * 2026-08-25): the body canvas keeps the global token, so the sidebar
+	 * separates from the content by fill, not only by its hairline border.
+	 * @theme inline makes bg-sidebar read the var in cascade, so the
+	 * element-level override is all it takes. */
 	return (
-		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
-			<div className="flex flex-col items-start gap-3">
-				<div className="flex flex-col gap-1">
-					<h1>
-						<GateshipLockup className="block aspect-[15635/3035] h-7 w-auto" />
-					</h1>
-					{version === '' ? null : (
-						<span className="font-mono text-muted-foreground text-xs">v{humanVersion}</span>
-					)}
-				</div>
-				{operational ? <Badge variant={attentionToneOf(attention)}>
-					{runInspectorCatalog.attentionLabels[attention]}
-				</Badge> : null}
-			</div>
-			<ShellNavigation catalog={catalog} projects={projects} selection={selection} />
+		<header className="flex shrink-0 flex-col gap-4 p-4 lg:h-full lg:w-64 lg:overflow-y-auto lg:p-6 lg:pt-8">
+			<h1 className="flex items-center gap-2">
+				<span aria-hidden="true">
+					<GateshipMark className="size-6 translate-x-px" portal />
+				</span>
+				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
+			</h1>
+			<ShellNavigation
+				catalog={catalog}
+				projects={projects}
+				selection={selection}
+				/* "Needs you" is the navigation's one acid point (design-system.md 1). */
+				status={operational ? { label: runInspectorCatalog.attentionLabels[attention], acid: attention === 'Needs you' } : null}
+			/>
 			<ChainPauseCallout pause={queuePause} />
 			{operational ? <StaleServiceCallout staleService={staleService} /> : null}
 			{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
-			<Separator />
-			<label className="flex flex-col gap-1 text-sidebar-foreground text-xs lg:mt-auto" htmlFor="gateship-locale">
-				<span className="font-medium">{catalog.languageLabel}</span>
-				<select
-					className="w-full rounded-md border border-sidebar-border bg-sidebar-accent px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-					id="gateship-locale"
-					onChange={(event) => onSelectLocale((event.currentTarget as unknown as { value: Locale }).value)}
-					value={locale}
+			<nav aria-label={catalog.routeLabels.globalSettings} className="lg:mt-auto">
+				<a
+					aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
+					className={cn(NAV_LINK_CLASS, selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+					href="/settings"
 				>
-					<option value="en-US">English (US)</option>
-					<option value="pt-BR">Português (Brasil)</option>
-				</select>
-			</label>
+					<NavGlyph name="globalSettings" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.globalSettings}</span>
+				</a>
+			</nav>
+			{version === '' ? null : (
+				<span className="px-3 font-mono text-[10px] text-sidebar-foreground/50 uppercase tracking-wider">v{humanVersion}</span>
+			)}
 		</header>
 	);
 }
@@ -2898,15 +3318,21 @@ function SurfaceColumn({
 	label: string;
 	children: React.ReactNode;
 }): React.ReactElement {
+	/* The main stays the full-width scroller (the scrollbar belongs to the
+	 * viewport edge); the content lives in a centered max-w-7xl column, the
+	 * industry dashboard measure, instead of stretching edge to edge on wide
+	 * displays (operator decision, 2026-08-25). */
 	return (
 		<main
 			aria-label={label}
-			className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6 xl:overflow-y-auto"
+			className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:p-6"
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<StatusOutput status={status} />
-			{children}
+			<div className="mx-auto flex w-full max-w-(--content-measure) flex-1 flex-col gap-6">
+				<StatusOutput status={status} />
+				{children}
+			</div>
 		</main>
 	);
 }
@@ -2940,8 +3366,7 @@ function RegisterProjectPanel({
 				>
 					<label className="flex flex-col gap-1 text-sm" htmlFor="project-root">
 						<span className="font-medium">{catalog.register.rootLabel}</span>
-						<input
-							className={FIELD_CLASS}
+						<Input
 							id="project-root"
 							name="project-root"
 							placeholder={catalog.register.rootPlaceholder}
@@ -2949,7 +3374,7 @@ function RegisterProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.register.rootGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 						{catalog.register.submit}
 					</button>
 				</form>
@@ -2988,8 +3413,7 @@ function ImportProjectPanel({
 				>
 					<label className="flex flex-col gap-1 text-sm" htmlFor="project-import-repository">
 						<span className="font-medium">{catalog.import.repositoryLabel}</span>
-						<input
-							className={FIELD_CLASS}
+						<Input
 							id="project-import-repository"
 							name="project-import-repository"
 							placeholder={catalog.import.repositoryPlaceholder}
@@ -2997,7 +3421,7 @@ function ImportProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.import.destinationGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.import.credentialGuidance}</span>
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 						{catalog.import.submit}
 					</button>
 					{projectOnboardingPending === 'import'
@@ -3049,8 +3473,7 @@ function CreateProjectPanel({
 				>
 					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-repository">
 						<span className="font-medium">{catalog.create.repositoryLabel}</span>
-						<input
-							className={FIELD_CLASS}
+						<Input
 							id="project-create-repository"
 							name="project-create-repository"
 							onChange={(event) => {
@@ -3063,8 +3486,7 @@ function CreateProjectPanel({
 					</label>
 					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-description">
 						<span className="font-medium">{catalog.create.descriptionLabel}</span>
-						<input
-							className={FIELD_CLASS}
+						<Input
 							id="project-create-description"
 							maxLength={350}
 							name="project-create-description"
@@ -3076,21 +3498,19 @@ function CreateProjectPanel({
 					</label>
 					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-visibility">
 						<span className="font-medium">{catalog.create.visibilityLabel}</span>
-						<select
-							className={FIELD_CLASS}
+						<SelectField
 							id="project-create-visibility"
+							items={[
+								{ value: 'private', label: catalog.create.privateLabel },
+								{ value: 'public', label: catalog.create.publicLabel },
+							]}
 							name="project-create-visibility"
-							onChange={(event) => {
-								setVisibility((event.currentTarget as unknown as {
-									value: 'private' | 'public';
-								}).value);
+							onValueChange={(value) => {
+								setVisibility(value as 'private' | 'public');
 								setConfirmed(false);
 							}}
 							value={visibility}
-						>
-							<option value="private">{catalog.create.privateLabel}</option>
-							<option value="public">{catalog.create.publicLabel}</option>
-						</select>
+						/>
 					</label>
 					{visibility === 'public' ? (
 						<p className="text-destructive text-sm" role="alert">{catalog.create.publicWarning}</p>
@@ -3108,7 +3528,7 @@ function CreateProjectPanel({
 						/>
 						<span>{authorization}</span>
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending || !confirmed || namedRepository === ''} type="submit">
+					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending || !confirmed || namedRepository === ''} type="submit">
 						{catalog.create.submit}
 					</button>
 					{projectOnboardingPending === 'create'
@@ -3156,7 +3576,7 @@ function UnregisterProjectPanel({
 					<span>{catalog.remove.confirm(project.name)}</span>
 				</label>
 				<button
-					className={BUTTON_CLASS}
+					className={cn(BUTTON_CLASS, 'self-end')}
 					disabled={pending || !confirmed}
 					onClick={() => {
 						setConfirmed(false);
@@ -3175,27 +3595,109 @@ type OverviewCardEntry =
 	| { project: RegisteredProjectView; snapshot: false }
 	| (ProjectOverviewView & { snapshot: true });
 
+/* One fact of a project tile: quiet label left, value right. */
+function OverviewFact({ label, children }: { label: string; children: React.ReactNode }): React.ReactElement {
+	return (
+		<div className="flex items-baseline justify-between gap-3">
+			<dt className="shrink-0 text-muted-foreground">{label}</dt>
+			<dd className="min-w-0 text-right">{children}</dd>
+		</div>
+	);
+}
+
+const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeVariant>> = {
+	ready: 'success',
+	empty: 'secondary',
+	'needs-attention': 'warning',
+};
+
+/** Outcome sparkline spec: family color plus a dash, never color alone. */
+const OUTCOME_LINES: readonly (readonly [
+	'shipped' | 'failed' | 'cancelled' | 'incomplete',
+	string,
+	string,
+])[] = [
+	['shipped', 'text-success', 'none'],
+	['failed', 'text-destructive', '4 2'],
+	['cancelled', 'text-chart-2', '1 2'],
+	['incomplete', 'text-warning', '8 2 1 2'],
+];
+
+const OUTCOME_TONE: Readonly<Record<string, BadgeVariant>> = {
+	shipped: 'success',
+	failed: 'error',
+	cancelled: 'secondary',
+	incomplete: 'warning',
+};
+
 function OverviewOperationalFacts({ entry, catalog, locale }: { entry: ProjectOverviewView; catalog: OverviewCatalog; locale: Locale }): React.ReactElement {
-	if (entry.database.state !== 'available') return <p>{catalog.databaseUnavailable}</p>;
+	if (entry.database.state !== 'available') return <p className="text-muted-foreground">{catalog.databaseUnavailable}</p>;
 	const provider = entry.activeRun === null ? null : MODEL_PROVIDER_LABELS[entry.activeRun.providerId];
-	return <>{provider === null ? null : <p><span className="font-medium">{catalog.provider}:</span> {provider}</p>}<p><span className="font-medium">{catalog.activeRun}:</span> {entry.activeRun === null ? catalog.noRun : <a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(entry.project.id)}/runs`}>{entry.activeRun.id}</a>}</p><p><span className="font-medium">{catalog.issue}:</span> {entry.activeRun?.issueId ?? catalog.noRun}</p><p><span className="font-medium">{catalog.phase}:</span> {entry.activeRun === null ? catalog.noRun : LOCALE_CATALOG[locale].runInspector.stateLabels[entry.activeRun.state as RunState]}</p><p><span className="font-medium">{catalog.updated}:</span> {entry.latestRun?.updatedAt ?? catalog.noRun}</p></>;
+	return <>
+		{provider === null ? null : <OverviewFact label={catalog.provider}>{provider}</OverviewFact>}
+		<OverviewFact label={catalog.activeRun}>
+			{entry.activeRun === null
+				? <span className="text-muted-foreground">{catalog.noRun}</span>
+				: <a className={cn(TEXT_LINK_CLASS, 'break-all font-mono text-xs')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs`}>{entry.activeRun.id}</a>}
+		</OverviewFact>
+		{entry.activeRun === null ? null : (
+			<OverviewFact label={catalog.issue}>
+				<span className="break-all font-mono text-xs">{entry.activeRun.issueId}</span>
+			</OverviewFact>
+		)}
+		{entry.activeRun === null ? null : (
+			<OverviewFact label={catalog.phase}>
+				<Badge variant={toneOf(entry.activeRun.state as RunState)}>
+					{LOCALE_CATALOG[locale].runInspector.stateLabels[entry.activeRun.state as RunState]}
+				</Badge>
+			</OverviewFact>
+		)}
+		{entry.latestRun === null ? null : (
+			<OverviewFact label={catalog.updated}>
+				<time className="font-mono text-muted-foreground text-xs">
+					{formatRunTimestamp(entry.latestRun.updatedAt, locale)}
+				</time>
+			</OverviewFact>
+		)}
+	</>;
 }
 
 function OverviewProjectDetails({ entry, catalog, projectCatalog, locale }: { entry: OverviewCardEntry; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
-	if (!entry.snapshot) return <p><span className="font-medium">{projectCatalog.readinessLabel}:</span> {projectCatalog.readiness[entry.project.readiness]}</p>;
-	const lastOutcome = entry.overview.overview === null ? catalog.historyUnavailable : entry.latestRunOutcome === null ? catalog.noOutcome : catalog.outcomes[entry.latestRunOutcome];
-	return <><p><span className="font-medium">{projectCatalog.readinessLabel}:</span> {projectCatalog.readiness[entry.project.readiness]}</p><OverviewOperationalFacts entry={entry} catalog={catalog} locale={locale} /><p><span className="font-medium">{catalog.backlogLabel}:</span> {entry.backlog.state === 'available' ? entry.backlog.counts.planned : catalog.partial}</p><p><span className="font-medium">{catalog.lastOutcome}:</span> {lastOutcome}</p></>;
+	const readiness = (
+		<OverviewFact label={projectCatalog.readinessLabel}>
+			<Badge variant={READINESS_TONE[entry.project.readiness]}>
+				{projectCatalog.readiness[entry.project.readiness]}
+			</Badge>
+		</OverviewFact>
+	);
+	if (!entry.snapshot) return readiness;
+	return <>
+		{readiness}
+		<OverviewOperationalFacts entry={entry} catalog={catalog} locale={locale} />
+		<OverviewFact label={catalog.backlogLabel}>
+			<span className="font-mono text-xs tabular-nums">
+				{entry.backlog.state === 'available' ? entry.backlog.counts.planned : catalog.partial}
+			</span>
+		</OverviewFact>
+		<OverviewFact label={catalog.lastOutcome}>
+			{entry.overview.overview === null
+				? <span className="text-muted-foreground">{catalog.historyUnavailable}</span>
+				: entry.latestRunOutcome === null
+					? <span className="text-muted-foreground">{catalog.noOutcome}</span>
+					: <Badge variant={OUTCOME_TONE[entry.latestRunOutcome] ?? 'secondary'}>{catalog.outcomes[entry.latestRunOutcome]}</Badge>}
+		</OverviewFact>
+	</>;
 }
 
 function OverviewProjectCard({ entry, catalog, projectCatalog, locale }: { entry: OverviewCardEntry; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
 	const project = entry.project;
-	return <li><Card><CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle><a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>{project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</div><CardDescription>{project.repository ?? projectCatalog.repositoryUnknown}</CardDescription></CardHeader><CardPanel><div className="grid gap-2 text-sm sm:grid-cols-2"><OverviewProjectDetails entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={locale} /></div></CardPanel></Card></li>;
+	return <li className="min-w-0"><Card><CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle><a className={TITLE_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>{project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</div><CardDescription className="break-all font-mono text-xs">{project.repository ?? projectCatalog.repositoryUnknown}</CardDescription></CardHeader><CardPanel><dl className="flex flex-col gap-1.5 text-sm"><OverviewProjectDetails entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={locale} /></dl></CardPanel></Card></li>;
 }
 
 function OverviewProjectCards({ props, overview, catalog, projectCatalog }: { props: AppProps; overview: ProjectOperationalOverviewView | null; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog }): React.ReactElement | null {
 	if (overview === null && props.overviewLoading) return null;
 	const entries: OverviewCardEntry[] = overview === null ? props.projects.map((project) => ({ project, snapshot: false })) : overview.projects.map((entry) => ({ ...entry, snapshot: true }));
-	return <ul className="grid gap-3 lg:grid-cols-2">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
+	return <ul className="card-ring-group grid gap-6 lg:grid-cols-2 2xl:grid-cols-3">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
 }
 
 function OverviewData({ props, overview, catalog, attention, activeProjects }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number; activeProjects: number }): React.ReactElement {
@@ -3204,15 +3706,59 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 	const chartPoints = historical.daily;
 	const maxRuns = Math.max(1, ...chartPoints.map((day) => day.totalRuns));
 	const maxOutcomes = Math.max(1, ...chartPoints.flatMap((day) => Object.values(day.runsByOutcome)));
+	// An all-zero line carries no information and three of them overlap into
+	// a noisy baseline strip, so only outcomes that happened get drawn.
+	const outcomeLines = OUTCOME_LINES.filter(([outcome]) =>
+		chartPoints.some((day) => day.runsByOutcome[outcome] > 0));
 	return <>
-		<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[[catalog.metrics.activeProjects, activeProjects], [catalog.metrics.attention, attention], [catalog.metrics.backlog, overview.summary.backlog.planned], [catalog.metrics.completed, completed], [catalog.metrics.cost, historical.knownCostUsd === null ? catalog.noCost : formatCostUsd(historical.knownCostUsd, props.locale)]].map(([label, value]) => <Card key={String(label)}><CardPanel><p className="text-muted-foreground text-xs">{label}</p><p className="font-semibold text-xl">{value}</p>{label === catalog.metrics.cost ? <p className="text-muted-foreground text-xs">{catalog.costCoverage(historical.runsWithKnownCost, historical.totalRuns)}</p> : null}</CardPanel></Card>)}</div>
+		{/*
+		 * The bento's hero answers "what needs me?" first. It is the one tile
+		 * allowed to go acid, and only while something actually waits; a zero
+		 * stays as quiet as every other number.
+		 */}
+		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+			<Stat
+				className={cn(
+					'xl:col-span-2',
+					attention > 0
+						&& 'border-attention-ui bg-attention-surface shadow-[0_6px_28px_rgba(200,255,0,0.09)]',
+				)}
+				label={catalog.metrics.attention}
+				value={attention}
+			/>
+			<Stat label={catalog.metrics.activeProjects} value={activeProjects} />
+			<Stat label={catalog.metrics.backlog} value={overview.summary.backlog.planned} />
+			<Stat label={catalog.metrics.completed} value={completed} />
+			<Stat
+				hint={catalog.costCoverage(historical.runsWithKnownCost, historical.totalRuns)}
+				label={catalog.metrics.cost}
+				value={historical.knownCostUsd === null
+					? catalog.noCost
+					: formatCostUsd(historical.knownCostUsd, props.locale, 2)}
+			/>
+		</div>
 		{props.overviewLoading ? <p className="text-muted-foreground text-xs" role="status">{catalog.loading}</p> : null}
 		{attention > 0 ? <p className="text-warning-foreground text-sm" role="status">{catalog.partial}</p> : null}
-		<Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel>
-			<svg aria-label={catalog.activity} className="h-24 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.activity}</title><polyline aria-label={catalog.activity} fill="none" points={chartPoints.map((day, index) => `${chartPoints.length < 2 ? 50 : (index / (chartPoints.length - 1)) * 100},${30 - (day.totalRuns / maxRuns) * 26}`).join(' ')} stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /></svg>
-			<svg aria-label={catalog.trend} className="h-24 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.trend}</title>{(['shipped', 'failed', 'cancelled', 'incomplete'] as const).map((outcome, index) => <polyline aria-label={catalog.outcomes[outcome]} fill="none" key={outcome} points={chartPoints.map((day, pointIndex) => `${chartPoints.length < 2 ? 50 : (pointIndex / (chartPoints.length - 1)) * 100},${30 - (day.runsByOutcome[outcome] / maxOutcomes) * 26}`).join(' ')} stroke="currentColor" strokeDasharray={['none', '4 2', '1 2', '8 2 1 2'][index]} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />)}</svg>
+		{/*
+		 * Sparklines, not charts: no axes, quiet strokes. The activity line is
+		 * neutral; outcome lines pair a family color with a dash pattern so no
+		 * state is told by color alone, and the legend repeats both cues.
+		 */}
+		<Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel className="flex flex-col gap-4">
+			<svg aria-label={catalog.activity} className="h-20 w-full text-chart-2" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.activity}</title><polyline aria-label={catalog.activity} fill="none" points={chartPoints.map((day, index) => `${chartPoints.length < 2 ? 50 : (index / (chartPoints.length - 1)) * 100},${30 - (day.totalRuns / maxRuns) * 26}`).join(' ')} stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
+			<svg aria-label={catalog.trend} className="h-20 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.trend}</title>{outcomeLines.map(([outcome, colorClass, dash]) => <polyline aria-label={catalog.outcomes[outcome]} className={colorClass} fill="none" key={outcome} points={chartPoints.map((day, pointIndex) => `${chartPoints.length < 2 ? 50 : (pointIndex / (chartPoints.length - 1)) * 100},${30 - (day.runsByOutcome[outcome] / maxOutcomes) * 26}`).join(' ')} stroke="currentColor" strokeDasharray={dash} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}</svg>
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs">
+				{outcomeLines.map(([outcome, colorClass, dash]) => (
+					<span className="inline-flex items-center gap-1.5" key={outcome}>
+						<svg aria-hidden="true" className={cn('h-2 w-5', colorClass)} viewBox="0 0 20 8">
+							<line stroke="currentColor" strokeDasharray={dash} strokeWidth="2" x1="0" x2="20" y1="4" y2="4" />
+						</svg>
+						{catalog.outcomes[outcome]}
+					</span>
+				))}
+				<span className="ml-auto font-mono tabular-nums">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</span>
+			</div>
 			<ul aria-label={catalog.trend} className="sr-only">{chartPoints.map((day) => <li key={day.date}>{day.date}: {catalog.activity} {day.totalRuns}; {catalog.outcomes.shipped} {day.runsByOutcome.shipped}; {catalog.outcomes.failed} {day.runsByOutcome.failed}; {catalog.outcomes.cancelled} {day.runsByOutcome.cancelled}; {catalog.outcomes.incomplete} {day.runsByOutcome.incomplete}</li>)}</ul>
-			<p className="text-muted-foreground text-xs">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</p>
 		</CardPanel></Card>
 	</>;
 }
@@ -3228,14 +3774,15 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
+			{/* One title, one description: the middle line duplicated the main
+			 * region's own label and diluted the page header. */}
 			<div>
-				<h2 className="font-semibold text-xl">{projectCatalog.title}</h2>
-				<p className="font-medium text-sm">{catalog.title}</p>
-				<p className="text-muted-foreground text-sm">{catalog.description}</p>
+				<h2 className="font-semibold text-xl tracking-tight">{projectCatalog.title}</h2>
+				<p className="mt-1 text-muted-foreground text-sm">{catalog.description}</p>
 			</div>
 			{props.overviewLoading && overview === null ? <p role="status">{catalog.loading}</p> : null}
 			{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
-			{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <Card><CardPanel><p>{catalog.empty}</p></CardPanel></Card> : null}
+			{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <Card><CardPanel><EmptyState>{catalog.empty}</EmptyState></CardPanel></Card> : null}
 			{props.overviewError ? <p className="text-warning-foreground text-sm" role="alert">{catalog.error}: {props.overviewError}</p> : null}
 			{overview === null || overview.projects.length === 0 ? null : <OverviewData props={props} overview={overview} catalog={catalog} attention={attention} activeProjects={activeProjects} />}
 			<OverviewProjectCards props={props} overview={overview} catalog={catalog} projectCatalog={projectCatalog} />
@@ -3245,7 +3792,7 @@ function OverviewSurface(props: AppProps): React.ReactElement {
 				pending={props.pending}
 				projectOnboardingPending={props.projectOnboardingPending}
 			/>
-			<div className="grid gap-3 md:grid-cols-2">
+			<div className="grid gap-6 md:grid-cols-2">
 				<ImportProjectPanel
 					catalog={projectCatalog}
 					onImportProject={props.onImportProject}
@@ -3300,6 +3847,37 @@ function UnavailableProjectSurface({
 function HomeSurface(props: AppProps & { projectId: string }): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
+	if (!inspectorOpen) {
+		return (
+			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
+				<ConversationColumn
+					catalog={localeCatalog.conversation}
+					chatMessages={props.chatMessages}
+					locale={props.locale}
+					onResume={props.onResume}
+					onSendMessage={props.onSendMessage}
+					pending={props.pending}
+					run={run}
+					status={props.status}
+				/>
+				<aside
+					aria-label={localeCatalog.runInspector.homeAccessibleLabel}
+					className="flex shrink-0 items-start justify-end p-3 xl:w-12 xl:justify-center xl:border-l xl:pt-4"
+				>
+					<Button
+						aria-label={localeCatalog.shell.inspectorToggle.expand}
+						onClick={toggleInspector}
+						size="icon"
+						type="button"
+						variant="ghost"
+					>
+						<PanelChevron direction="left" />
+					</Button>
+				</aside>
+			</div>
+		);
+	}
 	return (
 		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
 			<ConversationColumn
@@ -3314,8 +3892,19 @@ function HomeSurface(props: AppProps & { projectId: string }): React.ReactElemen
 			/>
 			<aside
 				aria-label={localeCatalog.runInspector.homeAccessibleLabel}
-				className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
+				className="flex w-full min-w-0 flex-col gap-6 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
 			>
+				<div className="-mb-4 flex justify-end">
+					<Button
+						aria-label={localeCatalog.shell.inspectorToggle.collapse}
+						onClick={toggleInspector}
+						size="icon"
+						type="button"
+						variant="ghost"
+					>
+						<PanelChevron direction="right" />
+					</Button>
+				</div>
 				<RunCard
 					catalog={localeCatalog.runInspector}
 					footer={
@@ -3352,32 +3941,59 @@ function RunsSurface(props: AppProps): React.ReactElement {
 				onShip={props.onShip}
 				pending={props.pending}
 				run={run}
+				showCost={false}
 				title={catalog.latestRunTitle}
 			/>
-			{run === null ? null : <RunReport catalog={catalog} run={run} />}
+			{/*
+			 * The run's numbers as a stat row (dashboard-01 composition), then
+			 * two columns: what happened on the left (activity, report), what it
+			 * measured on the right (cost, insights, benchmarks, leftovers).
+			 * History closes the page full-width.
+			 */}
 			{run === null ? null : (
-				<RunCostPanel catalog={localeCatalog.runsOperational} locale={props.locale} run={run} />
+				<div className="card-ring-group grid gap-4 sm:grid-cols-2">
+					{run.cost.totalCostUsd === null ? null : (
+						<Stat
+							label={catalog.stats.expectedCost}
+							value={formatCostUsd(run.cost.totalCostUsd, props.locale)}
+						/>
+					)}
+					<Stat
+						label={catalog.stats.events}
+						value={props.events.filter((event) => event.runId === run.id).length}
+					/>
+				</div>
 			)}
-			<WorkflowInsightsPanel
-				catalog={localeCatalog.runsWorkflow}
-				locale={props.locale}
-				runs={props.runs}
-			/>
-			<WorkflowBenchmarkPanel
-				catalog={localeCatalog.runsWorkflow}
-				locale={props.locale}
-				runs={props.runs}
-			/>
-			<RunActivity
-				catalog={localeCatalog.runsOperational}
-				events={props.events}
-				locale={props.locale}
-				run={run}
-			/>
-			<WorkspaceNoticesPanel
-				catalog={localeCatalog.runsOperational}
-				workspaceNotices={props.workspaceNotices}
-			/>
+			<div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+				<div className="flex min-w-0 flex-col gap-6">
+					<RunActivity
+						catalog={localeCatalog.runsOperational}
+						events={props.events}
+						locale={props.locale}
+						run={run}
+					/>
+					{run === null ? null : <RunReport catalog={catalog} run={run} />}
+				</div>
+				<div className="flex min-w-0 flex-col gap-6">
+					{run === null ? null : (
+						<RunCostPanel catalog={localeCatalog.runsOperational} locale={props.locale} run={run} />
+					)}
+					<WorkflowInsightsPanel
+						catalog={localeCatalog.runsWorkflow}
+						locale={props.locale}
+						runs={props.runs}
+					/>
+					<WorkflowBenchmarkPanel
+						catalog={localeCatalog.runsWorkflow}
+						locale={props.locale}
+						runs={props.runs}
+					/>
+					<WorkspaceNoticesPanel
+						catalog={localeCatalog.runsOperational}
+						workspaceNotices={props.workspaceNotices}
+					/>
+				</div>
+			</div>
 			<PreviousRunsPanel
 				catalog={localeCatalog.runsOperational}
 				locale={props.locale}
@@ -3427,11 +4043,11 @@ function IssueReviewForm({
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
 				<span className="font-medium">{catalog.form.scope}</span>
-				<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
+				<Textarea className="min-h-24" id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
 			</label>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
 				<span className="font-medium">{catalog.form.verificationCommand}</span>
-				<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
+				<Input className="font-mono" id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
 			</label>
 			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
 				<div className="flex flex-col gap-2 text-sm">
@@ -3446,27 +4062,27 @@ function IssueReviewForm({
 					</ul>
 				</div>
 			)}
-			<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
+			<button className={cn(BUTTON_CLASS, 'self-end')} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmPersisted}</span>
 			</label>
 			<button
-				className={PRIMARY_BUTTON_CLASS}
+				className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
 				disabled={pending || dirty || !confirmed}
 				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
 				type="button"
 			>{catalog.review.approve}</button>
 			<label className="flex flex-col gap-1 text-sm" htmlFor="abandon-reason">
 				<span className="font-medium">{catalog.review.abandonReason}</span>
-				<textarea className={cn(FIELD_CLASS, 'min-h-20')} id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
+				<Textarea className="min-h-20" id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
 			</label>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
 			</label>
 			<button
-				className={BUTTON_CLASS}
+				className={cn(BUTTON_CLASS, 'self-end')}
 				disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
 				onClick={() => {
 					setAbandonConfirmed(false);
@@ -3507,18 +4123,15 @@ function IssueReviewPanel({
 			<CardPanel className="flex flex-col gap-4">
 				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
 					<span className="font-medium">{catalog.review.draft}</span>
-					<select
-						className={FIELD_CLASS}
+					<SelectField
 						id="review-issue"
-						onChange={(event) =>
-							setSelectedId((event.currentTarget as unknown as { value: string }).value || null)}
+						items={[
+							{ value: '', label: catalog.review.selectDraft },
+							...drafts.map((draft) => ({ value: draft.id, label: `${draft.id} — ${draft.title}` })),
+						]}
+						onValueChange={(value) => setSelectedId(value === '' ? null : value)}
 						value={selectedId ?? ''}
-					>
-						<option value="">{catalog.review.selectDraft}</option>
-						{drafts.map((draft) => (
-							<option key={draft.id} value={draft.id}>{draft.id} — {draft.title}</option>
-						))}
-					</select>
+					/>
 				</label>
 				{selected === null || !ownedByRun ? null : (
 					<p className="text-muted-foreground text-sm">
@@ -3594,20 +4207,24 @@ function DiagnosticFindingCard({
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	return (
-		<details className="rounded-md border border-border p-3 text-sm">
+		<details className="rounded-lg border border-border p-4 text-sm">
 			<summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
 				<Badge variant={diagnosticSeverityVariant(finding.severity)}>{catalog.diagnostics.severityLabels[finding.severity]}</Badge>
-				<span className="font-medium">{finding.rule}</span>
-				<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
+				<span className="font-semibold">{finding.rule}</span>
 				{finding.occurrenceCount > 1 ? <Badge variant="outline">{catalog.diagnostics.occurrences(formatCount(finding.occurrenceCount, locale))}</Badge> : null}
+				<code className="w-full break-all font-mono text-muted-foreground text-xs">{diagnosticFindingLocation(finding)}</code>
 			</summary>
 			<div className="mt-4 flex flex-col gap-4">
 				<p className="whitespace-pre-wrap break-words text-muted-foreground">{finding.evidence}</p>
-				<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+				<div className="flex flex-wrap items-center justify-between gap-2 font-mono text-muted-foreground text-xs">
 					<span>{catalog.diagnostics.toolVersion(finding.toolVersion)}</span>
 					<code>{finding.sourceSha.slice(0, 12)}</code>
 				</div>
-				<ActionButton enabled={!pending} label={catalog.diagnostics.dismiss} onClick={() => onDismiss(finding.id)} />
+				<div className="flex justify-end">
+					<Button disabled={pending} onClick={() => onDismiss(finding.id)} size="sm" type="button" variant="ghost">
+						{catalog.diagnostics.dismiss}
+					</Button>
+				</div>
 				<form
 					className="flex flex-col gap-3"
 					onSubmit={(event) => {
@@ -3622,17 +4239,17 @@ function DiagnosticFindingCard({
 				>
 					<label className="flex flex-col gap-1">
 						<span className="font-medium">{catalog.form.title}</span>
-						<input className={FIELD_CLASS} defaultValue={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} name="diagnosticTitle" required />
+						<Input defaultValue={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} name="diagnosticTitle" required />
 					</label>
 					<label className="flex flex-col gap-1">
 						<span className="font-medium">{catalog.form.scope}</span>
-						<textarea className={cn(FIELD_CLASS, 'min-h-24')} name="diagnosticScope" required />
+						<Textarea className="min-h-24" name="diagnosticScope" required />
 					</label>
 					<label className="flex flex-col gap-1">
 						<span className="font-medium">{catalog.form.verificationCommand}</span>
-						<input className={cn(FIELD_CLASS, 'font-mono')} name="diagnosticVerificationCommand" placeholder={catalog.form.verificationPlaceholder} required />
+						<Input className="font-mono" name="diagnosticVerificationCommand" placeholder={catalog.form.verificationPlaceholder} required />
 					</label>
-					<button className={BUTTON_CLASS} disabled={pending} type="submit">{catalog.form.promote}</button>
+					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">{catalog.form.promote}</button>
 				</form>
 			</div>
 		</details>
@@ -3655,7 +4272,7 @@ function PendingDiagnosticFindings({
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	if (findings.length === 0) {
-		return <p className="text-muted-foreground text-sm">{catalog.diagnostics.noPending}</p>;
+		return <EmptyState>{catalog.diagnostics.noPending}</EmptyState>;
 	}
 	return (
 		<ul className="flex flex-col gap-3">
@@ -3849,30 +4466,40 @@ function ProposalsPanel({
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				{proposals.length === 0 ? (
-					<p className="text-muted-foreground text-sm">
-						{catalog.proposals.emptyPending}
-					</p>
+					<EmptyState>{catalog.proposals.emptyPending}</EmptyState>
 				) : (
-					<ul className="flex flex-col gap-6">
+					<ul className="flex flex-col divide-y divide-border">
 						{proposals.map((proposal) => (
-							<li className="flex min-w-0 flex-col gap-3 text-sm" key={proposal.id}>
-								<div className="flex flex-col gap-1">
-									<span className="break-words font-medium">{proposal.title}</span>
-									<p className="whitespace-pre-wrap break-words text-muted-foreground">
-										{proposal.evidence}
-									</p>
-									<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-										<Badge variant="outline">{proposal.sourceIssueId}</Badge>
-										<code className="break-all text-xs">{proposal.sourceRunId}</code>
+							<li className="flex min-w-0 flex-col gap-3 py-5 text-sm first:pt-0 last:pb-0" key={proposal.id}>
+								<div className="flex items-start justify-between gap-3">
+									<div className="flex min-w-0 flex-col gap-1.5">
+										<span className="break-words font-semibold">{proposal.title}</span>
+										<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+											<Badge variant="outline">{proposal.sourceIssueId}</Badge>
+											<code className="break-all text-xs">{proposal.sourceRunId}</code>
+										</div>
 									</div>
+									<Button
+										disabled={pending}
+										onClick={() => onDismissProposal(proposal.id)}
+										size="sm"
+										type="button"
+										variant="ghost"
+									>
+										{catalog.proposals.dismiss}
+									</Button>
 								</div>
-								<ActionButton
-									enabled={!pending}
-									label={catalog.proposals.dismiss}
-									onClick={() => onDismissProposal(proposal.id)}
-								/>
+								<p className="whitespace-pre-wrap break-words text-muted-foreground">
+									{proposal.evidence}
+								</p>
+								{/* Forty of these live on one tab: the promote form discloses
+								 * per item instead of stacking three fields forty times. */}
+								<details>
+									<summary className="w-fit cursor-pointer text-muted-foreground text-sm hover:text-foreground">
+										{catalog.form.promote}
+									</summary>
 								<form
-									className="flex flex-col gap-3"
+									className="mt-3 flex flex-col gap-3"
 									onSubmit={(event) => {
 										event.preventDefault();
 										const value = fieldReader(event.currentTarget);
@@ -3888,9 +4515,8 @@ function ProposalsPanel({
 										htmlFor={`proposal-title-${proposal.id}`}
 									>
 										<span className="font-medium">{catalog.form.title}</span>
-										<input
-											className={FIELD_CLASS}
-											defaultValue={proposal.title}
+										<Input
+															defaultValue={proposal.title}
 											id={`proposal-title-${proposal.id}`}
 											name="proposalTitle"
 											required
@@ -3901,8 +4527,8 @@ function ProposalsPanel({
 										htmlFor={`proposal-scope-${proposal.id}`}
 									>
 										<span className="font-medium">{catalog.form.scope}</span>
-										<textarea
-											className={cn(FIELD_CLASS, 'min-h-24')}
+										<Textarea
+											className="min-h-24"
 											id={`proposal-scope-${proposal.id}`}
 											name="proposalScope"
 											required
@@ -3913,18 +4539,19 @@ function ProposalsPanel({
 										htmlFor={`proposal-command-${proposal.id}`}
 									>
 										<span className="font-medium">{catalog.form.verificationCommand}</span>
-										<input
-											className={cn(FIELD_CLASS, 'font-mono')}
+										<Input
+											className="font-mono"
 											id={`proposal-command-${proposal.id}`}
 											name="proposalVerificationCommand"
 											placeholder={catalog.form.verificationPlaceholder}
 											required
 										/>
 									</label>
-									<button className={BUTTON_CLASS} disabled={pending} type="submit">
+									<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 										{catalog.form.promote}
 									</button>
 								</form>
+								</details>
 							</li>
 						))}
 					</ul>
@@ -3963,15 +4590,13 @@ function ResolvedProposalsPanel({
 				</div>
 				<Separator />
 				{resolvedProposals.length === 0 ? (
-					<p className="text-muted-foreground text-sm">
-						{catalog.proposals.emptyResolved}
-					</p>
+					<EmptyState>{catalog.proposals.emptyResolved}</EmptyState>
 				) : (
-					<ul className="flex flex-col gap-4">
+					<ul className="flex flex-col divide-y divide-border">
 						{resolvedProposals.map((proposal) => (
-							<li className="flex min-w-0 flex-col gap-2 text-sm" key={proposal.id}>
+							<li className="flex min-w-0 flex-col gap-2 py-4 text-sm first:pt-0 last:pb-0" key={proposal.id}>
 								<div className="flex flex-wrap items-center gap-2">
-									<span className="break-words font-medium">{proposal.title}</span>
+									<span className="break-words font-semibold">{proposal.title}</span>
 									{proposal.status === 'promoted' ? (
 										<Badge variant="success">{catalog.proposals.statusLabels.promoted}</Badge>
 									) : (
@@ -4005,13 +4630,15 @@ function ResolvedProposalsPanel({
 }
 
 /**
- * Work is two things stacked in one column (GSHIP-712). Above the separator is
- * the project-scoped core -- approved backlog, drafts to review or approve,
- * ideas to specify and intake -- every panel of which reads and commands the
- * project the browser path names. Below it are the extras that still belong to
- * the boot runtime alone: diagnostics, and the proposal inbox with its resolved
- * history. Diagnostics remain boot-runtime-only. Proposals are project-scoped
- * and are shown for every ready project selected in the browser.
+ * Work is four operator questions, one visible at a time (the panels
+ * themselves are unchanged from GSHIP-712; only the disclosure is new):
+ * what is ready to run (queue), what waits on my approval (the only tab whose
+ * count may go acid, because approval is the operator's turn), what is still
+ * an idea (specify and intake), and what does the system suggest
+ * (diagnostics, boot-runtime-only, and the project-scoped proposal inbox with
+ * its resolved history). Panels stay mounted behind their tabs so
+ * find-in-page and static rendering keep seeing the whole surface. The
+ * surface opens on approval when something actually waits there.
  */
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
@@ -4019,25 +4646,49 @@ function WorkSurface(props: AppProps): React.ReactElement {
 	const catalog = localeCatalog.work;
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
-			<BacklogPanel
-				backlog={props.backlog}
-				canStart={actions.start && !props.pending}
-				catalog={catalog.backlog}
-				locale={props.locale}
-				onSelectIssue={props.onSelectIssue}
-				onStart={props.onStart}
-				selectedIssueId={props.selectedIssueId}
-			/>
-			<IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
-			<IssueSpecifyPanel
-				catalog={catalog}
-				ideas={props.ideas}
-				onSpecifyIssue={props.onSpecifyIssue}
-				pending={props.pending}
-			/>
-			<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
-			<>
-					<Separator />
+			<Tabs defaultValue={props.drafts.length > 0 ? 'approval' : 'queue'}>
+				<TabsList>
+					<TabsTab value="queue">
+						{catalog.tabs.queue}
+						<TabsCount>{props.backlog.length}</TabsCount>
+					</TabsTab>
+					<TabsTab value="approval">
+						{catalog.tabs.approval}
+						<TabsCount attention={props.drafts.length > 0}>{props.drafts.length}</TabsCount>
+					</TabsTab>
+					<TabsTab value="ideas">
+						{catalog.tabs.ideas}
+						<TabsCount>{props.ideas.length}</TabsCount>
+					</TabsTab>
+					<TabsTab value="suggestions">
+						{catalog.tabs.suggestions}
+						<TabsCount>{props.proposals.length}</TabsCount>
+					</TabsTab>
+				</TabsList>
+				<TabsPanel value="queue">
+					<BacklogPanel
+						backlog={props.backlog}
+						canStart={actions.start && !props.pending}
+						catalog={catalog.backlog}
+						locale={props.locale}
+						onSelectIssue={props.onSelectIssue}
+						onStart={props.onStart}
+						selectedIssueId={props.selectedIssueId}
+					/>
+				</TabsPanel>
+				<TabsPanel value="approval">
+					<IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
+				</TabsPanel>
+				<TabsPanel value="ideas">
+					<IssueSpecifyPanel
+						catalog={catalog}
+						ideas={props.ideas}
+						onSpecifyIssue={props.onSpecifyIssue}
+						pending={props.pending}
+					/>
+					<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
+				</TabsPanel>
+				<TabsPanel value="suggestions">
 					<DiagnosticsPanel
 						catalog={catalog}
 						diagnostics={props.diagnostics}
@@ -4048,21 +4699,22 @@ function WorkSurface(props: AppProps): React.ReactElement {
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
 					/>
-			</>
-			<ProposalsPanel
-				catalog={catalog}
-				locale={props.locale}
-				onDismissProposal={props.onDismissProposal}
-				onPromoteProposal={props.onPromoteProposal}
-				pending={props.pending}
-				proposals={props.proposals}
-			/>
-			<ResolvedProposalsPanel
-				catalog={catalog}
-				locale={props.locale}
-				resolvedProposals={props.resolvedProposals}
-				resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
-			/>
+					<ProposalsPanel
+						catalog={catalog}
+						locale={props.locale}
+						onDismissProposal={props.onDismissProposal}
+						onPromoteProposal={props.onPromoteProposal}
+						pending={props.pending}
+						proposals={props.proposals}
+					/>
+					<ResolvedProposalsPanel
+						catalog={catalog}
+						locale={props.locale}
+						resolvedProposals={props.resolvedProposals}
+						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
+					/>
+				</TabsPanel>
+			</Tabs>
 		</SurfaceColumn>
 	);
 }
@@ -4130,8 +4782,7 @@ function OperatorProfilePanel({
 			>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
 					<span className="font-medium">{catalog.operator.name}</span>
-					<input
-						className={FIELD_CLASS}
+					<Input
 						defaultValue={operatorProfile.name}
 						id="operator-name"
 						name="operator-name"
@@ -4140,8 +4791,7 @@ function OperatorProfilePanel({
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
 					<span className="font-medium">{catalog.operator.timezone}</span>
-					<input
-						className={FIELD_CLASS}
+					<Input
 						defaultValue={initialTimezone}
 						id="operator-timezone"
 						name="operator-timezone"
@@ -4151,7 +4801,7 @@ function OperatorProfilePanel({
 						{catalog.operator.timezoneGuidance}
 					</span>
 				</label>
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.operator.save}
 				</button>
 			</form>
@@ -4200,10 +4850,15 @@ function DiagnosticSchedulePanel({
 				</label>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="diagnostic-cadence">
 					<span className="font-medium">{catalog.diagnostics.cadence}</span>
-					<select className={FIELD_CLASS} defaultValue={schedule.cadence} id="diagnostic-cadence" name="diagnostic-cadence">
-						<option value="daily">{catalog.diagnostics.cadenceLabels.daily}</option>
-						<option value="weekly">{catalog.diagnostics.cadenceLabels.weekly}</option>
-					</select>
+					<SelectField
+						defaultValue={schedule.cadence}
+						id="diagnostic-cadence"
+						items={[
+							{ value: 'daily', label: catalog.diagnostics.cadenceLabels.daily },
+							{ value: 'weekly', label: catalog.diagnostics.cadenceLabels.weekly },
+						]}
+						name="diagnostic-cadence"
+					/>
 				</label>
 				<p className="text-muted-foreground text-xs">
 					{active
@@ -4218,7 +4873,7 @@ function DiagnosticSchedulePanel({
 
 				</p>
 				<p className="text-muted-foreground text-xs">{catalog.diagnostics.guidance}</p>
-				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.diagnostics.save}
 				</button>
 			</form>
@@ -4312,58 +4967,79 @@ function OnboardingSurface({
 	);
 }
 
-function SettingsSurface(props: AppProps): React.ReactElement {
+/**
+ * Settings is three operator questions behind tabs: who executes (providers
+ * and their models), how execution behaves (chaining, executor handoff, the
+ * diagnostic schedule), and what the project is (binding, brief, session
+ * handoff). Panels are unchanged; only the disclosure is new, and every
+ * panel stays mounted so find-in-page keeps seeing the whole surface.
+ */
+function SettingsSurface(props: AppProps & { removePanel?: React.ReactNode }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
-			<ProjectPanel catalog={catalog} project={props.project} />
-			<ProvidersPanel
-				catalog={catalog}
-				claudeCredentialError={props.claudeCredentialError}
-				locale={props.locale}
-				onConnectClaudeCredential={props.onConnectClaudeCredential}
-				onConnectCodex={props.onConnectCodex}
-				onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
-				onDismissClaudeCredentialError={props.onDismissClaudeCredentialError}
-				onSelectProvider={props.onSelectProvider}
-				pending={props.pending}
-				providers={props.providers}
-				selectedProvider={props.selectedProvider}
-			/>
-			<ModelSettingsPanel
-				catalog={catalog}
-				modelSettings={props.modelSettings}
-				onSaveModelSettings={props.onSaveModelSettings}
-				pending={props.pending}
-			/>
-			<ChainRunsPanel
-				catalog={catalog}
-				chainRuns={props.chainRuns}
-				onSetChainRuns={props.onSetChainRuns}
-				pending={props.pending}
-			/>
-			<ExecutorHandoffPanel
-				catalog={catalog}
-				executorHandoff={props.executorHandoff}
-				onSetExecutorHandoff={props.onSetExecutorHandoff}
-				pending={props.pending}
-			/>
-			{props.project.state === 'ready' ? (
-				<DiagnosticSchedulePanel
-					catalog={catalog}
-					diagnostics={props.diagnostics}
-					locale={props.locale}
-					onSave={props.onSaveDiagnosticSchedule}
-					pending={props.pending}
-				/>
-			) : null}
-			<ProjectBriefPanel
-				brief={props.brief}
-				catalog={catalog}
-				onSaveBrief={props.onSaveBrief}
-				pending={props.pending}
-			/>
-			<HandoffPanel catalog={catalog} handoff={props.handoff} />
+			<Tabs defaultValue="providers">
+				<TabsList>
+					<TabsTab value="providers">{catalog.tabs.providers}</TabsTab>
+					<TabsTab value="execution">{catalog.tabs.execution}</TabsTab>
+					<TabsTab value="project">{catalog.tabs.project}</TabsTab>
+				</TabsList>
+				<TabsPanel value="providers">
+					<ProvidersPanel
+						catalog={catalog}
+						claudeCredentialError={props.claudeCredentialError}
+						locale={props.locale}
+						onConnectClaudeCredential={props.onConnectClaudeCredential}
+						onConnectCodex={props.onConnectCodex}
+						onDisconnectClaudeCredential={props.onDisconnectClaudeCredential}
+						onDismissClaudeCredentialError={props.onDismissClaudeCredentialError}
+						onSelectProvider={props.onSelectProvider}
+						pending={props.pending}
+						providers={props.providers}
+						selectedProvider={props.selectedProvider}
+					/>
+					<ModelSettingsPanel
+						catalog={catalog}
+						modelSettings={props.modelSettings}
+						onSaveModelSettings={props.onSaveModelSettings}
+						pending={props.pending}
+					/>
+				</TabsPanel>
+				<TabsPanel value="execution">
+					<ChainRunsPanel
+						catalog={catalog}
+						chainRuns={props.chainRuns}
+						onSetChainRuns={props.onSetChainRuns}
+						pending={props.pending}
+					/>
+					<ExecutorHandoffPanel
+						catalog={catalog}
+						executorHandoff={props.executorHandoff}
+						onSetExecutorHandoff={props.onSetExecutorHandoff}
+						pending={props.pending}
+					/>
+					{props.project.state === 'ready' ? (
+						<DiagnosticSchedulePanel
+							catalog={catalog}
+							diagnostics={props.diagnostics}
+							locale={props.locale}
+							onSave={props.onSaveDiagnosticSchedule}
+							pending={props.pending}
+						/>
+					) : null}
+				</TabsPanel>
+				<TabsPanel value="project">
+					<ProjectPanel catalog={catalog} project={props.project} />
+					<ProjectBriefPanel
+						brief={props.brief}
+						catalog={catalog}
+						onSaveBrief={props.onSaveBrief}
+						pending={props.pending}
+					/>
+					<HandoffPanel catalog={catalog} handoff={props.handoff} />
+					{props.removePanel}
+				</TabsPanel>
+			</Tabs>
 		</SurfaceColumn>
 	);
 }
@@ -4420,16 +5096,20 @@ function NonCurrentProjectSurface({
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} />;
 		if (surface === 'settings') {
+			/* The remove card rides inside the Project tab: as a sibling of the
+			 * surface it would join the shell's flex row and steal its width. */
 			return (
-				<>
-					<SettingsSurface {...props} />
-					<UnregisterProjectPanel
-						catalog={LOCALE_CATALOG[props.locale].projects}
-						onUnregisterProject={props.onUnregisterProject}
-						pending={props.pending}
-						project={selectedProject}
-					/>
-				</>
+				<SettingsSurface
+					{...props}
+					removePanel={
+						<UnregisterProjectPanel
+							catalog={LOCALE_CATALOG[props.locale].projects}
+							onUnregisterProject={props.onUnregisterProject}
+							pending={props.pending}
+							project={selectedProject}
+						/>
+					}
+				/>
 			);
 		}
 	}
@@ -4497,8 +5177,21 @@ export function App(props: AppProps): React.ReactElement {
 	const selection = routeSelection(props.route, currentProject?.id ?? null);
 	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
+	// The sidebar-07 mechanic: Cmd/Ctrl+B toggles the shell sidebar.
+	useEffect(() => {
+		const runtime = panelRuntime();
+		const onKeyDown = (event: PanelKeyEvent): void => {
+			if (event.key === 'b' && (event.metaKey || event.ctrlKey)) {
+				event.preventDefault();
+				toggleSidebar();
+			}
+		};
+		runtime.addEventListener?.('keydown', onKeyDown);
+		return () => runtime.removeEventListener?.('keydown', onKeyDown);
+	}, [toggleSidebar]);
 	return (
-		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
+		<div className="flex h-svh w-full flex-col overflow-hidden bg-sidebar [--sidebar:var(--color-neutral-100)] lg:flex-row dark:[--sidebar:var(--color-neutral-950)]">
 			<a
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}
@@ -4509,7 +5202,7 @@ export function App(props: AppProps): React.ReactElement {
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}
 				locale={props.locale}
-				onSelectLocale={props.onSelectLocale}
+				open={sidebarOpen}
 				projects={props.projects}
 				runInspectorCatalog={localeCatalog.runInspector}
 				route={props.route}
@@ -4518,7 +5211,24 @@ export function App(props: AppProps): React.ReactElement {
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
 			/>
-			<SelectedRouteSurface props={props} selectedProject={selectedProject} selection={selection} />
+			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-2 lg:p-3">
+				{/* The inset content panel (operator decision, 2026-08-25): the
+				 * sidebar's chrome runs to the top and bottom of the page, and
+				 * the content floats on it as one rounded bordered surface that
+				 * clips its own scroll. The shell controls ride inside the
+				 * panel, above the scrolling surface: they are content-view
+				 * preferences, not chrome. */}
+				<div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--border)_64%,transparent)] bg-(--shell-panel)">
+					<ShellControls
+						catalog={localeCatalog.shell}
+						locale={props.locale}
+						onSelectLocale={props.onSelectLocale}
+						onToggleSidebar={toggleSidebar}
+						sidebarOpen={sidebarOpen}
+					/>
+					<SelectedRouteSurface props={props} selectedProject={selectedProject} selection={selection} />
+				</div>
+			</div>
 		</div>
 	);
 }

@@ -3107,6 +3107,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/projects/:projectId/settings': () => serveWebAsset(assets.indexHtml),
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
+			'/fonts/SaansVF.woff2': async () => {
+				const asset = assets.saansFont;
+				if (asset === undefined || !(await Bun.file(asset.path).exists())) {
+					return new Response(null, { status: 404 });
+				}
+				return serveWebAsset(asset);
+			},
 			'/favicon.svg': () => serveWebAsset(assets.favicon),
 			'/apple-touch-icon.png': () => serveWebAsset(assets.appleTouchIcon),
 			'/icon-192.png': () => serveWebAsset(assets.icon192),

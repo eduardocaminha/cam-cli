@@ -50,7 +50,7 @@ describe('embedded web bundle', () => {
 			expect(scriptText).toBe(readFileSync(join(DIST_DIR, 'app.js'), 'utf8'));
 			// dist is generated before embedding rather than tracked (PR #486). Prove
 			// the bytes production serves contain this slice's locale seam.
-			expect(scriptText).toContain('Superfícies do operador');
+			expect(scriptText).toContain('Selecionar projeto');
 			expect(scriptText).toContain('Pular para o conteúdo');
 			expect(scriptText).toContain('document.documentElement.lang');
 			expect(scriptText).toContain('gateship.locale');
