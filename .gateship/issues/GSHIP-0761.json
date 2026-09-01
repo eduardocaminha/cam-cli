@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-761",
+  "title": "Expor defaults globais de agentes sem copiar configuração por projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T20:52:26.808Z",
+  "updatedAt": "2026-09-01T20:52:26.808Z",
+  "description": "Adicionar um contrato HTTP produto-wide para ler e substituir os defaults globais de agentes já persistidos por ProjectRegistry em projects.sqlite. O GET deve retornar provider e modelSettings efetivos do registro global, distinguindo ausência de provider e ausência de modelSettings sem consultar ou copiar runtime_settings de nenhum projeto. O PUT, protegido pela origem confiável, aceita somente provider opcional e modelSettings opcional como registro completo: objeto vazio limpa ambos e devolve o comportamento nativo dos CLIs. Provider informado deve ser claude ou codex e só pode ser salvo quando ProviderAuth confirmar assinatura conectada, usando a mesma recusa tipada do seletor por projeto. ModelSettings informado usa o parser existente, sonda somente slots alterados com NativeModelProber e preserva o valor global anterior quando o CLI recusar um slot; ausência de modelSettings remove o default global desse campo. Persistir uma única vez com ProjectRegistry.setAgentDefaults e devolver defaults normalizados mais probes. Não adicionar tabela, serviço, endpoint por projeto, UI ou duplicar validação. Mudanças globais devem ser lidas sob demanda pelos runtimes existentes, sem restart.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar um contrato HTTP produto-wide para ler e substituir os defaults globais de agentes já persistidos por ProjectRegistry em projects.sqlite. O GET deve retornar provider e modelSettings efetivos do registro global, distinguindo ausência de provider e ausência de modelSettings sem consultar ou copiar runtime_settings de nenhum projeto. O PUT, protegido pela origem confiável, aceita somente provider opcional e modelSettings opcional como registro completo: objeto vazio limpa ambos e devolve o comportamento nativo dos CLIs. Provider informado deve ser claude ou codex e só pode ser salvo quando ProviderAuth confirmar assinatura conectada, usando a mesma recusa tipada do seletor por projeto. ModelSettings informado usa o parser existente, sonda somente slots alterados com NativeModelProber e preserva o valor global anterior quando o CLI recusar um slot; ausência de modelSettings remove o default global desse campo. Persistir uma única vez com ProjectRegistry.setAgentDefaults e devolver defaults normalizados mais probes. Não adicionar tabela, serviço, endpoint por projeto, UI ou duplicar validação. Mudanças globais devem ser lidas sob demanda pelos runtimes existentes, sem restart.",
+    "verify": [
+      "bun test test/web/agent-defaults-api.test.ts test/runtime/project-registry.test.ts test/web/project-scoped-agent-api.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "3f028855570ac193e3ae38f9d4c0cef5ad68f73bfcc247b0da2682974e2c85e8",
+    "approvedAt": "2026-09-01T20:52:26.808Z"
+  }
+}
