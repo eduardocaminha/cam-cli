@@ -3492,7 +3492,7 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 		 * allowed to go acid, and only while something actually waits; a zero
 		 * stays as quiet as every other number.
 		 */}
-		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
 			<Stat
 				className={cn(
 					'xl:col-span-2',

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-766",
   "title": "Fechar a composição dos indicadores do Overview no desktop",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T23:07:38.888Z",
-  "updatedAt": "2026-09-01T23:07:38.888Z",
+  "updatedAt": "2026-09-01T23:11:15.560Z",
   "description": "Corrigir somente a composição do grid de indicadores do Overview em viewports desktop. Hoje o grid xl tem seis colunas, enquanto Needs attention ocupa duas e os cinco indicadores restantes ocupam uma cada, totalizando sete unidades e deixando Known cost sozinho na segunda linha. Manter a hierarquia e o destaque condicional de Needs attention, mas fazer os seis indicadores caberem numa única linha em largura desktop adequada, sem reduzir legibilidade, sem mudar dados, rótulos, ordem, mobile, endpoints ou comportamento. Adicionar ou ajustar a menor cobertura existente que prove a regra de composição. Não adicionar dependências.",
   "specSource": "operator",
   "spec": {
