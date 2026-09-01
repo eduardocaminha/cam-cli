@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-756",
   "title": "Corrigir uma falha da verificação da issue no mesmo ciclo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T18:30:57.944Z",
-  "updatedAt": "2026-09-01T18:31:26.880Z",
+  "updatedAt": "2026-09-01T18:38:06.441Z",
   "description": "Transformar a primeira falha determinística da verificação específica da issue em uma correção automática e limitada do mesmo ciclo, em vez de terminar imediatamente a run.\n\nContrato:\n- Quando o RuntimeVerifier da issue retornar ok:false pela primeira vez, transicionar verify -> working com um evento durável run.verification-fix-requested.\n- Entregar ao executor um campo tipado verificationFeedback contendo o detalhe limitado da falha; não reutilizar reviewFeedback, fullVerifyFeedback ou ciFeedback.\n- Executar novamente a implementação, a verificação específica, a revisão independente e o full verify antes de ship.\n- Permitir no máximo uma correção automática de verificação específica. Uma segunda falha termina em failed com run.verification-failed e preserva a evidência atual.\n- Contabilizar essa volta em fixRounds e atribuí-la à origem executor nas métricas.\n- Restaurar verificationFeedback após reinício/interrupção quando o evento de correção ainda não foi consumido por run.work-completed.\n- Provider hold, cancelamento e abandono continuam usando os mecanismos existentes, sem novo estado.\n- Não alterar os budgets independentes de review, full verify ou CI.\n- Adicionar testes para falha seguida de correção e sucesso, falha persistente, restauração durável, provider hold e cancelamento durante a correção.\n- Atualizar prompts de Claude e Codex para apresentar a falha como correção mecânica do comando aprovado, sem ampliar escopo.\n- A comunicação da run com o operador deve ser em português.",
   "specSource": "operator",
   "spec": {

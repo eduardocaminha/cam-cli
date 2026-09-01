@@ -64,6 +64,8 @@ export interface RuntimeExecutionInput {
 	 * only channel that puts its verdict in front of the executor.
 	 */
 	reviewFeedback?: string;
+	/** The issue verification's failure detail, for its one mechanical correction round. */
+	verificationFeedback?: string;
 	/**
 	 * The full-project verification's failure output (GSHIP-649), present only
 	 * on the single automatic fix round after the project's own `verify`
@@ -407,6 +409,7 @@ interface ActiveRun {
 interface RunAttempt {
 	resume: boolean;
 	reviewFeedback?: string;
+	verificationFeedback?: string;
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
 	operatorGuidance?: string;
@@ -581,10 +584,12 @@ export class RunRuntime {
 			this.#emit(run.id, 'run.operator-guidance', commandPayload({ text: guidance }, source));
 		}
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
+		const recoveredVerification = this.#unconsumedVerificationAttempt(run.id);
 		const recoveredCi = this.#unconsumedCiAttempt(run.id);
 		this.#launch(run, {
 			resume: true,
 			...(recoveredCycle ?? {}),
+			...(recoveredVerification ?? {}),
 			...(recoveredCi ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
@@ -1130,7 +1135,11 @@ export class RunRuntime {
 		for (;;) {
 			const executionInput = this.#executionInput(run, signal, attempt);
 			const verified = await this.#work(executor, verifier, run, signal, executionInput);
-			if (!verified) return;
+			if (verified === false) return;
+			if (verified !== true) {
+				attempt = verified;
+				continue;
+			}
 			const next = await this.#review(run, signal, executionInput);
 			if (next === null) break;
 			attempt = next;
@@ -1450,9 +1459,8 @@ export class RunRuntime {
 	}
 
 	/**
-	 * One implementation pass plus its verification. Returns true only when the
-	 * change is verified and the run is ready to be reviewed; every other
-	 * outcome has already settled the run.
+	 * One implementation pass plus its verification. A failed issue verification
+	 * returns its one correction attempt; false means the run already settled.
 	 */
 	async #work(
 		executor: RuntimeExecutor,
@@ -1460,7 +1468,7 @@ export class RunRuntime {
 		run: RunRecord,
 		signal: AbortSignal,
 		executionInput: RuntimeExecutionInput,
-	): Promise<boolean> {
+	): Promise<true | false | RunAttempt> {
 		const execution = await executor.execute(executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
@@ -1498,11 +1506,28 @@ export class RunRuntime {
 			return false;
 		}
 		if (verification.ok) return true;
+		const detail = verification.detail ?? 'A verificação específica da issue falhou.';
+		if (!this.#verificationFixUsed(run.id)) {
+			this.#transition(run.id, 'working', 'run.verification-fix-requested', {
+				payload: { findings: detail },
+			});
+			return {
+				resume: true,
+				verificationFeedback: detail,
+				...(executionInput.ciFeedback === undefined ? {} : { ciFeedback: executionInput.ciFeedback }),
+			};
+		}
 		const failedRun = this.#transition(run.id, 'failed', 'run.verification-failed', {
-			error: verification.detail ?? 'Verification failed.',
+			error: detail,
 		}).run;
 		this.#releaseFinishedWorkspace(failedRun, false);
 		return false;
+	}
+
+	/** Whether the one automatic correction for issue verification was already used. */
+	#verificationFixUsed(runId: string): boolean {
+		return this.#store.listRunDecisionEvents(runId)
+			.some((event) => event.kind === 'run.verification-fix-requested');
 	}
 
 	/**
@@ -1571,6 +1596,17 @@ export class RunRuntime {
 	#recoveredCycleAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback' | 'fullVerifyFeedback'> | null {
 		if (run.state !== 'interrupted') return null;
 		return this.#unconsumedCycleAttempt(run.id);
+	}
+
+	/** Restore an unconsumed issue-verification correction after any resume. */
+	#unconsumedVerificationAttempt(runId: string): Pick<RunAttempt, 'verificationFeedback'> | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const requestIndex = events.findLastIndex((event) => event.kind === 'run.verification-fix-requested');
+		if (requestIndex < 0 || events.slice(requestIndex + 1).some((event) => event.kind === 'run.work-completed')) {
+			return null;
+		}
+		const finding = events[requestIndex]?.payload['findings'];
+		return typeof finding === 'string' ? { verificationFeedback: finding } : null;
 	}
 
 	/**
@@ -1889,6 +1925,9 @@ export class RunRuntime {
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),
+			...(attempt.verificationFeedback === undefined
+				? {}
+				: { verificationFeedback: attempt.verificationFeedback }),
 			...(attempt.fullVerifyFeedback === undefined
 				? {}
 				: { fullVerifyFeedback: attempt.fullVerifyFeedback }),

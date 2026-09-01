@@ -10,6 +10,7 @@ import type { RunEvent } from './run-store.ts';
 const ROUND_START_KINDS: ReadonlySet<string> = new Set([
 	'run.started',
 	'run.review-fix-requested',
+	'run.verification-fix-requested',
 	'run.full-verify-fix-requested',
 	'run.ci-fix-requested',
 ]);
