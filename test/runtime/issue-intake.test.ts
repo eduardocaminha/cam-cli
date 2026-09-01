@@ -76,13 +76,12 @@ function seedFixture(
 	return { root, seed, remote, local };
 }
 
-function requirePullRequestForMain(remote: string): void {
-	const hook = join(remote, 'hooks', 'pre-receive');
+function blockDirectPushToMain(local: string, message: string): void {
+	const hook = join(local, '.git', 'hooks', 'pre-push');
 	writeFileSync(hook, `#!/bin/sh
-while read old new ref; do
-  if [ "$ref" = refs/heads/main ]; then
-    echo 'remote: error: GH006: Protected branch update failed for refs/heads/main.' >&2
-    echo 'remote: error: Changes must be made through a pull request.' >&2
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = refs/heads/main ]; then
+    echo '${message}' >&2
     exit 1
   fi
 done
@@ -91,9 +90,9 @@ done
 }
 
 describe('remote-main operator issue intake', () => {
-	test('uses the shared PR lifecycle only for an explicit protected-main refusal, across every intake write', async () => {
+	test('uses the shared PR lifecycle for the Reporter protection message across every intake write', async () => {
 		const fixture = seedFixture();
-		requirePullRequestForMain(fixture.remote);
+		blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/main is not allowed');
 		const calls: Array<{ issueId: string; branch: string; headSha: string; deleteBranch?: boolean }> = [];
 		const shipper = {
 			mergePullRequest: async (input: {
@@ -143,6 +142,35 @@ describe('remote-main operator issue intake', () => {
 			let merged = false;
 			await expect(createOperatorIssue(fixture.local, {
 				title: 'No fallback', scope: 'A generic rejection is closed.', verificationCommand: 'true',
+			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
+				.rejects.toMatchObject({ code: 'source-unavailable' });
+			expect(merged).toBe(false);
+		}
+	});
+
+	test('uses the PR fallback for the explicit master protection message', async () => {
+		const fixture = seedFixture();
+		blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/master is not allowed');
+		let merged = false;
+
+		await createOperatorIssue(fixture.local, {
+			title: 'Proteção local', scope: 'A proteção local usa a PR.', verificationCommand: 'true',
+		}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } });
+
+		expect(merged).toBe(true);
+	});
+
+	test('does not take the PR fallback for generic blocking, another ref or arbitrary hooks', async () => {
+		for (const rejection of [
+			'BLOCKED: direct push is not allowed',
+			'BLOCKED: direct push to refs/heads/release is not allowed',
+			'hook refused this push',
+		]) {
+			const fixture = seedFixture();
+			blockDirectPushToMain(fixture.local, rejection);
+			let merged = false;
+			await expect(createOperatorIssue(fixture.local, {
+				title: 'Sem fallback', scope: 'Uma recusa imprecisa falha fechada.', verificationCommand: 'true',
 			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
 				.rejects.toMatchObject({ code: 'source-unavailable' });
 			expect(merged).toBe(false);
