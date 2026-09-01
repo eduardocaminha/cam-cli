@@ -312,12 +312,14 @@ function isPushRace(stderr: string): boolean {
 
 /**
  * This is intentionally narrower than a failed push. Only GitHub's explicit
- * protected-ref / pull-request refusal may take the intake PR path; an auth,
- * transport, hook or ordinary rejected push remains fail-closed.
+ * protected-ref / pull-request refusal, or the explicit local policy that
+ * blocks a direct push to main or master, may take the intake PR path; an
+ * auth, transport, arbitrary hook or ordinary rejected push remains
+ * fail-closed.
  */
 function requiresPullRequest(stderr: string): boolean {
-	return /(?:protected (?:branch|ref)|branch protection|GH006: Protected branch update failed|changes must be made through a pull request|pull request (?:is )?required|requires? a pull request)/i
-		.test(stderr);
+	return /(?:protected (?:branch|ref)|branch protection|GH006: Protected branch update failed|changes must be made through a pull request|pull request (?:is )?required|requires? a pull request)/i.test(stderr)
+		|| /(?:^|\r?\n)(?:remote:\s*)?BLOCKED: direct push to refs\/heads\/(?:main|master) is not allowed(?:\r?$|\r?\n)/.test(stderr);
 }
 
 function intakeControlBranch(issueId: string, headSha: string): string {
