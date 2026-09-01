@@ -28,6 +28,15 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 	}
 }
 
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 describe('Codex CLI runtime executor', () => {
 	test('builds new and resumed subscription-backed exec turns', () => {
 		const first = buildCodexCliArgv({
@@ -176,6 +185,35 @@ describe('Codex CLI runtime executor', () => {
 
 		expect(failure).toBeInstanceOf(ProviderCallError);
 		expect(failure).toMatchObject({ provider: 'codex', kind: 'usage-limit' });
+	});
+
+	test('classifies a silent CLI as unavailable after reaping its process', async () => {
+		let childPid = 0;
+		const session = new CodexAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
+			activityTimeoutMs: 50,
+			terminationGraceMs: 100,
+			onSpawn: (pid) => { childPid = pid; },
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'codex-session-silent',
+				resume: false,
+				cwd: createTestTmpdir('gship-codex-silent-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'codex', kind: 'transport-unavailable' });
+		expect((failure as Error).message).toContain('50ms');
+		expect(isProcessAlive(childPid)).toBe(false);
 	});
 
 	test('keeps an unrecognized turn failure unknown instead of calling it a model refusal', async () => {

@@ -349,6 +349,46 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
+	test('rests a silent provider without inventing a retry schedule or releasing work', async () => {
+		const releases: string[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-provider-silent',
+			newSessionId: () => 'session-provider-silent',
+			workspace: {
+				prepare: () => '/workspaces/run-provider-silent',
+				release: ({ runId }) => {
+					releases.push(runId);
+					return { outcome: 'released', branch: 'gship/gship-751-run-provider-silent' };
+				},
+			},
+			executor: {
+				execute: async () => {
+					throw new ProviderCallError(
+						'codex',
+						'transport-unavailable',
+						'Codex CLI produced no protocol activity for 600000ms.',
+					);
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const run = runtime.startRun('GSHIP-751');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toEqual({
+			provider: 'codex',
+			kind: 'transport-unavailable',
+			message: 'Codex CLI produced no protocol activity for 600000ms.',
+			phase: 'working',
+		});
+		expect(releases).toEqual([]);
+		expect(runtime.getRun(run.id)?.workspacePath).toBe('/workspaces/run-provider-silent');
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('retries a fresh reviewer after provider recovery without rerunning the executor', async () => {
 		let executions = 0;
 		let reviews = 0;

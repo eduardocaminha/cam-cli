@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import process from 'node:process';
 
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import {
 	buildReviewerCliArgv,
 	buildReviewPrompt,
@@ -315,6 +316,23 @@ describe('independent Claude CLI reviewer', () => {
 		controller.abort();
 		expect(await settled).toBe('rejected');
 		expect(isProcessAlive(childPid)).toBe(false);
+	});
+
+	test('a silent reviewer becomes the same typed provider hold', async () => {
+		const reviewer = fixtureReviewer('CLEAN', {
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
+			activityTimeoutMs: 50,
+			terminationGraceMs: 100,
+		});
+		let failure: unknown;
+		try {
+			await reviewer.review(reviewInput());
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'claude', kind: 'transport-unavailable' });
 	});
 
 	// GSHIP-630: the operator's already-made decisions, carried into the review

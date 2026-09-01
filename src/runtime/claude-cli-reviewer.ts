@@ -114,6 +114,8 @@ export interface ClaudeCliReviewerOptions {
 	/** The dedicated Claude subscription token (GSHIP-704); see `ClaudeCliExecutorOptions` for the precedence and per-spawn resolution this mirrors. */
 	resolveClaudeCredential?: () => string | undefined;
 	terminationGraceMs?: number;
+	/** Internal/test seam; production uses the shared ten-minute constant. */
+	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	runGit?: GitCommandRunner;
 	newSessionId?: () => string;
@@ -329,6 +331,9 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
+			...(this.#options.activityTimeoutMs === undefined
+				? {}
+				: { activityTimeoutMs: this.#options.activityTimeoutMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
 		return parseReviewVerdict(result.structuredOutput, result.summary);

@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-08-23, against the `v0.371.0` tag.
+> Updated: 2026-09-01, against the `v0.379.0` tag.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -58,6 +58,13 @@ Reporter owns `package-lock.json`, so the former unconditional `bun install
 --frozen-lockfile` failed before an agent could start. The versioned project
 manifest can now declare ordered preparation commands, including an explicit
 empty list, while an absent field preserves the legacy Bun preparation.
+
+Observed Claude and Codex calls also stayed alive through long provider-side
+retry loops without useful protocol output. Every agent child now owns one
+shared ten-minute inactivity deadline, reset only by stdout protocol lines.
+Expiry reaps the process group and becomes a typed transport hold, preserving
+the run workspace and provider session without inventing a reset time or
+switching executors.
 
 ## Multiproject state and its limits
 

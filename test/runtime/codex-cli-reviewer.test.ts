@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
+import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import {
 	buildReviewPrompt,
 	collectChange,
@@ -97,6 +98,25 @@ describe('independent Codex reviewer', () => {
 			verdict: 'findings',
 			detail: '1. src/reviewed.ts: fixture finding',
 		});
+	});
+
+	test('a silent reviewer becomes the same typed provider hold', async () => {
+		const reviewer = new CodexCliReviewer({
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
+			loadIssue: () => '{"id":"CAM-1"}',
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+			activityTimeoutMs: 50,
+			terminationGraceMs: 100,
+		});
+		let failure: unknown;
+		try {
+			await reviewer.review(input());
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'codex', kind: 'transport-unavailable' });
 	});
 
 	// GSHIP-630: buildReviewPrompt is shared by both providers, so the same
