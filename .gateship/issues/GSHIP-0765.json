@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-765",
+  "title": "Corrigir o redesign responsivo validado na v0.394.0",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T22:41:02.875Z",
+  "updatedAt": "2026-09-01T22:41:02.875Z",
+  "description": "Corrigir somente os defeitos responsivos observados por inspeção da release instalada em viewport 390x844, preservando a direção visual publicada. Na conversa, o painel da run não pode sobrepor, cobrir ou disputar a rolagem das mensagens; deve entrar no fluxo abaixo da conversa em telas estreitas e continuar lateral no desktop. A navegação principal do projeto deve manter Overview, Conversation, Runs, Work e Settings acessíveis por texto ou por um controle explícito com nome acessível, sem item anônimo nem corte silencioso. As abas Queue, Approval, Ideas e Suggestions devem permanecer alcançáveis em telas estreitas com rolagem horizontal deliberada e indicação visual estável, sem truncar conteúdo por falta de largura. Remover do Overview o gráfico de linha decorativo que sugere tendência sem eixo, período ou métrica comparável; manter os fatos e contagens existentes. Compactar o estado vazio de Work para não ocupar uma superfície vertical desnecessária. Incluir cobertura de componentes para essas invariantes e respeitar prefers-reduced-motion. Não alterar endpoints, semântica do runtime, modelos, providers, tokens, dados de runs ou arquitetura de rotas nesta issue. Não adicionar dependências.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir somente os defeitos responsivos observados por inspeção da release instalada em viewport 390x844, preservando a direção visual publicada. Na conversa, o painel da run não pode sobrepor, cobrir ou disputar a rolagem das mensagens; deve entrar no fluxo abaixo da conversa em telas estreitas e continuar lateral no desktop. A navegação principal do projeto deve manter Overview, Conversation, Runs, Work e Settings acessíveis por texto ou por um controle explícito com nome acessível, sem item anônimo nem corte silencioso. As abas Queue, Approval, Ideas e Suggestions devem permanecer alcançáveis em telas estreitas com rolagem horizontal deliberada e indicação visual estável, sem truncar conteúdo por falta de largura. Remover do Overview o gráfico de linha decorativo que sugere tendência sem eixo, período ou métrica comparável; manter os fatos e contagens existentes. Compactar o estado vazio de Work para não ocupar uma superfície vertical desnecessária. Incluir cobertura de componentes para essas invariantes e respeitar prefers-reduced-motion. Não alterar endpoints, semântica do runtime, modelos, providers, tokens, dados de runs ou arquitetura de rotas nesta issue. Não adicionar dependências.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "a2dfa191397c2d4b790fcbbc891b4ac9da143f34a1a4e4be6415d35753dbd26e",
+    "approvedAt": "2026-09-01T22:41:02.875Z"
+  }
+}
