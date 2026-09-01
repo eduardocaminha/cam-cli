@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
-import { runAgentProcess } from './agent-process.ts';
+import {
+	AgentProcessActivityTimeoutError,
+	type AgentProcessResult,
+	runAgentProcess,
+} from './agent-process.ts';
 import {
 	type AgentSession,
 	type AgentSessionInput,
@@ -49,6 +53,8 @@ export interface CodexCliExecutorOptions {
 	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
+	/** Internal/test seam; production uses the shared ten-minute constant. */
+	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	onSpawn?: (pid: number) => void;
 }
@@ -245,16 +251,32 @@ async function runCodexTurn(
 	};
 	const slot = resolveModelSlot(options);
 	emitModelSelection(input.emit, input.eventPrefix, slot);
-	const result = await runAgentProcess({
-		argv: buildTurnArgv(input, options, slot, schemaPath, review),
-		cwd: input.cwd,
-		env: buildCodexEnv(options.sourceEnv ?? process.env),
-		stdin: input.prompt,
-		signal: input.signal,
-		terminationGraceMs: options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
-		onLine: (line) => consumeCodexEvent(line, input, state),
-		...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
-	});
+	let result: AgentProcessResult;
+	try {
+		result = await runAgentProcess({
+			argv: buildTurnArgv(input, options, slot, schemaPath, review),
+			cwd: input.cwd,
+			env: buildCodexEnv(options.sourceEnv ?? process.env),
+			stdin: input.prompt,
+			signal: input.signal,
+			terminationGraceMs: options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+			...(options.activityTimeoutMs === undefined
+				? {}
+				: { activityTimeoutMs: options.activityTimeoutMs }),
+			onLine: (line) => consumeCodexEvent(line, input, state),
+			...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
+		});
+	} catch (error) {
+		if (error instanceof AgentProcessActivityTimeoutError) {
+			throw new ProviderCallError(
+				'codex',
+				'transport-unavailable',
+				`Codex CLI produced no protocol activity for ${error.timeoutMs}ms.`,
+				{ cause: error },
+			);
+		}
+		throw error;
+	}
 	// Only a clean turn.failed is a protocol-reported refusal; a generic error
 	// event reads the same whether the model was rejected or the process just
 	// died mid-stream, so it is never mistaken for a clean CLI refusal.

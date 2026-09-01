@@ -51,6 +51,8 @@ export interface ClaudeCliExecutorOptions {
 	 */
 	resolveClaudeCredential?: () => string | undefined;
 	terminationGraceMs?: number;
+	/** Internal/test seam; production uses the shared ten-minute constant. */
+	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	onSpawn?: (pid: number) => void;
 }
@@ -352,6 +354,9 @@ export class ClaudeAgentSession implements AgentSession {
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
+			...(this.#options.activityTimeoutMs === undefined
+				? {}
+				: { activityTimeoutMs: this.#options.activityTimeoutMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
 	}

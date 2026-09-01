@@ -167,6 +167,35 @@ describe('Claude CLI runtime executor', () => {
 		expect((failure as ProviderCallError).retryAt).toBeUndefined();
 	});
 
+	test('classifies a silent CLI as unavailable after reaping its process', async () => {
+		let childPid = 0;
+		const session = new ClaudeAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
+			activityTimeoutMs: 50,
+			terminationGraceMs: 100,
+			onSpawn: (pid) => { childPid = pid; },
+		});
+		let failure: unknown;
+		try {
+			await session.run({
+				sessionId: 'session-silent',
+				resume: false,
+				cwd: createTestTmpdir('gship-claude-silent-'),
+				prompt: 'continue',
+				signal: new AbortController().signal,
+				emit: () => {},
+				eventPrefix: 'provider',
+			});
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toBeInstanceOf(ProviderCallError);
+		expect(failure).toMatchObject({ provider: 'claude', kind: 'transport-unavailable' });
+		expect((failure as Error).message).toContain('50ms');
+		expect(isProcessAlive(childPid)).toBe(false);
+	});
+
 	// GSHIP-664: the structured `utilization` fraction a real invocation reports
 	// is normalized into a 0-100 usedPercent on the same rate-limit event,
 	// without ever calling Claude a second time to ask for it.

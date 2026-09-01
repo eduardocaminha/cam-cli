@@ -16,7 +16,11 @@ import {
 	type ClaudeResultUsage,
 	classifyHeadlessStreamLine,
 } from './claude-stream.ts';
-import { runAgentProcess } from './agent-process.ts';
+import {
+	AgentProcessActivityTimeoutError,
+	type AgentProcessResult,
+	runAgentProcess,
+} from './agent-process.ts';
 import { buildClaudeAuthEnv } from './provider-env.ts';
 import type { ModelSlot } from './model-settings.ts';
 
@@ -43,6 +47,7 @@ export interface ClaudeCliRunInput {
 	 */
 	slot: ModelSlot;
 	terminationGraceMs?: number;
+	activityTimeoutMs?: number;
 	onSpawn?: (pid: number) => void;
 }
 
@@ -269,16 +274,32 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		summary: '',
 		structuredOutput: undefined,
 	};
-	const processResult = await runAgentProcess({
-		argv: input.argv,
-		cwd: input.cwd,
-		env: input.env,
-		stdin: `${message}\n`,
-		signal: input.signal,
-		terminationGraceMs: input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
-		...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
-		onLine: (line) => consumeClaudeLine(line, input, state),
-	});
+	let processResult: AgentProcessResult;
+	try {
+		processResult = await runAgentProcess({
+			argv: input.argv,
+			cwd: input.cwd,
+			env: input.env,
+			stdin: `${message}\n`,
+			signal: input.signal,
+			terminationGraceMs: input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+			...(input.activityTimeoutMs === undefined
+				? {}
+				: { activityTimeoutMs: input.activityTimeoutMs }),
+			...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
+			onLine: (line) => consumeClaudeLine(line, input, state),
+		});
+	} catch (error) {
+		if (error instanceof AgentProcessActivityTimeoutError) {
+			throw new ProviderCallError(
+				'claude',
+				'transport-unavailable',
+				`Claude CLI produced no protocol activity for ${error.timeoutMs}ms.`,
+				{ cause: error },
+			);
+		}
+		throw error;
+	}
 	if (state.rateLimitFailure !== undefined) throw state.rateLimitFailure;
 	if (processResult.exitCode !== 0) {
 		throw providerErrorFromMessage(

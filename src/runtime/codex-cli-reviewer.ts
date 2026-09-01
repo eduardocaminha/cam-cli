@@ -31,6 +31,8 @@ export interface CodexCliReviewerOptions {
 	resolveModel?: ModelSlotResolver;
 	sourceEnv?: Record<string, string | undefined>;
 	terminationGraceMs?: number;
+	/** Internal/test seam; production uses the shared ten-minute constant. */
+	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
 	runGit?: GitCommandRunner;
 	onSpawn?: (pid: number) => void;
@@ -55,6 +57,9 @@ function sessionOptions(options: CodexCliReviewerOptions): Omit<
 		...(options.terminationGraceMs === undefined
 			? {}
 			: { terminationGraceMs: options.terminationGraceMs }),
+		...(options.activityTimeoutMs === undefined
+			? {}
+			: { activityTimeoutMs: options.activityTimeoutMs }),
 		...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
 	};
 }
