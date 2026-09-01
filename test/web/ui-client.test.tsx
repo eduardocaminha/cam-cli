@@ -3399,6 +3399,10 @@ describe('operator shell', () => {
 
 		expect(html).toMatch(/>Activity<\/p><p[^>]*>3<\/p>/s);
 		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
+		// At xl, the attention hero spans two of seven columns and the other
+		// five metrics take one each, so the whole set stays on one row.
+		expect(html).toContain('card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-7');
+		expect(html).toMatch(/class="[^"]*xl:col-span-2[^"]*" data-slot="stat"><p[^>]*>Needs attention<\/p>/);
 		expect(html).toContain('aria-label="Outcomes"');
 		expect(html).toContain('2026-08-31: Activity 3; shipped 2; failed 1; cancelled 0; incomplete 0');
 		expect(html).not.toContain('<polyline');
