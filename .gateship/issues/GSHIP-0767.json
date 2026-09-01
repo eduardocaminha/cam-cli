@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-767",
+  "title": "Extrair implementações reais das rotas da UI",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T23:23:42.372Z",
+  "updatedAt": "2026-09-01T23:23:42.372Z",
+  "description": "Refatorar a UI sem qualquer mudança visual, textual, funcional, de estado, API ou dependência. `webui/src/App.tsx` não pode continuar definindo as implementações de OverviewSurface, HomeSurface, RunsSurface, WorkSurface, SettingsSurface, GlobalSettingsSurface, OnboardingSurface, UnavailableProjectSurface ou seus grandes clusters de componentes específicos. Cada superfície de rota deve ser exportada por um módulo real sob `webui/src/screens/`, junto dos componentes usados apenas por ela. Componentes usados por mais de uma rota devem ir para módulos de domínio compartilhados com nomes explícitos, por exemplo runs, projects, conversation ou settings, sem arquivo genérico de helpers. `App.tsx` deve importar essas superfícies e ficar responsável pela composição do shell, seleção de rota e wiring de props. Nenhum módulo extraído pode importar `App.tsx`, criar reexports que apenas escondam a implementação original ou duplicar componentes para evitar a movimentação. Preservar exatamente a navegação, os data-slots, atributos acessíveis, textos localizados, rolagem, comportamento responsivo, formulários, ações e ordem visual validados na v0.396.0. Atualizar somente imports e testes afetados pela movimentação. Não adicionar abstrações de registro de telas, estado global, context, nova biblioteca, endpoint ou gate arquitetural permanente. A refatoração deve resultar em dependências acíclicas verificadas pelo TypeScript e pelo knip existente.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Refatorar a UI sem qualquer mudança visual, textual, funcional, de estado, API ou dependência. `webui/src/App.tsx` não pode continuar definindo as implementações de OverviewSurface, HomeSurface, RunsSurface, WorkSurface, SettingsSurface, GlobalSettingsSurface, OnboardingSurface, UnavailableProjectSurface ou seus grandes clusters de componentes específicos. Cada superfície de rota deve ser exportada por um módulo real sob `webui/src/screens/`, junto dos componentes usados apenas por ela. Componentes usados por mais de uma rota devem ir para módulos de domínio compartilhados com nomes explícitos, por exemplo runs, projects, conversation ou settings, sem arquivo genérico de helpers. `App.tsx` deve importar essas superfícies e ficar responsável pela composição do shell, seleção de rota e wiring de props. Nenhum módulo extraído pode importar `App.tsx`, criar reexports que apenas escondam a implementação original ou duplicar componentes para evitar a movimentação. Preservar exatamente a navegação, os data-slots, atributos acessíveis, textos localizados, rolagem, comportamento responsivo, formulários, ações e ordem visual validados na v0.396.0. Atualizar somente imports e testes afetados pela movimentação. Não adicionar abstrações de registro de telas, estado global, context, nova biblioteca, endpoint ou gate arquitetural permanente. A refatoração deve resultar em dependências acíclicas verificadas pelo TypeScript e pelo knip existente.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "2b3aa035379502764438119dfaec0368a6fa22d4a767ec55b19f2d3753a10eb8",
+    "approvedAt": "2026-09-01T23:23:42.372Z"
+  }
+}
