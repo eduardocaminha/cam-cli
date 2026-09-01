@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-762",
+  "title": "Executar diagnósticos tipados definidos pelo próprio projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T21:11:08.120Z",
+  "updatedAt": "2026-09-01T21:11:08.120Z",
+  "description": "Estender de forma compatível o manifesto version 1 em .gateship/project.json com um campo opcional singular diagnostic contendo somente command, uma string não vazia. Adicionar um adaptador fixo id project, exibido ao lado do React Doctor, que no checkout diagnóstico isolado relê o manifesto daquela revisão e executa exatamente esse comando autorizado pelo repositório pelo mesmo caminho owned, cancelável, ambiente allowlisted e shell já usados por prepare/verify. O comando é responsável por seus runtimes e dependências; Gateship não instala Python, Node, ML ou ferramentas adicionais e não executa prepare automaticamente. A saída stdout deve ser JSON estrito com schemaVersion 1, version não vazia, coverageComplete boolean e findings; cada finding usa o contrato existente rule, severity, file, evidence, line e column, passa pela normalização e limites atuais, e caminhos absolutos ou que escapem do checkout são recusados. Schema desconhecido, ausência de configuração, saída acima do limite, JSON inválido ou exit code não zero falham somente o scan com mensagem limitada. Registrar o adaptador no runtime de boot e em cada projeto ready, sem tabela, score, threshold, gate de check:all, UI nova ou catálogo por linguagem. O workspace continua sendo preservado pelo mecanismo existente se o comando o modificar. Cobrir parser de manifesto, relatório, execução/cancelamento/falha e registro multiprojeto com runners falsos; não depender de Python instalado nos testes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Estender de forma compatível o manifesto version 1 em .gateship/project.json com um campo opcional singular diagnostic contendo somente command, uma string não vazia. Adicionar um adaptador fixo id project, exibido ao lado do React Doctor, que no checkout diagnóstico isolado relê o manifesto daquela revisão e executa exatamente esse comando autorizado pelo repositório pelo mesmo caminho owned, cancelável, ambiente allowlisted e shell já usados por prepare/verify. O comando é responsável por seus runtimes e dependências; Gateship não instala Python, Node, ML ou ferramentas adicionais e não executa prepare automaticamente. A saída stdout deve ser JSON estrito com schemaVersion 1, version não vazia, coverageComplete boolean e findings; cada finding usa o contrato existente rule, severity, file, evidence, line e column, passa pela normalização e limites atuais, e caminhos absolutos ou que escapem do checkout são recusados. Schema desconhecido, ausência de configuração, saída acima do limite, JSON inválido ou exit code não zero falham somente o scan com mensagem limitada. Registrar o adaptador no runtime de boot e em cada projeto ready, sem tabela, score, threshold, gate de check:all, UI nova ou catálogo por linguagem. O workspace continua sendo preservado pelo mecanismo existente se o comando o modificar. Cobrir parser de manifesto, relatório, execução/cancelamento/falha e registro multiprojeto com runners falsos; não depender de Python instalado nos testes.",
+    "verify": [
+      "bun test test/runtime/project-verification.test.ts test/runtime/diagnostics.test.ts test/web/diagnostics-api.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "94820963898fded37fb9fa3439d5bb632fecc4eba5ee9b163422f667caac6403",
+    "approvedAt": "2026-09-01T21:11:08.120Z"
+  }
+}
