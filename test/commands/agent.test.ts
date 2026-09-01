@@ -59,6 +59,7 @@ describe('canonical agent CLI', () => {
 		expect(String(guide).length).toBeLessThan(950);
 		expect(guide).toContain('Never edit .gship directly');
 		expect(guide).toContain('Never invent operator approval');
+		expect(guide).toContain('Prefer issues.create_approved with cited explicit authorization');
 	});
 
 	test('discovers operation names and formats only on demand', async () => {
@@ -69,12 +70,14 @@ describe('canonical agent CLI', () => {
 			'projects.import', 'projects.create',
 			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
-			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.specify', 'issues.approve',
+			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.create_approved', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
 			'runs.cancel', 'runs.abandon', 'runs.ship',
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
+		expect(operations.find(({ name }) => name === 'issues.create_approved')?.input)
+			.toContain('authorization');
 		// Onboarding names a location, never a project that does not exist yet.
 		expect(operations.find(({ name }) => name === 'projects.register')?.input).toBe('{root}');
 		// Importing names a repository, never a location on disk or a credential.
@@ -98,6 +101,22 @@ describe('canonical agent CLI', () => {
 			exitCode: 1,
 			output: { ok: false, code: 'invalid-input', message: expect.stringContaining('projectId') },
 		});
+	});
+
+	test('refuses an approved issue without authorization before calling the service', async () => {
+		let calls = 0;
+		const result = await executeAgent([
+			'call', 'issues.create_approved',
+			'--input', `{"projectId":"${PROJECT_ID}","title":"T","scope":"S","verificationCommand":"bun test","authorization":" "}`,
+		], async () => {
+			calls += 1;
+			return jsonResponse({ ok: true });
+		});
+		expect(result).toMatchObject({
+			exitCode: 1,
+			output: { ok: false, code: 'invalid-input', message: expect.stringContaining('authorization') },
+		});
+		expect(calls).toBe(0);
 	});
 
 	test('reads one registered project status by id without accepting locations', async () => {
@@ -542,6 +561,7 @@ describe('canonical agent CLI', () => {
 	test('routes every mutation class with JSON and agent-cli provenance', async () => {
 		const cases: Array<[string, Record<string, unknown>, string, string]> = [
 			['issues.create', { projectId: PROJECT_ID, title: 'T', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues`],
+			['issues.create_approved', { projectId: PROJECT_ID, title: 'T', scope: 'S', verificationCommand: 'bun test', authorization: 'Operator approves this contract.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/create-approved`],
 			['issues.specify', { projectId: PROJECT_ID, issueId: 'GSHIP-1', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/spec`],
 			['issues.approve', { projectId: PROJECT_ID, issueId: 'GSHIP-1', fingerprint: 'abc', authorization: 'Operator approves.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/approve`],
 			['issues.abandon', { projectId: PROJECT_ID, issueId: 'GSHIP-1', reason: 'No longer needed.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/abandon`],

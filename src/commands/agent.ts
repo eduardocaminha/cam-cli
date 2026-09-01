@@ -51,6 +51,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'runs.get': { method: 'GET', path: runPath(''), input: '{projectId, runId}' },
 	'runs.events': { method: 'GET', path: runPath('/events'), input: '{projectId, runId, limit?, offset?}', listField: 'events' },
 	'issues.create': { method: 'POST', path: projectPath('/issues'), input: '{projectId, title, scope, verificationCommand, evidence?}' },
+	'issues.create_approved': { method: 'POST', path: projectPath('/issues/create-approved'), input: '{projectId, title, scope, verificationCommand, evidence?, authorization}' },
 	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{projectId, issueId, scope, verificationCommand, evidence?}' },
 	'issues.approve': { method: 'POST', path: issuePath('/approve'), input: '{projectId, issueId, fingerprint, authorization}' },
 	'issues.abandon': { method: 'POST', path: issuePath('/abandon'), input: '{projectId, issueId, reason}' },
@@ -70,10 +71,11 @@ const GUIDE = [
 	'projects.register adds an existing checkout by absolute root.',
 	'projects.import clones owner/repo into a managed checkout.',
 	'projects.create requires explicit authorization and private or public visibility.',
-	'Use projects.unregister to drop a registration; it deletes no file and no project history.',
+	'projects.unregister drops a registration; it deletes no file or project history.',
 	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
 	'Never invent operator approval or authorization; pass only explicit operator text.',
+	'Prefer issues.create_approved with cited explicit authorization',
 	'Use `gship agent operations` for operation names and input formats.',
 	'Call with `gship agent call <operation> --input <json>`.',
 ].join('\n');
@@ -422,6 +424,12 @@ async function readJsonResponse(
 	return { response, payload };
 }
 
+function requireOperationAuthorization(operationName: string, input: Record<string, unknown>): void {
+	if (operationName === 'projects.create' || operationName === 'issues.create_approved') {
+		requiredString(input, 'authorization');
+	}
+}
+
 export async function executeAgent(
 	args: string[],
 	fetchFn: AgentFetch = fetch,
@@ -444,7 +452,7 @@ export async function executeAgent(
 		const operationName = parsed.operation!;
 		const operation = AGENT_OPERATIONS[operationName];
 		if (operation === undefined) throw new AgentCliError('unknown-operation', `Unknown operation: ${operationName}.`);
-		if (operationName === 'projects.create') requiredString(parsed.input, 'authorization');
+		requireOperationAuthorization(operationName, parsed.input);
 		const headers: Record<string, string> = {
 			accept: 'application/json',
 			origin: parsed.url,

@@ -85,6 +85,54 @@ describe('operator issue intake API', () => {
 		}
 	});
 
+	test('creates one approved issue only through the explicit authorized endpoint', async () => {
+		const received: Array<{ input: unknown; options: unknown }> = [];
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-approved-intake-api-'),
+			runRuntime: runtime,
+			issueIntake: (input, options) => {
+				received.push({ input, options });
+				return { id: 'CAM-701', title: 'Approved intake', sha: 'abc1234' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		const contract = {
+			title: '  Approved intake  ',
+			scope: '  Publicar uma única versão aprovada.  ',
+			verificationCommand: '  bun test test/web/issue-intake-api.test.ts  ',
+		};
+		try {
+			const missing = await fetch(`${origin}/api/issues/create-approved`, {
+				method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(contract),
+			});
+			expect(missing.status).toBe(403);
+			expect(await missing.json()).toMatchObject({ code: 'authorization-required' });
+			expect(received).toEqual([]);
+
+			const created = await fetch(`${origin}/api/issues/create-approved`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ ...contract, authorization: 'A operadora aprova este contrato.' }),
+			});
+			expect(created.status).toBe(201);
+			expect(await created.json()).toMatchObject({ ok: true, issue: { id: 'CAM-701' } });
+			expect(received).toEqual([{
+				input: {
+					title: 'Approved intake',
+					scope: 'Publicar uma única versão aprovada.',
+					verificationCommand: 'bun test test/web/issue-intake-api.test.ts',
+				},
+				options: { approve: true },
+			}]);
+			expect(runtime.listRuns()).toEqual([]);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('promotes an existing idea through the same trusted operator contract', async () => {
 		const received: unknown[] = [];
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });

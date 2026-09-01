@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-758",
   "title": "Criar issue já aprovada em uma única publicação",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T18:55:14.317Z",
-  "updatedAt": "2026-09-01T18:55:37.750Z",
+  "updatedAt": "2026-09-01T19:08:54.444Z",
   "description": "Expor no contrato de agentes uma operação explícita para criar uma nova issue já aprovada em uma única publicação quando o operador já autorizou o contrato.\n\nContrato:\n- Adicionar issues.create_approved com input {projectId,title,scope,verificationCommand,evidence?,authorization}.\n- Exigir authorization não vazia no agent CLI e no endpoint; ausência falha antes de qualquer escrita.\n- Publicar a issue usando o createOperatorIssue existente com approve:true, gerando uma única versão, um único fingerprint e um único lifecycle de push/PR.\n- Retornar a issue criada e aprovada; não iniciar run automaticamente.\n- Manter issues.create inalterada e sempre não aprovada.\n- Não permitir aprovação implícita em chamadas da UI sem o endpoint/comando explícito.\n- Se a publicação falhar, não deixar uma issue parcialmente aprovada na fonte remota.\n- Atualizar guide/operations para o agente preferir create_approved somente quando puder citar autorização explícita do operador.\n- Cobrir autorização ausente, sucesso atômico, fingerprint da spec exata, fallback de main protegida e não regressão de issues.create.\n- A comunicação da run com o operador deve ser em português.",
   "specSource": "operator",
   "spec": {
