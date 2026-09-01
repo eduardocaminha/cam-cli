@@ -37,23 +37,30 @@ export function TabsList({
 	...props
 }: Omit<TabsPrimitive.List.Props, 'className'> & { className?: string }): React.ReactElement {
 	return (
-		<TabsPrimitive.List
-			className={cn(
-				'relative z-0 flex w-fit items-center justify-center gap-x-0.5 rounded-lg bg-muted p-0.5 text-muted-foreground/72',
-				className,
-			)}
-			data-slot="tabs-list"
-			{...props}
+		<div
+			className="relative max-w-full after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-8 after:rounded-r-lg after:bg-linear-to-r after:from-transparent after:to-muted sm:after:hidden"
+			data-slot="tabs-scroll-frame"
 		>
-			{children}
-			<TabsPrimitive.Indicator
-				className={
-					'absolute bottom-0 left-0 h-(--active-tab-height) w-(--active-tab-width) translate-x-(--active-tab-left) -translate-y-(--active-tab-bottom) ' +
-					'-z-1 rounded-md bg-background shadow-sm/5 transition-[width,translate] duration-200 ease-in-out motion-reduce:transition-none dark:bg-input'
-				}
-				data-slot="tab-indicator"
-			/>
-		</TabsPrimitive.List>
+			<div className="max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
+				<TabsPrimitive.List
+					className={cn(
+						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-0.5 rounded-lg bg-muted py-0.5 pr-8 pl-0.5 text-muted-foreground/72 sm:pr-0.5',
+						className,
+					)}
+					data-slot="tabs-list"
+					{...props}
+				>
+					{children}
+					<TabsPrimitive.Indicator
+						className={
+							'absolute bottom-0 left-0 h-(--active-tab-height) w-(--active-tab-width) translate-x-(--active-tab-left) -translate-y-(--active-tab-bottom) ' +
+							'-z-1 rounded-md bg-background shadow-sm/5 transition-[width,translate] duration-200 ease-in-out motion-reduce:transition-none dark:bg-input'
+						}
+						data-slot="tab-indicator"
+					/>
+				</TabsPrimitive.List>
+			</div>
+		</div>
 	);
 }
 
@@ -64,8 +71,8 @@ export function TabsTab({
 	return (
 		<TabsPrimitive.Tab
 			className={cn(
-				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-base outline-none ' +
-					'transition-[color,background-color,box-shadow] hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring ' +
+				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-base outline-none pointer-coarse:min-h-11 ' +
+					'transition-[color,background-color,box-shadow] hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none ' +
 					'data-active:text-foreground data-disabled:pointer-events-none data-disabled:opacity-64 sm:text-sm',
 				segmentedControlItemLayoutClassName,
 				segmentedControlItemSizeClassNames.default,

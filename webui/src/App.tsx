@@ -2065,7 +2065,7 @@ function ChatLog({
 		<section
 			{...liveEdge}
 			aria-label={catalog.transcriptLabel}
-			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
+			className="min-h-24 min-w-0 overflow-x-hidden overflow-y-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:flex-1 xl:overflow-y-auto"
 		>
 			{chatMessages.length === 0 ? (
 				<EmptyState>{catalog.emptyStateGuidance}</EmptyState>
@@ -2220,16 +2220,16 @@ export function ConversationColumn({
 }): React.ReactElement {
 	return (
 		<main
-			className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6"
+			className="flex w-full min-w-0 shrink-0 flex-col p-4 lg:p-6 xl:min-h-0 xl:flex-1 xl:shrink"
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<Card className="mx-auto flex min-h-0 w-full max-w-(--content-measure) flex-1 flex-col">
+			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1">
 				<CardHeader>
 					<CardTitle>{catalog.title}</CardTitle>
 					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
-				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
+				<CardPanel className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 					<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
@@ -2292,6 +2292,16 @@ function BacklogPanel({
 	catalog: WorkCatalog['backlog'];
 	locale: Locale;
 }): React.ReactElement {
+	if (backlog.length === 0) {
+		return (
+			<Card data-state="empty">
+				<CardHeader className="py-3">
+					<CardTitle>{catalog.title}</CardTitle>
+					<CardDescription>{catalog.description(0, formatCount(0, locale))}</CardDescription>
+				</CardHeader>
+			</Card>
+		);
+	}
 	return (
 		<ContextPanel
 			description={catalog.description(backlog.length, formatCount(backlog.length, locale))}
@@ -2803,8 +2813,8 @@ function ShellNavigation({
 			status={status}
 		/>
 		<nav aria-label={catalog.operatorNavigationLabel}>
-			<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-0.5 lg:overflow-x-visible">
-				<li>
+			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
+				<li className="shrink-0">
 					<a
 						aria-current={selection.surface === 'overview' ? 'page' : undefined}
 						className={cn(
@@ -2813,11 +2823,11 @@ function ShellNavigation({
 						)}
 						href="/overview"
 					>
-						<NavGlyph name="overview" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.overview}</span>
+						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span>
 					</a>
 				</li>
 				{selection.projectId === null ? null : SURFACES.map((surface) => (
-					<li key={surface.surface}>
+					<li className="shrink-0" key={surface.surface}>
 						<a
 							aria-current={surface.surface === selection.surface ? 'page' : undefined}
 							className={cn(
@@ -2826,11 +2836,11 @@ function ShellNavigation({
 							)}
 							href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
 						>
-							<NavGlyph name={surface.surface} /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels[surface.label]}</span>
+							<NavGlyph name={surface.surface} /><span>{catalog.routeLabels[surface.label]}</span>
 						</a>
 					</li>
 				))}
-				<li className="lg:hidden">
+				<li className="shrink-0 lg:hidden">
 					<a
 						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
 						className={cn(
@@ -3476,8 +3486,6 @@ function OverviewProjectCards({ props, overview, catalog, projectCatalog }: { pr
 function OverviewData({ props, overview, catalog, attention, activeProjects }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number; activeProjects: number }): React.ReactElement {
 	const historical = overview.overview;
 	const completed = historical.totalRuns - historical.activeRuns;
-	const chartPoints = historical.daily;
-	const maxRuns = Math.max(1, ...chartPoints.map((day) => day.totalRuns));
 	return <>
 		{/*
 		 * The bento's hero answers "what needs me?" first. It is the one tile
@@ -3497,6 +3505,7 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 			<Stat label={catalog.metrics.activeProjects} value={activeProjects} />
 			<Stat label={catalog.metrics.backlog} value={overview.summary.backlog.planned} />
 			<Stat label={catalog.metrics.completed} value={completed} />
+			<Stat label={catalog.activity} value={historical.totalRuns} />
 			<Stat
 				hint={catalog.costCoverage(historical.runsWithKnownCost, historical.totalRuns)}
 				label={catalog.metrics.cost}
@@ -3505,15 +3514,17 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 					: formatCostUsd(historical.knownCostUsd, props.locale, 2)}
 			/>
 		</div>
+		{historical.daily.length === 0 ? null : (
+			<ul aria-label={catalog.trend} className="sr-only">
+				{historical.daily.map((day) => (
+					<li key={day.date}>
+						{day.date}: {catalog.activity} {day.totalRuns}; {catalog.outcomes.shipped} {day.runsByOutcome.shipped}; {catalog.outcomes.failed} {day.runsByOutcome.failed}; {catalog.outcomes.cancelled} {day.runsByOutcome.cancelled}; {catalog.outcomes.incomplete} {day.runsByOutcome.incomplete}
+					</li>
+				))}
+			</ul>
+		)}
 		{props.overviewLoading ? <p className="text-muted-foreground text-xs" role="status">{catalog.loading}</p> : null}
 		{attention > 0 ? <p className="text-warning-foreground text-sm" role="status">{catalog.partial}</p> : null}
-		{/* The activity sparkline shows volume only. Outcomes stay in factual
-		 * badges on each project, where a sparse series does not imply a trend. */}
-		{chartPoints.length === 0 ? null : <Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel className="flex flex-col gap-4">
-			<svg aria-label={catalog.activity} className="h-20 w-full text-chart-2" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.activity}</title><polyline aria-label={catalog.activity} fill="none" points={chartPoints.map((day, index) => `${chartPoints.length < 2 ? 50 : (index / (chartPoints.length - 1)) * 100},${30 - (day.totalRuns / maxRuns) * 26}`).join(' ')} stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
-			<p className="text-right font-mono text-muted-foreground text-xs tabular-nums">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</p>
-			<ul aria-label={catalog.trend} className="sr-only">{chartPoints.map((day) => <li key={day.date}>{day.date}: {catalog.activity} {day.totalRuns}; {catalog.outcomes.shipped} {day.runsByOutcome.shipped}; {catalog.outcomes.failed} {day.runsByOutcome.failed}; {catalog.outcomes.cancelled} {day.runsByOutcome.cancelled}; {catalog.outcomes.incomplete} {day.runsByOutcome.incomplete}</li>)}</ul>
-		</CardPanel></Card>}
 	</>;
 }
 
@@ -3604,7 +3615,7 @@ function HomeSurface(props: AppProps & { projectId: string }): React.ReactElemen
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
 	if (!inspectorOpen) {
 		return (
-			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
+			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden" data-slot="conversation-layout">
 				<ConversationColumn
 					catalog={localeCatalog.conversation}
 					chatMessages={props.chatMessages}
@@ -3618,6 +3629,7 @@ function HomeSurface(props: AppProps & { projectId: string }): React.ReactElemen
 				<aside
 					aria-label={localeCatalog.runInspector.homeAccessibleLabel}
 					className="flex shrink-0 items-start justify-end p-3 xl:w-12 xl:justify-center xl:border-l xl:pt-4"
+					data-slot="run-inspector"
 				>
 					<Button
 						aria-label={localeCatalog.shell.inspectorToggle.expand}
@@ -3633,7 +3645,7 @@ function HomeSurface(props: AppProps & { projectId: string }): React.ReactElemen
 		);
 	}
 	return (
-		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
+		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden" data-slot="conversation-layout">
 			<ConversationColumn
 				catalog={localeCatalog.conversation}
 				chatMessages={props.chatMessages}
@@ -3647,6 +3659,7 @@ function HomeSurface(props: AppProps & { projectId: string }): React.ReactElemen
 			<aside
 				aria-label={localeCatalog.runInspector.homeAccessibleLabel}
 				className="flex w-full min-w-0 flex-col gap-6 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
+				data-slot="run-inspector"
 			>
 				<div className="-mb-4 flex justify-end">
 					<Button
@@ -4026,7 +4039,7 @@ function PendingDiagnosticFindings({
 	onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	if (findings.length === 0) {
-		return <EmptyState>{catalog.diagnostics.noPending}</EmptyState>;
+		return <EmptyState compact>{catalog.diagnostics.noPending}</EmptyState>;
 	}
 	return (
 		<ul className="flex flex-col gap-3">
@@ -4220,7 +4233,7 @@ function ProposalsPanel({
 			</CardSummary>
 			<CardPanel className="flex flex-col gap-4">
 				{proposals.length === 0 ? (
-					<EmptyState>{catalog.proposals.emptyPending}</EmptyState>
+					<EmptyState compact>{catalog.proposals.emptyPending}</EmptyState>
 				) : (
 					<ul className="flex flex-col divide-y divide-border">
 						{proposals.map((proposal) => (
@@ -4344,7 +4357,7 @@ function ResolvedProposalsPanel({
 				</div>
 				<Separator />
 				{resolvedProposals.length === 0 ? (
-					<EmptyState>{catalog.proposals.emptyResolved}</EmptyState>
+					<EmptyState compact>{catalog.proposals.emptyResolved}</EmptyState>
 				) : (
 					<ul className="flex flex-col divide-y divide-border">
 						{resolvedProposals.map((proposal) => (
@@ -4401,7 +4414,7 @@ function WorkSurface(props: AppProps): React.ReactElement {
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
 			<Tabs defaultValue={props.drafts.length > 0 ? 'approval' : 'queue'}>
-				<TabsList>
+				<TabsList aria-label={localeCatalog.shell.routeLabels.work}>
 					<TabsTab value="queue">
 						{catalog.tabs.queue}
 						<TabsCount>{props.backlog.length}</TabsCount>

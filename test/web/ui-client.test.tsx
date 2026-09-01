@@ -1919,6 +1919,21 @@ describe('work surface', () => {
 		}
 	});
 
+	test('empty Work content stays compact and offers no inert run action', () => {
+		const html = workPage({ backlog: [] });
+		const emptyBacklog = elementWith(html, 'data-state="empty"');
+		const compactStates = openingTags(html).filter((tag) => tag.includes('data-density="compact"'));
+
+		expect(emptyBacklog).toContain('data-slot="card-frame"');
+		expect(html).toContain('0 admissible issues right now.');
+		expect(hasButton(html, 'Start run')).toBe(false);
+		expect(compactStates).toHaveLength(3);
+		for (const state of compactStates) {
+			expect(state).not.toContain('min-h-24');
+			expect(state).not.toContain('p-6');
+		}
+	});
+
 	test('reviews specified drafts in a closed disclosure and requires persisted confirmation', () => {
 		const html = workPage({ drafts: [{
 			id: 'CAM-42',
@@ -3345,6 +3360,51 @@ describe('operator shell', () => {
 		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
 	});
 
+	test('overview keeps the activity count without rendering a decorative line chart', () => {
+		const history = {
+			window: '7d' as const,
+			totalRuns: 3,
+			runsWithKnownCost: 2,
+			knownCostUsd: 1.25,
+			runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 },
+			activeRuns: 1,
+			daily: [{
+				date: '2026-08-31',
+				totalRuns: 3,
+				runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 },
+				runsWithKnownCost: 2,
+				knownCostUsd: 1.25,
+			}],
+			configurations: [],
+		};
+		const html = renderAt('/overview', {
+			projects: [CURRENT_PROJECT],
+			overview: {
+				window: '7d',
+				overview: history,
+				summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 2 } },
+				projects: [{
+					project: CURRENT_PROJECT,
+					root: { state: 'available' },
+					backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 2 } },
+					database: { state: 'available', path: '/state/runtime.sqlite' },
+					overview: { overview: history },
+					activeRun: null,
+					latestRun: null,
+					latestRunOutcome: null,
+					recentRuns: [],
+				}],
+			},
+		});
+
+		expect(html).toMatch(/>Activity<\/p><p[^>]*>3<\/p>/s);
+		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toContain('aria-label="Outcomes"');
+		expect(html).toContain('2026-08-31: Activity 3; shipped 2; failed 1; cancelled 0; incomplete 0');
+		expect(html).not.toContain('<polyline');
+		expect(html).not.toContain('preserveAspectRatio="none"');
+	});
+
 	// GSHIP-716: onboarding a checkout the operator already has is one absolute
 	// path, offered on the overview beside the list that stays the selection.
 	test('the overview offers registering an existing checkout by absolute path in both locales', () => {
@@ -3733,6 +3793,9 @@ describe('operator shell', () => {
 			for (const label of ['Overview', 'Conversation', 'Runs', 'Work', 'Settings']) {
 				expect(nav).toContain(`>${label}</span>`);
 			}
+			expect(nav).toContain('flex-wrap');
+			expect(nav).not.toContain('overflow-x-auto');
+			expect(nav).not.toContain('text-ellipsis');
 			expect(nav).toContain('href="/overview"');
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
 			expect(active).toContain('aria-current="page"');
@@ -4142,6 +4205,26 @@ describe('conversation transcript', () => {
 		expect(loaded.indexOf('role="log"')).toBeLessThan(loaded.indexOf('Pronto.'));
 	});
 
+	test('the run inspector follows the conversation on narrow screens and stays lateral on desktop', () => {
+		const html = home();
+		const layout = elementWith(html, 'data-slot="conversation-layout"');
+		const transcript = elementWith(html, 'role="log"');
+		const inspector = elementWith(html, 'data-slot="run-inspector"');
+		const main = openingTags(html).find((tag) => tag.startsWith('<main'));
+
+		expect(layout).toContain('flex-col');
+		expect(layout).toContain('overflow-y-auto');
+		expect(layout).toContain('xl:flex-row');
+		expect(layout).toContain('xl:overflow-hidden');
+		expect(transcript).toContain('overflow-y-visible');
+		expect(transcript).toContain('xl:overflow-y-auto');
+		expect(main).toContain('shrink-0');
+		expect(main).toContain('xl:flex-1');
+		expect(inspector).toContain('w-full');
+		expect(inspector).toContain('xl:w-96');
+		expect(html.indexOf('<main')).toBeLessThan(html.indexOf('data-slot="run-inspector"'));
+	});
+
 	test('conversation and run output use the same focusable live-edge contract', () => {
 		const conversation = home({
 			chatMessages: [{
@@ -4192,19 +4275,22 @@ describe('conversation transcript', () => {
 		expect(renderLongContent('/work')).toContain(`issue ${HASH}`);
 	});
 
-	test('horizontal scrolling is confined to the shell navigation and table containers', () => {
+	test('horizontal scrolling is confined to named tab lists and table containers', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderLongContent(route);
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 
 			// The page body never scrolls sideways: wide content scrolls inside
-			// its own container. Exactly two containers may do that, the shell's
-			// surface nav and a dense table's wrapper.
+			// its own container. Tab lists own one deliberate scroller; dense tables
+			// keep owning their own horizontal overflow.
 			const tables = horizontal.filter((tag) => tag.includes('data-slot="table-container"'));
-			expect(horizontal.length - tables.length).toBe(1);
+			const local = horizontal.filter((tag) => !tag.includes('data-slot="table-container"'));
+			for (const scroller of local) expect(scroller).toContain('data-slot="tabs-scroll"');
+			if (route.endsWith('/work')) expect(local).not.toHaveLength(0);
 			const operatorNav = html.indexOf('<nav aria-label="Navigation"');
-			expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(operatorNav);
-			expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>', operatorNav));
+			const navigation = html.slice(operatorNav, html.indexOf('</nav>', operatorNav));
+			expect(navigation).not.toContain('overflow-x-auto');
+			expect(horizontal.length).toBe(tables.length + local.length);
 		}
 	});
 });
