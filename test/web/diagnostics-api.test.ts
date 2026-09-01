@@ -172,6 +172,7 @@ describe('diagnostics web API', () => {
 			expect(initial).toMatchObject({
 				scan: null,
 				findings: [],
+				ratchets: [],
 				analyzers: [{ id: 'react', version: '0.9.12' }],
 				stats: { total: 0, pending: 0, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
 			});
@@ -191,6 +192,12 @@ describe('diagnostics web API', () => {
 			const completed = await waitForCompleted(harness.origin);
 			expect(completed).toMatchObject({
 				scan: { state: 'completed', findingCount: 2, coverageComplete: true },
+				ratchets: [{
+					analyzer: 'react', analyzerVersion: '0.9.12', sourceSha: SOURCE_SHA,
+					baseline: { error: 1, warning: 1, info: 0 },
+					observation: { error: 1, warning: 1, info: 0 },
+					deltas: { error: 0, warning: 0, info: 0 }, outcome: 'baseline',
+				}],
 			});
 			const findings = completed.findings;
 			const first = findings.find((finding) => finding.rule === 'first-rule');

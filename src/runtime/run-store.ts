@@ -24,6 +24,14 @@ import {
 	normalizeDiagnosticSchedule,
 } from './diagnostic-schedule.ts';
 import {
+	countDiagnosticSeverities,
+	DIAGNOSTIC_RATCHETS_KEY,
+	diagnosticRatchetSnapshot,
+	normalizeDiagnosticRatchets,
+	type DiagnosticRatchet,
+	updateDiagnosticRatchet,
+} from './diagnostic-ratchet.ts';
+import {
 	emptyModelSettings,
 	MODEL_SETTINGS_KEY,
 	type ModelSettings,
@@ -1402,6 +1410,14 @@ export class RunStore {
 				findingCount: drafts.length,
 				updatedAt: input.updatedAt,
 			}) as DiagnosticScanRow;
+			if (input.coverageComplete) {
+				this.#setDiagnosticRatchets(updateDiagnosticRatchet(this.#getDiagnosticRatchets(), {
+					analyzer: scan.analyzer,
+					analyzerVersion: input.analyzerVersion,
+					sourceSha: input.sourceSha,
+					observation: countDiagnosticSeverities(drafts),
+				}));
+			}
 			return { scan: completed, findings };
 		});
 		const result = apply();
@@ -1447,6 +1463,11 @@ export class RunStore {
 			SELECT * FROM diagnostic_scans ORDER BY seq DESC LIMIT $limit
 		`).all({ limit }) as DiagnosticScanRow[];
 		return rows.map(decodeDiagnosticScan);
+	}
+
+	/** Last complete comparison per analyzer. Partial, failed and cancelled scans leave this unchanged. */
+	listDiagnosticRatchets(): DiagnosticRatchet[] {
+		return diagnosticRatchetSnapshot(this.#getDiagnosticRatchets());
 	}
 
 	listPendingDiagnosticFindings(limit = 200): DiagnosticFinding[] {
@@ -1587,6 +1608,25 @@ export class RunStore {
 			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value
 		`).run({ key, value });
+	}
+
+	#getDiagnosticRatchets() {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = $key
+		`).get({ key: DIAGNOSTIC_RATCHETS_KEY }) as { value: string } | null;
+		if (row === null) return [];
+		try {
+			return normalizeDiagnosticRatchets(JSON.parse(row.value) as unknown);
+		} catch {
+			return [];
+		}
+	}
+
+	#setDiagnosticRatchets(entries: ReturnType<typeof normalizeDiagnosticRatchets>): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ($key, $value)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({ key: DIAGNOSTIC_RATCHETS_KEY, value: JSON.stringify(entries) });
 	}
 
 	/** Off by default (GSHIP-638): autonomy never turns itself on. */
