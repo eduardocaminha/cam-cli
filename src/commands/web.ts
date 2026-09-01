@@ -458,6 +458,27 @@ export function parseModelSettingsInput(value: unknown): ModelSettings {
 	return settings;
 }
 
+interface AgentDefaultsInput {
+	provider?: unknown;
+	modelSettings?: ModelSettings;
+}
+
+/** The product-wide record is complete: omitted fields deliberately clear defaults. */
+function parseAgentDefaultsInput(value: unknown): AgentDefaultsInput {
+	const input = jsonObjectInput(value, 'Agent defaults');
+	for (const field of Object.keys(input)) {
+		if (field !== 'provider' && field !== 'modelSettings') {
+			throw new IssueIntakeError('invalid-request', `Agent defaults has an unknown field: ${field}.`, 400);
+		}
+	}
+	return {
+		...(input['provider'] === undefined ? {} : { provider: input['provider'] }),
+		...(Object.hasOwn(input, 'modelSettings')
+			? { modelSettings: parseModelSettingsInput(input['modelSettings']) }
+			: {}),
+	};
+}
+
 /**
  * GSHIP-620: validates a chosen model/effort by asking the provider's own CLI,
  * instead of Gateship keeping a catalog of valid names. A test seam stands in
@@ -545,6 +566,59 @@ async function writeModelSettings(
 			source: runtime.getModelSettingsSource(),
 			probes,
 		});
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+/**
+ * GSHIP-761: global defaults belong to the registry alone. They deliberately
+ * do not read a project runtime, whose local override must stay irrelevant to
+ * this product-wide contract.
+ */
+async function writeAgentDefaults(
+	request: Request,
+	registry: ProjectRegistry,
+	providerAuth: ProviderAuth,
+	prober: ModelProber,
+	cwd: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const requested = parseAgentDefaultsInput(body);
+		let provider: AgentProviderId | undefined;
+		if (requested.provider !== undefined) {
+			const selected = await selectedConnectedProvider(requested.provider, providerAuth);
+			if (selected instanceof Response) return selected;
+			provider = selected;
+		}
+		const previous = registry.getAgentDefaults();
+		const { settings, probes } = requested.modelSettings === undefined
+			? { settings: undefined, probes: {} }
+			: await resolveModelSettingsWrite(
+				previous.modelSettings ?? emptyModelSettings(),
+				requested.modelSettings,
+				prober,
+				cwd,
+			);
+		registry.setAgentDefaults({
+			...(provider === undefined ? {} : { provider }),
+			...(settings === undefined ? {} : { modelSettings: settings }),
+		});
+		return Response.json({ ok: true, defaults: registry.getAgentDefaults(), probes });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -1112,6 +1186,17 @@ async function selectProvider(
 	runtime: RunRuntime,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	const selected = await selectedConnectedProvider(providerId, providerAuth);
+	if (selected instanceof Response) return selected;
+	runtime.selectProvider(selected);
+	return Response.json({ ok: true, selected, source: runtime.getSelectedProviderSource() });
+}
+
+/** Shared by project selection and product-wide defaults, so their refusal remains identical. */
+async function selectedConnectedProvider(
+	providerId: unknown,
+	providerAuth: ProviderAuth,
+): Promise<AgentProviderId | Response> {
 	if (providerId !== 'claude' && providerId !== 'codex') {
 		return Response.json(
 			{ ok: false, code: 'invalid-provider', message: 'Unknown provider.' },
@@ -1129,8 +1214,7 @@ async function selectProvider(
 			{ status: 409 },
 		);
 	}
-	runtime.selectProvider(providerId);
-	return Response.json({ ok: true, selected: providerId, source: runtime.getSelectedProviderSource() });
+	return providerId;
 }
 
 function clearSelectedProvider(request: Request, runtime: RunRuntime): Response {
@@ -3063,6 +3147,18 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request.params.projectId,
 					projectRegistry,
 					projectRoot,
+				),
+			},
+			// Product-wide agent defaults live only in projects.sqlite. Unlike the
+			// project routes below, this must not materialize or consult a runtime.
+			'/api/agent-defaults': {
+				GET: () => Response.json({ defaults: projectRegistry.getAgentDefaults() }),
+				PUT: (request) => writeAgentDefaults(
+					request,
+					projectRegistry,
+					providerAuth,
+					modelProber,
+					options.cwd,
 				),
 			},
 			'/api/projects/:projectId/status': (request) => {
