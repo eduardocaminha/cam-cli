@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-763",
+  "title": "Registrar ratchet diagnóstico suave por severidade",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T21:27:46.610Z",
+  "updatedAt": "2026-09-01T21:27:46.610Z",
+  "description": "Adicionar uma baseline advisory por analyzer ao runtime de diagnósticos, persistida em uma única chave JSON da runtime_settings existente, sem tabela ou coluna nova. Somente scans completed com coverageComplete true participam. Contar os findings normalizados crus por error, warning e info, independentemente de pending, dismissed, promoted ou cleared. O primeiro scan completo de um analyzer, ou o primeiro após mudança exata de analyzerVersion, inicializa a baseline e não declara melhora nem regressão. Em scans completos comparáveis, calcular deltas separados por severidade, sem nota composta: se qualquer contagem superar a baseline, outcome regressed e a baseline permanece; se nenhuma superar, outcome unchanged ou improved e a baseline avança para as novas contagens. Scans parciais, failed ou cancelled não leem ausência como melhoria e não alteram a baseline. Expor no DiagnosticsSnapshot uma lista limitada e tipada por analyzer com versão, sourceSha e contagens da baseline, observação atual, deltas e outcome baseline|unchanged|improved|regressed. Preservar a última comparação após restart. Não bloquear run, scan, check:all, merge ou release; não criar issue, alerta, threshold, score, peso, aceite automático, UI, endpoint novo ou dependência. Dados antigos sem baseline começam no próximo scan completo. Cobrir inicialização, melhora, regressão aderente, mudança de versão, scan parcial e recuperação do snapshot.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar uma baseline advisory por analyzer ao runtime de diagnósticos, persistida em uma única chave JSON da runtime_settings existente, sem tabela ou coluna nova. Somente scans completed com coverageComplete true participam. Contar os findings normalizados crus por error, warning e info, independentemente de pending, dismissed, promoted ou cleared. O primeiro scan completo de um analyzer, ou o primeiro após mudança exata de analyzerVersion, inicializa a baseline e não declara melhora nem regressão. Em scans completos comparáveis, calcular deltas separados por severidade, sem nota composta: se qualquer contagem superar a baseline, outcome regressed e a baseline permanece; se nenhuma superar, outcome unchanged ou improved e a baseline avança para as novas contagens. Scans parciais, failed ou cancelled não leem ausência como melhoria e não alteram a baseline. Expor no DiagnosticsSnapshot uma lista limitada e tipada por analyzer com versão, sourceSha e contagens da baseline, observação atual, deltas e outcome baseline|unchanged|improved|regressed. Preservar a última comparação após restart. Não bloquear run, scan, check:all, merge ou release; não criar issue, alerta, threshold, score, peso, aceite automático, UI, endpoint novo ou dependência. Dados antigos sem baseline começam no próximo scan completo. Cobrir inicialização, melhora, regressão aderente, mudança de versão, scan parcial e recuperação do snapshot.",
+    "verify": [
+      "bun test test/runtime/run-store.test.ts test/runtime/diagnostics.test.ts test/web/diagnostics-api.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "5c820baa254d0dba52c469920e8ff18e4cd7a61ca821fd04e842826b393d3b38",
+    "approvedAt": "2026-09-01T21:27:46.610Z"
+  }
+}
