@@ -848,6 +848,46 @@ async function createIssueFromOperator(
 }
 
 /**
+ * This is intentionally a separate route from ordinary issue intake: an
+ * approved contract is an explicit operator action, never an option a UI
+ * caller can accidentally imply on the normal create route.
+ */
+async function createApprovedIssueFromOperator(
+	request: Request,
+	issueIntake: IssueIntakeWriter,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON object is required.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const authorization = body !== null && typeof body === 'object' && !Array.isArray(body)
+			? (body as Record<string, unknown>)['authorization'] : undefined;
+		if (typeof authorization !== 'string' || authorization.trim().length === 0) {
+			throw new IssueIntakeError(
+				'authorization-required',
+				'Explicit operator authorization is required to create an approved issue.',
+				403,
+			);
+		}
+		const input = parseOperatorIssueInput(body);
+		return Response.json({ ok: true, issue: await issueIntake(input, { approve: true }) }, { status: 201 });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+/**
  * Register a checkout the operator already has, by absolute path (GSHIP-716).
  * Local metadata only: the refusal carries the same readiness detail the
  * screen already renders, and nothing is written unless the project is ready.
@@ -3087,6 +3127,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					(context) => createIssueFromOperator(request, context.issueIntake),
 				),
 			},
+			'/api/projects/:projectId/issues/create-approved': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => createApprovedIssueFromOperator(request, context.issueIntake),
+				),
+			},
 			'/api/projects/:projectId/issues/:issueId': {
 				GET: (request) => projectOperation(
 					request.params.projectId,
@@ -3387,6 +3433,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/issues': {
 				GET: () => listPublishedIssues(options.cwd),
 				POST: (request) => createIssueFromOperator(request, issueIntake),
+			},
+			'/api/issues/create-approved': {
+				POST: (request) => createApprovedIssueFromOperator(request, issueIntake),
 			},
 			'/api/issues/:issueId': {
 				GET: (request) => readPublishedIssueResponse(issueReader, request.params.issueId),

@@ -109,7 +109,7 @@ Open a PR: gh pr create --base main`);
 
 		const created = await createOperatorIssue(fixture.local, {
 			title: 'PR protected intake', scope: 'Use a protected main.', verificationCommand: 'true',
-		}, { shipper });
+		}, { approve: true, shipper });
 		await specifyOperatorIssue(fixture.local, 'CAM-2', {
 			scope: 'Specify through the same PR.', verificationCommand: 'true',
 		}, undefined, undefined, { shipper });
@@ -131,6 +131,10 @@ Open a PR: gh pr create --base main`);
 			expect(git(fixture.remote, ['diff-tree', '--no-commit-id', '--name-only', '-r', call.headSha]))
 				.toBe(`.gateship/issues/${call.issueId.replace(/\d+$/, (number) => number.padStart(4, '0'))}.json`);
 		}
+		const approved = JSON.parse(
+			git(fixture.remote, ['show', `main:.gateship/issues/${created.id.replace(/\d+$/, (number) => number.padStart(4, '0'))}.json`]),
+		) as { spec: Parameters<typeof fingerprintSpec>[0]; approval: { fingerprint: string } };
+		expect(approved.approval.fingerprint).toBe(fingerprintSpec(approved.spec));
 		expect(git(fixture.local, ['worktree', 'list', '--porcelain'])).not.toContain('gship-intake-');
 	});
 
@@ -175,13 +179,15 @@ Open a PR: gh pr create --base main`);
 			'hook refused this push',
 		]) {
 			const fixture = seedFixture();
+			const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
 			blockDirectPushToMain(fixture.local, rejection);
 			let merged = false;
 			await expect(createOperatorIssue(fixture.local, {
 				title: 'Sem fallback', scope: 'Uma recusa imprecisa falha fechada.', verificationCommand: 'true',
-			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
+			}, { approve: true, shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
 				.rejects.toMatchObject({ code: 'source-unavailable' });
 			expect(merged).toBe(false);
+			expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
 		}
 	});
 	test('records approval for the exact published spec when requested', async () => {
