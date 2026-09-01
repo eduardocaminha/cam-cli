@@ -1,52 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
-/*
- * Saans is the interface face and the only declared one (operator decision,
- * 2026-08-25, removing the vendored Inter fallback). It is strictly local:
- * the file is gitignored and never enters the repository or a release
- * binary, because the Displaay license does not grant redistribution. The
- * stylesheet always declares it; where the file is absent the request 404s
- * and every glyph falls back to the system stack with no other difference.
- */
-@font-face {
-	font-family: 'Saans';
-	font-style: normal;
-	font-display: swap;
-	font-weight: 300 700;
-	src: url('/fonts/SaansVF.woff2') format('woff2-variations');
-}
+/* Gateship's operator theme and semantic state vocabulary. */
 
-/*
- * The Gateship operator theme.
- *
- * Union of two sources (operator decision, 2026-08-24). The base is the
- * shadcn preset bbVKEfi (style base-maia): the standard shadcn token contract
- * in oklch, a derived radius scale, and Inter as the raw interface face. On
- * top of it, this screen's own vocabulary survives: the run state families
- * -- info, merged, success, warning, destructive -- that the surfaces
- * resolve and the preset does not know about.
- *
- * The raw preset look is deliberate: the design-system layers (Saans, acid
- * accent, Apple+ radius, hairline elevation; docs/design/design-system.md)
- * land on these tokens one slice at a time, by changing values, not names.
- */
-
-/*
- * coss ui's own dark variant, verbatim (packages/ui/src/styles/globals.css,
- * operator decision 2026-08-25). The class lands on <html>, and every
- * element a dark: rule targets is a descendant, so the descendant-only
- * match is sufficient here.
- */
+/* The class lands on <html>, so a descendant dark variant is sufficient. */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-	/* coss ui's own breakpoints past 2xl, verbatim. */
+	/* Additional wide-screen breakpoints. */
 	--breakpoint-3xl: 1600px;
 	--breakpoint-4xl: 2000px;
 
-	--font-sans: 'Saans', ui-sans-serif, system-ui, sans-serif;
+	--font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 	/*
 	 * Headings are an alias rather than a face of their own: nothing injects a
 	 * font here, so the alias is the seam where one would land later without
@@ -124,8 +89,7 @@
 
 	/*
 	 * The attention family: the brand acid, reserved for what waits on the
-	 * operator (design-system.md section 1). Not shadcn's --accent, which the
-	 * registry components treat as a subtle hover tint; this is its own role.
+	 * operator. It is separate from --accent, the subtle hover tint.
 	 * -ui and -text are the darkened ramps that keep AA on light surfaces.
 	 */
 	--color-attention: var(--attention);
@@ -144,15 +108,15 @@
 	--color-warning: var(--warning);
 	--color-warning-foreground: var(--warning-foreground);
 
-	/* coss ui's own code-block family, verbatim. */
+	/* Code-block family. */
 	--color-code: var(--code);
 	--color-code-foreground: var(--code-foreground);
 	--color-code-highlight: var(--code-highlight);
 
 	/*
-	 * coss ui's own radius scale, verbatim, and nothing past xl: 2xl and up
+	 * Gateship's radius scale stops at xl: 2xl and up
 	 * stay Tailwind's defaults (--radius-2xl is 1rem), which is exactly what
-	 * coss.com renders on its card frames.
+	 * the product renders on its card frames.
 	 */
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
@@ -177,15 +141,7 @@
 	 * theme class, not just the OS: a light scrollbar over a dark surface
 	 * was the loudest thing on the screen. */
 	color-scheme: light;
-	/*
-	 * Neutral, radius, spacing and elevation below are the coss ui tokens
-	 * (github.com/cosscom/coss, packages/ui/src/styles/globals.css) verbatim
-	 * (operator decision, 2026-08-24): a pure Tailwind neutral scale, a
-	 * lower base radius, alpha-mixed chrome instead of hand-picked hex, and
-	 * no shadow. Attention (the acid family and the focus ring it drives)
-	 * and the two typefaces stay Gateship's own; nothing else in this block
-	 * is a Gateship value anymore.
-	 */
+	/* Pure neutral scale with alpha-mixed chrome and restrained elevation. */
 	--background: var(--color-white);
 	--foreground: var(--color-neutral-800);
 	--card: var(--color-white);
@@ -206,10 +162,9 @@
 	--input: --alpha(var(--color-black) / 16%);
 	/* Focus stays the pastel acid wash, the same tone as the attention
 	 * surface (operator decision, 2026-08-24): a soft halo, not a saturated
-	 * outline. Kept out of the coss import: it is the attention family. */
+	 * outline. */
 	--ring: var(--attention-surface);
-	/* Kept out of the coss import: cancelled always renders gray (operator
-	 * decision), and coss's chart hues are a different, saturated register. */
+	/* Cancelled and neutral activity always render gray. */
 	--chart-1: #dedede;
 	--chart-2: #909090;
 	--chart-3: #5f5f5f;
@@ -240,8 +195,8 @@
 	/*
 	 * The logo's own two extra fills (gateship-logo.tsx, operator decision
 	 * 2026-08-25): on light, the portal is pure white, this system's own
-	 * pre-coss F4 decision (2026-08-24) for every risen control -- not the
-	 * coss `--secondary` wash that decision used to be, and not the acid
+	 * pre-Gateship F4 decision (2026-08-24) for every risen control -- not the
+	 * Gateship `--secondary` wash that decision used to be, and not the acid
 	 * family either. Light only: dark keeps its own acid wash (below). The
 	 * stair swaps from dark ink to white on dark so it still reads against
 	 * that wash there.
@@ -261,7 +216,7 @@
 	 */
 	--info: var(--color-blue-500);
 	--info-foreground: var(--color-blue-700);
-	/* Kept out of the coss import: coss has no "merged" state. */
+	/* Kept out of the Gateship import: Gateship has no "merged" state. */
 	--merged: var(--color-purple-500);
 	--merged-foreground: var(--color-purple-700);
 	--success: var(--color-emerald-500);
@@ -269,7 +224,7 @@
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-700);
 
-	/* coss ui's own code-block values, verbatim. */
+	/* Gateship's code-block values, directly. */
 	--code: var(--color-white);
 	--code-foreground: var(--foreground);
 	--code-highlight: --alpha(var(--color-black) / 4%);
@@ -301,9 +256,9 @@
 	--border: --alpha(var(--color-white) / 10%);
 	--input: --alpha(var(--color-white) / 12%);
 	/* The same pastel family, translucent so it reads as a halo on dark.
-	 * Kept out of the coss import: it is the attention family. */
+	 * Kept out of the Gateship import: it is the attention family. */
 	--ring: rgba(238, 247, 204, 0.45);
-	/* Kept out of the coss import: cancelled always renders gray. */
+	/* Kept out of the Gateship import: cancelled always renders gray. */
 	--chart-1: #dedede;
 	--chart-2: #a6a6a6;
 	--chart-3: #737373;
@@ -342,7 +297,7 @@
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-400);
 
-	/* coss ui's own code-block values, verbatim. */
+	/* Gateship's code-block values, directly. */
 	--code: color-mix(in srgb, var(--background) 98%, var(--color-white));
 	--code-foreground: var(--foreground);
 	--code-highlight: --alpha(var(--color-white) / 4%);
@@ -364,7 +319,7 @@
 
 /*
  * The outer double border (operator decision, 2026-08-25, settling the
- * ring's final form): a flat 1px line 7px outside the surface, in coss
+ * ring's final form): a flat 1px line 7px outside the surface, in Gateship
  * ui's own homepage tone (`border/64`), concentric with the surface's
  * radius. Flat, not faded: the gradient version died at the bottom edge
  * and read as barely there. The offset is counted space: the element
@@ -420,7 +375,7 @@
 	}
 
 	/*
-	 * coss ui's own homepage (apps/ui/app/layout.tsx) paints its body
+	 * Gateship's homepage (apps/ui/app/layout.tsx) paints its body
 	 * `bg-sidebar`, not `bg-background`: the canvas is the dimmed tone and
 	 * cards (`bg-card`, pure white) rise above it, not the other way round
 	 * (operator decision, 2026-08-25, correcting an earlier reversal).

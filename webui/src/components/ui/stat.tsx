@@ -3,10 +3,8 @@
 // One operational number: the value in the data voice (mono, tabular), the
 // label under it in quiet sans. Statistics never carry color; state and
 // attention have their own surfaces (design-system.md sections 1 and 3).
-// The surface is coss ui's plain Card (border, hairline bevel), inside
-// Gateship's card-ring outer ring; the base shadow-xs/5 is dropped
-// (operator decision, 2026-08-25) -- redundant once the ring and the bevel
-// already carry the surface's definition.
+// The surface is a plain card inside the shared card ring. Its border and
+// bevel carry the surface definition without another shadow.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';

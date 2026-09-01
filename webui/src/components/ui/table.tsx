@@ -1,11 +1,9 @@
 // webui/src/components/ui/table.tsx
 //
-// coss ui's table, vendored verbatim (packages/ui/src/components/table.tsx,
-// operator decision 2026-08-25): a scroll container wrapping the real
+// Gateship's table is a scroll container wrapping the real
 // <table>, rows separated by the border token, hover and selection tinted
 // by mixing the surface with 2-4% of ink. The "card" variant's selectors
-// ride along verbatim but stay inert; every table on this screen renders
-// the default variant. Only the exports this screen consumes are kept.
+// stay inert; every table on this screen renders the default variant.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';

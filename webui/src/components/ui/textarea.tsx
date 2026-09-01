@@ -1,7 +1,6 @@
 // webui/src/components/ui/textarea.tsx
 //
-// coss ui's textarea, vendored verbatim (packages/ui/src/components/
-// textarea.tsx, operator decision 2026-08-25): the same composed control as
+// Gateship's textarea uses the same composed control as
 // Input -- a span wrapper with the chrome, the field inside bare -- with
 // content-driven sizing. The focus ring stays Gateship's acid --ring token.
 

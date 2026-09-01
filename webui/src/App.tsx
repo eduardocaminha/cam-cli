@@ -15,18 +15,16 @@
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
 import React, { useCallback, useEffect, useState } from 'react';
+import type { AppProps } from './app-props.ts';
+import { AppShell, MAIN_CONTENT_ID } from './app-shell.tsx';
 import {
 	aggregateChatTurnCosts,
 	type ChainPauseReason,
 	type ChainRunsView,
-	type ChatMessageView,
-	type CreateProjectInput,
 	type DiagnosticCadenceView,
 	type DiagnosticFindingView,
 	type DiagnosticsView,
-	type ExecutorHandoffSettingView,
 	emptyModelSettings,
-	type GitIdentityView,
 	type IssueReviewDraft,
 	MODEL_PROVIDER_IDS,
 	MODEL_ROLE_NAMES,
@@ -35,22 +33,12 @@ import {
 	type ModelSlotView,
 	NOTIFICATION_CHANNEL_IDS,
 	type NotificationChannelId,
-	type NotificationChannelsView,
 	type NotificationChannelView,
-	type OperatorIssueDraft,
-	type OperatorProfileView,
-	type OperatorSpecDraft,
-	type ProjectBriefView,
 	type ProjectOperationalOverviewView,
 	type ProjectOverviewView,
 	type ProjectStatusView,
-	type ProposalView,
 	type ProviderStatusView,
 	type RegisteredProjectView,
-	type ResolvedProposalView,
-	type SelfUpdateView,
-	type StaleServiceView,
-	type WorkspaceNoticeView,
 } from './client.ts';
 import { GateshipMark, GateshipWordmark } from './components/gateship-logo.tsx';
 import { AttentionCard } from './components/ui/attention-card.tsx';
@@ -106,6 +94,8 @@ import { Textarea } from './components/ui/textarea.tsx';
 import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import { useLiveEdge } from './live-edge.ts';
+import { RouteScreen } from './screens/route-screen.tsx';
+import { SurfaceColumn } from './screens/surface-column.tsx';
 import {
 	type ConversationCatalog,
 	DEFAULT_LOCALE,
@@ -121,13 +111,17 @@ import {
 	type ShellCatalog,
 	type WorkCatalog,
 } from './locale.ts';
-import type { BrowserNotificationPermission } from './notifications.ts';
+import {
+	PROJECT_SURFACES as SURFACES,
+	routeSelection,
+	type OperatorRoute,
+	type RouteSelection,
+} from './routes.ts';
 import {
 	actionsFor,
 	activeRunIssueId,
 	attentionOf,
 	type OperatorAttention,
-	type PlannableIssue,
 	type ProviderUsageView,
 	type ProviderUsageWindowView,
 	phaseOf,
@@ -145,207 +139,12 @@ import {
 	type WorkflowCohort,
 } from './run-view.ts';
 
-/** Project selection and surface both come from this URL, never hidden state. */
-export type OperatorRoute = '/overview' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
-
-const MAIN_CONTENT_ID = 'main-content';
+export { projectIdOf, routeOf } from './routes.ts';
+export type { AppProps } from './app-props.ts';
+export type { OperatorRoute } from './routes.ts';
 
 function formatCount(count: number, locale: Locale): string {
 	return new Intl.NumberFormat(locale).format(count);
-}
-
-type ProjectSurface = 'conversation' | 'runs' | 'work' | 'settings';
-
-const SURFACES: readonly { suffix: string; label: keyof ShellCatalog['routeLabels']; surface: ProjectSurface }[] = [
-	{ suffix: '', label: 'conversation', surface: 'conversation' },
-	{ suffix: '/runs', label: 'runs', surface: 'runs' },
-	{ suffix: '/work', label: 'work', surface: 'work' },
-	{ suffix: '/settings', label: 'settings', surface: 'settings' },
-];
-
-/**
- * Which surface a browser path names. Anything the server does not serve --
- * which the shell's own links can never produce -- reads as the home surface,
- * so the screen has no unreachable state.
- */
-export function routeOf(pathname: string): OperatorRoute {
-	const normalized = pathname.replace(/\/+$/, '');
-	const path = normalized === '' ? '/' : normalized;
-	if (path === '/overview') return path;
-	if (path === '/' || path === '/runs' || path === '/work' || path === '/settings') return path;
-	if (/^\/projects\/[^/]+(?:\/(?:runs|work|settings))?$/.test(path)) {
-		return path as `/projects/${string}`;
-	}
-	return '/overview';
-}
-
-interface RouteSelection {
-	projectId: string | null;
-	surface: ProjectSurface | 'overview' | 'global-settings';
-}
-
-/**
- * The project this document is about, read from the browser path alone
- * (GSHIP-707) so the transport can address the scoped routes before anything
- * is fetched. `null` is the absence of a selection -- the overview, and the
- * legacy paths the service redirects -- which keeps the boot project's own
- * unscoped routes.
- */
-export function projectIdOf(pathname: string): string | null {
-	return routeSelection(routeOf(pathname), null).projectId;
-}
-
-function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
-	if (route === '/overview') return { projectId: null, surface: 'overview' };
-	const legacy = route === '/' ? 'conversation' : route.slice(1);
-	if (route === '/settings') return { projectId: null, surface: 'global-settings' };
-	if (route === '/' || route === '/runs' || route === '/work') {
-		return { projectId: currentId, surface: legacy as ProjectSurface };
-	}
-	const match = /^\/projects\/([^/]+)(?:\/(runs|work|settings))?$/.exec(route);
-	if (match === null) return { projectId: null, surface: 'overview' };
-	let projectId = match[1] ?? '';
-	try { projectId = decodeURIComponent(projectId); } catch { /* unmatched id stays unavailable */ }
-	return { projectId, surface: (match[2] ?? 'conversation') as ProjectSurface };
-}
-
-export interface AppProps {
-	/** Which of the four surfaces this document is showing. */
-	route: OperatorRoute;
-	/** The explicit locale shared by every cataloged surface. */
-	locale: Locale;
-	backlog: readonly PlannableIssue[];
-	ideas: readonly PlannableIssue[];
-	drafts: readonly IssueReviewDraft[];
-	/** Ideas captured by executed runs, still awaiting an operator decision. */
-	proposals: readonly ProposalView[];
-	/** Ad hoc analyzer state and its human-decided inbox. */
-	diagnostics: DiagnosticsView;
-	/**
-	 * Proposals already settled -- dismissed or promoted -- newest decision
-	 * first, plus how many more exist beyond that window (GSHIP-643). Kept
-	 * separate from `proposals` above so a historical record never mixes with a
-	 * pending decision.
-	 */
-	resolvedProposals: readonly ResolvedProposalView[];
-	resolvedProposalsOmittedCount: number;
-	events: readonly RunEventView[];
-	workspaceNotices: readonly WorkspaceNoticeView[];
-	providers: readonly ProviderStatusView[];
-	chatMessages: readonly ChatMessageView[];
-	/** The operator's own context, editable here and nowhere else. */
-	brief: ProjectBriefView;
-	/** Read-only readiness of the cwd this process owns. */
-	project: ProjectStatusView;
-	/** Read-only global registry used by URL-backed project navigation. */
-	projects: readonly RegisteredProjectView[];
-	overview?: ProjectOperationalOverviewView | null;
-	overviewLoading?: boolean;
-	overviewError?: string | null;
-	/** Human-owned identity and timezone, empty until explicitly saved. */
-	operatorProfile: OperatorProfileView;
-	/** Browser-derived suggestion; it is never persisted without a save. */
-	suggestedTimezone: string;
-	/** What the orchestrator recorded about the session; read-only. */
-	handoff: ProjectBriefView;
-	/** Model and effort per (provider, role); empty text keeps the CLI default. */
-	modelSettings: ModelSettingsView;
-	/** Off by default: autonomy never turns itself on (GSHIP-638). */
-	chainRuns: ChainRunsView;
-	/** Off by default: the operator opts in to a run transferring its executor role once (GSHIP-722). */
-	executorHandoff: ExecutorHandoffSettingView;
-	selectedProvider: ProviderStatusView['id'];
-	notificationPermission: BrowserNotificationPermission;
-	/** Whether each remote channel resolved a secret; never the secret itself (GSHIP-652). */
-	notificationChannels: NotificationChannelsView;
-	selfUpdate: SelfUpdateView;
-	/** Newest first, exactly as /api/runs returned it. */
-	runs: readonly RunView[];
-	selectedIssueId: string | null;
-	/** Binary serving this screen, read-only; empty renders nothing. */
-	version: string;
-	/**
-	 * The service is running code older than origin/main. Null is the ordinary
-	 * case; while it is set the shell says so, and no command is held back.
-	 */
-	staleService: StaleServiceView | null;
-	/**
-	 * No global git author identity is configured yet, so a commit would fail.
-	 * Null is the ordinary case; nothing here is ever a restart instruction --
-	 * derivation happens on the commit path itself, not here, so this can
-	 * still show stale until the next snapshot read, which a command or a run
-	 * event triggers rather than a timer.
-	 */
-	gitIdentity: GitIdentityView | null;
-	/** Last command outcome, or the last transport error. */
-	status: string | null;
-	/** A command is in flight; every button is held until it answers. */
-	pending: boolean;
-	projectOnboardingPending: 'create' | 'import' | null;
-	onSelectIssue: (issueId: string) => void;
-	onSelectLocale: (locale: Locale) => void;
-	onCreateIssue: (input: OperatorIssueDraft) => void;
-	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
-	onReviewIssue: (issueId: string, input: OperatorSpecDraft) => void;
-	onApproveIssue: (issueId: string) => void;
-	onAbandonIssue: (issueId: string, reason: string) => void;
-	onDismissProposal: (proposalId: string) => void;
-	onPromoteProposal: (proposalId: string, input: OperatorIssueDraft) => void;
-	onStartDiagnostic: (analyzer: string) => void;
-	onCancelDiagnostic: (scanId: string) => void;
-	onDismissDiagnosticFinding: (findingId: string) => void;
-	onPromoteDiagnosticFinding: (findingId: string, input: OperatorIssueDraft) => void;
-	onSaveDiagnosticSchedule: (enabled: boolean, cadence: DiagnosticCadenceView) => void;
-	onStart: () => void;
-	onResume: (operatorGuidance?: string) => void;
-	onAbandon: () => void;
-	onCancel: () => void;
-	onShip: () => void;
-	onConnectCodex: () => void;
-	/**
-	 * Connect, reconnect and rotate the dedicated Claude credential
-	 * (GSHIP-704) all share this one call. It resolves `true` only once the
-	 * service validated and persisted the token; on `false` the typed token
-	 * and its confirmation stay exactly where the operator left them
-	 * (GSHIP-705), so a refused paste can be corrected in place instead of
-	 * being retyped from a token the CLI printed once.
-	 */
-	onConnectClaudeCredential: (token: string) => Promise<boolean>;
-	/** The last refusal from that call, rendered beside the field it belongs to. `null` while nothing was refused. */
-	claudeCredentialError: string | null;
-	/** Abandons a refused attempt: the operator gave up on this token, so the refusal stops holding the form open. */
-	onDismissClaudeCredentialError: () => void;
-	onDisconnectClaudeCredential: () => void;
-	onEnableNotifications: () => void;
-	onSendNotificationTest: (channelId: NotificationChannelId) => void;
-	onSaveResendSettings: (input: { from: string; to: string; apiKey: string }) => void;
-	onRemoveResendCredential: () => void;
-	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
-	onSendMessage: (message: string) => void;
-	onSaveBrief: (brief: ProjectBriefView) => void;
-	onSaveModelSettings: (settings: ModelSettingsView) => void;
-	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
-	onSetChainRuns: (enabled: boolean) => void;
-	onSetExecutorHandoff: (enabled: boolean) => void;
-	onSetSelfUpdate: (enabled: boolean) => void;
-	/**
-	 * Import a GitHub repository into a checkout Gateship manages, by
-	 * owner/repo or an https://github.com/owner/repo URL.
-	 */
-	onImportProject: (repository: string) => void;
-	onCreateProject: (input: CreateProjectInput) => void;
-	/**
-	 * Register a checkout that already exists on disk, by absolute path
-	 * (GSHIP-716). Selection stays with the list and the sidebar; this only
-	 * adds a project to them.
-	 */
-	onRegisterProject: (root: string) => void;
-	/**
-	 * Drop a project's registration (GSHIP-717). Offered for a selected project
-	 * this process does not serve, and it removes nothing but the registry row:
-	 * the checkout and everything it owns stay on disk.
-	 */
-	onUnregisterProject: (projectId: string) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -486,7 +285,7 @@ const PRIMARY_BUTTON_CLASS = buttonVariants({ variant: 'default' });
  * drift apart: a subtle fill and weight, no marker.
  */
 const NAV_LINK_CLASS =
-	'flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none ' +
+	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
@@ -3031,6 +2830,18 @@ function ShellNavigation({
 						</a>
 					</li>
 				))}
+				<li className="lg:hidden">
+					<a
+						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
+						className={cn(
+							NAV_LINK_CLASS,
+							selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground',
+						)}
+						href="/settings"
+					>
+						<NavGlyph name="globalSettings" /><span>{catalog.routeLabels.globalSettings}</span>
+					</a>
+				</li>
 			</ul>
 		</nav>
 	</>;
@@ -3276,7 +3087,7 @@ function ShellSidebar({
 	 * @theme inline makes bg-sidebar read the var in cascade, so the
 	 * element-level override is all it takes. */
 	return (
-		<header className="flex shrink-0 flex-col gap-4 p-4 lg:h-full lg:w-64 lg:overflow-y-auto lg:p-6 lg:pt-8">
+		<header className="flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
 			<h1 className="flex items-center gap-2">
 				<span aria-hidden="true">
 					<GateshipMark className="size-6 translate-x-px" portal />
@@ -3290,10 +3101,12 @@ function ShellSidebar({
 				/* "Needs you" is the navigation's one acid point (design-system.md 1). */
 				status={operational ? { label: runInspectorCatalog.attentionLabels[attention], acid: attention === 'Needs you' } : null}
 			/>
-			<ChainPauseCallout pause={queuePause} />
-			{operational ? <StaleServiceCallout staleService={staleService} /> : null}
-			{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
-			<nav aria-label={catalog.routeLabels.globalSettings} className="lg:mt-auto">
+			<div className="hidden lg:contents">
+				<ChainPauseCallout pause={queuePause} />
+				{operational ? <StaleServiceCallout staleService={staleService} /> : null}
+				{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
+			</div>
+			<nav aria-label={catalog.routeLabels.globalSettings} className="hidden lg:mt-auto lg:block">
 				<a
 					aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
 					className={cn(NAV_LINK_CLASS, selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
@@ -3303,37 +3116,9 @@ function ShellSidebar({
 				</a>
 			</nav>
 			{version === '' ? null : (
-				<span className="px-3 font-mono text-[10px] text-sidebar-foreground/50 uppercase tracking-wider">v{humanVersion}</span>
+				<span className="hidden px-3 font-mono text-[10px] text-sidebar-foreground/50 uppercase tracking-wider lg:inline">v{humanVersion}</span>
 			)}
 		</header>
-	);
-}
-
-/** The content column of a secondary surface: stacked panels, one task each. */
-function SurfaceColumn({
-	label,
-	status,
-	children,
-}: Pick<AppProps, 'status'> & {
-	label: string;
-	children: React.ReactNode;
-}): React.ReactElement {
-	/* The main stays the full-width scroller (the scrollbar belongs to the
-	 * viewport edge); the content lives in a centered max-w-7xl column, the
-	 * industry dashboard measure, instead of stretching edge to edge on wide
-	 * displays (operator decision, 2026-08-25). */
-	return (
-		<main
-			aria-label={label}
-			className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:p-6"
-			id={MAIN_CONTENT_ID}
-			tabIndex={-1}
-		>
-			<div className="mx-auto flex w-full max-w-(--content-measure) flex-1 flex-col gap-6">
-				<StatusOutput status={status} />
-				{children}
-			</div>
-		</main>
 	);
 }
 
@@ -3611,18 +3396,6 @@ const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeV
 	'needs-attention': 'warning',
 };
 
-/** Outcome sparkline spec: family color plus a dash, never color alone. */
-const OUTCOME_LINES: readonly (readonly [
-	'shipped' | 'failed' | 'cancelled' | 'incomplete',
-	string,
-	string,
-])[] = [
-	['shipped', 'text-success', 'none'],
-	['failed', 'text-destructive', '4 2'],
-	['cancelled', 'text-chart-2', '1 2'],
-	['incomplete', 'text-warning', '8 2 1 2'],
-];
-
 const OUTCOME_TONE: Readonly<Record<string, BadgeVariant>> = {
 	shipped: 'success',
 	failed: 'error',
@@ -3705,11 +3478,6 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 	const completed = historical.totalRuns - historical.activeRuns;
 	const chartPoints = historical.daily;
 	const maxRuns = Math.max(1, ...chartPoints.map((day) => day.totalRuns));
-	const maxOutcomes = Math.max(1, ...chartPoints.flatMap((day) => Object.values(day.runsByOutcome)));
-	// An all-zero line carries no information and three of them overlap into
-	// a noisy baseline strip, so only outcomes that happened get drawn.
-	const outcomeLines = OUTCOME_LINES.filter(([outcome]) =>
-		chartPoints.some((day) => day.runsByOutcome[outcome] > 0));
 	return <>
 		{/*
 		 * The bento's hero answers "what needs me?" first. It is the one tile
@@ -3739,27 +3507,13 @@ function OverviewData({ props, overview, catalog, attention, activeProjects }: {
 		</div>
 		{props.overviewLoading ? <p className="text-muted-foreground text-xs" role="status">{catalog.loading}</p> : null}
 		{attention > 0 ? <p className="text-warning-foreground text-sm" role="status">{catalog.partial}</p> : null}
-		{/*
-		 * Sparklines, not charts: no axes, quiet strokes. The activity line is
-		 * neutral; outcome lines pair a family color with a dash pattern so no
-		 * state is told by color alone, and the legend repeats both cues.
-		 */}
-		<Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel className="flex flex-col gap-4">
+		{/* The activity sparkline shows volume only. Outcomes stay in factual
+		 * badges on each project, where a sparse series does not imply a trend. */}
+		{chartPoints.length === 0 ? null : <Card><CardHeader><CardTitle>{catalog.trend}</CardTitle><CardDescription>{catalog.activity}</CardDescription></CardHeader><CardPanel className="flex flex-col gap-4">
 			<svg aria-label={catalog.activity} className="h-20 w-full text-chart-2" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.activity}</title><polyline aria-label={catalog.activity} fill="none" points={chartPoints.map((day, index) => `${chartPoints.length < 2 ? 50 : (index / (chartPoints.length - 1)) * 100},${30 - (day.totalRuns / maxRuns) * 26}`).join(' ')} stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
-			<svg aria-label={catalog.trend} className="h-20 w-full" role="img" viewBox="0 0 100 32" preserveAspectRatio="none"><title>{catalog.trend}</title>{outcomeLines.map(([outcome, colorClass, dash]) => <polyline aria-label={catalog.outcomes[outcome]} className={colorClass} fill="none" key={outcome} points={chartPoints.map((day, pointIndex) => `${chartPoints.length < 2 ? 50 : (pointIndex / (chartPoints.length - 1)) * 100},${30 - (day.runsByOutcome[outcome] / maxOutcomes) * 26}`).join(' ')} stroke="currentColor" strokeDasharray={dash} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}</svg>
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs">
-				{outcomeLines.map(([outcome, colorClass, dash]) => (
-					<span className="inline-flex items-center gap-1.5" key={outcome}>
-						<svg aria-hidden="true" className={cn('h-2 w-5', colorClass)} viewBox="0 0 20 8">
-							<line stroke="currentColor" strokeDasharray={dash} strokeWidth="2" x1="0" x2="20" y1="4" y2="4" />
-						</svg>
-						{catalog.outcomes[outcome]}
-					</span>
-				))}
-				<span className="ml-auto font-mono tabular-nums">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</span>
-			</div>
+			<p className="text-right font-mono text-muted-foreground text-xs tabular-nums">{historical.totalRuns} {catalog.activity.toLocaleLowerCase()}</p>
 			<ul aria-label={catalog.trend} className="sr-only">{chartPoints.map((day) => <li key={day.date}>{day.date}: {catalog.activity} {day.totalRuns}; {catalog.outcomes.shipped} {day.runsByOutcome.shipped}; {catalog.outcomes.failed} {day.runsByOutcome.failed}; {catalog.outcomes.cancelled} {day.runsByOutcome.cancelled}; {catalog.outcomes.incomplete} {day.runsByOutcome.incomplete}</li>)}</ul>
-		</CardPanel></Card>
+		</CardPanel></Card>}
 	</>;
 }
 
@@ -5134,39 +4888,38 @@ function SelectedRouteSurface({
 	selection: RouteSelection;
 }): React.ReactElement {
 	const localeCatalog = LOCALE_CATALOG[props.locale];
-	if (selection.surface === 'overview') return <OverviewSurface {...props} />;
-	if (selection.surface === 'global-settings') return <GlobalSettingsSurface {...props} />;
-	if (selectedProject === null) {
-		return (
+	return (
+		<RouteScreen
+			currentProjectReady={props.project.state === 'ready'}
+			screens={{
+				overview: () => <OverviewSurface {...props} />,
+				globalSettings: () => <GlobalSettingsSurface {...props} />,
+				notFound: () => (
 			<SurfaceColumn label={localeCatalog.projects.notFoundTitle} status={props.status}>
 				<h2 className="font-semibold text-xl">{localeCatalog.projects.notFoundTitle}</h2>
 				<p className="text-muted-foreground text-sm">{localeCatalog.projects.notFoundDescription}</p>
 			</SurfaceColumn>
-		);
-	}
-	if (!selectedProject.current) {
-		return (
-			<NonCurrentProjectSurface
+				),
+				nonCurrent: (project, surface) => <NonCurrentProjectSurface
 				props={props}
-				selectedProject={selectedProject}
-				surface={selection.surface}
-			/>
-		);
-	}
-	if (props.project.state !== 'ready' && selection.surface !== 'settings') {
-		return (
-			<OnboardingSurface
+					selectedProject={project}
+					surface={surface}
+				/>,
+				onboarding: (project) => <OnboardingSurface
 				catalog={localeCatalog.onboarding}
 				project={props.project}
-				settingsHref={`/projects/${encodeURIComponent(selectedProject.id)}/settings`}
+				settingsHref={`/projects/${encodeURIComponent(project.id)}/settings`}
 				status={props.status}
-			/>
-		);
-	}
-	if (selection.surface === 'runs') return <RunsSurface {...props} />;
-	if (selection.surface === 'work') return <WorkSurface {...props} />;
-	if (selection.surface === 'settings') return <SettingsSurface {...props} />;
-	return <HomeSurface {...props} projectId={selectedProject.id} />;
+				/>,
+				conversation: () => <HomeSurface {...props} projectId={selectedProject?.id ?? ''} />,
+				runs: () => <RunsSurface {...props} />,
+				work: () => <WorkSurface {...props} />,
+				settings: () => <SettingsSurface {...props} />,
+			}}
+			selectedProject={selectedProject}
+			selection={selection}
+		/>
+	);
 }
 
 export function App(props: AppProps): React.ReactElement {
@@ -5191,14 +4944,17 @@ export function App(props: AppProps): React.ReactElement {
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
 	}, [toggleSidebar]);
 	return (
-		<div className="flex h-svh w-full flex-col overflow-hidden bg-sidebar [--sidebar:var(--color-neutral-100)] lg:flex-row dark:[--sidebar:var(--color-neutral-950)]">
-			<a
-				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
-				href={`#${MAIN_CONTENT_ID}`}
-			>
-				{localeCatalog.shell.skipLinkLabel}
-			</a>
-			<ShellSidebar
+		<AppShell
+			controls={(
+				<ShellControls
+					catalog={localeCatalog.shell}
+					locale={props.locale}
+					onSelectLocale={props.onSelectLocale}
+					onToggleSidebar={toggleSidebar}
+					sidebarOpen={sidebarOpen}
+				/>
+			)}
+			sidebar={<ShellSidebar
 				chainRuns={props.chainRuns}
 				gitIdentity={props.gitIdentity}
 				locale={props.locale}
@@ -5210,25 +4966,10 @@ export function App(props: AppProps): React.ReactElement {
 				staleService={props.staleService}
 				version={props.version}
 				workspaceNotices={props.workspaceNotices}
-			/>
-			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-2 lg:p-3">
-				{/* The inset content panel (operator decision, 2026-08-25): the
-				 * sidebar's chrome runs to the top and bottom of the page, and
-				 * the content floats on it as one rounded bordered surface that
-				 * clips its own scroll. The shell controls ride inside the
-				 * panel, above the scrolling surface: they are content-view
-				 * preferences, not chrome. */}
-				<div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--border)_64%,transparent)] bg-(--shell-panel)">
-					<ShellControls
-						catalog={localeCatalog.shell}
-						locale={props.locale}
-						onSelectLocale={props.onSelectLocale}
-						onToggleSidebar={toggleSidebar}
-						sidebarOpen={sidebarOpen}
-					/>
-					<SelectedRouteSurface props={props} selectedProject={selectedProject} selection={selection} />
-				</div>
-			</div>
-		</div>
+			/>}
+			skipLabel={localeCatalog.shell.skipLinkLabel}
+		>
+			<SelectedRouteSurface props={props} selectedProject={selectedProject} selection={selection} />
+		</AppShell>
 	);
 }

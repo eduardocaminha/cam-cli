@@ -31,7 +31,3 @@ webui/dist/
 
 # Optional, local-only Claude Code source reference.
 claude-code-harness/
-
-# Operator-licensed font, local only: the Displaay license does not grant
-# redistribution, so this file must never enter the repository or a release.
-webui/public/fonts/SaansVF.woff2

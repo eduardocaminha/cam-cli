@@ -41,14 +41,6 @@ export interface WebAssets {
 	indexHtml: WebAsset;
 	appJs: WebAsset;
 	appCss: WebAsset;
-	/**
-	 * The operator's own licensed face, the interface's only declared one,
-	 * never embedded: it exists only when a disk directory serves the UI and
-	 * the operator placed the file there (the file is gitignored;
-	 * redistribution is not licensed). Absent, the request 404s and the
-	 * stylesheet's system fallback stack carries every glyph.
-	 */
-	saansFont?: WebAsset;
 	favicon: WebAsset;
 	appleTouchIcon: WebAsset;
 	icon192: WebAsset;
@@ -93,7 +85,6 @@ export function resolveWebAssets(env: NodeJS.ProcessEnv = process.env): WebAsset
 		indexHtml: { path: join(dir, 'index.html'), contentType: EMBEDDED.indexHtml.contentType },
 		appJs: { path: join(dir, 'app.js'), contentType: EMBEDDED.appJs.contentType },
 		appCss: { path: join(dir, 'app.css'), contentType: EMBEDDED.appCss.contentType },
-		saansFont: { path: join(dir, 'fonts', 'SaansVF.woff2'), contentType: 'font/woff2' },
 		favicon: { path: join(dir, 'favicon.svg'), contentType: EMBEDDED.favicon.contentType },
 		appleTouchIcon: {
 			path: join(dir, 'apple-touch-icon.png'),

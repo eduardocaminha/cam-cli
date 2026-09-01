@@ -1,7 +1,6 @@
 // webui/src/components/ui/callout.tsx
 //
-// An inline notice inside a surface, on coss ui's alert recipe (packages/ui
-// /src/components/alert.tsx, operator decision 2026-08-25): a rounded-xl
+// An inline notice inside a surface: a rounded box
 // box whose tone is a 32% border and 4% wash of its own hue, with the text
 // staying the surface's ink -- the frame carries the state, the words stay
 // readable. Tones map to the state families; neutral is for facts that are

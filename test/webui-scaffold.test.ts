@@ -37,15 +37,8 @@ describe('web UI scaffold', () => {
 		const builtCss = readFileSync(join(distDir, 'app.css'), 'utf8');
 
 		// Unhashed names, because static `with { type: "file" }` specifiers
-		// (src/commands/web-assets.ts) cannot name a content hash. The fonts
-		// directory is absent on a clean checkout: SaansVF.woff2, the
-		// interface's only declared face, is the operator's own licensed,
-		// gitignored file, allowed locally, never required, never shipped.
-		expect(
-			readdirSync(distDir)
-				.filter((name) => name !== 'fonts')
-				.sort(),
-		).toEqual([
+		// (src/commands/web-assets.ts) cannot name a content hash.
+		expect(readdirSync(distDir).sort()).toEqual([
 			'app.css',
 			'app.js',
 			'apple-touch-icon.png',
@@ -55,13 +48,11 @@ describe('web UI scaffold', () => {
 			'index.html',
 			'manifest.webmanifest',
 		]);
-		const fontsDir = join(distDir, 'fonts');
-		if (existsSync(fontsDir)) {
-			expect(readdirSync(fontsDir).filter((name) => name !== 'SaansVF.woff2')).toEqual([]);
-		}
 		expect(html).toContain('class="flex');
 		expect(builtCss).toContain('display:flex');
 		expect(builtCss).not.toContain('@import "tailwindcss"');
+		expect(builtCss).not.toContain('Saans');
+		expect(builtCss).not.toContain('/fonts/');
 	});
 
 	test('keeps browser types and dependencies scoped without a nested package graph', () => {
@@ -77,6 +68,7 @@ describe('web UI scaffold', () => {
 			compilerOptions?: { lib?: string[] };
 		};
 		const packageManifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as {
+			dependencies?: Record<string, string>;
 			devDependencies?: Record<string, string>;
 		};
 
@@ -84,5 +76,6 @@ describe('web UI scaffold', () => {
 		expect(appConfig.compilerOptions?.lib).toContain('DOM');
 		expect(existsSync(join(WEBUI_ROOT, 'package.json'))).toBe(false);
 		expect(packageManifest.devDependencies?.['@tailwindcss/vite']).toBeDefined();
+		expect(packageManifest.dependencies?.['shadcn']).toBeUndefined();
 	});
 });

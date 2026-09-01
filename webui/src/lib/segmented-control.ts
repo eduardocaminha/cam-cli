@@ -1,9 +1,6 @@
 // webui/src/lib/segmented-control.ts
 //
-// Vendored verbatim from coss ui (packages/ui/src/lib/segmented-control.ts,
-// operator decision 2026-08-25): the shared sizing vocabulary between tabs
-// and any other segmented control. Only the exports tabs.tsx consumes are
-// kept.
+// Shared sizing vocabulary for tabs and segmented controls.
 
 export type SegmentedControlSize = 'default' | 'lg' | 'sm';
 

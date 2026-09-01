@@ -1,7 +1,6 @@
 // webui/src/components/ui/select.tsx
 //
-// coss ui's select, vendored verbatim (packages/ui/src/components/select.tsx,
-// operator decision 2026-08-25) on the Base UI select primitive: the trigger
+// Gateship's select uses the Base UI primitive. The trigger
 // is the same composed control chrome as Input, the popup is a bordered
 // popover with its own hairline bevel and scroll arrows. The glyphs come
 // from Hugeicons' free set, the product's icon source (operator decision,

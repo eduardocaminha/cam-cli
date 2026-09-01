@@ -56,8 +56,7 @@ are installed in the image and authenticated by the operator on first boot.
   plugin. Vite is not part of the shipped runtime.
 - Prefer existing platform APIs over new packages.
 - Any change that touches the web UI follows the design contract in
-  `docs/design/design-system.md`; the craft baseline is
-  `docs/design/interface-cheatsheet.md`.
+  `docs/design/design-system.md`.
 
 ## Verification
 

@@ -1,15 +1,13 @@
 // webui/src/components/ui/badge.tsx
 //
-// coss ui's badge, vendored verbatim (packages/ui/src/components/badge.tsx,
-// operator decision 2026-08-25): a rounded-sm chip whose semantic variants
+// Gateship's compact status chip. Its semantic variants
 // are an 8% wash of their own hue (16% on dark), never a solid. Badges on
 // this screen only ever report what the runtime decided, so the component
 // takes a variant and children and nothing else: no sizes, no link or
 // button form, no click target.
 //
-// Gateship's own additions: `merged` (a run state coss does not have, same
-// wash recipe on the purple family) and `attention` (the acid solid,
-// reserved for what waits on the operator).
+// `merged` uses the purple state family and `attention` is reserved for what
+// waits on the operator.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';

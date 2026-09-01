@@ -1,12 +1,11 @@
 // webui/src/components/ui/tabs.tsx
 //
-// coss ui's tabs, vendored verbatim (packages/ui/src/components/tabs.tsx,
-// operator decision 2026-08-25) on the Base UI tabs primitive: the list is
+// Gateship's tabs use the Base UI primitive. The list is
 // a muted well, and the active tab is marked by a sliding indicator -- a
 // background-colored pill that animates between tabs via Base UI's
 // --active-tab-* variables -- instead of per-tab selected styles.
 //
-// Gateship's own layers: TabsCount (the count chip a tab carries; acid when
+// TabsCount is the count chip a tab carries; it is acid when
 // the queue waits on the operator), panels that stay mounted (find-in-page
 // and static rendering keep seeing the whole surface), and the panel's
 // stack layout, which every surface on this screen relies on.
@@ -50,7 +49,7 @@ export function TabsList({
 			<TabsPrimitive.Indicator
 				className={
 					'absolute bottom-0 left-0 h-(--active-tab-height) w-(--active-tab-width) translate-x-(--active-tab-left) -translate-y-(--active-tab-bottom) ' +
-					'-z-1 rounded-md bg-background shadow-sm/5 transition-[width,translate] duration-200 ease-in-out dark:bg-input'
+					'-z-1 rounded-md bg-background shadow-sm/5 transition-[width,translate] duration-200 ease-in-out motion-reduce:transition-none dark:bg-input'
 				}
 				data-slot="tab-indicator"
 			/>

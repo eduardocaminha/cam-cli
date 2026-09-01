@@ -1,7 +1,6 @@
 // webui/src/components/ui/input.tsx
 //
-// coss ui's input, vendored verbatim (packages/ui/src/components/input.tsx,
-// operator decision 2026-08-25): a span wrapper carries the visual chrome
+// Gateship's input uses a span wrapper for the visual chrome
 // (rounded-lg border, hairline bevel, bevel and shadow dropping away while
 // focused) and the real input inside stays bare. The focus ring stays
 // Gateship's acid --ring token.

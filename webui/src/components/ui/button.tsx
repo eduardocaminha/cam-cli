@@ -1,13 +1,12 @@
 // webui/src/components/ui/button.tsx
 //
-// coss ui's button, vendored verbatim (packages/ui/src/components/button.tsx,
-// operator decision 2026-08-25) on the Base UI button primitive: rounded-lg
+// Gateship's button uses the Base UI primitive with rounded controls,
 // with an inner bevel, a top gloss and a fill-tinted shadow on the solid
 // variants, both flattening on press. The loading machinery is omitted (no
 // call site uses it and it would pull in an icon package); the class strings
 // that reference it are inert without the indicator element.
 //
-// Gateship's own additions: the `attention` variant, the acid form of the
+// The `attention` variant is the acid form of the
 // solid button, reserved for actions that resolve an item waiting on the
 // operator; and the focus ring, which stays the acid --ring token.
 
@@ -17,10 +16,8 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/cn.ts';
 
 export const buttonVariants = cva(
-	/* rounded-xl, not coss's own rounded-lg (operator decision, 2026-08-25,
-	 * testing a more generous curve that rhymes with the mark's own arch,
-	 * a near-semicircle far softer than rounded-lg's 10px). */
-	'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border font-medium text-base outline-none transition-shadow ' +
+	/* The generous curve echoes the wordmark arch. */
+	'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border font-medium text-base outline-none transition-[box-shadow,transform] duration-100 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 ' +
 		'before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] ' +
 		'pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 ' +
 		'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ' +
@@ -50,10 +47,7 @@ export const buttonVariants = cva(
 					'not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs hover:bg-destructive/90 data-pressed:bg-destructive/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none',
 				ghost:
 					'border-transparent text-foreground hover:bg-accent data-pressed:bg-accent',
-				/* bg-white, not coss's own bg-popover (operator decision,
-				 * 2026-08-25): this system's own pre-coss F4 decision (2026-08-24)
-				 * for every risen control, restored -- light only, dark keeps
-				 * coss's bg-input/32. */
+				/* Raised controls stay white on light and use the input tint on dark. */
 				outline:
 					'border-input bg-white not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-accent/50 data-pressed:bg-accent/50 dark:bg-input/32 dark:data-pressed:bg-input/64 dark:hover:bg-input/64 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none',
 				secondary:

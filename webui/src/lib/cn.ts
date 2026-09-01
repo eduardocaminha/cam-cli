@@ -3,12 +3,8 @@
 // Class composition for this screen: clsx flattens the truthy inputs and
 // tailwind-merge resolves competing utilities in favour of the caller.
 //
-// The previous version deliberately skipped conflict resolution because no
-// call site competed with its base. That held while every primitive was
-// written here; it stops holding with shadcn-style components, whose variant
-// system leans on the caller overriding base utilities (operator decision,
-// 2026-08-24). Composition order is unchanged: base classes first, call-site
-// classes last.
+// Component variants let callers override base utilities. Composition order
+// stays base classes first, call-site classes last.
 
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';

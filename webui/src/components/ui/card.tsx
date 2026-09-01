@@ -1,18 +1,8 @@
 // webui/src/components/ui/card.tsx
 //
-// The panel surface of the operator shell, on coss ui's CardFrame anatomy
-// (packages/ui/src/components/card.tsx, vendored verbatim by operator
-// decision 2026-08-25): the outer element is coss's CardFrame -- border,
-// hairline bevel, a muted wash that shows through wherever no inner card
-// covers it -- the header sits directly on that frame, and CardPanel is
-// coss's nested inner Card (own border, smaller top radius, -1px margin so
-// its edges fuse with the frame's border; the frame's child selectors do
-// the rounding, clipping and shadow suppression). Gateship keeps its own
-// exported names so no call site changes: Card here is coss's CardFrame,
-// CardPanel is coss's nested Card + CardPanel pair.
-//
-// Gateship's own layers on top of the vendored strings: the card-ring
-// outer ring (index.css), the acid focus ring through --ring, and the
+// The panel surface of the operator shell. The outer frame provides the border,
+// hairline bevel and muted wash; CardPanel supplies the nested content surface.
+// The shared card ring lives in index.css, focus uses the acid --ring token, and
 // details/summary disclosure pair (a disclosure has to be a real <details>;
 // collapsed is a rendering state, never an unmounted branch, ADR-0067).
 
@@ -20,11 +10,10 @@ import type React from 'react';
 import { cn } from '../../lib/cn.ts';
 
 /*
- * coss CardFrame, verbatim, in three pieces: the surface, the child-card
+ * The frame has three pieces: the surface, the child-card
  * plumbing (margins, rounding, clip and shadow suppression for a nested
  * [data-slot=card]), and the muted wash. The wash is guarded behind
- * has-data-[slot=card] -- coss chooses Card vs CardFrame per call site,
- * this screen has one component for both, and a frame with no inner card
+ * has-data-[slot=card]. This screen has one component for both, and a frame with no inner card
  * (a plain padded card) must not render all-gray.
  */
 const FRAME =
@@ -42,14 +31,13 @@ const FRAME =
 	'*:data-[slot=card]:[clip-path:inset(var(--clip-top)_1px_var(--clip-bottom)_1px_round_calc(var(--radius-2xl)-1px))] ' +
 	'*:data-[slot=card]:last:[--clip-bottom:1px] *:data-[slot=card]:first:[--clip-top:1px]';
 
-/* coss CardFrameHeader, verbatim. */
+/* Header shared by cards and native disclosures. */
 const HEADER =
 	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 px-6 py-4 ' +
 	'has-data-[slot=card-frame-action]:grid-cols-[1fr_auto]';
 
 /*
- * coss's inner Card, verbatim, plus the homepage's own fill for it
- * (apps/ui/app/page.tsx): --color-card mixed with --color-sidebar, barely
+ * The inner card uses --color-card mixed with --color-sidebar, barely
  * lighter than the canvas. The frame's child selectors above override the
  * shadow, bevel and rounding, so this class list mostly matters when the
  * markup is inspected in isolation.
@@ -101,9 +89,7 @@ export function CardSummary({
 }
 
 /*
- * coss CardFrameTitle composed with its homepage override (font-heading,
- * bold, text-base): the registry base alone is a text-sm docs label, the
- * homepage form is the card title this screen means.
+ * Card title with the product heading weight and scale.
  */
 export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): React.ReactElement {
 	return (
@@ -115,7 +101,7 @@ export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): 
 	);
 }
 
-/* coss CardFrameDescription, verbatim. */
+/* Quiet supporting text for the card title. */
 export function CardDescription({
 	className,
 	...props
@@ -147,8 +133,8 @@ export function CardAction({
 }
 
 /**
- * coss's frame content slot: a nested inner card (the frame's selectors pull
- * it flush and re-round it) holding coss's own CardPanel. `className` lands
+ * The frame content slot is a nested inner card that the frame pulls flush and
+ * re-rounds. `className` lands
  * on the panel, where call sites have always put their layout.
  */
 export function CardPanel({
