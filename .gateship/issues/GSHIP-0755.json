@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-755",
+  "title": "Reproduzir literalmente a recusa do hook no intake",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T18:05:16.736Z",
+  "updatedAt": "2026-09-01T18:05:16.736Z",
+  "description": "Corrigir o matcher de proteção local do intake para reproduzir literalmente a mensagem real do Reporter, que termina em ponto.\n\nContrato:\n- Aceitar \"BLOCKED: direct push to refs/heads/main is not allowed.\" e a variante master, com ou sem o ponto final.\n- Manter a correspondência ancorada a uma linha inteira e às refs main/master.\n- Não aceitar pontuação ou texto adicional arbitrário depois da frase.\n- Atualizar o fixture positivo para usar exatamente as duas linhas emitidas pelo .githooks/pre-push do Reporter, incluindo \"Open a PR: gh pr create --base main\".\n- Preservar todos os testes negativos e incluir texto adicional malicioso na mesma linha como caso negativo.\n- Não alterar o lifecycle de PR ou ampliar outros erros elegíveis.\n- A comunicação da run com o operador deve ser em português.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir o matcher de proteção local do intake para reproduzir literalmente a mensagem real do Reporter, que termina em ponto.\n\nContrato:\n- Aceitar \"BLOCKED: direct push to refs/heads/main is not allowed.\" e a variante master, com ou sem o ponto final.\n- Manter a correspondência ancorada a uma linha inteira e às refs main/master.\n- Não aceitar pontuação ou texto adicional arbitrário depois da frase.\n- Atualizar o fixture positivo para usar exatamente as duas linhas emitidas pelo .githooks/pre-push do Reporter, incluindo \"Open a PR: gh pr create --base main\".\n- Preservar todos os testes negativos e incluir texto adicional malicioso na mesma linha como caso negativo.\n- Não alterar o lifecycle de PR ou ampliar outros erros elegíveis.\n- A comunicação da run com o operador deve ser em português.",
+    "verify": [
+      "bun test test/runtime/issue-intake.test.ts"
+    ]
+  }
+}
