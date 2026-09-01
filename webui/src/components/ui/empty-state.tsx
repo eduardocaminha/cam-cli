@@ -13,19 +13,23 @@ export function EmptyState({
 	className,
 	children,
 	action,
+	compact = false,
 	...props
-}: React.ComponentProps<'div'> & { action?: React.ReactNode }): React.ReactElement {
+}: React.ComponentProps<'div'> & { action?: React.ReactNode; compact?: boolean }): React.ReactElement {
 	return (
 		<div
 			className={cn(
-				'flex min-h-24 flex-col items-center justify-center gap-3 p-6 text-center',
+				compact
+					? 'flex items-center gap-2 py-1 text-left'
+					: 'flex min-h-24 flex-col items-center justify-center gap-3 p-6 text-center',
 				className,
 			)}
+			data-density={compact ? 'compact' : 'default'}
 			data-slot="empty-state"
 			{...props}
 		>
 			<span aria-hidden="true">
-				<GateshipMark className="size-6 text-muted-foreground/50" />
+				<GateshipMark className={cn('text-muted-foreground/50', compact ? 'size-4' : 'size-6')} />
 			</span>
 			<p className="max-w-prose text-muted-foreground text-sm">{children}</p>
 			{action}

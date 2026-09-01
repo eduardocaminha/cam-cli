@@ -17,8 +17,15 @@ import {
 	CardSummary,
 	CardTitle,
 } from '../../webui/src/components/ui/card.tsx';
+import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
+import {
+	Tabs,
+	TabsList,
+	TabsPanel,
+	TabsTab,
+} from '../../webui/src/components/ui/tabs.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
 
 describe('ui primitives', () => {
@@ -70,6 +77,44 @@ describe('ui primitives', () => {
 		expect(html).toContain('border-attention-ui');
 		expect(html).toContain('O executor tem uma pergunta');
 		expect(html).toContain('corpo');
+	});
+
+	test('tabs keep every label in a named horizontal scroller with reduced motion support', () => {
+		const html = renderToStaticMarkup(
+			<Tabs defaultValue="queue">
+				<TabsList aria-label="Work">
+					<TabsTab value="queue">Queue</TabsTab>
+					<TabsTab value="approval">Approval</TabsTab>
+					<TabsTab value="ideas">Ideas</TabsTab>
+					<TabsTab value="suggestions">Suggestions</TabsTab>
+				</TabsList>
+				<TabsPanel value="queue">Queue panel</TabsPanel>
+			</Tabs>,
+		);
+
+		expect(html).toContain('data-slot="tabs-scroll"');
+		expect(html).toContain('overflow-x-auto');
+		expect(html).toContain('after:to-muted');
+		expect(html).toContain('pr-8');
+		expect(html).toContain('sm:pr-0.5');
+		expect(html).toContain('py-0.5');
+		expect(html).toContain('pl-0.5');
+		expect(html).toContain('aria-label="Work"');
+		for (const label of ['Queue', 'Approval', 'Ideas', 'Suggestions']) {
+			expect(html).toContain(`>${label}</button>`);
+		}
+		expect(html).toContain('whitespace-nowrap');
+		expect(html).toContain('pointer-coarse:min-h-11');
+		expect(html).toContain('motion-reduce:transition-none');
+	});
+
+	test('a compact empty state keeps its explanation without reserving a tall region', () => {
+		const html = renderToStaticMarkup(<EmptyState compact>No pending proposals.</EmptyState>);
+
+		expect(html).toContain('data-density="compact"');
+		expect(html).toContain('No pending proposals.');
+		expect(html).not.toContain('min-h-24');
+		expect(html).not.toContain('p-6');
 	});
 
 	test('the visual separator uses the native horizontal-rule semantic', () => {
