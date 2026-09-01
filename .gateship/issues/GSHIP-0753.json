@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-753",
+  "title": "Merge pinado sem exigir auto-merge habilitado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-01T17:36:35.553Z",
+  "updatedAt": "2026-09-01T17:36:35.553Z",
+  "description": "Fazer a fronteira compartilhada do GithubShipper concluir PRs com segurança também quando o repositório retorna explicitamente que auto-merge não é permitido. Manter o caminho atual de auto-merge quando disponível. Na recusa específica, continuar no mesmo monitor tipado: aguardar status de CI não pendente, preservar as checagens requeridas, confirmar que o PR continua no head publicado e, apenas quando o PR estiver mergeável e a CI tiver passado ou não for reportada, executar merge squash direto com --match-head-commit; depois confirmar o estado MERGED e sincronizar origin/main como hoje. Nunca usar --admin, nunca tratar autenticação, conflito ou erro genérico como ausência de auto-merge, nunca mergear enquanto algum check reportado estiver pendente ou falho e preservar deleteBranch quando solicitado pelo intake. Cobrir auto-merge disponível inalterado, recusa específica com CI pendente e depois aprovada, projeto sem checks, head divergente, check falho e recusa genérica. Registrar eventos distintos para auto-merge armado e fallback direto, sem criar outro loop de polling.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Fazer a fronteira compartilhada do GithubShipper concluir PRs com segurança também quando o repositório retorna explicitamente que auto-merge não é permitido. Manter o caminho atual de auto-merge quando disponível. Na recusa específica, continuar no mesmo monitor tipado: aguardar status de CI não pendente, preservar as checagens requeridas, confirmar que o PR continua no head publicado e, apenas quando o PR estiver mergeável e a CI tiver passado ou não for reportada, executar merge squash direto com --match-head-commit; depois confirmar o estado MERGED e sincronizar origin/main como hoje. Nunca usar --admin, nunca tratar autenticação, conflito ou erro genérico como ausência de auto-merge, nunca mergear enquanto algum check reportado estiver pendente ou falho e preservar deleteBranch quando solicitado pelo intake. Cobrir auto-merge disponível inalterado, recusa específica com CI pendente e depois aprovada, projeto sem checks, head divergente, check falho e recusa genérica. Registrar eventos distintos para auto-merge armado e fallback direto, sem criar outro loop de polling.",
+    "verify": [
+      "bun check:all"
+    ]
+  }
+}
