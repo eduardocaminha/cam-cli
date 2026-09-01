@@ -1065,7 +1065,10 @@ describe('runs surface', () => {
 		expect(html).toContain('Claude five hour usage limit reached.');
 		expect(html).toContain(`dateTime="${retryAt}"`);
 		expect(html).toContain(formattedRetryAt);
-		expect(html).toContain(`Custo esperado: ${formattedCost}`);
+		// The cost lives in the stat row on /runs: value and label are paired
+		// by the stat, no longer one sentence.
+		expect(html).toContain(`>${formattedCost}</p>`);
+		expect(html).toContain('Custo esperado');
 		expect(html).toContain('Rodadas de correção: 1 do executor, 2 de decisões do operador');
 		expect(html).toContain('1 indeterminada');
 		expect(buttonIsEnabled(html, 'Retomar')).toBe(true);
@@ -3162,7 +3165,7 @@ describe('operator shell', () => {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`>${expected.all}</h2>`);
 			expect(html).toContain(`>${expected.current}</span>`);
-			expect(html).toContain(`>${expected.readiness}:</span>`);
+			expect(html).toContain(`>${expected.readiness}</dt>`);
 			expect(html).toContain('acme/gateship');
 			expect(html).toContain('acme/other-product');
 			expect(html).toContain('href="/overview"');
@@ -3188,7 +3191,13 @@ describe('operator shell', () => {
 					summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 0, backlog: { idea: 0, specified: 0, planned: 0 } },
 					projects: [{
 						project: CURRENT_PROJECT, root: { state: 'available' }, backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 0 } },
-						database: { state: 'available', path: '/state/runtime.sqlite' }, overview: { overview: null }, activeRun: null, latestRun: { id: `run-${index}`, issueId: 'CAM-900', state: 'done', providerId: 'claude', createdAt: '', updatedAt: '' }, latestRunOutcome: outcome, recentRuns: [],
+						// The tile needs history for its outcome badge: the legend no
+						// longer names outcomes that never happened in the window.
+						database: { state: 'available', path: '/state/runtime.sqlite' }, overview: { overview: {
+							window: '7d', totalRuns: 1, runsWithKnownCost: 0, knownCostUsd: null,
+							runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 1 }, activeRuns: 1,
+							daily: [], configurations: [],
+						} }, activeRun: null, latestRun: { id: `run-${index}`, issueId: 'CAM-900', state: 'done', providerId: 'claude', createdAt: '', updatedAt: '' }, latestRunOutcome: outcome, recentRuns: [],
 					}],
 				},
 			});
@@ -3256,8 +3265,9 @@ describe('operator shell', () => {
 				}],
 			},
 		});
-		expect(html).toContain('Provider:</span> Codex');
-		expect(html).not.toContain('Provider:</span> Claude Code');
+		expect(html).toContain('>Provider</dt>');
+		expect(html).toMatch(/>Provider<\/dt><dd[^>]*>Codex</);
+		expect(html).not.toMatch(/>Provider<\/dt><dd[^>]*>Claude Code</);
 	});
 
 	test('overview localizes active run states in pt-BR', () => {
@@ -3297,7 +3307,8 @@ describe('operator shell', () => {
 					}],
 				},
 			});
-			expect(html).toContain(`Fase:</span> ${label}`);
+			// The phase renders as a badge inside its fact row now.
+			expect(html).toMatch(new RegExp(`>Fase</dt><dd[^>]*><span[^>]*data-slot="badge"[^>]*>${label}<`));
 			expect(html).not.toContain(`>${state}</p>`);
 		}
 	});
@@ -3329,7 +3340,9 @@ describe('operator shell', () => {
 				}],
 			},
 		});
-		expect(html).toMatch(/Runs completed<\/p>.*?font-semibold text-xl">2<\/p>/s);
+		// The stat renders label first, value under it; the pairing is the
+		// claim, not the type classes.
+		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
 	});
 
 	// GSHIP-716: onboarding a checkout the operator already has is one absolute
@@ -3395,7 +3408,10 @@ describe('operator shell', () => {
 			expect(html).toContain(expected.credential);
 			expect(html).toContain('name="project-create-repository"');
 			expect(html).toContain('name="project-create-description"');
-			expect(html).toContain('<option value="private" selected="">');
+			// The visibility control is a popover select: the closed trigger
+			// shows the private default; the hidden input serializes it.
+			expect(html).toContain(expected.locale === 'en-US' ? '>Private</span>' : '>Privado</span>');
+			expect(html).toContain('value="private"');
 			expect(html).toContain('name="project-create-confirm"');
 			expect(buttonIsEnabled(html, expected.submit)).toBe(false);
 			expect(html).not.toContain(expected.publicWarning);
@@ -3659,19 +3675,18 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('the persistent language control renders both self-named choices and marks the locale on every surface', () => {
+	test('the persistent language control offers the other locale on every surface', () => {
+		// The control is a single button in the shell's top-right row: its
+		// face and label name the locale it switches TO.
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			for (const route of SURFACE_PATHS) {
-				const header = shellHeader(renderAt(route, { locale }));
-				const select = header.slice(header.indexOf('<select'), header.indexOf('</select>'));
+				const html = renderAt(route, { locale });
 
-				expect(header).toContain(locale === 'en-US' ? '>Language</span>' : '>Idioma</span>');
-				expect(select).toContain('id="gateship-locale"');
-				expect(select).toContain('<option value="en-US"');
-				expect(select).toContain('>English (US)</option>');
-				expect(select).toContain('<option value="pt-BR"');
-				expect(select).toContain('>Português (Brasil)</option>');
-				expect(select).toContain(`<option value="${locale}" selected="">`);
+				expect(html).toContain('id="gateship-locale"');
+				expect(html).toContain(
+					`aria-label="${locale === 'en-US' ? 'Português (Brasil)' : 'English (US)'}"`,
+				);
+				expect(html).toContain(locale === 'en-US' ? '>PT<' : '>EN<');
 			}
 		}
 	});
@@ -3681,7 +3696,7 @@ describe('operator shell', () => {
 		for (const route of ['/', '/runs', '/work'] as const) {
 			const html = renderAt(route, { project });
 			expect(html).toContain('Connect a GitHub project');
-			expect(shellHeader(html)).toContain('id="gateship-locale"');
+			expect(html).toContain('id="gateship-locale"');
 		}
 	});
 
@@ -3707,17 +3722,18 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation is four real paths, with the active one marked', () => {
+	test('navigation is five real paths, with the active one marked', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
-			const start = html.indexOf('<nav aria-label="Operator surfaces"');
+			const start = html.indexOf('<nav aria-label="Navigation"');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
 			const active = openingTags(nav).find((tag) => tag.includes(`href="${route}"`));
 
-			expect(nav).toContain('aria-label="Operator surfaces"');
-			for (const label of ['Conversation', 'Runs', 'Work', 'Settings']) {
-				expect(nav).toContain(`>${label}</a>`);
+			expect(nav).toContain('aria-label="Navigation"');
+			for (const label of ['Overview', 'Conversation', 'Runs', 'Work', 'Settings']) {
+				expect(nav).toContain(`>${label}</span>`);
 			}
+			expect(nav).toContain('href="/overview"');
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
 			expect(active).toContain('aria-current="page"');
 			expect(nav.split('aria-current="page"')).toHaveLength(2);
@@ -3729,12 +3745,12 @@ describe('operator shell', () => {
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
 		const html = runsPage({ locale: 'pt-BR' });
-		const start = html.indexOf('<nav aria-label="Superfícies do operador"');
+		const start = html.indexOf('<nav aria-label="Navegação"');
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
-		expect(nav).toContain('aria-label="Superfícies do operador"');
-		for (const label of ['Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
-			expect(nav).toContain(`>${label}</a>`);
+		expect(nav).toContain('aria-label="Navegação"');
+		for (const label of ['Visão geral', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
+			expect(nav).toContain(`>${label}</span>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');
 		expect(html).toContain('Execução mais recente');
@@ -3798,8 +3814,8 @@ describe('operator shell', () => {
 		expect(title).toContain('aria-label="Gateship"');
 		// The lockup carries no intrinsic size, so the box only holds the art
 		// when the viewBox and the reserved ratio agree on the wordmark's canvas.
-		expect(title).toContain('viewBox="0 0 15635 3035"');
-		expect(title).toContain('aspect-[15635/3035]');
+		expect(title).toContain('viewBox="3250 0 10187 2750"');
+		expect(title).toContain('aspect-[10187/2750]');
 		// The badge moved off the title's row, so its longest label is never
 		// squeezed for space.
 		expect(html).toContain('>Needs you<');
@@ -4176,13 +4192,17 @@ describe('conversation transcript', () => {
 		expect(renderLongContent('/work')).toContain(`issue ${HASH}`);
 	});
 
-	test('no surface scrolls horizontally except the shell navigation', () => {
+	test('horizontal scrolling is confined to the shell navigation and table containers', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderLongContent(route);
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 
-			expect(horizontal).toHaveLength(1);
-			const operatorNav = html.indexOf('<nav aria-label="Operator surfaces"');
+			// The page body never scrolls sideways: wide content scrolls inside
+			// its own container. Exactly two containers may do that, the shell's
+			// surface nav and a dense table's wrapper.
+			const tables = horizontal.filter((tag) => tag.includes('data-slot="table-container"'));
+			expect(horizontal.length - tables.length).toBe(1);
+			const operatorNav = html.indexOf('<nav aria-label="Navigation"');
 			expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(operatorNav);
 			expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>', operatorNav));
 		}

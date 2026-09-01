@@ -33,12 +33,17 @@ export function applyLocalePreference(
 }
 
 export interface ShellCatalog {
+	themeToggle: { label: string; light: string; dark: string };
+	widthToggle: { wide: string; compact: string };
+	sidebarToggle: { collapse: string; expand: string };
+	inspectorToggle: { collapse: string; expand: string };
 	operatorNavigationLabel: string;
 	projectNavigationLabel: string;
-	allProjectsLabel: string;
+	switcherPlaceholder: string;
 	skipLinkLabel: string;
 	languageLabel: string;
 	routeLabels: {
+		overview: string;
 		conversation: string;
 		runs: string;
 		work: string;
@@ -160,6 +165,10 @@ export interface RunInspectorCatalog {
 	homeAccessibleLabel: string;
 	currentRunTitle: string;
 	latestRunTitle: string;
+	stats: {
+		expectedCost: string;
+		events: string;
+	};
 	viewDetailsLabel: string;
 	noRunLabel: string;
 	stateLabels: Readonly<Record<RunState, string>>;
@@ -234,6 +243,13 @@ export interface RunsOperationalCatalog {
 	previousRuns: {
 		title: string;
 		description: (count: number) => string;
+		columns: {
+			issue: string;
+			state: string;
+			delivery: string;
+			cost: string;
+			updated: string;
+		};
 	};
 }
 
@@ -298,6 +314,12 @@ export interface RunsWorkflowCatalog {
 }
 
 export interface WorkCatalog {
+	tabs: {
+		queue: string;
+		approval: string;
+		ideas: string;
+		suggestions: string;
+	};
 	backlog: {
 		title: string;
 		description: (count: number, formattedCount: string) => string;
@@ -378,6 +400,11 @@ export interface WorkCatalog {
 }
 
 export interface SettingsCatalog {
+	tabs: {
+		providers: string;
+		execution: string;
+		project: string;
+	};
 	title: string;
 	disclosure: { open: string; close: string };
 	project: {
@@ -548,12 +575,17 @@ export interface LocaleCatalog {
 export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
-			operatorNavigationLabel: 'Operator surfaces',
+			operatorNavigationLabel: 'Navigation',
 			projectNavigationLabel: 'Projects',
-			allProjectsLabel: 'All projects',
+			switcherPlaceholder: 'Select a project',
 			skipLinkLabel: 'Skip to content',
+			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
+			widthToggle: { wide: 'Wide layout', compact: 'Centered layout' },
+			sidebarToggle: { collapse: 'Collapse the sidebar', expand: 'Expand the sidebar' },
+			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			routeLabels: {
+				overview: 'Overview',
 				conversation: 'Conversation',
 				runs: 'Runs',
 				work: 'Work',
@@ -650,6 +682,10 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
 			latestRunTitle: 'Latest run',
+			stats: {
+				expectedCost: 'Expected cost',
+				events: 'Run events',
+			},
 			viewDetailsLabel: 'View run details',
 			noRunLabel: 'No runs recorded yet.',
 			stateLabels: {
@@ -767,6 +803,13 @@ export const LOCALE_CATALOG = {
 				title: 'Previous runs',
 				description: (count) =>
 					`${count} ${count === 1 ? 'run' : 'runs'} before the latest, newest first.`,
+				columns: {
+					issue: 'Issue',
+					state: 'State',
+					delivery: 'Delivery',
+					cost: 'Expected cost',
+					updated: 'Updated',
+				},
 			},
 		},
 		runsWorkflow: {
@@ -837,6 +880,12 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		work: {
+			tabs: {
+				queue: 'Queue',
+				approval: 'Approval',
+				ideas: 'Ideas',
+				suggestions: 'Suggestions',
+			},
 			backlog: {
 				title: 'Executable backlog',
 				description: (count, formattedCount) =>
@@ -921,6 +970,11 @@ export const LOCALE_CATALOG = {
 		},
 		settings: {
 			title: 'Settings',
+			tabs: {
+				providers: 'Providers and models',
+				execution: 'Execution',
+				project: 'Project',
+			},
 			disclosure: { open: 'open', close: 'close' },
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
@@ -991,12 +1045,17 @@ export const LOCALE_CATALOG = {
 	},
 	'pt-BR': {
 		shell: {
-			operatorNavigationLabel: 'Superfícies do operador',
+			operatorNavigationLabel: 'Navegação',
 			projectNavigationLabel: 'Projetos',
-			allProjectsLabel: 'Todos os projetos',
+			switcherPlaceholder: 'Selecionar projeto',
 			skipLinkLabel: 'Pular para o conteúdo',
+			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
+			widthToggle: { wide: 'Layout largo', compact: 'Layout centralizado' },
+			sidebarToggle: { collapse: 'Recolher a barra lateral', expand: 'Expandir a barra lateral' },
+			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			routeLabels: {
+				overview: 'Visão geral',
 				conversation: 'Conversa',
 				runs: 'Runs',
 				work: 'Trabalho',
@@ -1093,6 +1152,10 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',
 			latestRunTitle: 'Execução mais recente',
+			stats: {
+				expectedCost: 'Custo esperado',
+				events: 'Eventos da execução',
+			},
 			viewDetailsLabel: 'Ver detalhes da execução',
 			noRunLabel: 'Nenhuma execução registrada ainda.',
 			stateLabels: {
@@ -1210,6 +1273,13 @@ export const LOCALE_CATALOG = {
 				title: 'Execuções anteriores',
 				description: (count) =>
 					`${count} ${count === 1 ? 'execução' : 'execuções'} antes da mais recente, da mais nova para a mais antiga.`,
+				columns: {
+					issue: 'Issue',
+					state: 'Estado',
+					delivery: 'Entrega',
+					cost: 'Custo esperado',
+					updated: 'Atualizada',
+				},
 			},
 		},
 		runsWorkflow: {
@@ -1280,6 +1350,12 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		work: {
+			tabs: {
+				queue: 'Fila',
+				approval: 'Aprovação',
+				ideas: 'Ideias',
+				suggestions: 'Sugestões',
+			},
 			backlog: {
 				title: 'Backlog executável',
 				description: (count, formattedCount) =>
@@ -1364,6 +1440,11 @@ export const LOCALE_CATALOG = {
 		},
 		settings: {
 			title: 'Ajustes',
+			tabs: {
+				providers: 'Provedores e modelos',
+				execution: 'Execução',
+				project: 'Projeto',
+			},
 			disclosure: { open: 'abrir', close: 'fechar' },
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },

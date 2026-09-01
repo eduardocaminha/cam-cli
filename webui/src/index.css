@@ -1,100 +1,293 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Gateship's operator theme and semantic state vocabulary. */
+
+/* The class lands on <html>, so a descendant dark variant is sufficient. */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+	/* Additional wide-screen breakpoints. */
+	--breakpoint-3xl: 1600px;
+	--breakpoint-4xl: 2000px;
+
+	--font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	/*
+	 * Headings are an alias rather than a face of their own: nothing injects a
+	 * font here, so the alias is the seam where one would land later without
+	 * touching a single component.
+	 */
+	--font-heading: var(--font-sans);
+
+	/*
+	 * The weight ladder (design-system.md 2.2, decision 12#1: 450 floor)
+	 * formalized as real tokens (operator decision, 2026-08-25). Before this,
+	 * every card title and emphasis span carried its weight as a one-off
+	 * arbitrary value (`font-[560]`); `font-medium`/`font-semibold`/
+	 * `font-bold` used Tailwind's own 500/600/700 everywhere else in the
+	 * screen, which is the drift this closes -- redefining the same names
+	 * Tailwind ships updates every existing `font-medium` etc. call site at
+	 * once, no find-and-replace across the screen.
+	 */
+	--font-weight-normal: 500;
+	--font-weight-medium: 560;
+	--font-weight-semibold: 620;
+	--font-weight-bold: 680;
+
+	/*
+	 * A true modular scale (operator decision, 2026-08-25) replaces
+	 * Tailwind's own ad hoc `text-*` steps (12/14/16/18/20/24/30/36, no
+	 * consistent ratio) the same way: redefining the names Tailwind already
+	 * ships updates every existing `text-sm`/`text-xl`/etc. call site. Minor
+	 * third (1.2), base 16px: gentler steps than a major third keep the
+	 * range where most of this screen's text actually lives (xs/sm) legible,
+	 * while still compounding cleanly. `--text-xs` landing on 11px is not a
+	 * coincidence: it is the density this screen already carried in its
+	 * arbitrary `text-[11px]` call sites.
+	 */
+	--text-xs: 0.6875rem;
+	--text-sm: 0.8125rem;
+	--text-base: 1rem;
+	--text-lg: 1.1875rem;
+	--text-xl: 1.4375rem;
+	--text-2xl: 1.75rem;
+	--text-3xl: 2.0625rem;
+	--text-4xl: 2.5rem;
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+
+	/*
+	 * The attention family: the brand acid, reserved for what waits on the
+	 * operator. It is separate from --accent, the subtle hover tint.
+	 * -ui and -text are the darkened ramps that keep AA on light surfaces.
+	 */
+	--color-attention: var(--attention);
+	--color-attention-foreground: var(--attention-foreground);
+	--color-attention-ui: var(--attention-ui);
+	--color-attention-text: var(--attention-text);
+	--color-attention-surface: var(--attention-surface);
+
+	/* Run state families, this screen's own vocabulary. */
+	--color-info: var(--info);
+	--color-info-foreground: var(--info-foreground);
+	--color-merged: var(--merged);
+	--color-merged-foreground: var(--merged-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+
+	/* Code-block family. */
+	--color-code: var(--code);
+	--color-code-foreground: var(--code-foreground);
+	--color-code-highlight: var(--code-highlight);
+
+	/*
+	 * Gateship's radius scale stops at xl: 2xl and up
+	 * stay Tailwind's defaults (--radius-2xl is 1rem), which is exactly what
+	 * the product renders on its card frames.
+	 */
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+}
 
 /*
- * The Gateship operator theme.
- *
- * One custom property per role the screen actually names -- surfaces, lines,
- * emphasis, and the four families a run state can report -- declared in :root,
- * overridden wholesale in .dark, and exposed to Tailwind through @theme inline.
- * Values are expressed against Tailwind's own colour scale, so the palette has
- * a single source and this file only assigns meaning to it.
- *
- * The set is deliberately closed: a token exists here because some class on
- * this screen resolves it. Adding a role is a decision, not a copy.
+ * Values below are the design-system layer (docs/design/design-system.md,
+ * operator decisions 04#1, 07#3, 08#3, 09#1, 10#2): pure-gray neutrals, acid
+ * confined to the attention role and the focus ring, vivid state hues on the
+ * warm side of the wheel, Apple+ radius, hairline elevation.
  */
-
 /*
- * Dark mode is a class, matched on the node carrying it as well as on its
- * descendants. :where keeps the variant at zero specificity, so a dark rule
- * still loses to nothing it should not win against.
+ * Light is a gray canvas, not a white page (operator direction, 2026-08-24):
+ * white is reserved for what rises above it, cards, controls, the active
+ * segment. Elevation on light is therefore whiter plus a soft hairline;
+ * elevation on dark stays lighter plus a line.
  */
-@custom-variant dark (&:where(.dark, .dark *));
-
 :root {
-	/* Surfaces, from the page down to the panels standing on it. */
+	/* Native chrome (scrollbars, form widgets, system colors) follows the
+	 * theme class, not just the OS: a light scrollbar over a dark surface
+	 * was the loudest thing on the screen. */
+	color-scheme: light;
+	/* Pure neutral scale with alpha-mixed chrome and restrained elevation. */
 	--background: var(--color-white);
 	--foreground: var(--color-neutral-800);
 	--card: var(--color-white);
 	--card-foreground: var(--color-neutral-800);
-	--sidebar: var(--color-neutral-50);
-	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
-
-	/* Lines and focus. Borders are an alpha of ink so they follow the surface. */
-	--border: --alpha(var(--color-black) / 8%);
-	--input: --alpha(var(--color-black) / 10%);
-	--ring: var(--color-neutral-400);
-	--sidebar-border: --alpha(var(--color-black) / 6%);
-	--sidebar-ring: var(--color-neutral-400);
-
-	/* Emphasis, in descending strength: primary, secondary, accent, muted. */
+	--popover: var(--color-white);
+	--popover-foreground: var(--color-neutral-800);
 	--primary: var(--color-neutral-800);
 	--primary-foreground: var(--color-neutral-50);
 	--secondary: --alpha(var(--color-black) / 4%);
 	--secondary-foreground: var(--color-neutral-800);
-	--accent: --alpha(var(--color-black) / 4%);
-	--accent-foreground: var(--color-neutral-800);
-	--sidebar-accent: --alpha(var(--color-black) / 4%);
-	--sidebar-accent-foreground: var(--color-neutral-800);
 	--muted: --alpha(var(--color-black) / 4%);
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+	--accent: --alpha(var(--color-black) / 4%);
+	--accent-foreground: var(--color-neutral-800);
+	--destructive: var(--color-red-500);
+	--destructive-foreground: var(--color-red-700);
+	--border: --alpha(var(--color-black) / 12%);
+	--input: --alpha(var(--color-black) / 16%);
+	/* Focus stays the pastel acid wash, the same tone as the attention
+	 * surface (operator decision, 2026-08-24): a soft halo, not a saturated
+	 * outline. */
+	--ring: var(--attention-surface);
+	/* Cancelled and neutral activity always render gray. */
+	--chart-1: #dedede;
+	--chart-2: #909090;
+	--chart-3: #5f5f5f;
+	--chart-4: #3d3d3d;
+	--chart-5: #232323;
+	--radius: 0.625rem;
+	--sidebar: var(--color-neutral-50);
+	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
+	--sidebar-primary: var(--color-neutral-800);
+	--sidebar-primary-foreground: var(--color-neutral-50);
+	--sidebar-accent: --alpha(var(--color-black) / 4%);
+	--sidebar-accent-foreground: var(--color-neutral-800);
+	--sidebar-border: --alpha(var(--color-black) / 10%);
+	--sidebar-ring: var(--attention-surface);
+
+	/*
+	 * The attention family. Pure acid works on light only as a fill under
+	 * dark ink (15.21:1); the -ui (3.38:1 on this canvas) and -text (5.05:1)
+	 * ramps carry borders, icons and small text.
+	 */
+	--attention: #c8ff00;
+	--attention-foreground: #161807;
+	--attention-ui: #6b8a00;
+	--attention-text: #546c00;
+	/* The pale acid wash behind an attention surface: a solid, not an alpha,
+	 * so it reads the same on any canvas (the mockup's #eef7cc). */
+	--attention-surface: #eef7cc;
+	/*
+	 * The logo's own two extra fills (gateship-logo.tsx, operator decision
+	 * 2026-08-25): on light, the portal is pure white, this system's own
+	 * pre-Gateship F4 decision (2026-08-24) for every risen control -- not the
+	 * Gateship `--secondary` wash that decision used to be, and not the acid
+	 * family either. Light only: dark keeps its own acid wash (below). The
+	 * stair swaps from dark ink to white on dark so it still reads against
+	 * that wash there.
+	 */
+	--logo-portal: var(--color-white);
+	--logo-stair: var(--color-neutral-800);
+	/* The inset content panel (App shell): one step lighter than the chrome
+	 * it floats on. */
+	--shell-panel: var(--color-neutral-50);
 
 	/*
 	 * Run state families. A supervision screen has to be able to say advancing,
 	 * holding, done and broke, so these four are semantic tokens and never a
-	 * colour picked at the call site.
+	 * colour picked at the call site. Hues sit on the warm side of the wheel,
+	 * harmonized with the acid; solids paint dots and tints, foregrounds are
+	 * the AA text steps.
 	 */
 	--info: var(--color-blue-500);
 	--info-foreground: var(--color-blue-700);
+	/* Kept out of the Gateship import: Gateship has no "merged" state. */
 	--merged: var(--color-purple-500);
 	--merged-foreground: var(--color-purple-700);
 	--success: var(--color-emerald-500);
 	--success-foreground: var(--color-emerald-700);
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-700);
-	--destructive: var(--color-red-500);
-	--destructive-foreground: var(--color-red-700);
+
+	/* Gateship's code-block values, directly. */
+	--code: var(--color-white);
+	--code-foreground: var(--foreground);
+	--code-highlight: --alpha(var(--color-black) / 4%);
 }
 
 /*
- * Dark is not the light theme inverted: surfaces stay near-black and lift by a
- * few percent of white per layer, and the state families keep their hue while
- * their foreground moves to the lighter step that survives a dark background.
+ * Dark is not the light theme inverted: surfaces stay near-black and lift by
+ * a few percent per layer, elevation comes from line and highlight rather
+ * than shadow, and pure acid is free (15.55:1 against these surfaces).
  */
 .dark {
-	--background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+	color-scheme: dark;
+	--background: color-mix(in srgb, var(--color-neutral-950) 96%, var(--color-white));
 	--foreground: var(--color-neutral-100);
 	--card: color-mix(in srgb, var(--background) 98%, var(--color-white));
 	--card-foreground: var(--color-neutral-100);
-	--sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
-
-	--border: --alpha(var(--color-white) / 6%);
-	--input: --alpha(var(--color-white) / 8%);
-	--ring: var(--color-neutral-500);
-	--sidebar-border: --alpha(var(--color-white) / 5%);
-	--sidebar-ring: var(--color-neutral-400);
-
+	--popover: color-mix(in srgb, var(--background) 96%, var(--color-white));
+	--popover-foreground: var(--color-neutral-100);
 	--primary: var(--color-neutral-100);
 	--primary-foreground: var(--color-neutral-800);
 	--secondary: --alpha(var(--color-white) / 4%);
 	--secondary-foreground: var(--color-neutral-100);
-	--accent: --alpha(var(--color-white) / 4%);
-	--accent-foreground: var(--color-neutral-100);
-	--sidebar-accent: --alpha(var(--color-white) / 4%);
-	--sidebar-accent-foreground: var(--color-neutral-100);
 	--muted: --alpha(var(--color-white) / 4%);
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+	--accent: --alpha(var(--color-white) / 4%);
+	--accent-foreground: var(--color-neutral-100);
+	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+	--destructive-foreground: var(--color-red-400);
+	--border: --alpha(var(--color-white) / 10%);
+	--input: --alpha(var(--color-white) / 12%);
+	/* The same pastel family, translucent so it reads as a halo on dark.
+	 * Kept out of the Gateship import: it is the attention family. */
+	--ring: rgba(238, 247, 204, 0.45);
+	/* Kept out of the Gateship import: cancelled always renders gray. */
+	--chart-1: #dedede;
+	--chart-2: #a6a6a6;
+	--chart-3: #737373;
+	--chart-4: #4a4a4a;
+	--chart-5: #232323;
+	--sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
+	--sidebar-primary: var(--color-neutral-100);
+	--sidebar-primary-foreground: var(--color-neutral-800);
+	--sidebar-accent: --alpha(var(--color-white) / 4%);
+	--sidebar-accent-foreground: var(--color-neutral-100);
+	--sidebar-border: --alpha(var(--color-white) / 8%);
+	--sidebar-ring: rgba(238, 247, 204, 0.45);
 
+	/* Pure acid carries every attention role on dark surfaces. */
+	--attention: #c8ff00;
+	--attention-foreground: #161807;
+	--attention-ui: #c8ff00;
+	--attention-text: #c8ff00;
+	--attention-surface: #262b10;
+	/* Light only for the muted portal (operator decision, 2026-08-25): dark
+	 * keeps the acid wash, since it was never the wash that looked wrong
+	 * there -- --logo-stair already carries the fix for that (white). */
+	--logo-portal: var(--attention-surface);
+	--logo-stair: var(--color-white);
+	--shell-panel: color-mix(in srgb, var(--color-neutral-950) 96%, var(--color-white));
+
+	/* State hues hold; their foreground moves to the lighter step that
+	 * survives a dark background. */
 	--info: var(--color-blue-500);
 	--info-foreground: var(--color-blue-400);
 	--merged: var(--color-purple-500);
@@ -103,55 +296,77 @@
 	--success-foreground: var(--color-emerald-400);
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-400);
-	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-	--destructive-foreground: var(--color-red-400);
+
+	/* Gateship's code-block values, directly. */
+	--code: color-mix(in srgb, var(--background) 98%, var(--color-white));
+	--code-foreground: var(--foreground);
+	--code-highlight: --alpha(var(--color-white) / 4%);
 }
 
 /*
- * `inline` is required, not cosmetic: a plain @theme resolves the reference at
- * its definition site, so every utility would freeze the :root value and the
- * .dark override would never reach the screen. @theme also cannot be nested
- * under a selector, which is why the values above live in ordinary rules.
+ * The content measure every surface caps to (screen hierarchy, section 4 of
+ * the design doc): 80rem is the industry dashboard column. The shell's
+ * width toggle (ShellControls) stores the choice and flips the root class;
+ * `none` releases the cap so content fills the area beside the sidebar.
  */
-@theme inline {
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-background: var(--background);
-	--color-border: var(--border);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-	--color-foreground: var(--foreground);
-	--color-info: var(--info);
-	--color-info-foreground: var(--info-foreground);
-	--color-input: var(--input);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-merged: var(--merged);
-	--color-merged-foreground: var(--merged-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-ring: var(--ring);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-sidebar: var(--sidebar);
-	--color-sidebar-accent: var(--sidebar-accent);
-	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-	--color-sidebar-border: var(--sidebar-border);
-	--color-sidebar-foreground: var(--sidebar-foreground);
-	--color-sidebar-ring: var(--sidebar-ring);
-	--color-success: var(--success);
-	--color-success-foreground: var(--success-foreground);
-	--color-warning: var(--warning);
-	--color-warning-foreground: var(--warning-foreground);
+:root {
+	--content-measure: 80rem;
+}
 
-	/*
-	 * Headings are an alias rather than a face of their own: nothing injects a
-	 * font here, so the alias is the seam where one would land later without
-	 * touching a single component.
-	 */
-	--font-heading: var(--font-sans);
+:root.gship-wide {
+	--content-measure: none;
+}
+
+/*
+ * The outer double border (operator decision, 2026-08-25, settling the
+ * ring's final form): a flat 1px line 7px outside the surface, in Gateship
+ * ui's own homepage tone (`border/64`), concentric with the surface's
+ * radius. Flat, not faded: the gradient version died at the bottom edge
+ * and read as barely there. The offset is counted space: the element
+ * cedes 7px of its own slot (margin) and the line draws inside it, so
+ * ring plus card together fill exactly the slot the card claims.
+ *
+ * The ring marks belonging, not cardness -- border and bevel already say
+ * "card". Cards that carry one function together share a single ring on
+ * their group wrapper (`card-ring-group`, which silences its members' own
+ * rings and margins), and a card alone in its function keeps its own ring
+ * as a group of one (`card-ring`).
+ */
+@utility card-ring {
+	position: relative;
+	margin: 7px;
+
+	&::after {
+		content: '';
+		pointer-events: none;
+		position: absolute;
+		inset: -7px;
+		border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+		border-radius: calc(var(--radius-2xl) + 7px);
+	}
+}
+
+@utility card-ring-group {
+	position: relative;
+	margin: 7px;
+
+	&::after {
+		content: '';
+		pointer-events: none;
+		position: absolute;
+		inset: -7px;
+		border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+		border-radius: calc(var(--radius-2xl) + 7px);
+	}
+
+	/* Members give their ring and its counted margin to the group. */
+	& :is([data-slot='card-frame'], [data-slot='stat'])::after {
+		display: none;
+	}
+
+	& :is([data-slot='card-frame'], [data-slot='stat']) {
+		margin: 0;
+	}
 }
 
 @layer base {
@@ -159,8 +374,23 @@
 		@apply border-border outline-ring/50;
 	}
 
+	/*
+	 * Gateship's homepage (apps/ui/app/layout.tsx) paints its body
+	 * `bg-sidebar`, not `bg-background`: the canvas is the dimmed tone and
+	 * cards (`bg-card`, pure white) rise above it, not the other way round
+	 * (operator decision, 2026-08-25, correcting an earlier reversal).
+	 */
 	body {
-		@apply bg-background text-foreground;
+		@apply bg-sidebar text-foreground;
+	}
+
+	html {
+		@apply font-sans;
+		/* The weight floor is inherited, not opt-in (operator decision,
+		 * 2026-08-25): without this line the --font-weight-normal token only
+		 * reached elements carrying the font-normal class, and body prose
+		 * rendered at the browser's 400 -- the floor was never wired. */
+		font-weight: var(--font-weight-normal);
 	}
 
 	code,
@@ -169,4 +399,26 @@
 	pre {
 		font-family: var(--font-mono);
 	}
+
+	/* Values that change must not wobble: timestamps, durations, counters. */
+	time {
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Checkboxes stay native for their form semantics; the check itself is
+	 * selection, so it wears the acid-ui ramp. */
+	input[type='checkbox'] {
+		width: 1rem;
+		height: 1rem;
+		accent-color: var(--attention-ui);
+	}
+
+	/* Set for one frame around a theme swap (main.tsx): colors cut over
+	 * together instead of cross-fading out of sync. */
+	[data-theme-switching] *,
+	[data-theme-switching] *::before,
+	[data-theme-switching] *::after {
+		transition: none !important;
+	}
+
 }

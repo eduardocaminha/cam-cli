@@ -1,17 +1,17 @@
 // webui/src/components/ui/badge.tsx
 //
-// A short, non-interactive state label. Badges on this screen only ever report
-// what the runtime decided -- a run state, a workspace notice kind, which
-// provider is in use -- so the component takes a variant and children and
-// nothing else: no sizes, no link or button form, no click target.
+// Gateship's compact status chip. Its semantic variants
+// are an 8% wash of their own hue (16% on dark), never a solid. Badges on
+// this screen only ever report what the runtime decided, so the component
+// takes a variant and children and nothing else: no sizes, no link or
+// button form, no click target.
+//
+// `merged` uses the purple state family and `attention` is reserved for what
+// waits on the operator.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
 
-/**
- * The families the theme declares. `default` and `secondary` are neutral, the
- * remaining four are the semantic ones a run state maps onto (run-view.ts).
- */
 export type BadgeVariant =
 	| 'default'
 	| 'secondary'
@@ -20,20 +20,17 @@ export type BadgeVariant =
 	| 'merged'
 	| 'success'
 	| 'warning'
-	| 'error';
+	| 'error'
+	/** Reserved for "waits on the operator", the product's one acid signal. */
+	| 'attention';
 
 const SHAPE =
-	'inline-flex h-5.5 min-w-5.5 shrink-0 items-center justify-center gap-1 whitespace-nowrap ' +
-	'rounded-sm border border-transparent px-[calc(--spacing(1)-1px)] font-medium text-sm ' +
-	'sm:h-4.5 sm:min-w-4.5 sm:text-xs';
+	'relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none ' +
+	'h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs ' +
+	"[&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
-/**
- * The four semantic families are a tinted wash of their own colour rather than
- * a solid fill, so a row of them reads as status and not as a row of buttons.
- * Dark mode doubles the tint because the same alpha over a dark surface all but
- * disappears.
- */
 const VARIANT: Readonly<Record<BadgeVariant, string>> = {
+	attention: 'bg-attention text-attention-foreground',
 	default: 'bg-primary text-primary-foreground',
 	error: 'bg-destructive/8 text-destructive-foreground dark:bg-destructive/16',
 	info: 'bg-info/8 text-info-foreground dark:bg-info/16',

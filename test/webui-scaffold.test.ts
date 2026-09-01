@@ -51,6 +51,8 @@ describe('web UI scaffold', () => {
 		expect(html).toContain('class="flex');
 		expect(builtCss).toContain('display:flex');
 		expect(builtCss).not.toContain('@import "tailwindcss"');
+		expect(builtCss).not.toContain('Saans');
+		expect(builtCss).not.toContain('/fonts/');
 	});
 
 	test('keeps browser types and dependencies scoped without a nested package graph', () => {
@@ -66,6 +68,7 @@ describe('web UI scaffold', () => {
 			compilerOptions?: { lib?: string[] };
 		};
 		const packageManifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as {
+			dependencies?: Record<string, string>;
 			devDependencies?: Record<string, string>;
 		};
 
@@ -73,5 +76,6 @@ describe('web UI scaffold', () => {
 		expect(appConfig.compilerOptions?.lib).toContain('DOM');
 		expect(existsSync(join(WEBUI_ROOT, 'package.json'))).toBe(false);
 		expect(packageManifest.devDependencies?.['@tailwindcss/vite']).toBeDefined();
+		expect(packageManifest.dependencies?.['shadcn']).toBeUndefined();
 	});
 });

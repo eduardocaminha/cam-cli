@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { AttentionCard } from '../../webui/src/components/ui/attention-card.tsx';
 import { Badge } from '../../webui/src/components/ui/badge.tsx';
 import {
 	CardDisclosure,
@@ -54,9 +55,21 @@ describe('ui primitives', () => {
 	});
 
 	test('a badge carries the family it was told, and is neutral by default', () => {
+		// The family, not the tint strength: the alpha is a design value.
 		expect(renderToStaticMarkup(<Badge variant="warning">waiting-user</Badge>))
-			.toContain('bg-warning/8');
+			.toContain('bg-warning/');
 		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
+	});
+
+	test('the attention card is the acid surface and announces its title', () => {
+		const html = renderToStaticMarkup(
+			<AttentionCard title="O executor tem uma pergunta">corpo</AttentionCard>,
+		);
+		// The family, not the exact wash: acid marks what waits on the operator.
+		expect(html).toContain('bg-attention-surface');
+		expect(html).toContain('border-attention-ui');
+		expect(html).toContain('O executor tem uma pergunta');
+		expect(html).toContain('corpo');
 	});
 
 	test('the visual separator uses the native horizontal-rule semantic', () => {

@@ -55,6 +55,8 @@ are installed in the image and authenticated by the operator on first boot.
 - The React UI is built with Vite because Tailwind v4 requires its build-time
   plugin. Vite is not part of the shipped runtime.
 - Prefer existing platform APIs over new packages.
+- Any change that touches the web UI follows the design contract in
+  `docs/design/design-system.md`.
 
 ## Verification
 
