@@ -72,7 +72,7 @@ function createRuntime(verdicts: RuntimeReviewResult[], shipper?: RuntimeShipper
 describe('independent review stage', () => {
 	test('a clean verdict takes a verified run from review to ready-to-ship', async () => {
 		const { runtime, executions, reviews } = createRuntime([{ verdict: 'clean' }]);
-		const run = runtime.startRun('CAM-577');
+		const run = await runtime.startRun('CAM-577');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship', fixRounds: 0 });
@@ -94,7 +94,7 @@ describe('independent review stage', () => {
 			{ verdict: 'findings', detail: '1. src/a.ts: off-by-one in the cursor' },
 			{ verdict: 'clean' },
 		]);
-		const run = runtime.startRun('CAM-577');
+		const run = await runtime.startRun('CAM-577');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship', fixRounds: 1 });
@@ -125,7 +125,7 @@ describe('independent review stage', () => {
 			{ verdict: 'findings', detail: 'first pass finding' },
 			{ verdict: 'findings', detail: 'still broken in src/a.ts' },
 		]);
-		const run = runtime.startRun('CAM-577');
+		const run = await runtime.startRun('CAM-577');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(runtime.getRun(run.id)).toMatchObject({
@@ -173,7 +173,7 @@ describe('independent review stage', () => {
 				return { outcome: 'merged', prNumber: 407 };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(runtime.listEvents().map((event) => event.kind)).toEqual([
@@ -202,7 +202,7 @@ describe('independent review stage', () => {
 				},
 			},
 		);
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(shipCalls).toBe(0);
@@ -235,7 +235,7 @@ describe('independent review stage', () => {
 			} },
 		});
 
-		const run = runtime.startRun('GSHIP-732');
+		const run = await runtime.startRun('GSHIP-732');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(runtime.getRun(run.id)?.fixRounds).toBe(4);
 		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response'))
@@ -255,7 +255,7 @@ describe('independent review stage', () => {
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-577');
+		const run = await runtime.startRun('CAM-577');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(runtime.listEvents().map((event) => event.kind)).not.toContain('run.review-started');
 		await runtime.stop();

@@ -65,7 +65,7 @@ async function approveProjectIssue(options: {
 		});
 	}
 	const starts: string[] = [];
-	runtime.startRun = (issueId: string) => {
+	runtime.startRun = async (issueId: string) => {
 		starts.push(issueId);
 		const created = store.createRun({
 			id: `run-${starts.length}`,

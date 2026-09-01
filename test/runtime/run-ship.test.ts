@@ -122,7 +122,7 @@ describe('shipping a run', () => {
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		// No operator command sits between run.verified and run.ship-started.
@@ -160,7 +160,7 @@ describe('shipping a run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-release',
 			workspace: {
-				prepare: () => '/project/.gship/worktrees/run-release',
+				prepare: async () => '/project/.gship/worktrees/run-release',
 				release: (input) => {
 					releases.push(input.workspacePath);
 					return { outcome: 'released', branch: 'gship/cam-583-run-rel' };
@@ -171,7 +171,7 @@ describe('shipping a run', () => {
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('workspace.released'));
 
 		expect(runtime.getRun(run.id)?.state).toBe('done');
@@ -201,7 +201,7 @@ describe('shipping a run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-release-upstream',
 			workspace: {
-				prepare: () => '/project/.gship/worktrees/run-release-upstream',
+				prepare: async () => '/project/.gship/worktrees/run-release-upstream',
 				release: ({ requireUpstream }) => {
 					releaseCalls.push({ requireUpstream });
 					return { outcome: 'released', branch: 'gship/cam-584-run-rel' };
@@ -226,7 +226,7 @@ describe('shipping a run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-dirty',
 			workspace: {
-				prepare: () => '/project/.gship/worktrees/run-dirty',
+				prepare: async () => '/project/.gship/worktrees/run-dirty',
 				release: () => ({
 					outcome: 'preserved',
 					branch: 'gship/cam-583-run-dir',
@@ -238,7 +238,7 @@ describe('shipping a run', () => {
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('workspace.cleanup-warning'));
 
 		expect(runtime.getRun(run.id)?.state).toBe('done');
@@ -262,7 +262,7 @@ describe('shipping a run', () => {
 					: { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		// The diff is untouched and the run is still shippable: no failed state.
@@ -306,7 +306,7 @@ describe('shipping a run', () => {
 			} : { outcome: 'merged', prNumber: 385 } },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(ships).toBe(2);
@@ -347,7 +347,7 @@ describe('shipping a run', () => {
 			}) },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		const limit = runtime.listEvents().find((event) => event.kind === 'run.ci-fix-limit');
 		expect(limit?.payload).toMatchObject({
@@ -375,7 +375,7 @@ describe('shipping a run', () => {
 			}) },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		expect(verifications).toBe(1);
 		expect(eventKinds(runtime).at(-1)).toBe('run.ci-fix-no-change');
@@ -406,7 +406,7 @@ describe('shipping a run', () => {
 			} : { outcome: 'merged', prNumber: 385 } },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		runtime.resumeRun(run.id);
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
@@ -447,7 +447,7 @@ describe('shipping a run', () => {
 			}) },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(executions).toHaveLength(2);
 		expect(verifications).toBe(2);
@@ -504,7 +504,7 @@ describe('shipping a run', () => {
 			} },
 		});
 
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		// The correction round belongs to the operator's explicit retry, not to
@@ -635,7 +635,7 @@ describe('shipping a run', () => {
 				return { outcome: 'failed', detail: 'pull request #385 now carries bbbb' };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
@@ -676,7 +676,7 @@ describe('shipping a run', () => {
 				return { outcome: 'failed', detail: 'pull request #385 now carries bbbb' };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
@@ -721,7 +721,7 @@ describe('shipping a run', () => {
 				};
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
@@ -742,7 +742,7 @@ describe('shipping a run', () => {
 				throw new Error('gh pr create failed: no such remote');
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
@@ -764,7 +764,7 @@ describe('shipping a run', () => {
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'shipping');
 
 		// The automatic ship owns the run, so the retry command is refused.
@@ -786,7 +786,7 @@ describe('shipping a run', () => {
 				}, { once: true });
 			}),
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'shipping');
 		const cancelled = await runtime.cancelRun(run.id);
 
@@ -809,7 +809,7 @@ describe('shipping a run', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
 		});
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(() => runtime.shipRun(run.id)).toThrow('run cannot ship from state waiting-user');
@@ -822,7 +822,7 @@ describe('shipping a run', () => {
 
 	test('a runtime without a shipper stops at ready-to-ship instead of pretending', async () => {
 		const runtime = createRuntime();
-		const run = runtime.startRun('CAM-583');
+		const run = await runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(eventKinds(runtime)).not.toContain('run.ship-started');
@@ -883,7 +883,7 @@ describe('shipping a run', () => {
 			cwd: '/project',
 			store,
 			workspace: {
-				prepare: () => '/unused',
+				prepare: async () => '/unused',
 				release: (input) => {
 					releases.push(input.runId);
 					return { outcome: 'already-released', branch: 'gship/cam-583-run-don' };
@@ -948,7 +948,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			},
 			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
 		);
-		const run = runtime.startRun('GSHIP-649');
+		const run = await runtime.startRun('GSHIP-649');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(calls).toEqual(['full-verify']);
@@ -979,7 +979,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			},
 			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
 		);
-		const run = runtime.startRun('GSHIP-649');
+		const run = await runtime.startRun('GSHIP-649');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(calls).toBe(2);
@@ -1017,7 +1017,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 				},
 			},
 		);
-		const run = runtime.startRun('GSHIP-649');
+		const run = await runtime.startRun('GSHIP-649');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(runtime.getRun(run.id)).toMatchObject({
@@ -1060,7 +1060,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 				return { outcome: 'continue', guidance: 'Apply the verification correction.', usage: { model: 'model', effort: 'high' } };
 			} },
 		);
-		const run = runtime.startRun('GSHIP-732');
+		const run = await runtime.startRun('GSHIP-732');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 		expect(runtime.getRun(run.id)?.fixRounds).toBe(2);
 		expect(runtime.listRunDecisionEvents(run.id).find((event) => event.kind === 'run.cycle-question')?.payload)
@@ -1075,7 +1075,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			{ verify: async () => ({ ok: true, skipped: true }) },
 			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
 		);
-		const run = runtime.startRun('GSHIP-649');
+		const run = await runtime.startRun('GSHIP-649');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(eventKinds(runtime)).toEqual([
@@ -1106,7 +1106,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			},
 			{ ship: async () => ({ outcome: 'merged', prNumber: 649 }) },
 		);
-		const run = runtime.startRun('GSHIP-649');
+		const run = await runtime.startRun('GSHIP-649');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'full-verify');
 
 		// ready-to-ship is a resting state again (GSHIP-649): the operator's

@@ -137,11 +137,11 @@ describe('the web runtime Git source', () => {
 			.toThrow('cannot fetch origin/main');
 	});
 
-	test('cuts the run worktree from the refreshed source commit, not from local main', () => {
+	test('cuts the run worktree from the refreshed source commit, not from local main', async () => {
 		const fixture = seedFixture();
 		createGitRuntimePreflight(fixture.local)('CAM-580');
 
-		const workspace = new GitWorkspaceManager(
+		const workspace = await new GitWorkspaceManager(
 			fixture.local,
 			undefined,
 			noopInstall,
@@ -152,11 +152,11 @@ describe('the web runtime Git source', () => {
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(fixture.staleMain);
 	});
 
-	test('the workspace manager still defaults to main for legacy callers', () => {
+	test('the workspace manager still defaults to main for legacy callers', async () => {
 		const fixture = seedFixture();
 		createGitRuntimePreflight(fixture.local)('CAM-580');
 
-		const workspace = new GitWorkspaceManager(fixture.local, undefined, noopInstall)
+		const workspace = await new GitWorkspaceManager(fixture.local, undefined, noopInstall)
 			.prepare({ runId: 'run-580bbbbb-0002', issueId: 'CAM-580' });
 
 		expect(git(workspace, ['rev-parse', 'HEAD'])).toBe(fixture.staleMain);

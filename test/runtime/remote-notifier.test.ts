@@ -217,7 +217,7 @@ describe('createRemoteNotifier', () => {
 		const { fetchImpl, calls } = stubFetch();
 		runtime.subscribe(createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl }));
 
-		const run = runtime.startRun('CAM-51');
+		const run = await runtime.startRun('CAM-51');
 		await executorStarted;
 		const cancelled = await runtime.cancelRun(run.id);
 		expect(cancelled?.state).toBe('interrupted');
@@ -266,8 +266,8 @@ describe('createRemoteNotifier', () => {
 		runtimeB.subscribe(createRemoteNotifier({ cwd: projectB, stateDir: globalStateDir, legacyStateDir: legacyStateDirB, env: {}, fetchImpl }));
 
 		try {
-			const runA = runtimeA.startRun('GSHIP-735-A');
-			const runB = runtimeB.startRun('GSHIP-735-B');
+			const runA = await runtimeA.startRun('GSHIP-735-A');
+			const runB = await runtimeB.startRun('GSHIP-735-B');
 			await waitFor(() => runtimeA.getRun(runA.id)?.state === 'waiting-user' && runtimeB.getRun(runB.id)?.state === 'waiting-user');
 			await waitFor(() => calls.length === 2);
 
@@ -295,7 +295,7 @@ describe('createRemoteNotifier', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-52');
+		const run = await runtime.startRun('CAM-52');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		// Subscribed only once the run is parked, so this asserts on the

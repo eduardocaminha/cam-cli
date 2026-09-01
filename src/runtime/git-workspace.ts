@@ -14,7 +14,7 @@ interface CommandResult {
 
 export type WorkspaceGitRunner = (cwd: string, args: string[]) => CommandResult;
 
-export type WorkspacePrepareRunner = (cwd: string, command: string) => CommandResult;
+export type WorkspacePrepareRunner = (cwd: string, command: string) => CommandResult | Promise<CommandResult>;
 
 export interface PrepareWorkspaceInput {
 	runId: string;
@@ -71,7 +71,7 @@ export interface WorkspaceNotice {
 }
 
 export interface RuntimeWorkspace {
-	prepare: (input: PrepareWorkspaceInput) => string;
+	prepare: (input: PrepareWorkspaceInput) => Promise<string>;
 	release?: (input: ReleaseWorkspaceInput) => WorkspaceReleaseResult;
 	inspect?: (runs: readonly WorkspaceRunReference[]) => WorkspaceNotice[];
 }
@@ -92,19 +92,39 @@ function defaultRunGit(cwd: string, args: string[]): CommandResult {
 	};
 }
 
-function defaultRunPrepare(cwd: string, command: string): CommandResult {
-	const result = spawnSync(command, {
+const PREPARE_OUTPUT_LIMIT = 2_000;
+
+async function outputTail(stream: ReadableStream<Uint8Array>): Promise<string> {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	let output = '';
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			output = `${output}${decoder.decode(value, { stream: true })}`.slice(-PREPARE_OUTPUT_LIMIT);
+		}
+		return `${output}${decoder.decode()}`.slice(-PREPARE_OUTPUT_LIMIT);
+	} finally {
+		reader.releaseLock();
+	}
+}
+
+async function defaultRunPrepare(cwd: string, command: string): Promise<CommandResult> {
+	const child = Bun.spawn({
+		cmd: ['/bin/sh', '-c', command],
 		cwd,
-		encoding: 'utf8',
 		env: buildAllowlistedEnv(process.env),
-		shell: true,
+		stdin: 'ignore',
+		stdout: 'pipe',
+		stderr: 'pipe',
 	});
-	if (result.error) throw result.error;
-	return {
-		exitCode: result.status ?? 1,
-		stdout: result.stdout ?? '',
-		stderr: result.stderr ?? '',
-	};
+	const [exitCode, stdout, stderr] = await Promise.all([
+		child.exited,
+		outputTail(child.stdout),
+		outputTail(child.stderr),
+	]);
+	return { exitCode, stdout, stderr };
 }
 
 const PROJECT_MANIFEST_PATH = join('.gateship', 'project.json');
@@ -223,7 +243,7 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		this.#baseRef = baseRef;
 	}
 
-	prepare(input: PrepareWorkspaceInput): string {
+	async prepare(input: PrepareWorkspaceInput): Promise<string> {
 		const base = this.#runGit(this.#projectRoot, ['rev-parse', '--verify', this.#baseRef]);
 		if (base.exitCode !== 0) {
 			throw new RuntimeWorkspaceError(`cannot resolve ${this.#baseRef}: ${failureDetail(base)}`);
@@ -256,23 +276,26 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 			throw new RuntimeWorkspaceError(`cannot create run workspace: ${failureDetail(added)}`);
 		}
 
-		try {
-			const commands = projectPrepareCommands(workspacePath) ?? [LEGACY_PREPARE_COMMAND];
-			for (const command of commands) {
-				const prepared = this.#runPrepare(workspacePath, command);
-				if (prepared.exitCode !== 0) {
-					throw new Error(`preparation command failed: ${failureDetail(prepared)}`);
-				}
-			}
-		} catch (error) {
+		const fail = (error: unknown): never => {
 			const detail = error instanceof Error ? error.message : String(error);
 			throw new RuntimeWorkspaceError(this.#prepareFailure(
 				input,
 				workspacePath,
 				`cannot prepare workspace: ${detail}`,
 			));
+		};
+		try {
+			const commands = projectPrepareCommands(workspacePath) ?? [LEGACY_PREPARE_COMMAND];
+			for (const command of commands) {
+				const result = await this.#runPrepare(workspacePath, command);
+				if (result.exitCode !== 0) {
+					throw new Error(`preparation command failed: ${failureDetail(result)}`);
+				}
+			}
+			return workspacePath;
+		} catch (error) {
+			return fail(error);
 		}
-		return workspacePath;
 	}
 
 	/**

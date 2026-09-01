@@ -487,6 +487,7 @@ export class RunRuntime {
 	#workspaceNotices: WorkspaceNotice[] = [];
 	#admissionBlockedReason: string | null = null;
 	readonly #admissionFences = new Map<symbol, string>();
+	#preparingWorkspace = false;
 
 	constructor(options: RunRuntimeOptions) {
 		this.#cwd = options.cwd;
@@ -519,7 +520,7 @@ export class RunRuntime {
 		this.#armProviderRetryForWaitingRun();
 	}
 
-	startRun(issueId: string, source?: string): RunRecord {
+	async startRun(issueId: string, source?: string): Promise<RunRecord> {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -535,12 +536,21 @@ export class RunRuntime {
 				`run ${blockingRun.id} is still ${blockingRun.state}; resume or finish it first`,
 			);
 		}
+		if (this.#preparingWorkspace) {
+			throw new RuntimeConflictError('a workspace is still being prepared; wait for it to finish');
+		}
 		this.#preflight?.(normalizedIssueId);
 		const id = this.#newId();
-		const workspacePath = this.#workspace?.prepare({
-			runId: id,
-			issueId: normalizedIssueId,
-		}) ?? this.#cwd;
+		this.#preparingWorkspace = true;
+		let workspacePath: string;
+		try {
+			workspacePath = await this.#workspace?.prepare({
+				runId: id,
+				issueId: normalizedIssueId,
+			}) ?? this.#cwd;
+		} finally {
+			this.#preparingWorkspace = false;
+		}
 		const created = this.#store.createRun({
 			id,
 			issueId: normalizedIssueId,
@@ -557,12 +567,12 @@ export class RunRuntime {
 	}
 
 	/** Wake the existing chain scheduler after an approval makes work admissible. */
-	startNextAdmissibleIssue(admit?: () => void): RunRecord | null {
+	async startNextAdmissibleIssue(admit?: () => void): Promise<RunRecord | null> {
 		if (!this.#store.getChainRunsEnabled()) return null;
 		const issueId = this.#nextAdmissibleIssueId();
 		if (issueId === null) return null;
 		admit?.();
-		return this.startRun(issueId);
+		return await this.startRun(issueId);
 	}
 
 	/** Synchronous admission fence used only during the native update handoff. */
@@ -2030,14 +2040,12 @@ export class RunRuntime {
 			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.noAdmissibleIssue);
 			return;
 		}
-		try {
-			this.startNextAdmissibleIssue();
-		} catch (error) {
+		void this.startNextAdmissibleIssue().catch((error) => {
 			const reason = error instanceof RuntimeConflictError
 				? CHAIN_PAUSE_REASONS.runActive
 				: CHAIN_PAUSE_REASONS.startFailed;
 			this.#emitChainPause(run.id, reason, { issueId: nextIssueId, error: errorMessage(error) });
-		}
+		});
 	}
 
 	/**

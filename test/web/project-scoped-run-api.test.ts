@@ -92,6 +92,41 @@ function bootRuntimeThatMustNotStart(cwd: string): { runtime: RunRuntime; starts
 }
 
 describe('project-scoped work API', () => {
+	test('keeps status reads responsive while workspace preparation is pending', async () => {
+		let releasePreparation = (): void => {};
+		let preparationStarted = false;
+		const preparation = new Promise<string>((resolve) => { releasePreparation = () => resolve('/workspace/pending'); });
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-work-api-pending-'),
+			store: new RunStore(':memory:'),
+			workspace: { prepare: () => { preparationStarted = true; return preparation; } },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-work-api-pending-cwd-'), runRuntime: runtime });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const start = fetch(`${origin}/api/runs`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ issueId: 'GSHIP-1' }),
+			});
+			for (let attempt = 0; !preparationStarted && attempt < 20; attempt += 1) {
+				await Bun.sleep(5);
+			}
+			expect(preparationStarted).toBe(true);
+			const status = await fetch(`${origin}/api/runs`);
+			expect(status.status).toBe(200);
+			expect(await status.json()).toEqual({ runs: [] });
+			releasePreparation();
+			expect((await start).status).toBe(202);
+		} finally {
+			await handle.stop();
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
 	test('intake, specification, approval and abandon write the named project backlog alone', async () => {
 		const boot = publishableProject('gship-work-api-boot-', []);
 		const foreign = publishableProject('gship-work-api-foreign-', [

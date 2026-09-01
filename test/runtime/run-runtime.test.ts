@@ -120,7 +120,7 @@ describe('durable run runtime', () => {
 			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
 			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
 		});
-		const run = runtime.startRun('GSHIP-756');
+		const run = await runtime.startRun('GSHIP-756');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(executions).toEqual([
 			{ resume: false, verificationFeedback: undefined },
@@ -141,7 +141,7 @@ describe('durable run runtime', () => {
 			executor: { execute: async () => { attempts += 1; return { outcome: 'completed' }; } },
 			verifier: { verify: async () => ({ ok: false, detail: `falha ${attempts}` }) },
 		});
-		const run = runtime.startRun('GSHIP-756');
+		const run = await runtime.startRun('GSHIP-756');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 		expect(attempts).toBe(2);
 		expect(runtime.getRun(run.id)).toMatchObject({ error: 'falha 2', fixRounds: 1 });
@@ -183,7 +183,7 @@ describe('durable run runtime', () => {
 			} },
 			verifier: { verify: async () => ({ ok: executions > 1, detail: 'falha aprovada' }) },
 		});
-		const run = runtime.startRun('GSHIP-756');
+		const run = await runtime.startRun('GSHIP-756');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		runtime.resumeRun(run.id);
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
@@ -208,7 +208,7 @@ describe('durable run runtime', () => {
 			} },
 			verifier: { verify: async () => ({ ok: false, detail: 'falha aprovada' }) },
 		});
-		const run = runtime.startRun('GSHIP-756');
+		const run = await runtime.startRun('GSHIP-756');
 		await started;
 		await runtime.cancelRun(run.id);
 		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
@@ -226,7 +226,7 @@ describe('durable run runtime', () => {
 			newId: () => 'run-complete',
 			newSessionId: () => 'session-complete',
 			now: () => '2026-08-15T11:00:00Z',
-			workspace: { prepare: () => '/workspaces/run-complete' },
+			workspace: { prepare: async () => '/workspaces/run-complete' },
 			executor: {
 				execute: async ({ cwd, emit }) => {
 					observedCwds.push(cwd);
@@ -240,7 +240,7 @@ describe('durable run runtime', () => {
 			} },
 		});
 
-		const started = runtime.startRun(' CAM-10 ');
+		const started = await runtime.startRun(' CAM-10 ');
 		expect(started).toMatchObject({
 			id: 'run-complete',
 			issueId: 'CAM-10',
@@ -282,7 +282,7 @@ describe('durable run runtime', () => {
 			} },
 		});
 
-		const run = runtime.startRun('GSHIP-685');
+		const run = await runtime.startRun('GSHIP-685');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(shippedInputs[0]?.evidence).toEqual({
@@ -317,7 +317,7 @@ describe('durable run runtime', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-11');
+		const run = await runtime.startRun('CAM-11');
 		await executorStarted;
 
 		const cancelled = await runtime.cancelRun(run.id);
@@ -328,19 +328,44 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
-	test('does not persist a run when workspace preparation fails', () => {
+	test('does not persist a run when workspace preparation fails', async () => {
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store: new RunStore(':memory:'),
-			workspace: { prepare: () => {
+			workspace: { prepare: async () => {
 				throw new Error('cannot prepare workspace');
 			} },
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		expect(() => runtime.startRun('CAM-13')).toThrow('cannot prepare workspace');
+		await expect(runtime.startRun('CAM-13')).rejects.toThrow('cannot prepare workspace');
 		expect(runtime.listRuns()).toEqual([]);
+		runtime.close();
+	});
+
+	test('reserves admission while an asynchronous workspace preparation is pending', async () => {
+		let finishPreparation = (): void => {};
+		const preflightIssueIds: string[] = [];
+		const prepared = new Promise<string>((resolve) => { finishPreparation = () => resolve('/workspaces/prepared'); });
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			preflight: (issueId) => { preflightIssueIds.push(issueId); },
+			workspace: { prepare: async () => prepared },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		const first = runtime.startRun('CAM-13');
+		expect(runtime.listRuns()).toEqual([]);
+		await expect(runtime.startRun('CAM-14')).rejects.toThrow('workspace is still being prepared');
+		expect(preflightIssueIds).toEqual(['CAM-13']);
+		finishPreparation();
+		const run = await first;
+		expect(run.workspacePath).toBe('/workspaces/prepared');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		await runtime.stop();
 		runtime.close();
 	});
 
@@ -355,7 +380,7 @@ describe('durable run runtime', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-resume',
 			newSessionId: () => 'session-stable',
-			workspace: { prepare: () => '/workspaces/run-resume' },
+			workspace: { prepare: async () => '/workspaces/run-resume' },
 			executor: {
 				execute: (input) => {
 					calls.push({ sessionId: input.sessionId, resume: input.resume, cwd: input.cwd });
@@ -372,7 +397,7 @@ describe('durable run runtime', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-14');
+		const run = await runtime.startRun('CAM-14');
 		await started;
 		await runtime.cancelRun(run.id);
 		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
@@ -399,7 +424,7 @@ describe('durable run runtime', () => {
 			// armed for later, so this test keeps covering the manual resume.
 			now: () => '2026-08-20T12:00:00.000Z',
 			workspace: {
-				prepare: () => '/workspaces/run-provider-limit',
+				prepare: async () => '/workspaces/run-provider-limit',
 				release: ({ runId }) => {
 					releases.push(runId);
 					return { outcome: 'released', branch: 'gship/gship-700-run-provider-limit' };
@@ -422,7 +447,7 @@ describe('durable run runtime', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-700');
+		const run = await runtime.startRun('GSHIP-700');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRun(run.id)).toMatchObject({
 			state: 'waiting-provider',
@@ -446,7 +471,7 @@ describe('durable run runtime', () => {
 			phase: 'working',
 			retryAt: '2026-08-20T12:10:00.000Z',
 		});
-		expect(() => runtime.startRun('GSHIP-701')).toThrow('still waiting-provider');
+		await expect(runtime.startRun('GSHIP-701')).rejects.toThrow('still waiting-provider');
 
 		runtime.resumeRun(run.id);
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
@@ -470,7 +495,7 @@ describe('durable run runtime', () => {
 			newId: () => 'run-provider-silent',
 			newSessionId: () => 'session-provider-silent',
 			workspace: {
-				prepare: () => '/workspaces/run-provider-silent',
+				prepare: async () => '/workspaces/run-provider-silent',
 				release: ({ runId }) => {
 					releases.push(runId);
 					return { outcome: 'released', branch: 'gship/gship-751-run-provider-silent' };
@@ -488,7 +513,7 @@ describe('durable run runtime', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-751');
+		const run = await runtime.startRun('GSHIP-751');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toEqual({
 			provider: 'codex',
@@ -527,7 +552,7 @@ describe('durable run runtime', () => {
 			},
 		});
 
-		const run = runtime.startRun('GSHIP-702');
+		const run = await runtime.startRun('GSHIP-702');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.listRunEvents(run.id).at(-1)?.payload['phase']).toBe('review');
 
@@ -580,7 +605,7 @@ describe('durable run runtime', () => {
 			}),
 		});
 
-		const run = runtime.startRun('GSHIP-709');
+		const run = await runtime.startRun('GSHIP-709');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(claudeReviews).toBe(2);
 		expect(codexReviews).toBe(2);
@@ -644,7 +669,7 @@ describe('durable run runtime', () => {
 			}),
 		});
 
-		const run = runtime.startRun('GSHIP-709');
+		const run = await runtime.startRun('GSHIP-709');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toEqual({
 			provider: 'claude',
@@ -684,7 +709,7 @@ describe('durable run runtime', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-15');
+		const run = await runtime.startRun('CAM-15');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(() => runtime.resumeRun(run.id)).toThrow('operator guidance is required');
@@ -750,7 +775,7 @@ describe('executor handoff between providers (GSHIP-722)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-722');
+		const run = await runtime.startRun('GSHIP-722');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(codexCalls).toBe(0);
 		expect(runtime.getRunExecutorHandoff(run.id)).toBeNull();
@@ -808,7 +833,7 @@ describe('executor handoff between providers (GSHIP-722)', () => {
 		});
 
 		runtime.setExecutorHandoffEnabled(true);
-		const run = runtime.startRun('GSHIP-722');
+		const run = await runtime.startRun('GSHIP-722');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(claudeCalls).toBe(1);
@@ -882,7 +907,7 @@ describe('executor handoff between providers (GSHIP-722)', () => {
 		});
 
 		runtime.setExecutorHandoffEnabled(true);
-		const run = runtime.startRun('GSHIP-722');
+		const run = await runtime.startRun('GSHIP-722');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toEqual({
 			provider: 'claude',
@@ -965,7 +990,7 @@ describe('automatic resume after the provider retry instant', () => {
 			newSessionId: () => 'session-auto-retry',
 			now: () => clock,
 			timer: fake.timer,
-			workspace: { prepare: () => '/workspaces/run-auto-retry' },
+			workspace: { prepare: async () => '/workspaces/run-auto-retry' },
 			executor: {
 				execute: async (input) => {
 					calls.push({
@@ -988,7 +1013,7 @@ describe('automatic resume after the provider retry instant', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-708');
+		const run = await runtime.startRun('GSHIP-708');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		// Ten minutes out, and nothing fires before it: the run is still resting.
 		expect(fake.delay()).toBe(600_000);
@@ -1066,7 +1091,7 @@ describe('automatic resume after the provider retry instant', () => {
 			executor,
 			verifier,
 		});
-		const run = before.startRun('GSHIP-708');
+		const run = await before.startRun('GSHIP-708');
 		await waitFor(() => before.getRun(run.id)?.state === 'waiting-provider');
 		await before.stop();
 
@@ -1122,7 +1147,7 @@ describe('automatic resume after the provider retry instant', () => {
 			},
 		});
 
-		const run = runtime.startRun('GSHIP-709');
+		const run = await runtime.startRun('GSHIP-709');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'review' });
 
@@ -1160,7 +1185,7 @@ describe('automatic resume after the provider retry instant', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-710');
+		const run = await runtime.startRun('GSHIP-710');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		const stale = fake.callback();
 
@@ -1203,7 +1228,7 @@ describe('automatic resume after the provider retry instant', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-711');
+		const run = await runtime.startRun('GSHIP-711');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(fake.delay()).toBe(600_000);
 
@@ -1250,7 +1275,7 @@ describe('automatic resume after the provider retry instant', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-711');
+		const run = await runtime.startRun('GSHIP-711');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		clock = '2026-08-23T00:50:00.000Z';
 		fake.fire();
@@ -1282,7 +1307,7 @@ describe('automatic resume after the provider retry instant', () => {
 				},
 				verifier: { verify: async () => ({ ok: true }) },
 			});
-			const run = runtime.startRun('GSHIP-712');
+			const run = await runtime.startRun('GSHIP-712');
 			await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 			expect(fake.delay()).toBeNull();
 			expect(runtime.getRun(run.id)?.state).toBe('waiting-provider');
@@ -1309,7 +1334,7 @@ describe('automatic resume after the provider retry instant', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('GSHIP-713');
+		const run = await runtime.startRun('GSHIP-713');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(fake.delay()).toBe(600_000);
 
@@ -1335,7 +1360,7 @@ describe('evidence check gates the executor', () => {
 			cwd: '/project',
 			store,
 			newId: () => 'run-evidence-ok',
-			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			workspace: { prepare: async ({ runId }) => `/workspaces/${runId}` },
 			evidenceCheck: { check: async () => ({ ok: true }) },
 			executor: {
 				execute: async () => {
@@ -1346,7 +1371,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-40');
+		const run = await runtime.startRun('CAM-40');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(executorCalled).toBe(true);
@@ -1368,7 +1393,7 @@ describe('evidence check gates the executor', () => {
 			cwd: '/project',
 			store,
 			newId: () => 'run-evidence-diverged',
-			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			workspace: { prepare: async ({ runId }) => `/workspaces/${runId}` },
 			evidenceCheck: {
 				check: async () => ({
 					ok: false,
@@ -1384,7 +1409,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-41');
+		const run = await runtime.startRun('CAM-41');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		expect(executorCalled).toBe(false);
@@ -1416,7 +1441,7 @@ describe('evidence check gates the executor', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-evidence-diverged-clean',
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: ({ runId, requireUpstream }) => {
 					releaseCalls.push({ runId, requireUpstream });
 					return { outcome: 'released', branch: 'gship/cam-44-run-evidence-diverged-clean' };
@@ -1433,7 +1458,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-44');
+		const run = await runtime.startRun('CAM-44');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		expect(releaseCalls).toEqual([{ runId: 'run-evidence-diverged-clean', requireUpstream: true }]);
@@ -1459,7 +1484,7 @@ describe('evidence check gates the executor', () => {
 			cwd: '/project',
 			store: new RunStore(':memory:'),
 			newId: () => 'run-evidence-reason',
-			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			workspace: { prepare: async ({ runId }) => `/workspaces/${runId}` },
 			evidenceCheck: new GitEvidenceChecker({
 				loadIssueFromWorkspace: () => JSON.stringify({
 					spec: {
@@ -1474,7 +1499,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-45');
+		const run = await runtime.startRun('CAM-45');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		const reason = runtime.getRun(run.id)?.error ?? '';
@@ -1496,7 +1521,7 @@ describe('evidence check gates the executor', () => {
 			cwd: '/project',
 			store,
 			newId: () => 'run-evidence-resume',
-			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			workspace: { prepare: async ({ runId }) => `/workspaces/${runId}` },
 			evidenceCheck: {
 				check: async () => {
 					checkCalls += 1;
@@ -1511,7 +1536,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-42');
+		const run = await runtime.startRun('CAM-42');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		expect(checkCalls).toBe(1);
 		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.evidence-checked'))
@@ -1540,7 +1565,7 @@ describe('evidence check gates the executor', () => {
 			cwd: '/project',
 			store,
 			newId: () => 'run-evidence-interrupted',
-			workspace: { prepare: ({ runId }) => `/workspaces/${runId}` },
+			workspace: { prepare: async ({ runId }) => `/workspaces/${runId}` },
 			evidenceCheck: {
 				check: (input) => {
 					checkCalls += 1;
@@ -1561,7 +1586,7 @@ describe('evidence check gates the executor', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const run = runtime.startRun('CAM-43');
+		const run = await runtime.startRun('CAM-43');
 		await checkStarted;
 		const cancelled = await runtime.cancelRun(run.id);
 		expect(cancelled?.state).toBe('interrupted');
@@ -1601,7 +1626,7 @@ describe('capturing proposals derived from a run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-40');
+		const run = await runtime.startRun('CAM-40');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(store.listProposals()).toEqual([
@@ -1667,7 +1692,7 @@ describe('capturing proposals derived from a run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-41');
+		const run = await runtime.startRun('CAM-41');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(runtime.listRunEvents(run.id).at(-2)).toMatchObject({
@@ -1687,7 +1712,7 @@ describe('capturing proposals derived from a run', () => {
 			executor: { execute: async () => ({ outcome: 'completed', proposals: [] }) },
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-42');
+		const run = await runtime.startRun('CAM-42');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(store.listProposals()).toEqual([]);
@@ -1715,7 +1740,7 @@ describe('abandoning an interrupted run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => `run-${(ids += 1)}`,
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: ({ runId }) => {
 					released.push(runId);
 					return { outcome: 'released', branch: `gship/cam-20-${runId}` };
@@ -1737,12 +1762,12 @@ describe('abandoning an interrupted run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-20');
+		const run = await runtime.startRun('CAM-20');
 		await started;
 		await runtime.cancelRun(run.id);
 		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
 		// While it is only interrupted it still owns the runtime.
-		expect(() => runtime.startRun('CAM-21')).toThrow('is still interrupted');
+		await expect(runtime.startRun('CAM-21')).rejects.toThrow('is still interrupted');
 
 		const abandoned = runtime.abandonRun(run.id);
 
@@ -1760,7 +1785,7 @@ describe('abandoning an interrupted run', () => {
 			'workspace.released',
 		]);
 
-		const next = runtime.startRun('CAM-21');
+		const next = await runtime.startRun('CAM-21');
 		await waitFor(() => runtime.getRun(next.id)?.state === 'ready-to-ship');
 		await runtime.stop();
 		runtime.close();
@@ -1781,7 +1806,7 @@ describe('abandoning an interrupted run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-abandon-clean',
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: ({ runId, requireUpstream }) => {
 					releaseCalls.push({ runId, requireUpstream });
 					return { outcome: 'released', branch: 'gship/cam-33-run-abandon-clean' };
@@ -1801,7 +1826,7 @@ describe('abandoning an interrupted run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-33');
+		const run = await runtime.startRun('CAM-33');
 		await started;
 		await runtime.cancelRun(run.id);
 
@@ -1822,7 +1847,7 @@ describe('abandoning an interrupted run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-abandon-ahead',
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: () => ({
 					outcome: 'preserved',
 					branch: 'gship/cam-34-run-abandon-ahead',
@@ -1850,7 +1875,7 @@ describe('abandoning an interrupted run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-34');
+		const run = await runtime.startRun('CAM-34');
 		await started;
 		await runtime.cancelRun(run.id);
 
@@ -1883,7 +1908,7 @@ describe('abandoning an interrupted run', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-dirty',
 			workspace: {
-				prepare: () => '/workspaces/run-dirty',
+				prepare: async () => '/workspaces/run-dirty',
 				release: () => ({
 					outcome: 'preserved',
 					branch: 'gship/cam-22-run-dirt',
@@ -1911,7 +1936,7 @@ describe('abandoning an interrupted run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-22');
+		const run = await runtime.startRun('CAM-22');
 		await started;
 		await runtime.cancelRun(run.id);
 
@@ -1944,7 +1969,7 @@ describe('abandoning an interrupted run', () => {
 			},
 			verifier: { verify: async () => ({ ok: true }) },
 		});
-		const run = runtime.startRun('CAM-23');
+		const run = await runtime.startRun('CAM-23');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(() => runtime.abandonRun(run.id)).toThrow('cannot be abandoned from state waiting-user');
@@ -1972,7 +1997,7 @@ describe('releasing a failed run workspace', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-failed-clean',
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: ({ runId, requireUpstream }) => {
 					releaseCalls.push({ runId, requireUpstream });
 					return { outcome: 'released', branch: 'gship/cam-30-run-failed-clean' };
@@ -1981,7 +2006,7 @@ describe('releasing a failed run workspace', () => {
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: false, detail: 'lint failed' }) },
 		});
-		const run = runtime.startRun('CAM-30');
+		const run = await runtime.startRun('CAM-30');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		expect(releaseCalls).toEqual([{ runId: 'run-failed-clean', requireUpstream: true }]);
@@ -2005,7 +2030,7 @@ describe('releasing a failed run workspace', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-failed-ahead',
 			workspace: {
-				prepare: ({ runId }) => `/workspaces/${runId}`,
+				prepare: async ({ runId }) => `/workspaces/${runId}`,
 				release: () => ({
 					outcome: 'preserved',
 					branch: 'gship/cam-31-run-failed-ahead',
@@ -2022,7 +2047,7 @@ describe('releasing a failed run workspace', () => {
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: false, detail: 'tests failed' }) },
 		});
-		const run = runtime.startRun('CAM-31');
+		const run = await runtime.startRun('CAM-31');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		expect(runtime.listRunEvents(run.id).at(-1)).toMatchObject({
@@ -2070,7 +2095,7 @@ describe('releasing a failed run workspace', () => {
 			store,
 			now: () => '2026-08-17T10:01:00Z',
 			workspace: {
-				prepare: () => '/unused',
+				prepare: async () => '/unused',
 				release: ({ runId, requireUpstream }) => {
 					releaseCalls.push({ runId, requireUpstream });
 					return { outcome: 'released', branch: 'gship/cam-32-run-failed-reconcile' };
@@ -2130,7 +2155,7 @@ describe('releasing a failed run workspace', () => {
 			},
 		});
 
-		const run = runtime.startRun('CAM-70');
+		const run = await runtime.startRun('CAM-70');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(runtime.getRun(run.id)).toMatchObject({ fixRounds: 1 });
@@ -2171,7 +2196,7 @@ describe('releasing a failed run workspace', () => {
 			},
 		});
 
-		const run = runtime.startRun('CAM-71');
+		const run = await runtime.startRun('CAM-71');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
 		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
@@ -2227,7 +2252,7 @@ describe('retrying a failed remote branch delete', () => {
 			cwd: '/project',
 			store,
 			workspace: {
-				prepare: () => '/unused',
+				prepare: async () => '/unused',
 				release: ({ runId, retryRemoteDelete }) => {
 					releaseCalls.push({ runId, retryRemoteDelete });
 					return { outcome: 'already-released', branch: 'gship/cam-35-run-remote-pending' };
@@ -2258,7 +2283,7 @@ describe('retrying a failed remote branch delete', () => {
 			cwd: '/project',
 			store,
 			workspace: {
-				prepare: () => '/unused',
+				prepare: async () => '/unused',
 				release: ({ runId, retryRemoteDelete }) => {
 					releaseCalls.push({ runId, retryRemoteDelete });
 					return { outcome: 'already-released', branch: 'gship/cam-36-run-remote-clean' };
@@ -2292,7 +2317,7 @@ describe('run event class', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 		});
 
-		const started = runtime.startRun('CAM-80');
+		const started = await runtime.startRun('CAM-80');
 		await waitFor(() => runtime.getRun(started.id)?.state === 'ready-to-ship');
 
 		const live = runtime.listRunEvents(started.id)
@@ -2474,7 +2499,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 			} },
 		});
 
-		const run = runtime.startRun('GSHIP-675');
+		const run = await runtime.startRun('GSHIP-675');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect({ executions, verifications, reviews }).toEqual({ executions: 3, verifications: 3, reviews: 3 });
 		const events = runtime.listRunDecisionEvents(run.id);
@@ -2509,7 +2534,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 				usage: CYCLE_AUDIT_USAGE,
 			}) },
 		});
-		const run = runtime.startRun('GSHIP-675');
+		const run = await runtime.startRun('GSHIP-675');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		expect(runtime.getRun(run.id)?.summary).toBe('Choose whether archived runs remain visible.');
 		expect(runtime.listRunDecisionEvents(run.id).findLast((event) => event.kind === 'run.cycle-response')?.payload)
@@ -2542,7 +2567,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 				return { outcome: 'continue', guidance: 'Apply the bounded correction.', usage: CYCLE_AUDIT_USAGE };
 			} },
 		});
-		const run = runtime.startRun('GSHIP-675');
+		const run = await runtime.startRun('GSHIP-675');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'review', kind: 'usage-limit' });
 		runtime.resumeRun(run.id);
@@ -2576,7 +2601,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 				return { outcome: 'continue', guidance: 'Apply the full verify correction.', usage: CYCLE_AUDIT_USAGE };
 			} },
 		});
-		const run = runtime.startRun('GSHIP-732');
+		const run = await runtime.startRun('GSHIP-732');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
 		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'full-verify', kind: 'usage-limit' });
 		runtime.resumeRun(run.id);
@@ -2782,7 +2807,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 				return { outcome: 'continue', guidance: `bounded fix ${resolutions}`, usage: CYCLE_AUDIT_USAGE };
 			} },
 		});
-		const run = runtime.startRun('GSHIP-675');
+		const run = await runtime.startRun('GSHIP-675');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		expect(resolutions).toBe(3);
 		const responses = runtime.listRunDecisionEvents(run.id).filter((event) =>
@@ -2813,7 +2838,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 				outcome: 'continue', guidance: '   ', usage: CYCLE_AUDIT_USAGE,
 			}) },
 		});
-		const invalidRun = invalid.startRun('GSHIP-675');
+		const invalidRun = await invalid.startRun('GSHIP-675');
 		await waitFor(() => invalid.getRun(invalidRun.id)?.state === 'waiting-user');
 		expect(invalid.listRunDecisionEvents(invalidRun.id)
 			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(0);
@@ -2863,7 +2888,7 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 			},
 		});
 
-		const run = runtime.startRun('CAM-90');
+		const run = await runtime.startRun('CAM-90');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		runtime.resumeRun(run.id, 'Ratify the smaller seam.');
@@ -2956,7 +2981,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 
 	test('a done run does not chain while the switch stays off', async () => {
 		const runtime = createChainableRuntime(() => [admissibleIssue('GSHIP-2')]);
-		const run = runtime.startRun('GSHIP-1');
+		const run = await runtime.startRun('GSHIP-1');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
 
 		expect(runtime.listRuns().map((r) => r.issueId)).toEqual(['GSHIP-1']);
@@ -2978,7 +3003,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		});
 		runtime.setChainRuns(true);
 
-		const run = runtime.startRun('GSHIP-1');
+		const run = await runtime.startRun('GSHIP-1');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		expect(runtime.listRuns().map((r) => r.issueId)).toEqual(['GSHIP-1']);
@@ -3002,7 +3027,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		});
 		runtime.setChainRuns(true);
 
-		const run = runtime.startRun('GSHIP-1');
+		const run = await runtime.startRun('GSHIP-1');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 
 		const pause = runtime.getChainPause();
@@ -3033,7 +3058,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		// The switch stays off, so #attemptChain never itself reaches the
 		// backlog read; only the later getChainPause() call below does.
 
-		const run = runtime.startRun('GSHIP-1');
+		const run = await runtime.startRun('GSHIP-1');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
 
 		const pause = runtime.getChainPause();
@@ -3056,7 +3081,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			listBacklog: () => [admissibleIssue('GSHIP-2')],
 		});
 
-		const run = runtime.startRun('GSHIP-1');
+		const run = await runtime.startRun('GSHIP-1');
 		await waitFor(() => store.getRun(run.id)?.state === 'done');
 		store.hideRun(run.id);
 
@@ -3099,7 +3124,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		});
 		runtime.setChainRuns(true);
 
-		const first = runtime.startRun('GSHIP-1');
+		const first = await runtime.startRun('GSHIP-1');
 		await waitFor(() => runtime.getRun(first.id)?.state === 'done');
 		await waitFor(() => runtime.getChainPause() !== null);
 

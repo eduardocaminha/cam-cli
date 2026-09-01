@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-759",
   "title": "Manter o controle responsivo durante a preparação do workspace",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T19:17:07.013Z",
-  "updatedAt": "2026-09-01T19:17:07.013Z",
+  "updatedAt": "2026-09-01T19:37:29.309Z",
   "description": "Problema medido: em uma run real do projeto Reporter, o comando de preparação npm ci levou cerca de 2m20 e bloqueou todas as respostas HTTP do processo porque GitWorkspaceManager usa spawnSync. Tornar somente os comandos de preparação assíncronos e propagar esse contrato por RuntimeWorkspace e RunRuntime, sem adicionar estado durável ou subsistema. O pedido de start pode aguardar a preparação, mas o event loop e as demais rotas devem continuar responsivos. Preservar a criação da run apenas após preparação bem-sucedida, o rollback atual quando a preparação falha e o isolamento serial por projeto. Adicionar uma reserva de admissão em memória durante a preparação para que um segundo start seja recusado; liberar a reserva em sucesso ou falha. Atualizar os chamadores web, orquestrador e chain para aguardar startRun sem alterar o significado dos estados existentes. Limitar a saída capturada dos comandos de preparação conforme os limites já usados pelo runtime. Critérios: uma preparação lenta não bloqueia uma consulta de status; falha não persiste run e desfaz o workspace; start concorrente recebe conflito; chain continua iniciando a próxima issue; projetos sem prepare e o fallback legado mantêm o comportamento. Não criar fila nova, worker, estado preparing ou dependência.",
   "specSource": "operator",
   "spec": {

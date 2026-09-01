@@ -183,7 +183,7 @@ describe('orchestrator web API', () => {
 		});
 		const created: Array<{ input: unknown; options: unknown }> = [];
 		const started: string[] = [];
-		runtime.startRun = (issueId: string) => {
+		runtime.startRun = async (issueId: string) => {
 			started.push(issueId);
 			return { ...RUN_FIXTURE, issueId };
 		};
