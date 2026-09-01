@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-01, against the `v0.379.0` tag.
+> Updated: 2026-09-01, against the `v0.380.0` tag.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -66,6 +66,29 @@ Expiry reaps the process group and becomes a typed transport hold, preserving
 the run workspace and provider session without inventing a reset time or
 switching executors.
 
+The first real external run then shipped Reporter issue #58 through PR #298.
+Its project-owned preparation, executable premise, focused verification,
+independent review, one autonomous fix round, three-command full verification,
+PR, merge, and Vercel deployment all completed without operator intervention.
+The run took 8 minutes 48 seconds and reported USD 2.7158543 of known Claude
+cost. The review caught a false concurrency test that passed sequentially and
+the executor replaced it with an interleaved test that demonstrably fails when
+the lock is removed.
+
+That run also exposed two onboarding boundaries that are now product evidence,
+not speculation. Operator issue intake writes control metadata directly to
+remote main, so a repository that requires pull requests rejects the intake
+before a run can start. Reporter required a temporary metadata PR recovery;
+weakening branch protection is not an acceptable default. Shipping also
+depends on the repository admitting Gateship's merge strategy, but readiness
+does not report whether auto-merge is available. Protected-ref-compatible
+intake and typed ship readiness therefore precede more diagnostic breadth.
+
+Operator-facing executor summaries and reconciliation were correctly emitted
+in Portuguese. Raw provider activity remained in English. Preserve raw output
+as audit evidence; do not claim that the whole event stream is localized until
+the UI distinguishes provider-native activity from operator-facing prose.
+
 ## Multiproject state and its limits
 
 A global `GATESHIP_HOME` holds a durable, automatically reconciled project
@@ -101,6 +124,11 @@ fix rounds, 16 internal questions, and 17 of 19 runs without operator
 intervention. GSHIP-733 to GSHIP-741 had zero operator intervention and resolved
 10 internal questions. The first GSHIP-741 attempt failed typecheck; a new run
 shipped without intervention.
+
+Reporter is the first external-project evidence point: one shipped run, one
+autonomous fix round, zero attention requests, zero operator interventions,
+USD 2.7158543 known cost, full project verification clean, and Vercel green.
+Keep it as one observation, not a benchmark or threshold.
 
 Use the tag, commit graph, and the running service's `/api/snapshot` as factual
 evidence for an installed version. Git history and GitHub Releases own older
@@ -158,9 +186,12 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-1. Typed diagnostic and measurement adapters.
-2. External validation of onboarding.
-3. Only then, a soft ratchet or statistical policy.
+1. Make issue intake compatible with a protected main without weakening the
+   repository, and report merge capability as typed project readiness.
+2. Add typed diagnostic and measurement adapters.
+3. Validate another external project only when it adds a new stack or hosting
+   boundary; Reporter already closes the generic external-onboarding proof.
+4. Only then, consider a soft ratchet or statistical policy.
 
 Accumulating comparable revision-tagged terminal runs stays ahead of every
 threshold, cohort rule, and self-tuning behaviour in this list. Do not invent a
