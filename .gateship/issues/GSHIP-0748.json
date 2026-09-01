@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T00:59:16.570Z",
-  "updatedAt": "2026-09-01T12:34:07.885Z",
+  "updatedAt": "2026-09-01T12:52:29.796Z",
   "description": "Corrigir a primeira falha observada no onboarding real do Reporter. Antes de qualquer contexto de projeto criar runtime.sqlite ou outro estado em um stateDir igual a <projectRoot>/.gship, o runtime deve tornar esse diretório autoignorado por Git com um .gship/.gitignore contendo um catch-all. A operação deve ser idempotente, não deve alterar o .gitignore rastreado, índice, branch, refs ou arquivos do produto e não deve esconder o contrato rastreável .gateship/project.json, que é outro diretório. Preserve conteúdo preexistente do .gship/.gitignore e acrescente apenas o necessário quando ainda não houver um catch-all. Registrar sozinho continua sem criar stateDir; a proteção acontece imediatamente antes da primeira escrita de estado. Adicione testes com um repositório Git real sem regra .gship, comprovando que criar e reabrir o contexto produz runtime.sqlite mas mantém git status --porcelain vazio. Atualize HANDOFF.md com a evidência do Reporter e mantenha fora do escopo migração de estado, alteração de .git/info/exclude, UI e qualquer mudança no Reporter.",
   "specSource": "operator",
   "spec": {
@@ -19,5 +19,9 @@
         "output": "1"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "94790a169c1ff9938a9b4a66cd13d15fbeef37b3d8b65187d76cceebf678baf2",
+    "approvedAt": "2026-09-01T12:52:29.796Z"
   }
 }
