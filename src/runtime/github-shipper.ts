@@ -211,6 +211,35 @@ export interface GithubShipperOptions {
 	ensureIdentity?: () => GitIdentityResult;
 }
 
+/**
+ * A pull request whose commit was already built and pushed by another
+ * deterministic runtime boundary. Intake uses this to take the exact same
+ * readiness, CI, head-divergence, timeout and merge-confirmation path as a
+ * run ship, without giving that boundary a second monitor of its own.
+ */
+export interface GithubPullRequestInput {
+	/** Correlates lifecycle events; intake supplies its deterministic control branch. */
+	runId: string;
+	/** Present for the shared runtime shape; PR monitoring itself does not inspect it. */
+	evidence: RuntimeShipInput['evidence'];
+	cwd: string;
+	issueId: string;
+	title: string;
+	branch: string;
+	headSha: string;
+	verificationCommands: readonly string[];
+	signal: AbortSignal;
+	emit: RuntimeShipInput['emit'];
+	initialCiStatus: RuntimeShipInput['initialCiStatus'];
+	/** Delete the deterministic control branch once its exact head is merged. */
+	deleteBranch?: boolean;
+}
+
+/** Minimal seam used by intake; the production implementation is GithubShipper. */
+export interface GithubPullRequestMerger {
+	mergePullRequest: (input: GithubPullRequestInput) => Promise<RuntimeShipResult>;
+}
+
 interface WorkspaceIssue {
 	title: string;
 	/** True when this attempt is the one that wrote stage:'shipped'. */
@@ -505,6 +534,20 @@ export class GithubShipper implements RuntimeShipper {
 		}
 	}
 
+	/**
+	 * Complete an already-pushed pull request through the shipper's single
+	 * monitored lifecycle. This is deliberately public only at the typed
+	 * boundary: callers cannot bypass the pinned head or invent another poll.
+	 */
+	async mergePullRequest(input: GithubPullRequestInput): Promise<RuntimeShipResult> {
+		try {
+			return await this.#completePullRequest(input);
+		} catch (error) {
+			if (input.signal.aborted) throw error;
+			return { outcome: 'failed', detail: errorMessage(error) };
+		}
+	}
+
 	async #ship(input: RuntimeShipInput): Promise<RuntimeShipResult> {
 		const branch = await this.#checked(input, 'git', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		if (branch === 'main' || branch === 'HEAD') {
@@ -536,26 +579,45 @@ export class GithubShipper implements RuntimeShipper {
 		const headSha = await this.#checked(input, 'git', ['rev-parse', 'HEAD']);
 		input.emit('ship.pushed', { branch, headSha });
 
+		return await this.#completePullRequest({
+			runId: input.runId,
+			evidence: input.evidence,
+			cwd: input.cwd,
+			issueId: input.issueId,
+			title: issue.title,
+			branch,
+			headSha,
+			verificationCommands: issue.verificationCommands,
+			signal: input.signal,
+			emit: input.emit,
+			initialCiStatus: input.initialCiStatus,
+		});
+	}
+
+	async #completePullRequest(input: GithubPullRequestInput): Promise<RuntimeShipResult> {
 		const pullRequest = await this.#resolvePullRequest(
 			input,
-			branch,
-			issue.title,
-			headSha,
-			issue.verificationCommands,
+			input.branch,
+			input.title,
+			input.headSha,
+			input.verificationCommands,
 		);
-		const settled = await this.#settledPullRequest(input, pullRequest, headSha);
+		const settled = await this.#settledPullRequest(input, pullRequest, input.headSha);
 		if (settled !== null) return settled;
 
 		const prNumber = pullRequest.number;
 		await this.#checked(
 			input,
 			'gh',
-			['pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', headSha],
+			[
+				'pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', input.headSha,
+				...(input.deleteBranch === true ? ['--delete-branch'] : []),
+			],
 			{ retryIdempotent: true },
 		);
-		input.emit('ship.automerge-armed', { prNumber, headSha });
+		input.emit('ship.automerge-armed', { prNumber, headSha: input.headSha });
 
-		return await this.#awaitMerge(input, prNumber, branch, headSha);
+		return await this.#awaitMerge(input, prNumber, input.branch, input.headSha);
 	}
 
 	/**

@@ -387,6 +387,51 @@ function disarmCalls(calls: RecordedCall[]): RecordedCall[] {
 }
 
 describe('the GitHub shipper', () => {
+	test('monitors an intake control PR through the same pinned-head lifecycle and deletes it after merge', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo();
+		const calls: RecordedCall[] = [];
+		const shipper = new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 });
+
+		const merged = await shipper.mergePullRequest({
+			runId: 'intake-CAM-579',
+			evidence: { workflowRevision: 'intake', review: 'not-applicable', fullVerification: 'not-applicable' },
+			cwd,
+			issueId: 'CAM-579',
+			title: 'intake control',
+			branch: 'gship/intake/cam-579',
+			headSha: HEAD_SHA,
+			verificationCommands: ['true'],
+			signal: new AbortController().signal,
+			emit: () => {},
+			initialCiStatus: 'not-reported',
+			deleteBranch: true,
+		});
+
+		expect(merged).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.commits).toBe(0);
+		expect(repo.pushes).toBe(0);
+		expect(repo.prCreates).toBe(1);
+		expect(armCalls(calls)[0]?.args).toContain('--match-head-commit');
+		expect(armCalls(calls)[0]?.args).toContain(HEAD_SHA);
+		expect(armCalls(calls)[0]?.args).toContain('--delete-branch');
+	});
+
+	test('refuses an intake PR merged with a head other than the published one', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ prNumber: 385, prState: 'MERGED', prHeadRefOid: FOREIGN_SHA });
+		const shipper = new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 });
+		const result = await shipper.mergePullRequest({
+			runId: 'intake-CAM-579',
+			evidence: { workflowRevision: 'intake', review: 'not-applicable', fullVerification: 'not-applicable' },
+			cwd, issueId: 'CAM-579', title: 'intake control', branch: 'gship/intake/cam-579',
+			headSha: HEAD_SHA, verificationCommands: ['true'], signal: new AbortController().signal,
+			emit: () => {}, initialCiStatus: 'not-reported', deleteBranch: true,
+		});
+		expect(result).toMatchObject({ outcome: 'failed' });
+		expect((result as { detail: string }).detail).toContain('never verified');
+	});
+
 	test('closes the issue in the worktree, commits, pushes and arms a pinned auto-merge', async () => {
 		const cwd = createWorkspace();
 		const repo = createRepo();

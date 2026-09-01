@@ -21,6 +21,7 @@ import {
 	VERIFICATION_COMMAND_TIMEOUT_MS,
 } from './git-runtime.ts';
 import { ensureGitIdentity, type GitIdentityResult } from './git-identity.ts';
+import { GithubShipper, type GithubPullRequestMerger } from './github-shipper.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 const MAX_PUBLISH_ATTEMPTS = 3;
@@ -28,6 +29,8 @@ export interface IssueEvidenceExecutionOptions {
 	evidenceTimeoutMs?: number;
 	runCommand?: VerificationCommandRunner;
 	signal?: AbortSignal;
+	/** The shared pull-request lifecycle, injectable only for deterministic tests. */
+	shipper?: GithubPullRequestMerger;
 }
 
 export interface OperatorSpecInput {
@@ -307,12 +310,68 @@ function isPushRace(stderr: string): boolean {
 	return /non-fast-forward|fetch first/i.test(stderr);
 }
 
+/**
+ * This is intentionally narrower than a failed push. Only GitHub's explicit
+ * protected-ref / pull-request refusal may take the intake PR path; an auth,
+ * transport, hook or ordinary rejected push remains fail-closed.
+ */
+function requiresPullRequest(stderr: string): boolean {
+	return /(?:protected (?:branch|ref)|branch protection|GH006: Protected branch update failed|changes must be made through a pull request|pull request (?:is )?required|requires? a pull request)/i
+		.test(stderr);
+}
+
+function intakeControlBranch(issueId: string, headSha: string): string {
+	return `gship/intake/${issueId.toLowerCase()}-${headSha.slice(0, 12)}`;
+}
+
+async function publishProtectedEntry(
+	worktree: string,
+	entry: IssueEntry,
+	sha: string,
+	options: IssueEvidenceExecutionOptions,
+): Promise<{ kind: 'published'; issue: CreatedOperatorIssue }> {
+	// The head suffix makes the branch stable for a retry of this exact write,
+	// while a later specify/approve/abandon commit for the same issue cannot
+	// accidentally reuse the already-merged pull request from an earlier head.
+	const branch = intakeControlBranch(entry.id, sha);
+	const controlPushed = git(worktree, [
+		'push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`,
+	]);
+	if (controlPushed.exitCode !== 0) {
+		throw commandFailure('Could not publish the protected intake branch', controlPushed.stderr);
+	}
+	const merged = await (options.shipper ?? new GithubShipper()).mergePullRequest({
+		runId: `intake-${entry.id}`,
+		evidence: { workflowRevision: 'intake', review: 'not-applicable', fullVerification: 'not-applicable' },
+		cwd: worktree,
+		issueId: entry.id,
+		title: entry.title,
+		branch,
+		headSha: sha,
+		verificationCommands: entry.spec?.verify ?? [],
+		signal: options.signal ?? new AbortController().signal,
+		emit: () => {},
+		initialCiStatus: 'not-reported',
+		deleteBranch: true,
+	});
+	if (merged.outcome === 'merged') {
+		return { kind: 'published', issue: { id: entry.id, title: entry.title, sha } };
+	}
+	throw commandFailure(
+		'Could not merge the protected intake pull request',
+		merged.outcome === 'ci-failed'
+			? `required check failed: ${merged.evidence.check.name}`
+			: merged.detail,
+	);
+}
+
 async function publishEntryAttempt(
 	cwd: string,
 	sourceSha: string,
 	buildEntry: (worktree: string) => Promise<IssueEntry>,
 	commitMessage: string,
 	ensureIdentity: () => GitIdentityResult,
+	options: IssueEvidenceExecutionOptions,
 ): Promise<{ kind: 'published'; issue: CreatedOperatorIssue } | { kind: 'retry' }> {
 	// Right before the first write this attempt makes, not merely displayed
 	// (GSHIP-654): a missing identity fails clearly here, before any worktree
@@ -349,6 +408,9 @@ async function publishEntryAttempt(
 			return { kind: 'published', issue: { id: entry.id, title: entry.title, sha } };
 		}
 		if (isPushRace(pushed.stderr)) return { kind: 'retry' };
+		if (requiresPullRequest(pushed.stderr)) {
+			return await publishProtectedEntry(worktree, entry, sha, options);
+		}
 		throw commandFailure('Could not publish the issue', pushed.stderr);
 	} finally {
 		git(cwd, ['worktree', 'remove', '--force', worktree]);
@@ -399,6 +461,7 @@ export async function createOperatorIssue(
 			),
 			`chore(gship): file ${id}`,
 			ensureIdentity,
+			options,
 		);
 		if (result.kind === 'published') {
 			// The push is already durable. A transient second fetch must not turn
@@ -459,6 +522,7 @@ export async function specifyOperatorIssue(
 			},
 			`chore(gship): specify ${issueId}`,
 			ensureIdentity,
+			options,
 		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);
@@ -479,6 +543,7 @@ export async function approveOperatorIssue(
 	id: string,
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
+	options: Pick<IssueEvidenceExecutionOptions, 'signal' | 'shipper'> = {},
 ): Promise<CreatedOperatorIssue> {
 	const issueId = requiredString(id, 'Issue');
 	const approvedAt = now();
@@ -516,6 +581,7 @@ export async function approveOperatorIssue(
 			async () => approved,
 			`chore(gship): approve ${issueId}`,
 			ensureIdentity,
+			options,
 		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);
@@ -540,6 +606,7 @@ export async function abandonOperatorIssue(
 	rawInput: unknown,
 	now: () => string = () => new Date().toISOString(),
 	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
+	options: Pick<IssueEvidenceExecutionOptions, 'signal' | 'shipper'> = {},
 ): Promise<CreatedOperatorIssue> {
 	const issueId = requiredString(id, 'Issue');
 	const input = parseOperatorAbandonInput(rawInput);
@@ -571,6 +638,7 @@ export async function abandonOperatorIssue(
 			async () => abandoned,
 			`chore(gship): abandon ${issueId}`,
 			ensureIdentity,
+			options,
 		);
 		if (result.kind === 'published') {
 			fetchRuntimeSource(defaultRunGit, cwd);

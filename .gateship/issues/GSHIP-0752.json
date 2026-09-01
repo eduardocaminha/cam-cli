@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-752",
   "title": "Intake compatível com main protegida sem bypass",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-01T16:04:32.087Z",
-  "updatedAt": "2026-09-01T16:04:49.887Z",
+  "updatedAt": "2026-09-01T17:24:52.000Z",
   "description": "Preservar o ledger versionado em .gateship/issues e o fast path atual de push direto. Quando, e somente quando, o remoto rejeitar explicitamente a atualização da main por exigir pull request ou regra de proteção equivalente, publicar o commit de intake já construído em uma branch de controle determinística, abrir ou reutilizar um PR contendo apenas o arquivo da issue e concluir a operação somente após confirmar que exatamente aquele head foi mergeado e origin/main foi atualizado. Reutilizar ou extrair a fronteira tipada de prontidão, CI, divergência de head, timeout e confirmação de merge já exercida pelo GithubShipper, sem criar um segundo loop ad hoc. Create, specify, approve e abandon devem herdar o mesmo comportamento. Erros genéricos de push, falha de autenticação e non-fast-forward continuam fail-closed e não acionam o fallback errado. Não usar bypass administrativo, não exigir alteração nas regras do repositório, não migrar o ledger para SQLite e não deixar branch ou worktree temporária órfã. Cobrir fast path inalterado, rejeição por proteção, PR novo e reutilizado, confirmação do head, CI/merge não concluído, erro genérico e limpeza. Atualizar a documentação operacional apenas se o contrato visível mudar.",
   "specSource": "operator",
   "spec": {
