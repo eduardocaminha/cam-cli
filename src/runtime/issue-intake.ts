@@ -319,7 +319,7 @@ function isPushRace(stderr: string): boolean {
  */
 function requiresPullRequest(stderr: string): boolean {
 	return /(?:protected (?:branch|ref)|branch protection|GH006: Protected branch update failed|changes must be made through a pull request|pull request (?:is )?required|requires? a pull request)/i.test(stderr)
-		|| /(?:^|\r?\n)(?:remote:\s*)?BLOCKED: direct push to refs\/heads\/(?:main|master) is not allowed(?:\r?$|\r?\n)/.test(stderr);
+		|| /(?:^|\r?\n)(?:remote:\s*)?BLOCKED: direct push to refs\/heads\/(?:main|master) is not allowed\.?(?:\r?$|\r?\n)/.test(stderr);
 }
 
 function intakeControlBranch(issueId: string, headSha: string): string {

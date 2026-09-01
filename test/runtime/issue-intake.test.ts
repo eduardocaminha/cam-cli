@@ -92,7 +92,8 @@ done
 describe('remote-main operator issue intake', () => {
 	test('uses the shared PR lifecycle for the Reporter protection message across every intake write', async () => {
 		const fixture = seedFixture();
-		blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/main is not allowed');
+		blockDirectPushToMain(fixture.local, `BLOCKED: direct push to refs/heads/main is not allowed.
+Open a PR: gh pr create --base main`);
 		const calls: Array<{ issueId: string; branch: string; headSha: string; deleteBranch?: boolean }> = [];
 		const shipper = {
 			mergePullRequest: async (input: {
@@ -148,22 +149,29 @@ describe('remote-main operator issue intake', () => {
 		}
 	});
 
-	test('uses the PR fallback for the explicit master protection message', async () => {
-		const fixture = seedFixture();
-		blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/master is not allowed');
-		let merged = false;
+	test('uses the PR fallback for the explicit local protection message variants', async () => {
+		for (const rejection of [
+			'BLOCKED: direct push to refs/heads/main is not allowed',
+			'BLOCKED: direct push to refs/heads/master is not allowed',
+			'BLOCKED: direct push to refs/heads/master is not allowed.',
+		]) {
+			const fixture = seedFixture();
+			blockDirectPushToMain(fixture.local, rejection);
+			let merged = false;
 
-		await createOperatorIssue(fixture.local, {
-			title: 'Proteção local', scope: 'A proteção local usa a PR.', verificationCommand: 'true',
-		}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } });
+			await createOperatorIssue(fixture.local, {
+				title: 'Proteção local', scope: 'A proteção local usa a PR.', verificationCommand: 'true',
+			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } });
 
-		expect(merged).toBe(true);
+			expect(merged).toBe(true);
+		}
 	});
 
 	test('does not take the PR fallback for generic blocking, another ref or arbitrary hooks', async () => {
 		for (const rejection of [
 			'BLOCKED: direct push is not allowed',
 			'BLOCKED: direct push to refs/heads/release is not allowed',
+			'BLOCKED: direct push to refs/heads/main is not allowed. Run arbitrary text',
 			'hook refused this push',
 		]) {
 			const fixture = seedFixture();
