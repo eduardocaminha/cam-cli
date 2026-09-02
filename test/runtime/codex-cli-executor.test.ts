@@ -361,6 +361,34 @@ describe('Codex CLI runtime executor', () => {
 		expect(input).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
 	});
 
+	test('uses the shared typed internal guidance contract and preserves the approved issue', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-mode=waiting-user'],
+			loadIssue: () => '{"id":"GSHIP-768"}',
+		});
+		const result = await executor.execute({
+			runId: 'run-768-codex',
+			issueId: 'GSHIP-768',
+			sessionId: 'session-768-codex',
+			resume: true,
+			internalGuidance: {
+				question: 'A decomposição integral amplia escopo?',
+				guidance: 'Continue dentro do contrato aprovado.',
+			},
+			cwd: createTestTmpdir('gship-codex-internal-guidance-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		expect(result).toMatchObject({
+			outcome: 'waiting-user',
+			approvedContract: '{"id":"GSHIP-768"}',
+		});
+		const summary = JSON.parse(result.summary as string) as { input: string };
+		expect(summary.input).toContain('Binding internal guidance:');
+		expect(summary.input).toContain('does not represent a human decision or intervention');
+		expect(summary.input).toContain('Continue dentro do contrato aprovado.');
+	});
+
 	// GSHIP-720: the ephemeral CI diagnosis guidance is role-specific, and both
 	// executors share buildWorkPrompt, so the real Codex child receives it too.
 	test('forwards the CI correction diagnosis guidance into the prompt the real child receives', async () => {

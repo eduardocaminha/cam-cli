@@ -2465,6 +2465,258 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		expect(result.usage).toMatchObject({ model: 'provider-default', effort: 'provider-default' });
 	});
 
+	test('resolves an executor scope question internally and reaches verification without human attention', async () => {
+		const approvedContract = JSON.stringify({
+			id: 'GSHIP-768',
+			spec: { scope: 'Decompor integralmente o seam existente.' },
+		});
+		const question = 'A decomposição integral já exigida pela spec amplia escopo?';
+		const guidance = 'Continue. A decomposição integral já está coberta pela autorização existente.';
+		const executionInputs: Array<{
+			sessionId: string;
+			resume: boolean;
+			internalGuidance: unknown;
+		}> = [];
+		let executions = 0;
+		let verifications = 0;
+		const ids = ['run-executor-question', 'question-executor'];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => ids.shift() ?? 'unexpected-id',
+			newSessionId: () => 'same-native-session',
+			executor: { execute: async (input) => {
+				executions += 1;
+				executionInputs.push({
+					sessionId: input.sessionId,
+					resume: input.resume,
+					internalGuidance: input.internalGuidance,
+				});
+				if (executions === 1) {
+					return { outcome: 'waiting-user', summary: question, approvedContract };
+				}
+				expect(input.internalGuidance).toEqual({ question, guidance });
+				return { outcome: 'completed', summary: 'Implementação concluída.' };
+			} },
+			verifier: { verify: async () => {
+				verifications += 1;
+				return { ok: true };
+			} },
+			cycleQuestionResolver: { resolve: async (input) => {
+				expect(input).toMatchObject({
+					runId: 'run-executor-question',
+					issueId: 'GSHIP-768',
+					workspace: '/project',
+					finding: question,
+					origin: 'executor',
+					approvedContract,
+					priorResponses: [],
+				});
+				return { outcome: 'continue', guidance, usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ executions, verifications }).toEqual({ executions: 2, verifications: 1 });
+		expect(executionInputs).toEqual([
+			{ sessionId: 'same-native-session', resume: false, internalGuidance: undefined },
+			{ sessionId: 'same-native-session', resume: true, internalGuidance: { question, guidance } },
+		]);
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.cycle-question')).toHaveLength(1);
+		expect(events.find((event) => event.kind === 'run.cycle-question')?.payload)
+			.toMatchObject({ questionId: 'question-executor', origin: 'executor', approvedContract });
+		expect(events.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+		expect(events.map((event) => event.kind)).not.toContain('run.waiting-user');
+		expect(events.map((event) => event.kind)).not.toContain('run.operator-guidance');
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 0,
+			operatorInterventions: 0,
+			resolvedCycleQuestions: 1,
+		});
+		expect(runtime.getRunRoundOrigins(run.id).orchestrator).toBe(1);
+	});
+
+	test('lets only an orchestrator operator decision expose an executor question to the human', async () => {
+		const ids = ['run-executor-semantic', 'question-semantic'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session-semantic',
+			executor: { execute: async () => ({
+				outcome: 'waiting-user',
+				summary: 'Arquivados devem permanecer visíveis?',
+				approvedContract: '{"id":"GSHIP-768"}',
+			}) },
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: { resolve: async () => ({
+				outcome: 'operator',
+				reason: 'Escolha se runs arquivadas permanecem visíveis ou são ocultadas.',
+				usage: CYCLE_AUDIT_USAGE,
+			}) },
+		});
+
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(runtime.getRun(run.id)?.summary)
+			.toBe('Escolha se runs arquivadas permanecem visíveis ou são ocultadas.');
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.waiting-user')).toHaveLength(0);
+		expect(events.findLast((event) => event.kind === 'run.cycle-response'))
+			.toMatchObject({ fromState: 'working', toState: 'waiting-user' });
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 1, operatorInterventions: 0, resolvedCycleQuestions: 1,
+		});
+	});
+
+	test('preserves direct executor waiting-user behavior without a cycle resolver', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-no-executor-resolver',
+			newSessionId: () => 'session-no-executor-resolver',
+			executor: { execute: async () => ({ outcome: 'waiting-user', summary: 'Escolha A ou B.' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.waiting-user')).toHaveLength(1);
+		expect(events.filter((event) => event.kind === 'run.cycle-question')).toHaveLength(0);
+		expect(runtime.getRun(run.id)?.summary).toBe('Escolha A ou B.');
+	});
+
+	test('retries the same durable executor question after a resolver provider hold', async () => {
+		const question = 'A decomposição coberta amplia escopo?';
+		const approvedContract = '{"id":"GSHIP-768","spec":{"scope":"decompor"}}';
+		let executions = 0;
+		let resolutions = 0;
+		const ids = ['run-executor-hold', 'question-executor-hold'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session-executor-hold',
+			executor: { execute: async (input) => {
+				executions += 1;
+				if (executions === 1) return { outcome: 'waiting-user', summary: question, approvedContract };
+				expect(input.internalGuidance?.guidance).toBe('Continue dentro do contrato.');
+				return { outcome: 'completed', summary: 'concluído' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: { resolve: async (input) => {
+				resolutions += 1;
+				expect(input).toMatchObject({
+					origin: 'executor', finding: question, approvedContract,
+				});
+				if (resolutions === 1) {
+					throw new ProviderCallError('claude', 'usage-limit', 'Subscription window exhausted.');
+				}
+				return { outcome: 'continue', guidance: 'Continue dentro do contrato.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(runtime.getRunProviderWait(run.id)).toMatchObject({ phase: 'working', kind: 'usage-limit' });
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ executions, resolutions }).toEqual({ executions: 2, resolutions: 2 });
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.cycle-question')).toHaveLength(1);
+		expect(events.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+	});
+
+	test('replays durable executor guidance once after restart before work completion', async () => {
+		const dbPath = join(createTestTmpdir('gship-executor-question-restart-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.createRun({
+			id: 'run-executor-restart', issueId: 'GSHIP-768', sessionId: 'session-executor-restart',
+			workspacePath: '/project', createdAt: '2026-09-01T12:00:00.000Z',
+		});
+		store.transition({
+			runId: 'run-executor-restart', toState: 'working', kind: 'run.started',
+			createdAt: '2026-09-01T12:00:01.000Z',
+		});
+		store.appendEvent({
+			runId: 'run-executor-restart', kind: 'run.cycle-question',
+			createdAt: '2026-09-01T12:00:02.000Z',
+			payload: {
+				questionId: 'question-executor-restart', finding: 'A decomposição amplia escopo?',
+				origin: 'executor', approvedContract: '{"id":"GSHIP-768"}',
+			},
+		});
+		store.appendEvent({
+			runId: 'run-executor-restart', kind: 'run.cycle-response',
+			createdAt: '2026-09-01T12:00:03.000Z',
+			payload: {
+				questionId: 'question-executor-restart', responder: 'orchestrator', source: 'internal',
+				outcome: 'continue', guidance: 'Continue dentro do contrato.',
+				findings: 'A decomposição amplia escopo?', origin: 'executor',
+				provider: 'claude', model: 'opus', effort: 'high', latencyMs: 5,
+			},
+		});
+		store.close();
+
+		const inputs: Array<{ resume: boolean; internalGuidance: unknown }> = [];
+		let resolutions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath),
+			executor: { execute: async (input) => {
+				inputs.push({ resume: input.resume, internalGuidance: input.internalGuidance });
+				return { outcome: 'completed', summary: 'recuperado' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				return { outcome: 'continue', guidance: 'não deve rodar', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		expect(runtime.getRun('run-executor-restart')?.state).toBe('interrupted');
+		runtime.resumeRun('run-executor-restart');
+		await waitFor(() => runtime.getRun('run-executor-restart')?.state === 'ready-to-ship');
+		expect(inputs).toEqual([{
+			resume: true,
+			internalGuidance: {
+				question: 'A decomposição amplia escopo?',
+				guidance: 'Continue dentro do contrato.',
+			},
+		}]);
+		expect(resolutions).toBe(0);
+		expect(runtime.listRunDecisionEvents('run-executor-restart')
+			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+	});
+
+	test('does not loop when an executor repeats a question after internal guidance', async () => {
+		let executions = 0;
+		let resolutions = 0;
+		const ids = ['run-executor-repeat', 'question-executor-1', 'question-executor-2'];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => ids.shift() ?? 'id',
+			newSessionId: () => 'session-executor-repeat',
+			executor: { execute: async () => {
+				executions += 1;
+				return {
+					outcome: 'waiting-user',
+					summary: 'A decomposição coberta amplia escopo?',
+					approvedContract: '{"id":"GSHIP-768"}',
+				};
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				return { outcome: 'continue', guidance: 'Continue.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect({ executions, resolutions }).toEqual({ executions: 2, resolutions: 2 });
+		expect(runtime.getRun(run.id)?.error)
+			.toBe('Cycle question resolver returned continue for a repeated executor question.');
+		expect(runtime.listRunDecisionEvents(run.id)
+			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
+			attentionRequests: 0, operatorInterventions: 0, resolvedCycleQuestions: 1,
+		});
+	});
+
 	test('a no-change answer is linked, attributed and followed by fresh verification and review', async () => {
 		const store = new RunStore(':memory:');
 		let executions = 0;

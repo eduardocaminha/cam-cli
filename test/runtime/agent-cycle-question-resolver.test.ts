@@ -84,9 +84,22 @@ describe('agent cycle question resolver', () => {
 	test('keeps the contract ahead of the finding and the prior responses', () => {
 		const prompt = buildCycleQuestionPrompt(questionInput());
 		expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))
-			.toBeLessThan(prompt.indexOf('Current independent-review finding:'));
-		expect(prompt.indexOf('Current independent-review finding:'))
+			.toBeLessThan(prompt.indexOf('Current cycle question:'));
+		expect(prompt.indexOf('Current cycle question:'))
 			.toBeLessThan(prompt.indexOf('Prior durable cycle responses:'));
+	});
+
+	test('gives an executor question the approved contract and identifies its origin', () => {
+		const approvedContract = '{"id":"GSHIP-768","spec":{"scope":"decompor integralmente"}}';
+		const prompt = buildCycleQuestionPrompt(questionInput({
+			origin: 'executor',
+			approvedContract,
+			finding: 'A decomposição já exigida amplia escopo?',
+		}));
+		expect(prompt).toContain('Approved issue contract:');
+		expect(prompt).toContain(approvedContract);
+		expect(prompt).toContain('Finding origin: executor.');
+		expect(prompt).toContain('A decomposição já exigida amplia escopo?');
 	});
 
 	test('sends each provider the same prompt, as a fresh read-only turn', async () => {
