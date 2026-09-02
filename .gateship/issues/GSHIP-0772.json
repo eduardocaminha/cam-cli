@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-772",
+  "title": "Diferenciar o seletor e completar a navegação da conversa",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T13:28:56.802Z",
+  "updatedAt": "2026-09-02T13:28:56.802Z",
+  "description": "Refinar somente a navegação lateral e a conversa web. O seletor de projeto deve usar sempre o glifo de projeto, inclusive no estado vazio, para não duplicar semanticamente o ícone de Overview. Na conversa desktop, preservar o histórico como viewport limitado, o compositor persistente e o comportamento atual de acompanhar novas mensagens apenas enquanto o operador está no fim. Quando o operador sair do fim, exibir um controle discreto e acessível para retornar à mensagem mais recente; ao acioná-lo, rolar ao fim e reativar o acompanhamento. Não exibir o controle quando não houver rolagem ou quando o operador já estiver no fim. No móvel, manter uma única rolagem de página e não introduzir controle enganoso sobre um transcript que não rola independentemente. Reutilizar Button, ícones, locale e useLiveEdge existentes. Não adicionar dependências, rotas, animações, estado persistente nem alterar o domínio da conversa.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Refinar somente a navegação lateral e a conversa web. O seletor de projeto deve usar sempre o glifo de projeto, inclusive no estado vazio, para não duplicar semanticamente o ícone de Overview. Na conversa desktop, preservar o histórico como viewport limitado, o compositor persistente e o comportamento atual de acompanhar novas mensagens apenas enquanto o operador está no fim. Quando o operador sair do fim, exibir um controle discreto e acessível para retornar à mensagem mais recente; ao acioná-lo, rolar ao fim e reativar o acompanhamento. Não exibir o controle quando não houver rolagem ou quando o operador já estiver no fim. No móvel, manter uma única rolagem de página e não introduzir controle enganoso sobre um transcript que não rola independentemente. Reutilizar Button, ícones, locale e useLiveEdge existentes. Não adicionar dependências, rotas, animações, estado persistente nem alterar o domínio da conversa.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui && git diff --check"
+    ]
+  },
+  "approval": {
+    "fingerprint": "948eb4245daee82192a8a8103f2ebeaa4603b0aed936cc2a137ae4663c16300c",
+    "approvedAt": "2026-09-02T13:28:56.802Z"
+  }
+}
