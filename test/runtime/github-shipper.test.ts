@@ -67,6 +67,10 @@ interface FakeRepo {
 	openMergeState: string;
 	/** Times `gh pr update-branch` has been called. */
 	branchUpdates: number;
+	/** A specific `gh pr update-branch` refusal, if GitHub returns one. */
+	updateBranchFailure: string | null;
+	/** The update mutation loses the branch because auto-merge landed it first. */
+	mergeOnUpdateBranchFailure: boolean;
 	/**
 	 * `gh pr view` calls after a `gh pr update-branch` before its new head
 	 * becomes visible on `prHeadRefOid` (GSHIP-656): 0 means the very first
@@ -135,6 +139,8 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		behindWhileUpdatesBelow: 0,
 		openMergeState: 'BLOCKED',
 		branchUpdates: 0,
+		updateBranchFailure: null,
+		mergeOnUpdateBranchFailure: false,
 		branchUpdateDelayViews: 0,
 		pendingHeadSha: null,
 		pendingHeadSinceView: 0,
@@ -237,6 +243,10 @@ function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
 
 function ghUpdateBranch(repo: FakeRepo): CommandResult {
 	repo.branchUpdates += 1;
+	if (repo.updateBranchFailure !== null) {
+		if (repo.mergeOnUpdateBranchFailure) repo.prState = 'MERGED';
+		return result(1, '', repo.updateBranchFailure);
+	}
 	// The new head is not applied here: `gh pr update-branch` only reports
 	// GitHub accepted the request. `ghView` applies it once `branchUpdateDelayViews`
 	// worth of rereads have passed, simulating the asynchronous apply GSHIP-656
@@ -1309,6 +1319,99 @@ describe('the GitHub shipper', () => {
 		expect(findCall(calls, 'git', 'reset')[0]?.args).toEqual(['reset', '--hard', UPDATED_SHAS[0] as string]);
 	});
 
+	test('an auto-merge that lands after CI passes but before update-branch ships once (GSHIP-769)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: 2,
+			statusCheckRollups: [[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }]],
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(0);
+		expect(events.filter((kind) => kind === 'ship.source-synced')).toHaveLength(1);
+		expect(events.filter((kind) => kind === 'ship.merged')).toHaveLength(1);
+	});
+
+	test('a missing-head update refusal stays failed while the same PR remains open (GSHIP-769)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			updateBranchFailure: 'GraphQL: Head ref does not exist (updatePullRequestBranch)',
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const failed = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toEqual({
+			outcome: 'failed',
+			detail: 'gh pr update-branch failed: GraphQL: Head ref does not exist (updatePullRequestBranch)',
+		});
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		expect(events).not.toContain('ship.source-synced');
+		expect(events).not.toContain('ship.merged');
+	});
+
+	test('a missing-head update refusal completes when auto-merge already landed the expected head (GSHIP-769)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+			updateBranchFailure: 'GraphQL: Head ref does not exist (updatePullRequestBranch)',
+			mergeOnUpdateBranchFailure: true,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+		expect(events.filter((kind) => kind === 'ship.source-synced')).toHaveLength(1);
+		expect(events.filter((kind) => kind === 'ship.merged')).toHaveLength(1);
+	});
+
+	test('a PR closed without merge before update-branch keeps the safe refusal (GSHIP-769)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			behindWhileUpdatesBelow: 1,
+			closedOnView: 2,
+			mergedOnView: Number.MAX_SAFE_INTEGER,
+		});
+		const calls: RecordedCall[] = [];
+		const events: string[] = [];
+		const failed = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(failed).toEqual({ outcome: 'failed', detail: 'pull request #385 was closed without merging' });
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(0);
+		expect(disarmCalls(calls)).toHaveLength(1);
+		expect(events).not.toContain('ship.source-synced');
+	});
+
+	test('repeating a ship after the branch was merged only resynchronizes its source (GSHIP-769)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo();
+		const calls: RecordedCall[] = [];
+		const shipper = new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 });
+		const firstEvents: string[] = [];
+		expect(await shipper.ship(createShipInput(cwd, firstEvents, new AbortController().signal)))
+			.toEqual({ outcome: 'merged', prNumber: 385 });
+		const repeatedEvents: string[] = [];
+		expect(await shipper.ship(createShipInput(cwd, repeatedEvents, new AbortController().signal)))
+			.toEqual({ outcome: 'merged', prNumber: 385 });
+
+		expect(repeatedEvents).toEqual(['ship.pushed', 'ship.pr-reused', 'ship.source-synced', 'ship.merged']);
+		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(0);
+		expect(repo.prCreates).toBe(1);
+	});
+
 	test('GitHub staying unavailable while confirming a branch update ends the ship as unconfirmed, not failed (GSHIP-632)', async () => {
 		// The first poll reports BEHIND and `gh pr update-branch` succeeds, but
 		// the follow-up read that would tell this ship what head resulted keeps
@@ -1319,7 +1422,7 @@ describe('the GitHub shipper', () => {
 		const repo = createRepo({
 			behindWhileUpdatesBelow: 1,
 			mergedOnView: 3,
-			viewUnavailableFromView: 2,
+			viewUnavailableFromView: 3,
 		});
 		const calls: RecordedCall[] = [];
 		const events: string[] = [];
@@ -1360,7 +1463,7 @@ describe('the GitHub shipper', () => {
 		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
 		expect(events).not.toContain('ship.head-diverged');
 		expect(events).not.toContain('ship.automerge-disarmed');
-		expect(events.slice(-3)).toEqual(['ship.merge-pending', 'ship.source-synced', 'ship.merged']);
+		expect(events.slice(-3)).toEqual(['ship.branch-updated', 'ship.source-synced', 'ship.merged']);
 		expect(disarmCalls(calls)).toHaveLength(0);
 	});
 
@@ -1371,7 +1474,7 @@ describe('the GitHub shipper', () => {
 		const cwd = createWorkspace();
 		const repo = createRepo({
 			behindWhileUpdatesBelow: 1,
-			headMovedOnView: 3,
+			headMovedOnView: 4,
 			mergedOnView: Number.MAX_SAFE_INTEGER,
 		});
 		const calls: RecordedCall[] = [];
@@ -1458,7 +1561,7 @@ describe('the GitHub shipper', () => {
 		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
 		// Two stale rereads (still the previous head, still BEHIND) before the
 		// third confirms the new one.
-		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(5);
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(6);
 		expect(payloads.get('ship.branch-updated')).toEqual({
 			prNumber: 385,
 			previousHead: HEAD_SHA,
@@ -1514,7 +1617,7 @@ describe('the GitHub shipper', () => {
 		// Two rereads see the previous head under a non-BEHIND status (UNKNOWN)
 		// before the third confirms the new head — a buggy confirm loop would
 		// have stopped, and registered, on the very first of these.
-		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(5);
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(6);
 		expect(payloads.get('ship.branch-updated')).toEqual({
 			prNumber: 385,
 			previousHead: HEAD_SHA,
@@ -1564,7 +1667,7 @@ describe('the GitHub shipper', () => {
 		// unconfirmed result ends the ship.
 		expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
 		// One read right after the update, plus the confirmation attempts.
-		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(4);
+		expect(findCall(calls, 'gh', 'pr', 'view')).toHaveLength(5);
 		// Without a confirmed new head, the worktree is never synced, and
 		// nothing this ship never confirmed producing gets disarmed either —
 		// same as GSHIP-625's unconfirmed ending, a retry may find it landed.
@@ -1583,7 +1686,7 @@ describe('the GitHub shipper', () => {
 			behindWhileUpdatesBelow: 1,
 			mergedOnView: Number.MAX_SAFE_INTEGER,
 			branchUpdateDelayViews: 1,
-			headMovedOnView: 4,
+			headMovedOnView: 5,
 		});
 		const calls: RecordedCall[] = [];
 		const events: string[] = [];
