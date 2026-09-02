@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-768",
+  "title": "Resolver internamente dúvidas do executor antes de pedir o operador",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T00:01:31.832Z",
+  "updatedAt": "2026-09-02T00:01:31.832Z",
+  "description": "GSHIP-767 terminou shipped com attentionRequests=2, operatorInterventions=2 e resolvedCycleQuestions=2 porque o executor pediu ao operador autorização para uma decomposição já exigida pela spec e reiterada pelo orquestrador. Quando um executor retornar waiting-user e houver cycleQuestionResolver configurado, não expor a pergunta diretamente ao operador. Registrar uma pergunta durável com origem executor e entregar ao orquestrador o contrato aprovado, a pergunta, o workspace em modo read-only e as respostas anteriores. Se o orquestrador responder continue, retomar a mesma sessão nativa com um campo tipado de orientação interna, claramente identificado no prompt como vinculante e já coberto pela autorização existente; isso não pode criar run.operator-guidance, operatorIntervention nem decisão atribuída ao humano. Somente uma resposta operator do orquestrador pode transicionar para waiting-user. Sem cycleQuestionResolver, preservar o comportamento atual. Estender os tipos e a recuperação durável para a origem executor: provider hold deve retomar a mesma pergunta, e reinício antes de run.work-completed deve reapresentar a orientação interna exatamente uma vez. A resposta interna deve contar em resolvedCycleQuestions e roundOrigins.orchestrator. Adicionar teste de ponta a ponta no qual o executor pergunta se uma decomposição integral já exigida pela spec amplia escopo, o orquestrador responde continue, o executor conclui e a run chega à verificação sem atenção ou intervenção humana. Cobrir também decisão realmente semântica que chega ao operador, ausência de resolver, provider hold e recuperação após reinício. Claude e Codex compartilham o mesmo contrato. Não criar novo estado, score, aprovação implícita, chamada API paga ou loop ilimitado.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "GSHIP-767 terminou shipped com attentionRequests=2, operatorInterventions=2 e resolvedCycleQuestions=2 porque o executor pediu ao operador autorização para uma decomposição já exigida pela spec e reiterada pelo orquestrador. Quando um executor retornar waiting-user e houver cycleQuestionResolver configurado, não expor a pergunta diretamente ao operador. Registrar uma pergunta durável com origem executor e entregar ao orquestrador o contrato aprovado, a pergunta, o workspace em modo read-only e as respostas anteriores. Se o orquestrador responder continue, retomar a mesma sessão nativa com um campo tipado de orientação interna, claramente identificado no prompt como vinculante e já coberto pela autorização existente; isso não pode criar run.operator-guidance, operatorIntervention nem decisão atribuída ao humano. Somente uma resposta operator do orquestrador pode transicionar para waiting-user. Sem cycleQuestionResolver, preservar o comportamento atual. Estender os tipos e a recuperação durável para a origem executor: provider hold deve retomar a mesma pergunta, e reinício antes de run.work-completed deve reapresentar a orientação interna exatamente uma vez. A resposta interna deve contar em resolvedCycleQuestions e roundOrigins.orchestrator. Adicionar teste de ponta a ponta no qual o executor pergunta se uma decomposição integral já exigida pela spec amplia escopo, o orquestrador responde continue, o executor conclui e a run chega à verificação sem atenção ou intervenção humana. Cobrir também decisão realmente semântica que chega ao operador, ausência de resolver, provider hold e recuperação após reinício. Claude e Codex compartilham o mesmo contrato. Não criar novo estado, score, aprovação implícita, chamada API paga ou loop ilimitado.",
+    "verify": [
+      "bun test test/runtime/run-runtime.test.ts test/runtime/agent-cycle-question-resolver.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "357605586b9ed4cd6930898aa2408059f992edc3eebf44743e727c8aa92ab62a",
+    "approvedAt": "2026-09-02T00:01:31.832Z"
+  }
+}
