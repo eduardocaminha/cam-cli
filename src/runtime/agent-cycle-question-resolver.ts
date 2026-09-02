@@ -69,23 +69,29 @@ function usageOf(
 }
 
 export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): string {
+	const contractSection = input.approvedContract === undefined ? [] : [
+		'',
+		'Approved issue contract:',
+		input.approvedContract,
+	];
 	return [
-		`Answer one bounded Gateship review-cycle question for run ${input.runId}, issue ${input.issueId}.`,
+		`Answer one bounded Gateship cycle question for run ${input.runId}, issue ${input.issueId}.`,
 		'You are the orchestrator, in a fresh mechanically read-only session. Do not edit files, approve, start, ship, or request tools that mutate state.',
-		'Return continue only with non-empty, concrete guidance that lets the existing executor either make a precise in-scope correction or provide an evidence-backed no-change rebuttal.',
+		'Return continue only with non-empty, concrete guidance that lets the existing executor proceed within authority already granted by the approved contract, make a precise in-scope correction, or provide an evidence-backed no-change rebuttal.',
 		'Return operator only when a concrete unresolved product or authority ambiguity requires a human decision, with that ambiguity in reason.',
 		'Do not expose hidden reasoning or credentials.',
 		'',
 		...OPERATOR_LANGUAGE_CONTRACT,
+		...contractSection,
 		'',
-		'Current independent-review finding:',
+		'Current cycle question:',
 		`Finding origin: ${input.origin}.`,
 		input.finding,
 		'',
 		'Prior durable cycle responses:',
 		JSON.stringify(input.priorResponses),
 		'',
-		'If the same finding has returned without concrete new executable guidance or evidence of progress, return operator with that stall as the public reason. A new technical finding within the approved contract must return continue.',
+		'If the same question has returned after concrete internal guidance without new evidence of progress, return operator with that stall as the public reason. A new technical question answered by the approved contract must return continue.',
 	].join('\n');
 }
 

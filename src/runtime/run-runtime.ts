@@ -84,6 +84,14 @@ export interface RuntimeExecutionInput {
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
 	/**
+	 * Binding answer produced internally by the read-only orchestrator for an
+	 * executor question already covered by the approved contract. This is
+	 * deliberately distinct from operator guidance and review feedback: it
+	 * resumes the same native executor session without attributing a decision
+	 * or intervention to the human.
+	 */
+	internalGuidance?: RuntimeInternalGuidance;
+	/**
 	 * Every decision the operator has already made for this run, chronological
 	 * (GSHIP-630) -- not only the latest one `operatorGuidance` carries. Read
 	 * from the durable event log, so it survives past the resume that produced
@@ -131,7 +139,18 @@ export interface RuntimeExecutorHandoff {
 export type RuntimeExecutionResult =
 	/** `proposals` are ideas found outside the issue, never work done for it. */
 	| { outcome: 'completed'; summary?: string; proposals?: readonly ProposalDraft[]; reconciliation?: RuntimeExecutionReconciliation }
-	| { outcome: 'waiting-user'; summary: string; reconciliation?: RuntimeExecutionReconciliation };
+	| {
+		outcome: 'waiting-user';
+		summary: string;
+		reconciliation?: RuntimeExecutionReconciliation;
+		/** Issue record loaded from the immutable run source by the provider adapter. */
+		approvedContract?: string;
+	};
+
+export interface RuntimeInternalGuidance {
+	question: string;
+	guidance: string;
+}
 
 export type RuntimeReconciliationOutcome = 'unchanged' | 'adapted' | 'contract-change-required';
 
@@ -202,7 +221,7 @@ export interface RuntimeCycleResponse {
 	createdAt: string;
 }
 
-export type RuntimeCycleQuestionOrigin = 'review' | 'full-verify';
+export type RuntimeCycleQuestionOrigin = 'executor' | 'review' | 'full-verify';
 
 export interface RuntimeCycleQuestionInput {
 	runId: string;
@@ -210,6 +229,8 @@ export interface RuntimeCycleQuestionInput {
 	workspace: string;
 	finding: string;
 	origin: RuntimeCycleQuestionOrigin;
+	/** Present for executor-origin questions, loaded by its provider adapter. */
+	approvedContract?: string;
 	priorResponses: readonly RuntimeCycleResponse[];
 	providerId: AgentProviderId;
 	signal: AbortSignal;
@@ -420,6 +441,7 @@ interface RunAttempt {
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
 	operatorGuidance?: string;
+	internalGuidance?: RuntimeInternalGuidance;
 }
 
 const PROVIDER_AVAILABILITY_FAILURES: readonly ProviderErrorKind[] = [
@@ -466,6 +488,35 @@ function cycleUsageEventPayload(usage: RuntimeCycleResponseUsage): Record<string
 		modelUsage: usage.modelUsage ?? synthesizedModelUsage,
 		usage: Object.keys(invocationUsage).length === 0 ? undefined : invocationUsage,
 	});
+}
+
+type ValidatedCycleQuestionResult =
+	| { ok: true; result: RuntimeCycleQuestionResult; normalized: string }
+	| { ok: false; reason: string };
+
+function validateCycleQuestionResult(
+	result: RuntimeCycleQuestionResult | undefined,
+	origin: RuntimeCycleQuestionOrigin,
+	finding: string,
+	priorResponses: readonly RuntimeCycleResponse[],
+): ValidatedCycleQuestionResult {
+	const text = result?.outcome === 'continue' ? result.guidance
+		: result?.outcome === 'operator' ? result.reason : '';
+	const normalized = typeof text === 'string' ? text.trim() : '';
+	const validAudit = typeof result?.usage?.model === 'string' && result.usage.model.trim().length > 0
+		&& typeof result.usage.effort === 'string' && result.usage.effort.trim().length > 0;
+	const repeatsAnsweredExecutorQuestion = origin === 'executor'
+		&& result?.outcome === 'continue'
+		&& priorResponses.some((response) => response.origin === 'executor'
+			&& response.finding.trim() === finding.trim());
+	if (repeatsAnsweredExecutorQuestion) {
+		return { ok: false, reason: 'Cycle question resolver returned continue for a repeated executor question.' };
+	}
+	if ((result?.outcome !== 'continue' && result?.outcome !== 'operator')
+		|| normalized.length === 0 || !validAudit) {
+		return { ok: false, reason: 'Cycle question resolver returned an invalid response.' };
+	}
+	return { ok: true, result, normalized };
 }
 
 export class RunRuntime {
@@ -1163,7 +1214,8 @@ export class RunRuntime {
 		firstAttempt: RunAttempt,
 		resumeAtReview: 'review' | 'full-verify' | null = null,
 	): Promise<void> {
-		let attempt = firstAttempt;
+		let attempt = await this.#resumePendingExecutorQuestion(run, signal, firstAttempt);
+		if (attempt === null) return;
 		if (resumeAtReview === 'full-verify') {
 			const next = await this.#enterFullVerify(
 				run, signal, this.#executionInput(run, signal, attempt), 'run.review-clean',
@@ -1202,6 +1254,24 @@ export class RunRuntime {
 		// under the same ownership: the operator asked for the change, not for a
 		// button.
 		await this.#shipIfReady(run, signal);
+	}
+
+	async #resumePendingExecutorQuestion(
+		run: RunRecord,
+		signal: AbortSignal,
+		attempt: RunAttempt,
+	): Promise<RunAttempt | null> {
+		const pending = this.#pendingCycleQuestion(run.id);
+		if (pending?.origin !== 'executor') return attempt;
+		return await this.#answerCycleQuestion(
+			run,
+			signal,
+			pending.questionId,
+			pending.finding,
+			pending.origin,
+			attempt.ciFeedback,
+			pending.approvedContract,
+		);
 	}
 
 	async #shipIfReady(run: RunRecord, signal: AbortSignal): Promise<void> {
@@ -1537,11 +1607,7 @@ export class RunRuntime {
 			});
 		}
 		if (execution?.outcome === 'waiting-user') {
-			this.#transition(run.id, 'waiting-user', 'run.waiting-user', {
-				summary: execution.summary,
-				payload: { summary: execution.summary },
-			});
-			return false;
+			return await this.#handleExecutorQuestion(run, signal, executionInput, execution);
 		}
 		if (executionInput.ciFeedback !== undefined
 			&& this.#hasWorkspaceChanges !== undefined
@@ -1575,6 +1641,29 @@ export class RunRuntime {
 			error: detail,
 		}).run;
 		this.#releaseFinishedWorkspace(failedRun, false);
+		return false;
+	}
+
+	async #handleExecutorQuestion(
+		run: RunRecord,
+		signal: AbortSignal,
+		executionInput: RuntimeExecutionInput,
+		execution: Extract<RuntimeExecutionResult, { outcome: 'waiting-user' }>,
+	): Promise<false | RunAttempt> {
+		if (this.#cycleQuestionResolver !== undefined) {
+			return await this.#askCycleQuestion(
+				run,
+				signal,
+				execution.summary,
+				'executor',
+				executionInput.ciFeedback,
+				execution.approvedContract,
+			) ?? false;
+		}
+		this.#transition(run.id, 'waiting-user', 'run.waiting-user', {
+			summary: execution.summary,
+			payload: { summary: execution.summary },
+		});
 		return false;
 	}
 
@@ -1641,14 +1730,16 @@ export class RunRuntime {
 				if (typeof questionId !== 'string'
 					|| (outcome !== 'continue' && outcome !== 'operator')
 					|| typeof finding !== 'string'
-					|| (normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify')
+					|| (normalizedOrigin !== 'executor' && normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify')
 					|| typeof text !== 'string') return [];
 				return [{ questionId, outcome, finding, origin: normalizedOrigin, text, createdAt: event.createdAt }];
 			});
 	}
 
-	#recoveredCycleAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback' | 'fullVerifyFeedback'> | null {
-		if (run.state !== 'interrupted') return null;
+	#recoveredCycleAttempt(
+		run: RunRecord,
+	): Pick<RunAttempt, 'internalGuidance' | 'reviewFeedback' | 'fullVerifyFeedback'> | null {
+		if (run.state !== 'interrupted' && run.state !== 'waiting-provider') return null;
 		return this.#unconsumedCycleAttempt(run.id);
 	}
 
@@ -1670,7 +1761,9 @@ export class RunRuntime {
 	 * front of the existing executor session instead of reviewing unchanged
 	 * work or spending another cycle response.
 	 */
-	#unconsumedCycleAttempt(runId: string): Pick<RunAttempt, 'reviewFeedback' | 'fullVerifyFeedback'> | null {
+	#unconsumedCycleAttempt(
+		runId: string,
+	): Pick<RunAttempt, 'internalGuidance' | 'reviewFeedback' | 'fullVerifyFeedback'> | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const responseIndex = events.findLastIndex((event) =>
 			event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue');
@@ -1684,7 +1777,10 @@ export class RunRuntime {
 		const origin = response?.payload['origin'];
 		const normalizedOrigin = origin === undefined ? 'review' : origin;
 		if (typeof finding !== 'string' || typeof guidance !== 'string') return null;
-		if (normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify') return null;
+		if (normalizedOrigin !== 'executor' && normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify') return null;
+		if (normalizedOrigin === 'executor') {
+			return { internalGuidance: { question: finding, guidance } };
+		}
 		const feedback = this.#cycleReviewFeedback(finding, guidance);
 		return normalizedOrigin === 'review'
 			? { reviewFeedback: feedback }
@@ -1722,6 +1818,7 @@ export class RunRuntime {
 		questionId: string;
 		finding: string;
 		origin: RuntimeCycleQuestionOrigin;
+		approvedContract?: string;
 	} | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const answered = new Set(this.#cycleResponses(runId).map((response) => response.questionId));
@@ -1733,11 +1830,17 @@ export class RunRuntime {
 			const questionId = event.payload['questionId'];
 			const finding = event.payload['finding'];
 			const origin = event.payload['origin'];
+			const approvedContract = event.payload['approvedContract'];
 			const normalizedOrigin = origin === undefined ? 'review' : origin;
 			if (typeof questionId === 'string' && typeof finding === 'string'
-				&& (normalizedOrigin === 'review' || normalizedOrigin === 'full-verify')
+				&& (normalizedOrigin === 'executor' || normalizedOrigin === 'review' || normalizedOrigin === 'full-verify')
 				&& !answered.has(questionId) && !supersededByOperator) {
-				return { questionId, finding, origin: normalizedOrigin };
+				return {
+					questionId,
+					finding,
+					origin: normalizedOrigin,
+					...(typeof approvedContract === 'string' ? { approvedContract } : {}),
+				};
 			}
 			return null;
 		}
@@ -1750,12 +1853,16 @@ export class RunRuntime {
 		finding: string,
 		origin: RuntimeCycleQuestionOrigin,
 		ciFeedback?: string,
+		approvedContract?: string,
 	): Promise<RunAttempt | null> {
 		const questionId = this.#newId();
 		this.#emit(run.id, 'run.cycle-question', {
 			questionId, issueId: run.issueId, finding, origin,
+			...(approvedContract === undefined ? {} : { approvedContract }),
 		});
-		return this.#answerCycleQuestion(run, signal, questionId, finding, origin, ciFeedback);
+		return this.#answerCycleQuestion(
+			run, signal, questionId, finding, origin, ciFeedback, approvedContract,
+		);
 	}
 
 	async #answerCycleQuestion(
@@ -1765,6 +1872,7 @@ export class RunRuntime {
 		finding: string,
 		origin: RuntimeCycleQuestionOrigin,
 		ciFeedback?: string,
+		approvedContract?: string,
 	): Promise<RunAttempt | null> {
 		const resolver = this.#cycleQuestionResolver;
 		if (resolver === undefined) {
@@ -1775,13 +1883,15 @@ export class RunRuntime {
 			return null;
 		}
 		const started = performance.now();
-		const result = await resolver.resolve({
+		const priorResponses = this.#cycleResponses(run.id);
+		const unresolved = await resolver.resolve({
 			runId: run.id,
 			issueId: run.issueId,
 			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			finding,
 			origin,
-			priorResponses: this.#cycleResponses(run.id),
+			...(approvedContract === undefined ? {} : { approvedContract }),
+			priorResponses,
 			providerId: run.providerId,
 			signal,
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
@@ -1790,14 +1900,10 @@ export class RunRuntime {
 			this.#interrupt(run.id);
 			return null;
 		}
-		const text = result?.outcome === 'continue' ? result.guidance
-			: result?.outcome === 'operator' ? result.reason : '';
-		const normalized = typeof text === 'string' ? text.trim() : '';
-		const validAudit = typeof result?.usage?.model === 'string' && result.usage.model.trim().length > 0
-			&& typeof result.usage.effort === 'string' && result.usage.effort.trim().length > 0;
-		if ((result?.outcome !== 'continue' && result?.outcome !== 'operator')
-			|| normalized.length === 0 || !validAudit) {
-			const reason = 'Cycle question resolver returned an invalid response.';
+		const validation = validateCycleQuestionResult(unresolved, origin, finding, priorResponses);
+		if (!validation.ok) {
+			const { reason } = validation;
+			if (origin === 'executor') throw new Error(reason);
 			this.#transition(run.id, 'waiting-user', 'run.cycle-response-invalid', {
 				summary: reason,
 				payload: {
@@ -1811,6 +1917,7 @@ export class RunRuntime {
 			});
 			return null;
 		}
+		const { result, normalized } = validation;
 		const responsePayload = {
 			questionId,
 			responder: 'orchestrator',
@@ -1828,12 +1935,14 @@ export class RunRuntime {
 			});
 			return null;
 		}
-		this.#transition(run.id, 'working', 'run.cycle-response', {
-			payload: { ...responsePayload, findings: finding, origin },
-		});
+		const payload = { ...responsePayload, findings: finding, origin };
+		if (origin === 'executor') this.#emit(run.id, 'run.cycle-response', payload);
+		else this.#transition(run.id, 'working', 'run.cycle-response', { payload });
 		return {
 			resume: true,
-			...(origin === 'review'
+			...(origin === 'executor'
+				? { internalGuidance: { question: finding, guidance: normalized } }
+				: origin === 'review'
 				? { reviewFeedback: this.#cycleReviewFeedback(finding, normalized) }
 				: { fullVerifyFeedback: this.#cycleReviewFeedback(finding, normalized) }),
 			...(ciFeedback === undefined ? {} : { ciFeedback }),
@@ -1989,6 +2098,9 @@ export class RunRuntime {
 			...(attempt.operatorGuidance === undefined
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),
+			...(attempt.internalGuidance === undefined
+				? {}
+				: { internalGuidance: attempt.internalGuidance }),
 		};
 	}
 

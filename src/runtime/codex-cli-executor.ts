@@ -430,6 +430,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.ciFeedback,
 			input.executorHandoff,
 			input.verificationFeedback,
+			input.internalGuidance,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,
@@ -442,6 +443,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			eventPrefix: 'provider',
 			...(input.setSessionId === undefined ? {} : { onSessionId: input.setSessionId }),
 		});
-		return parseExecutionResult(result.structuredOutput);
+		const parsed = parseExecutionResult(result.structuredOutput);
+		return parsed.outcome === 'waiting-user' ? { ...parsed, approvedContract: issue } : parsed;
 	}
 }

@@ -28,6 +28,7 @@ import type {
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 	RuntimeExecutorHandoff,
+	RuntimeInternalGuidance,
 	RuntimeReconciliationOutcome,
 } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -175,6 +176,8 @@ export function buildWorkPrompt(
 	handoff: RuntimeExecutorHandoff | undefined = undefined,
 	/** The failed human-approved issue verification, for one mechanical correction only. */
 	verificationFeedback: string | undefined = undefined,
+	/** Internal orchestrator answer to the executor's own prior question. */
+	internalGuidance: RuntimeInternalGuidance | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -242,6 +245,18 @@ export function buildWorkPrompt(
 		'The operator answered your previous request. Treat this as the decision for the current turn:',
 		operatorGuidance,
 	];
+	const internalGuidanceSection = internalGuidance === undefined ? [] : [
+		'',
+		'Internal orchestrator guidance for your previous question follows.',
+		'This guidance is binding for the current turn and is already covered by the operator-approved issue contract.',
+		'It is not new operator guidance and does not represent a human decision or intervention.',
+		'',
+		'Your question:',
+		internalGuidance.question,
+		'',
+		'Binding internal guidance:',
+		internalGuidance.guidance,
+	];
 	// Same source and ordering the reviewer's prompt carries (GSHIP-630): this
 	// run's own `run.operator-guidance` events, chronological. An empty list
 	// leaves the prompt exactly as it was before this issue -- every run's
@@ -273,6 +288,7 @@ export function buildWorkPrompt(
 		...handoffSection,
 		...decisionsSection,
 		...guidanceSection,
+		...internalGuidanceSection,
 		...reviewSection,
 		...verificationSection,
 		...fullVerifySection,
@@ -458,6 +474,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.ciFeedback,
 			input.executorHandoff,
 			input.verificationFeedback,
+			input.internalGuidance,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,
@@ -470,6 +487,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			eventPrefix: 'provider',
 			...(input.setSessionId === undefined ? {} : { onSessionId: input.setSessionId }),
 		});
-		return parseExecutionResult(result.structuredOutput);
+		const parsed = parseExecutionResult(result.structuredOutput);
+		return parsed.outcome === 'waiting-user' ? { ...parsed, approvedContract: issue } : parsed;
 	}
 }

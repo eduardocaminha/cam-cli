@@ -669,6 +669,33 @@ describe('Claude CLI runtime executor', () => {
 
 		expect(result.outcome).toBe('waiting-user');
 		expect(result.summary).toContain('Use the smaller migration.');
+		expect(result).toMatchObject({ approvedContract: '{"id":"CAM-22"}' });
+	});
+
+	test('labels internal orchestrator guidance as binding and non-human', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"GSHIP-768"}',
+		});
+		const result = await executor.execute({
+			runId: 'run-768-claude',
+			issueId: 'GSHIP-768',
+			sessionId: 'session-768-claude',
+			resume: true,
+			internalGuidance: {
+				question: 'A decomposição integral amplia escopo?',
+				guidance: 'Continue; a decomposição já está exigida pelo contrato aprovado.',
+			},
+			cwd: createTestTmpdir('gship-claude-internal-guidance-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+		const { input } = JSON.parse(result.summary as string) as { input: string };
+		const stdinMessage = JSON.parse(input.trim()) as { message: { content: string } };
+		expect(stdinMessage.message.content).toContain('Binding internal guidance:');
+		expect(stdinMessage.message.content).toContain('already covered by the operator-approved issue contract');
+		expect(stdinMessage.message.content).toContain('does not represent a human decision or intervention');
+		expect(stdinMessage.message.content).toContain('Continue; a decomposição já está exigida');
 	});
 
 	test('carries a proposal from the provider result into the run store', async () => {
