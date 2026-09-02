@@ -29,6 +29,7 @@ export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
 export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
 export const MODEL_SETTINGS_PATH = '/api/model-settings';
+export const AGENT_DEFAULTS_PATH = '/api/agent-defaults';
 export const CHAIN_RUNS_PATH = '/api/chain-runs';
 export const EXECUTOR_HANDOFF_PATH = '/api/executor-handoff';
 export const NOTIFICATIONS_PATH = '/api/notifications';
@@ -493,6 +494,14 @@ export type ModelSettingsView = Record<
 	Record<ModelRoleName, ModelSlotView>
 >;
 
+export type AgentSettingSource = 'project' | 'global' | 'provider-default';
+
+/** The global values are deliberately separate from each project's effective values. */
+export interface AgentDefaultsView {
+	provider: ProviderStatusView['id'];
+	modelSettings: ModelSettingsView;
+}
+
 export function emptyModelSettings(): ModelSettingsView {
 	const roles = (): Record<ModelRoleName, ModelSlotView> => ({
 		orchestrator: { model: '', effort: '' },
@@ -630,6 +639,7 @@ export interface ResolvedProposalsSnapshot {
 interface ProvidersPayload {
 	providers: ProviderStatusView[];
 	selected: ProviderStatusView['id'];
+	source?: unknown;
 }
 
 interface CodexLoginPayload extends CommandPayload {
@@ -998,11 +1008,16 @@ export async function fetchRuns(scope: ProjectScope): Promise<RunView[]> {
 export interface ProvidersSnapshot {
 	providers: ProviderStatusView[];
 	selected: ProviderStatusView['id'];
+	source: AgentSettingSource;
 }
 
 export async function fetchProviders(scope: ProjectScope = null): Promise<ProvidersSnapshot> {
 	const payload = await readJson<ProvidersPayload>(await fetch(providersPathOf(scope)), 'Providers');
-	return { providers: payload.providers ?? [], selected: payload.selected ?? 'claude' };
+	return {
+		providers: payload.providers ?? [],
+		selected: payload.selected ?? 'claude',
+		source: payload.source === 'project' || payload.source === 'global' ? payload.source : 'provider-default',
+	};
 }
 
 export async function fetchChat(scope: ProjectScope = null): Promise<ChatMessageView[]> {
@@ -1056,6 +1071,12 @@ export async function saveBrief(brief: ProjectBriefView, scope: ProjectScope = n
 interface ModelSettingsPayload extends CommandPayload {
 	settings?: unknown;
 	probes?: unknown;
+	source?: unknown;
+}
+
+interface AgentDefaultsPayload extends CommandPayload {
+	defaults?: unknown;
+	probes?: unknown;
 }
 
 function modelSlotRecord(value: unknown): ModelSlotView {
@@ -1084,11 +1105,36 @@ function modelSettingsRecord(value: unknown): ModelSettingsView {
 }
 
 export async function fetchModelSettings(scope: ProjectScope = null): Promise<ModelSettingsView> {
+	return (await fetchModelSettingsSnapshot(scope)).settings;
+}
+
+export interface ModelSettingsSnapshot {
+	settings: ModelSettingsView;
+	source: AgentSettingSource;
+}
+
+export async function fetchModelSettingsSnapshot(scope: ProjectScope = null): Promise<ModelSettingsSnapshot> {
 	const payload = await readJson<ModelSettingsPayload>(
 		await fetch(modelSettingsPathOf(scope)),
 		'Models',
 	);
-	return modelSettingsRecord(payload.settings);
+	return {
+		settings: modelSettingsRecord(payload.settings),
+		source: payload.source === 'project' || payload.source === 'global' ? payload.source : 'provider-default',
+	};
+}
+
+function agentDefaultsRecord(value: unknown): AgentDefaultsView {
+	const defaults = value !== null && typeof value === 'object' ? value as Record<string, unknown> : {};
+	return {
+		provider: defaults.provider === 'codex' ? 'codex' : 'claude',
+		modelSettings: modelSettingsRecord(defaults.modelSettings),
+	};
+}
+
+export async function fetchAgentDefaults(): Promise<AgentDefaultsView> {
+	const payload = await readJson<AgentDefaultsPayload>(await fetch(AGENT_DEFAULTS_PATH), 'Agent defaults');
+	return agentDefaultsRecord(payload.defaults);
 }
 
 /** One line for a probed slot that did not cleanly accept, in the CLI's own words. */
@@ -1135,6 +1181,25 @@ export async function saveModelSettings(settings: ModelSettingsView, scope: Proj
 	if (!response.ok) return payload.message ?? `Configuration rejected (${response.status}).`;
 	const notes = describeModelProbes(payload.probes);
 	return notes.length === 0 ? 'Models by role updated.' : `Models by role updated. ${notes}`;
+}
+
+export async function resetModelSettings(scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(modelSettingsPathOf(scope), { method: 'DELETE' });
+	const payload = (await response.json()) as ModelSettingsPayload;
+	return response.ok ? 'Models reset to global defaults.' : payload.message ?? `Configuration rejected (${response.status}).`;
+}
+
+/** Saves the registry-owned defaults, using the same CLI probes as project overrides. */
+export async function saveAgentDefaults(defaults: AgentDefaultsView): Promise<string> {
+	const response = await fetch(AGENT_DEFAULTS_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(defaults),
+	});
+	const payload = (await response.json()) as AgentDefaultsPayload;
+	if (!response.ok) return payload.message ?? `Configuration rejected (${response.status}).`;
+	const notes = describeModelProbes(payload.probes);
+	return notes.length === 0 ? 'Agent defaults updated.' : `Agent defaults updated. ${notes}`;
 }
 
 interface SelfUpdatePayload extends CommandPayload {
@@ -1389,6 +1454,12 @@ export async function startCodexLogin(): Promise<string> {
 
 export function selectProvider(providerId: ProviderStatusView['id'], scope: ProjectScope = null): Promise<string> {
 	return postCommand(`${providersPathOf(scope)}/${providerId}/select`);
+}
+
+export async function resetSelectedProvider(scope: ProjectScope = null): Promise<string> {
+	const response = await fetch(`${providersPathOf(scope)}/claude/select`, { method: 'DELETE' });
+	const payload = (await response.json()) as CommandPayload;
+	return response.ok ? 'Provider reset to global default.' : payload.message ?? `Configuration rejected (${response.status}).`;
 }
 
 /**

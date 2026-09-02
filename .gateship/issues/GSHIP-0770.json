@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-770",
   "title": "Expor padrões globais de agentes e overrides por projeto na UI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-02T00:02:08.245Z",
-  "updatedAt": "2026-09-02T00:02:08.245Z",
+  "updatedAt": "2026-09-02T00:39:54.438Z",
   "description": "Usar somente os endpoints e a persistência já entregues por GSHIP-761. Em /settings global, adicionar um painel Agent defaults que lê GET /api/agent-defaults e permite salvar por PUT o provider padrão e os seis slots existentes de modelo e effort para Claude e Codex. Reutilizar os componentes de campos de modelo e a validação/probes atuais, sem catálogo local de modelos. Em Ajustes de cada projeto, preservar os formulários existentes, mas manter no estado do cliente os campos source já retornados por GET providers e GET model-settings e indicar de forma legível se provider e modelos estão herdados dos padrões globais ou personalizados neste projeto. Editar continua criando override de projeto. Quando houver override, oferecer ações separadas Reset provider to global default e Reset models to global defaults usando os DELETE já existentes; após sucesso, atualizar valores e source sem reiniciar o serviço. Quando estiver herdado, mostrar os valores efetivos globais sem sugerir que são locais. Provider e modelos podem ter fontes diferentes. Implementar tipos, transporte same-origin, estado, callbacks, textos pt-BR e en-US e testes de renderização/interação para global, herdado, override e reset. O painel global pertence somente à rota /settings; o painel de projeto permanece na rota do projeto. Não criar endpoint, storage, contexto global, catálogo de modelos, segredo, dependência ou nova política de seleção.",
   "specSource": "operator",
   "spec": {

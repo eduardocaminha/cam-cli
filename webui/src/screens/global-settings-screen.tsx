@@ -4,12 +4,18 @@ import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
-import { NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
+import { AgentDefaultsPanel, NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
 
 export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
+			<AgentDefaultsPanel
+				agentDefaults={props.agentDefaults}
+				catalog={catalog}
+				onSaveAgentDefaults={props.onSaveAgentDefaults}
+				pending={props.pending}
+			/>
 			<OperatorProfilePanel
 						catalog={catalog}
 						onSaveOperatorProfile={props.onSaveOperatorProfile}

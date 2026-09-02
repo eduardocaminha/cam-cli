@@ -1,5 +1,7 @@
 import type {
 	ChainRunsView,
+	AgentDefaultsView,
+	AgentSettingSource,
 	ChatMessageView,
 	CreateProjectInput,
 	DiagnosticCadenceView,
@@ -54,9 +56,12 @@ export interface AppProps {
 	suggestedTimezone: string;
 	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
+	modelSettingsSource: AgentSettingSource;
+	agentDefaults: AgentDefaultsView;
 	chainRuns: ChainRunsView;
 	executorHandoff: ExecutorHandoffSettingView;
 	selectedProvider: ProviderStatusView['id'];
+	providerSource: AgentSettingSource;
 	notificationPermission: BrowserNotificationPermission;
 	notificationChannels: NotificationChannelsView;
 	selfUpdate: SelfUpdateView;
@@ -97,9 +102,12 @@ export interface AppProps {
 	onSaveResendSettings: (input: { from: string; to: string; apiKey: string }) => void;
 	onRemoveResendCredential: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
+	onResetProvider: () => void;
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
+	onResetModelSettings: () => void;
+	onSaveAgentDefaults: (defaults: AgentDefaultsView) => void;
 	onSaveOperatorProfile: (profile: OperatorProfileView) => void;
 	onSetChainRuns: (enabled: boolean) => void;
 	onSetExecutorHandoff: (enabled: boolean) => void;

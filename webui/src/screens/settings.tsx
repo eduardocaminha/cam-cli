@@ -3,7 +3,7 @@
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import { MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS, emptyModelSettings } from '../client.ts';
-import type { DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
+import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
@@ -395,15 +395,25 @@ export function ProviderRow({
 	);
 }
 
-export function ProvidersPanel(props: ProviderPanelProps & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
+function AgentSourceNotice({ catalog, source }: { catalog: SettingsCatalog; source: AgentSettingSource }): React.ReactElement {
+	return <p className="text-muted-foreground text-sm">{catalog.agentSources[source === 'global' ? 'global' : source === 'project' ? 'project' : 'providerDefault']}</p>;
+}
+
+export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'providerSource' | 'onResetProvider'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
 		<ContextPanel
 			actionLabels={props.catalog.disclosure}
 			description={props.catalog.providers.description}
 			open
 			title={props.catalog.providers.title}
-		>
-			<ul className="flex flex-col gap-3">
+	>
+		<AgentSourceNotice catalog={props.catalog} source={props.providerSource} />
+		{props.providerSource === 'project' ? (
+			<button className={cn(BUTTON_CLASS, 'self-start')} disabled={props.pending} onClick={props.onResetProvider} type="button">
+				{props.catalog.agentSources.resetProvider}
+			</button>
+		) : null}
+		<ul className="flex flex-col gap-3">
 				{props.providers.map((provider) => (
 					<ProviderRow
 						catalog={props.catalog}
@@ -537,18 +547,21 @@ export function ModelProviderFields({
  */
 export function ModelSettingsPanel({
 	modelSettings,
+	modelSettingsSource,
 	pending,
 	onSaveModelSettings,
+	onResetModelSettings,
 	catalog,
-}: Pick<AppProps, 'modelSettings' | 'pending' | 'onSaveModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
+}: Pick<AppProps, 'modelSettings' | 'modelSettingsSource' | 'pending' | 'onSaveModelSettings' | 'onResetModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
 			actionLabels={catalog.disclosure}
 			description={catalog.models.description}
 			open
 			title={catalog.models.title}
-		>
-			<form
+	>
+		<AgentSourceNotice catalog={catalog} source={modelSettingsSource} />
+		<form
 				className="flex flex-col gap-6"
 				// Re-synced with the server's answer after a save, the only thing that
 				// changes this record while the operator is looking at it.
@@ -568,6 +581,52 @@ export function ModelSettingsPanel({
 				))}
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.models.save}
+				</button>
+			</form>
+		{modelSettingsSource === 'project' ? (
+			<button className={cn(BUTTON_CLASS, 'self-start')} disabled={pending} onClick={onResetModelSettings} type="button">
+				{catalog.agentSources.resetModels}
+			</button>
+		) : null}
+		</ContextPanel>
+	);
+}
+
+/** Registry-owned defaults use the same free-text fields and CLI validation as project overrides. */
+export function AgentDefaultsPanel({
+	agentDefaults,
+	pending,
+	onSaveAgentDefaults,
+	catalog,
+}: Pick<AppProps, 'agentDefaults' | 'pending' | 'onSaveAgentDefaults'> & { catalog: SettingsCatalog }): React.ReactElement {
+	return (
+		<ContextPanel actionLabels={catalog.disclosure} description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
+			<form
+				className="flex flex-col gap-6"
+				key={JSON.stringify(agentDefaults)}
+				onSubmit={(event) => {
+					event.preventDefault();
+					const provider = fieldReader(event.currentTarget)('agent-default-provider');
+					onSaveAgentDefaults({
+						provider: provider === 'codex' ? 'codex' : 'claude',
+						modelSettings: readModelSettings(event.currentTarget),
+					});
+				}}
+			>
+				<label className="flex flex-col gap-1 text-sm" htmlFor="agent-default-provider">
+					<span className="font-medium">{catalog.agentDefaults.provider}</span>
+					<SelectField
+						defaultValue={agentDefaults.provider}
+						id="agent-default-provider"
+						items={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]}
+						name="agent-default-provider"
+					/>
+				</label>
+				{MODEL_PROVIDER_IDS.map((providerId) => (
+					<ModelProviderFields catalog={catalog} key={providerId} modelSettings={agentDefaults.modelSettings} providerId={providerId} />
+				))}
+				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+					{catalog.agentDefaults.save}
 				</button>
 			</form>
 		</ContextPanel>

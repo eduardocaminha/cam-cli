@@ -487,6 +487,8 @@ export interface SettingsCatalog {
 		documentation: (provider: string) => string;
 		save: string;
 	};
+	agentDefaults: { title: string; description: string; provider: string; save: string };
+	agentSources: { global: string; project: string; providerDefault: string; resetProvider: string; resetModels: string };
 	chain: { title: string; description: string; label: string };
 	executorHandoff: { title: string; description: string; label: string };
 	updates: {
@@ -1013,6 +1015,8 @@ export const LOCALE_CATALOG = {
 				},
 			},
 			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Orchestrator', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
+			agentDefaults: { title: 'Agent defaults', description: 'Default provider, model and effort for projects that have not set their own agent configuration.', provider: 'Default provider', save: 'Save agent defaults' },
+			agentSources: { global: 'Inherited from global defaults.', project: 'Customized for this project.', providerDefault: 'Using the provider default.', resetProvider: 'Reset provider to global default', resetModels: 'Reset models to global defaults' },
 			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
 			executorHandoff: {
 				title: 'Executor handoff between providers',
@@ -1483,6 +1487,8 @@ export const LOCALE_CATALOG = {
 				},
 			},
 			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Orquestrador', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
+			agentDefaults: { title: 'Padrões dos agentes', description: 'Provedor, modelo e esforço padrão para projetos que ainda não definiram sua própria configuração de agentes.', provider: 'Provedor padrão', save: 'Salvar padrões dos agentes' },
+			agentSources: { global: 'Herdado dos padrões globais.', project: 'Personalizado para este projeto.', providerDefault: 'Usando o padrão do provedor.', resetProvider: 'Redefinir provedor para o padrão global', resetModels: 'Redefinir modelos para os padrões globais' },
 			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },
 			executorHandoff: {
 				title: 'Transferência de executor entre provedores',
