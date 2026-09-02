@@ -170,11 +170,12 @@ export function ProjectSwitcher({
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
 	return (
 		<>
-		<Menu.Root>
-			<Menu.Trigger className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left text-sidebar-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent">
-				<span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg border">
+			<Menu.Root>
+				<Menu.Trigger
+					className={cn(NAV_LINK_CLASS, 'w-full text-left data-[popup-open]:bg-sidebar-accent')}
+					data-slot="project-switcher"
+				>
 					<NavGlyph name={selected === null ? 'overview' : 'project'} />
-				</span>
 				<span className="grid min-w-0 flex-1 leading-tight">
 					<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
 						{selected?.name ?? catalog.switcherPlaceholder}
@@ -217,7 +218,7 @@ export function ProjectSwitcher({
 		 * static render, so without this nav the closed menu would drop
 		 * every registry link from the no-JS document and from keyboard
 		 * reach before hydration. */}
-		<nav aria-label={catalog.projectNavigationLabel} className="sr-only">
+		<div aria-label={catalog.projectNavigationLabel} className="sr-only">
 			<ul>
 				{projects.map((project) => (
 					<li key={project.id}>
@@ -225,7 +226,7 @@ export function ProjectSwitcher({
 					</li>
 				))}
 			</ul>
-		</nav>
+		</div>
 		</>
 	);
 }
@@ -241,17 +242,9 @@ export function ShellNavigation({
 	selection: ReturnType<typeof routeSelection>;
 	status: { label: string; acid: boolean } | null;
 }): React.ReactElement {
-	/* The overview is a standing destination, never a scope the switcher can
-	 * hold: it stays one click away from every project. The project surfaces
-	 * follow with no group label -- the switcher above already names the
-	 * scope (operator decision, 2026-08-31). */
-	return <>
-		<ProjectSwitcher
-			catalog={catalog}
-			projects={projects}
-			selection={selection}
-			status={status}
-		/>
+	/* Overview is global and precedes the project scope. Once a project is
+	 * selected, its four surfaces follow the switcher in the same list. */
+	return (
 		<nav aria-label={catalog.operatorNavigationLabel}>
 			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
 				<li className="shrink-0">
@@ -265,6 +258,14 @@ export function ShellNavigation({
 					>
 						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span>
 					</a>
+				</li>
+				<li className="w-full min-w-0" data-slot="project-switcher-item">
+					<ProjectSwitcher
+						catalog={catalog}
+						projects={projects}
+						selection={selection}
+						status={status}
+					/>
 				</li>
 				{selection.projectId === null ? null : SURFACES.map((surface) => (
 					<li className="shrink-0" key={surface.surface}>
@@ -294,7 +295,7 @@ export function ShellNavigation({
 				</li>
 			</ul>
 		</nav>
-	</>;
+	);
 }
 
 /*

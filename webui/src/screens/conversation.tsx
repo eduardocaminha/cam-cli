@@ -26,7 +26,7 @@ export function ChatLog({
 		<section
 			{...liveEdge}
 			aria-label={catalog.transcriptLabel}
-			className="min-h-24 min-w-0 overflow-x-hidden overflow-y-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:flex-1 xl:overflow-y-auto"
+			className="min-h-0 min-w-0 overflow-x-hidden overflow-y-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:flex-1 xl:overflow-y-auto"
 		>
 			{chatMessages.length === 0 ? (
 				<EmptyState>{catalog.emptyStateGuidance}</EmptyState>
@@ -185,12 +185,12 @@ export function ConversationColumn({
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1">
+			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
 				<CardHeader>
 					<CardTitle>{catalog.title}</CardTitle>
 					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
-				<CardPanel className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
+				<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
 					<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
