@@ -158,6 +158,15 @@ const NETWORK_PATTERN =
 	/\b(dial tcp|no such host|could not resolve host|connection refused|connection reset|network is unreachable|temporary failure in name resolution|TLS handshake timeout)\b/i;
 /** GitHub's explicit refusal to enable a repository's auto-merge feature. */
 const AUTO_MERGE_NOT_ALLOWED_PATTERN = /\bauto[ -]?merge\b.*\bnot allowed\b/i;
+/**
+ * The one update-branch refusal that can mean GitHub merged and deleted the
+ * control branch between our preceding read and the mutation. Keep these
+ * complete messages explicit: every other update refusal remains a failure.
+ */
+const HEAD_REF_MISSING_DETAILS = new Set([
+	'gh pr update-branch failed: GraphQL: Head ref does not exist',
+	'gh pr update-branch failed: GraphQL: Head ref does not exist (updatePullRequestBranch)',
+]);
 
 /**
  * GitHub being unavailable — HTTP 5xx, a timeout, or a network or name
@@ -167,6 +176,10 @@ const AUTO_MERGE_NOT_ALLOWED_PATTERN = /\bauto[ -]?merge\b.*\bnot allowed\b/i;
  */
 function isGithubUnavailable(detail: string): boolean {
 	return HTTP_5XX_PATTERN.test(detail) || TIMEOUT_PATTERN.test(detail) || NETWORK_PATTERN.test(detail);
+}
+
+function isHeadRefMissingError(error: unknown): boolean {
+	return HEAD_REF_MISSING_DETAILS.has(errorMessage(error));
 }
 
 /** Thrown only once an idempotent `gh` command exhausts its retry budget while GitHub stays unavailable. */
@@ -1019,10 +1032,30 @@ export class GithubShipper implements RuntimeShipper {
 				},
 			};
 		}
+		// Auto-merge can settle and delete its head between the poll that saw
+		// BEHIND and the update mutation. Re-read the same PR immediately before
+		// asking GitHub to update it so that a settled, exact head reaches the
+		// normal merged exit instead of being turned into a retryable failure.
 		try {
+			const beforeUpdate = await this.#pullRequestView(input, prNumber);
+			const settledBeforeUpdate = await this.#pollVerdict(input, prNumber, headSha, beforeUpdate);
+			if (settledBeforeUpdate !== null) return { result: settledBeforeUpdate };
 			const updated = await this.#updateBranch(input, prNumber, branch, headSha);
 			return { headSha: updated, branchUpdates: branchUpdates + 1, pending: null };
 		} catch (error) {
+			// GitHub's explicit missing-head refusal has the same race window as
+			// the re-read above. It is deliberately the only mutation error that
+			// triggers this recovery; broad error matching would hide real refusals.
+			if (isHeadRefMissingError(error)) {
+				const afterMissingHead = await this.#pullRequestView(input, prNumber);
+				const settledAfterMissingHead = await this.#pollVerdict(
+					input,
+					prNumber,
+					headSha,
+					afterMissingHead,
+				);
+				if (settledAfterMissingHead !== null) return { result: settledAfterMissingHead };
+			}
 			if (error instanceof GithubUnavailableError) {
 				return { result: await this.#unconfirmed(input, prNumber, headSha, error) };
 			}
@@ -1031,6 +1064,13 @@ export class GithubShipper implements RuntimeShipper {
 			}
 			throw error;
 		}
+	}
+
+	/** Read the full state needed to settle a branch-update race safely. */
+	async #pullRequestView(input: RuntimeShipInput, prNumber: number): Promise<PullRequestView> {
+		return parsePullRequestView(await this.#checked(input, 'gh', [
+			'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
+		], { retryIdempotent: true }));
 	}
 
 	/**
@@ -1174,9 +1214,7 @@ export class GithubShipper implements RuntimeShipper {
 		previousHead: string,
 	): Promise<PullRequestView> {
 		for (let attempt = 1; ; attempt++) {
-			const view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
-			], { retryIdempotent: true }));
+			const view = await this.#pullRequestView(input, prNumber);
 			if (view.headRefOid !== previousHead) return view;
 			if (attempt >= this.#branchUpdateConfirmAttempts) {
 				throw new BranchUpdateStalledError(
