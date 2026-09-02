@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-774",
   "title": "Adicionar atalhos numericos ao seletor de projetos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-02T14:56:29.150Z",
-  "updatedAt": "2026-09-02T14:56:29.150Z",
+  "updatedAt": "2026-09-02T15:02:54.012Z",
   "description": "No ProjectSwitcher, mostrar um elemento kbd discreto com ⌘1 a ⌘9 nos nove primeiros projetos, seguindo exatamente a ordem visivel do seletor. No shell global, Command+1 a Command+9 e Control+1 a Control+9 devem prevenir o comportamento do navegador e navegar imediatamente para a mesma rota raiz do projeto correspondente, /projects/:projectId. Nao interceptar digitos cujo indice nao exista, combinacoes sem Command/Control, nem projetos alem do nono. Manter nome, estado selecionado, check, semantica de link, foco, idiomas e anatomia responsiva atuais. O atalho deve ser instantaneo, sem animacao. Nao adicionar dependencia, configuracao, persistencia, rota, estado ou componente generico. Cobrir a renderizacao dos kbd, o limite de nove, a ordem e o comportamento do listener com Command, Control e indice ausente.",
   "specSource": "operator",
   "spec": {

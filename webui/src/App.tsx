@@ -31,6 +31,21 @@ export { ConversationColumn } from './screens/conversation.tsx';
 export type { AppProps } from './app-props.ts';
 export type { OperatorRoute } from './routes.ts';
 
+export function handleProjectShortcut(
+	event: PanelKeyEvent,
+	projects: AppProps['projects'],
+	runtime = panelRuntime(),
+): boolean {
+	if ((!event.metaKey && !event.ctrlKey) || event.key.length !== 1) return false;
+	const index = event.key.charCodeAt(0) - '1'.charCodeAt(0);
+	if (index < 0 || index > 8) return false;
+	const project = projects[index];
+	if (project === undefined) return false;
+	event.preventDefault();
+	runtime.location?.assign(`/projects/${encodeURIComponent(project.id)}`);
+	return true;
+}
+
 export function App(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const currentProject = props.projects.find((project) => project.current) ?? null;
@@ -44,11 +59,13 @@ export function App(props: AppProps): React.ReactElement {
 			if (event.key === 'b' && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
 				toggleSidebar();
+				return;
 			}
+			handleProjectShortcut(event, props.projects, runtime);
 		};
 		runtime.addEventListener?.('keydown', onKeyDown);
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
-	}, [toggleSidebar]);
+	}, [props.projects, toggleSidebar]);
 	return (
 		<AppShell
 			controls={<ShellControls catalog={localeCatalog.shell} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleSidebar={toggleSidebar} sidebarOpen={sidebarOpen} />}

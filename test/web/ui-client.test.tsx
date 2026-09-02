@@ -11,11 +11,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
 	App,
+	handleProjectShortcut,
 	type AppProps,
 	ConversationColumn,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
+import type { PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
 import {
 	abandonIssue,
 	aggregateChatTurnCosts,
@@ -3897,6 +3899,54 @@ describe('operator shell', () => {
 
 		expect(nav).toContain('data-slot="project-switcher"');
 		expect(nav).not.toContain('data-slot="project-surface-navigation"');
+	});
+
+	test('project switcher renders shortcuts for the first nine projects in visible order', () => {
+		const projects = Array.from({ length: 10 }, (_, index) => ({
+			...CURRENT_PROJECT,
+			id: `project-${index + 1}`,
+			name: `Project ${index + 1}`,
+			current: index === 0,
+		}));
+		const html = renderAt('/overview', { projects });
+		const shortcuts = [...html.matchAll(/<kbd[^>]*>(⌘[1-9])<\/kbd>/g)].map((match) => match[1]);
+
+		expect(shortcuts).toEqual(['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9']);
+		expect(html).toContain('href="/projects/project-9"');
+		expect(html).toContain('href="/projects/project-10"');
+		expect(html).not.toContain('⌘10');
+	});
+
+	test('project shortcuts navigate with Command or Control and leave unavailable combinations alone', () => {
+		const projects = Array.from({ length: 10 }, (_, index) => ({
+			...CURRENT_PROJECT,
+			id: `project-${index + 1}`,
+			current: index === 0,
+		}));
+		const locations: string[] = [];
+		const invoke = (key: string, modifiers: Pick<PanelKeyEvent, 'metaKey' | 'ctrlKey'>): { handled: boolean; prevented: boolean } => {
+			let prevented = false;
+			const handled = handleProjectShortcut(
+				{ key, ...modifiers, preventDefault: () => { prevented = true; } },
+				projects,
+				{ location: { assign: (url) => { locations.push(url); } } },
+			);
+			return { handled, prevented };
+		};
+
+		expect(invoke('1', { metaKey: true, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('9', { metaKey: false, ctrlKey: true })).toEqual({ handled: true, prevented: true });
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
+		expect(invoke('1', { metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('0', { metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		let missingPrevented = false;
+		expect(handleProjectShortcut(
+			{ key: '3', metaKey: true, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
+			projects.slice(0, 2),
+			{ location: { assign: (url) => { locations.push(url); } } },
+		)).toBe(false);
+		expect(missingPrevented).toBe(false);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {

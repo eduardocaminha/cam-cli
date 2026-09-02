@@ -195,7 +195,7 @@ export function ProjectSwitcher({
 						<div className="px-2 pt-1.5 pb-1 font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
 							{catalog.projectNavigationLabel}
 						</div>
-						{projects.map((project) => (
+						{projects.map((project, index) => (
 							<Menu.Item
 								className={SWITCHER_ITEM_CLASS}
 								key={project.id}
@@ -205,6 +205,7 @@ export function ProjectSwitcher({
 								<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 									{project.name}
 								</span>
+								{index < 9 ? <kbd aria-hidden="true" className="shrink-0 rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground">⌘{index + 1}</kbd> : null}
 								{project.id === selection.projectId ? (
 									<HugeiconsIcon className="size-3.5 shrink-0" icon={Tick02Icon} size={14} strokeWidth={2.25} />
 								) : null}
@@ -220,9 +221,9 @@ export function ProjectSwitcher({
 		 * reach before hydration. */}
 		<div aria-label={catalog.projectNavigationLabel} className="sr-only">
 			<ul>
-				{projects.map((project) => (
+				{projects.map((project, index) => (
 					<li key={project.id}>
-						<a href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a>
+						<a href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}{index < 9 ? <kbd aria-hidden="true">⌘{index + 1}</kbd> : null}</a>
 					</li>
 				))}
 			</ul>
@@ -314,6 +315,7 @@ export interface PanelRuntime {
 	localStorage?: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void };
 	addEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
 	removeEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
+	location?: { assign: (url: string) => void };
 	matchMedia?: (query: string) => { matches: boolean };
 	document?: { documentElement: { classList: { toggle: (name: string, force: boolean) => void } } };
 }
