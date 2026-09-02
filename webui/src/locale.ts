@@ -39,6 +39,7 @@ export interface ShellCatalog {
 	inspectorToggle: { collapse: string; expand: string };
 	operatorNavigationLabel: string;
 	projectNavigationLabel: string;
+	projectContextLabel: string;
 	switcherPlaceholder: string;
 	skipLinkLabel: string;
 	languageLabel: string;
@@ -580,6 +581,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Navigation',
 			projectNavigationLabel: 'Projects',
+			projectContextLabel: 'Project',
 			switcherPlaceholder: 'Select a project',
 			skipLinkLabel: 'Skip to content',
 			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
@@ -588,7 +590,7 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			routeLabels: {
-				overview: 'Overview',
+				overview: 'All projects',
 				conversation: 'Conversation',
 				runs: 'Runs',
 				work: 'Work',
@@ -1053,6 +1055,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Navegação',
 			projectNavigationLabel: 'Projetos',
+			projectContextLabel: 'Projeto',
 			switcherPlaceholder: 'Selecionar projeto',
 			skipLinkLabel: 'Pular para o conteúdo',
 			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
@@ -1061,7 +1064,7 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			routeLabels: {
-				overview: 'Visão geral',
+				overview: 'Todos os projetos',
 				conversation: 'Conversa',
 				runs: 'Runs',
 				work: 'Trabalho',

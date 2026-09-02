@@ -3832,7 +3832,7 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation separates global overview from the nested project context on desktop', () => {
+		test('navigation separates all projects from the nested project context on desktop', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
@@ -3842,6 +3842,7 @@ describe('operator shell', () => {
 			const switcher = elementWith(html, 'data-slot="project-switcher"');
 			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
 			const divider = elementWith(html, 'data-slot="navigation-divider"');
+			const contextLabel = elementWith(html, 'data-slot="project-context-label"');
 			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
 			const globalStart = nav.indexOf('data-slot="global-navigation"');
 			const projectStart = nav.indexOf('data-slot="project-navigation"');
@@ -3851,7 +3852,7 @@ describe('operator shell', () => {
 			const switcherMarkup = html.slice(switcherStart, switcherEnd);
 
 			expect(nav).toContain('aria-label="Navigation"');
-			for (const label of ['Overview', 'Conversation', 'Runs', 'Work', 'Settings']) {
+			for (const label of ['All projects', 'Conversation', 'Runs', 'Work', 'Settings']) {
 				expect(nav).toContain(`>${label}</span>`);
 			}
 			expect(nav).toContain('flex-wrap');
@@ -3862,10 +3863,17 @@ describe('operator shell', () => {
 			expect(globalGroup).not.toContain('data-slot="project-switcher"');
 			expect(globalGroup).toContain('</ul><div');
 			expect(divider).toContain('my-1.5');
+			expect(divider).toContain('lg:my-4');
 			expect(divider).toContain('hidden');
 			expect(divider).toContain('lg:block');
 			expect(divider).toContain('bg-sidebar-border');
 			expect(projectStart).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(contextLabel).toContain('hidden');
+			expect(contextLabel).toContain('lg:block');
+			expect(contextLabel).toContain('font-mono');
+			expect(contextLabel).toContain('text-muted-foreground');
+			expect(contextLabel).toContain('uppercase');
+			expect(nav.indexOf('data-slot="project-context-label"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
 			expect(projectSurfaceNavigation).toContain('lg:border-l');
 			expect(projectSurfaceNavigation).toContain('lg:border-sidebar-border');
 			expect(projectSurfaceNavigation).toContain('lg:pl-2');
@@ -3889,6 +3897,20 @@ describe('operator shell', () => {
 			// Navigation itself stays on served paths. The shell-level skip link is
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
+		}
+	});
+
+	test('navigation localizes the global destination and desktop project context', () => {
+		for (const expected of [
+			{ locale: 'en-US' as const, overview: 'All projects', context: 'Project' },
+			{ locale: 'pt-BR' as const, overview: 'Todos os projetos', context: 'Projeto' },
+		]) {
+			const html = renderAt('/projects/project-current', { locale: expected.locale });
+			const start = html.indexOf('<nav aria-label=');
+			const nav = html.slice(start, html.indexOf('</nav>', start));
+
+			expect(nav).toContain(`>${expected.overview}</span>`);
+			expect(nav).toContain(`>${expected.context}</p>`);
 		}
 	});
 
@@ -3955,7 +3977,7 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Visão geral', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
+		for (const label of ['Todos os projetos', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');
