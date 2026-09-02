@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-777",
+  "title": "Preservar o estado na navegacao interna",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T20:53:08.921Z",
+  "updatedAt": "2026-09-02T20:53:08.921Z",
+  "description": "Remove the false empty-state flash from operator navigation. Internal links that stay inside the same data scope must use client-side history navigation: project surfaces for the currently loaded project, and global surfaces when the loaded scope is global. These route changes must preserve the already loaded operational snapshot, update aria-current immediately, support browser back and forward, and must not repeat the initial API fan-out. Cross-project and project-to-global scope changes may keep a document navigation in this seam, but the initial render must show an explicit localized loading state until the first coherent snapshot resolves; it must never render Project not registered, zero counts, an empty conversation, or another false empty state while data is still unknown. Internal navigation must preserve normal anchor behavior for external origins, downloads, targets, hashes, non-primary clicks, and modifier keys. Keep real URLs, deep links, refresh behavior, project shortcuts, locale, sidebar state, event subscriptions, commands, accessibility, and the no-JavaScript link fallback. Do not add a router dependency, animation, artificial delay, cached stale project data, polling, or a second state store. Add focused tests for same-scope navigation, history traversal, hard-boundary routing, initial loading truthfulness, and unchanged special-link behavior.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Remove the false empty-state flash from operator navigation. Internal links that stay inside the same data scope must use client-side history navigation: project surfaces for the currently loaded project, and global surfaces when the loaded scope is global. These route changes must preserve the already loaded operational snapshot, update aria-current immediately, support browser back and forward, and must not repeat the initial API fan-out. Cross-project and project-to-global scope changes may keep a document navigation in this seam, but the initial render must show an explicit localized loading state until the first coherent snapshot resolves; it must never render Project not registered, zero counts, an empty conversation, or another false empty state while data is still unknown. Internal navigation must preserve normal anchor behavior for external origins, downloads, targets, hashes, non-primary clicks, and modifier keys. Keep real URLs, deep links, refresh behavior, project shortcuts, locale, sidebar state, event subscriptions, commands, accessibility, and the no-JavaScript link fallback. Do not add a router dependency, animation, artificial delay, cached stale project data, polling, or a second state store. Add focused tests for same-scope navigation, history traversal, hard-boundary routing, initial loading truthfulness, and unchanged special-link behavior.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui && git diff --check"
+    ]
+  },
+  "approval": {
+    "fingerprint": "1c07384490f56fd0f07f7acea4b9c421dba0355a3ccbb5a33f78378e2ec036c8",
+    "approvedAt": "2026-09-02T20:53:08.921Z"
+  }
+}
