@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-775",
+  "title": "Tornar inequivoca a hierarquia global e de projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T17:03:06.879Z",
+  "updatedAt": "2026-09-02T17:03:06.879Z",
+  "description": "Refinar somente a hierarquia da ShellNavigation e o catalogo localizado. Renomear o destino global Overview para All projects em en-US e Todos os projetos em pt-BR. Adicionar ao ShellCatalog um rotulo de contexto Project em en-US e Projeto em pt-BR e renderiza-lo, apenas no desktop, imediatamente antes do ProjectSwitcher como microtitulo discreto em caixa alta, fonte mono e cor muted. Aumentar a separacao espacial entre o grupo global e o grupo de projeto para 16 a 24 px ao redor do unico divisor existente, sem aumentar seu peso visual. Manter o seletor como primeiro controle do grupo contextual e Conversation, Runs, Work e Settings na lista aninhada com recuo e linha vertical existentes. No movel, manter a anatomia plana atual sem microtitulo, divisor, recuo, linha vertical ou overflow; o texto Todos os projetos ou All projects continua tornando o destino global explicito. Preservar atalhos numericos, destinos, estados ativos, foco, semantica, footer, idiomas e todos os demais comportamentos. Nao adicionar card, disclosure, animacao, rota, estado, dependencia ou componente generico. Cobrir os dois catalogos, a ordem semantica, o microtitulo somente desktop, o unico divisor e a preservacao do menu contextual e dos atalhos.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Refinar somente a hierarquia da ShellNavigation e o catalogo localizado. Renomear o destino global Overview para All projects em en-US e Todos os projetos em pt-BR. Adicionar ao ShellCatalog um rotulo de contexto Project em en-US e Projeto em pt-BR e renderiza-lo, apenas no desktop, imediatamente antes do ProjectSwitcher como microtitulo discreto em caixa alta, fonte mono e cor muted. Aumentar a separacao espacial entre o grupo global e o grupo de projeto para 16 a 24 px ao redor do unico divisor existente, sem aumentar seu peso visual. Manter o seletor como primeiro controle do grupo contextual e Conversation, Runs, Work e Settings na lista aninhada com recuo e linha vertical existentes. No movel, manter a anatomia plana atual sem microtitulo, divisor, recuo, linha vertical ou overflow; o texto Todos os projetos ou All projects continua tornando o destino global explicito. Preservar atalhos numericos, destinos, estados ativos, foco, semantica, footer, idiomas e todos os demais comportamentos. Nao adicionar card, disclosure, animacao, rota, estado, dependencia ou componente generico. Cobrir os dois catalogos, a ordem semantica, o microtitulo somente desktop, o unico divisor e a preservacao do menu contextual e dos atalhos.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui && git diff --check"
+    ]
+  },
+  "approval": {
+    "fingerprint": "7374a72fa7787497edc130177e8f64f18afbda509422dc625fe83c9c389077f7",
+    "approvedAt": "2026-09-02T17:03:06.879Z"
+  }
+}
