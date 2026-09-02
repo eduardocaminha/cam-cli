@@ -3220,11 +3220,12 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 describe('operator shell', () => {
 	test('overview and the project selector expose the global registry in both locales', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, all: 'All projects', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, all: 'Todos os projetos', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, title: 'Control center', current: 'served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, title: 'Central de controle', current: 'servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
-			expect(html).toContain(`>${expected.all}</h2>`);
+			expect(html).toContain(`aria-label="${expected.title}"`);
+			expect(html).toContain(`>${expected.title}</h2>`);
 			expect(html).toContain(`>${expected.current}</span>`);
 			expect(html).toContain(`>${expected.readiness}</dt>`);
 			expect(html).toContain('acme/gateship');
@@ -3852,7 +3853,7 @@ describe('operator shell', () => {
 			const switcherMarkup = html.slice(switcherStart, switcherEnd);
 
 			expect(nav).toContain('aria-label="Navigation"');
-			for (const label of ['All projects', 'Conversation', 'Runs', 'Work', 'Settings']) {
+			for (const label of ['Control center', 'Conversation', 'Runs', 'Work', 'Settings']) {
 				expect(nav).toContain(`>${label}</span>`);
 			}
 			expect(nav).toContain('flex-wrap');
@@ -3874,10 +3875,10 @@ describe('operator shell', () => {
 			expect(contextLabel).toContain('text-muted-foreground');
 			expect(contextLabel).toContain('uppercase');
 			expect(nav.indexOf('data-slot="project-context-label"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(projectSurfaceNavigation).toContain('lg:border-l');
-			expect(projectSurfaceNavigation).toContain('lg:border-sidebar-border');
 			expect(projectSurfaceNavigation).toContain('lg:pl-2');
-			expect(projectSurfaceNavigation).not.toContain(' border-l');
+			expect(projectSurfaceNavigation).toContain('lg:mt-1');
+			expect(projectSurfaceNavigation).not.toContain('border-l');
+			expect(projectSurfaceNavigation).not.toContain('border-sidebar-border');
 			expect(projectSurfaceNavigation).not.toContain(' pl-2');
 			expect(projectSurfaceNavigation).not.toContain('pt-1');
 			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
@@ -3900,10 +3901,26 @@ describe('operator shell', () => {
 		}
 	});
 
+	test('navigation keeps the localized global settings footer on desktop', () => {
+		for (const expected of [
+			{ locale: 'en-US' as const, globalSettings: 'Global settings' },
+			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais' },
+		]) {
+			const html = renderAt('/projects/project-current', { locale: expected.locale });
+			const footerStart = html.indexOf(`<nav aria-label="${expected.globalSettings}"`);
+			const footer = html.slice(footerStart, html.indexOf('</nav>', footerStart));
+
+			expect(footer).toContain('hidden');
+			expect(footer).toContain('lg:mt-auto');
+			expect(footer).toContain('href="/settings"');
+			expect(footer).toContain(`>${expected.globalSettings}</span>`);
+		}
+	});
+
 	test('navigation localizes the global destination and desktop project context', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, overview: 'All projects', context: 'Project' },
-			{ locale: 'pt-BR' as const, overview: 'Todos os projetos', context: 'Projeto' },
+			{ locale: 'en-US' as const, overview: 'Control center', context: 'Project' },
+			{ locale: 'pt-BR' as const, overview: 'Central de controle', context: 'Projeto' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
 			const start = html.indexOf('<nav aria-label=');
@@ -3977,7 +3994,7 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Todos os projetos', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
+		for (const label of ['Central de controle', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');

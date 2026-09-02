@@ -275,7 +275,7 @@ export function ShellNavigation({
 						status={status}
 					/>
 					{selection.projectId === null ? null : (
-						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:border-l lg:border-sidebar-border lg:pl-2" data-slot="project-surface-navigation">
+						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:pl-2" data-slot="project-surface-navigation">
 							{SURFACES.map((surface) => (
 								<li className="shrink-0" key={surface.surface}>
 									<a

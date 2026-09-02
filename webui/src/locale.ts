@@ -590,7 +590,7 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			routeLabels: {
-				overview: 'All projects',
+				overview: 'Control center',
 				conversation: 'Conversation',
 				runs: 'Runs',
 				work: 'Work',
@@ -599,7 +599,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		projects: {
-			title: 'All projects',
+			title: 'Control center',
 			description: 'Registered projects available to this Gateship installation.',
 			currentBadge: 'served by this instance',
 			repositoryUnknown: 'Repository not known',
@@ -655,7 +655,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Operations overview', description: 'A live view of project readiness, active work and recent outcomes.', loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
+			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
 			metrics: { activeProjects: 'Active projects', attention: 'Needs attention', backlog: 'Approved backlog', completed: 'Runs completed', cost: 'Known cost' }, activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Backlog', lastOutcome: 'Last outcome', noRun: 'No active run', noOutcome: 'No outcome in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', activity: 'Activity', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
 		},
 		conversation: {
@@ -1064,7 +1064,7 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			routeLabels: {
-				overview: 'Todos os projetos',
+				overview: 'Central de controle',
 				conversation: 'Conversa',
 				runs: 'Runs',
 				work: 'Trabalho',
@@ -1073,7 +1073,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		projects: {
-			title: 'Todos os projetos',
+			title: 'Central de controle',
 			description: 'Projetos registrados disponíveis nesta instalação do Gateship.',
 			currentBadge: 'servido por esta instância',
 			repositoryUnknown: 'Repositório desconhecido',
@@ -1129,7 +1129,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Central de operações', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
+			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
 			metrics: { activeProjects: 'Projetos ativos', attention: 'Requer atenção', backlog: 'Backlog aprovado', completed: 'Runs concluídas', cost: 'Custo conhecido' }, activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Backlog', lastOutcome: 'Último resultado', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhum resultado nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', activity: 'Atividade', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
 		},
 		conversation: {
