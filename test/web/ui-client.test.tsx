@@ -657,10 +657,13 @@ describe('conversation surface', () => {
 
 		for (const expected of cases) {
 			const empty = conversationAt(expected.locale);
+			const conversationMain = openingTags(empty).find((tag) => tag.startsWith('<main'));
+			expect(conversationMain).toContain(`aria-label="${expected.title}"`);
 			expect(empty).toContain(`aria-label="${expected.transcript}"`);
 			expect(empty).toContain(expected.empty);
-			expect(empty).toContain(expected.title);
-			expect(empty).toContain(expected.description);
+			expect(empty).not.toContain('data-slot="card-frame-header"');
+			expect(empty).not.toContain('data-slot="card-frame-title"');
+			expect(empty).not.toContain(expected.description);
 
 			const populated = conversationAt(expected.locale, {
 				chatMessages: [
@@ -809,7 +812,8 @@ describe('conversation surface', () => {
 			],
 		});
 
-		expect(html).toContain('Conversation with the orchestrator');
+		expect(openingTags(html).find((tag) => tag.startsWith('<main')))
+			.toContain('aria-label="Conversation with the orchestrator"');
 		expect(html).toContain('for="orchestrator-message"');
 		expect(html).toContain('>Message for the orchestrator</label>');
 		expect(html).toContain('name="message"');
@@ -3665,7 +3669,8 @@ describe('operator shell', () => {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 		});
-		expect(conversation).toContain('Conversation with the orchestrator');
+		expect(openingTags(conversation).find((tag) => tag.startsWith('<main')))
+			.toContain('aria-label="Conversation with the orchestrator"');
 		expect(conversation).toContain('/projects/project-other/runs');
 		expect(conversation).not.toContain('Project runtime not loaded');
 

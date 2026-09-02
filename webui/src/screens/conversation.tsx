@@ -6,7 +6,7 @@ import { MAIN_CONTENT_ID } from '../app-shell.tsx';
 import { aggregateChatTurnCosts } from '../client.ts';
 import { AttentionCard } from '../components/ui/attention-card.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardPanel } from '../components/ui/card.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
@@ -201,15 +201,12 @@ export function ConversationColumn({
 }): React.ReactElement {
 	return (
 		<main
+			aria-label={catalog.title}
 			className="flex w-full min-w-0 shrink-0 flex-col p-4 lg:p-6 xl:min-h-0 xl:flex-1 xl:shrink"
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
 			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
-				<CardHeader>
-					<CardTitle>{catalog.title}</CardTitle>
-					<CardDescription>{catalog.description}</CardDescription>
-				</CardHeader>
 				<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
 					<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
