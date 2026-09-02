@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-769",
+  "title": "Concluir ship quando o automerge remover a branch antes do sync",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T00:01:46.055Z",
+  "updatedAt": "2026-09-02T00:01:46.055Z",
+  "description": "Na GSHIP-767, a PR #630 já estava MERGED quando o ship tentou gh pr update-branch; o GitHub respondeu Head ref does not exist e a run voltou incorretamente de shipping para ready-to-ship, exigindo novo runs.ship. Tornar esse caminho idempotente. Antes de atualizar a branch e também ao receber a variante explícita de head ref ausente, reler o estado da mesma PR e o head esperado. Se a PR já estiver MERGED, não tratar como falha: sincronizar origin/main, emitir os eventos normais de source-synced, merged e shipped e concluir done uma única vez. Se estiver aberta, preservar o fluxo atual de atualização e CI. Se estiver fechada sem merge ou apontar para outro head, manter a recusa segura atual. Não ampliar o conjunto de mensagens de erro que acionam fallback por regex genérica. Adicionar testes da corrida automerge entre CI passed e update-branch, do erro head-ref com PR ainda aberta, de PR fechada sem merge e da repetição idempotente após merged. Não alterar política de automerge, proteção de branch, retry global ou estados públicos.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Na GSHIP-767, a PR #630 já estava MERGED quando o ship tentou gh pr update-branch; o GitHub respondeu Head ref does not exist e a run voltou incorretamente de shipping para ready-to-ship, exigindo novo runs.ship. Tornar esse caminho idempotente. Antes de atualizar a branch e também ao receber a variante explícita de head ref ausente, reler o estado da mesma PR e o head esperado. Se a PR já estiver MERGED, não tratar como falha: sincronizar origin/main, emitir os eventos normais de source-synced, merged e shipped e concluir done uma única vez. Se estiver aberta, preservar o fluxo atual de atualização e CI. Se estiver fechada sem merge ou apontar para outro head, manter a recusa segura atual. Não ampliar o conjunto de mensagens de erro que acionam fallback por regex genérica. Adicionar testes da corrida automerge entre CI passed e update-branch, do erro head-ref com PR ainda aberta, de PR fechada sem merge e da repetição idempotente após merged. Não alterar política de automerge, proteção de branch, retry global ou estados públicos.",
+    "verify": [
+      "bun test test/runtime/run-ship.test.ts test/runtime/issue-intake.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "615ac142b7c28323484dec741f43d5fcf3f96ca4ddbfdd8871a83ce770046083",
+    "approvedAt": "2026-09-02T00:01:46.055Z"
+  }
+}
