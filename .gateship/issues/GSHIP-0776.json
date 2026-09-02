@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-776",
   "title": "Nomear a central de controle e remover a linha da arvore",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-02T19:19:56.218Z",
-  "updatedAt": "2026-09-02T19:19:56.218Z",
+  "updatedAt": "2026-09-02T19:24:42.881Z",
   "description": "Refinar somente a nomenclatura da superficie global e a decoracao da lista contextual. Em en-US, substituir All projects por Control center em shell.routeLabels.overview, projects.title e overview.title. Em pt-BR, substituir Todos os projetos por Central de controle nos mesmos tres pontos. Manter a rota /overview, descricoes, metricas, cards, icone e comportamento existentes. Na ShellNavigation desktop, remover completamente as classes e o efeito da linha vertical da project-surface-navigation, preservando somente lg:pl-2 como recuo de 8 px e lg:mt-1. No movel, continuar sem linha, recuo ou overflow. Preservar o unico divisor, o microtitulo Project/Projeto, o seletor, estados ativos, atalhos Command/Control+1 a 9, links, foco, idiomas e Global settings/Ajustes globais exatamente no rodape atual. Nao adicionar rota, estado, componente, dependencia, animacao ou outra decoracao. Cobrir os dois idiomas, os tres pontos de nomenclatura, a ausencia total de border-left, o recuo somente desktop e a preservacao do footer global.",
   "specSource": "operator",
   "spec": {
