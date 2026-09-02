@@ -166,7 +166,11 @@ export function RunActivity({
 		: events
 			.filter((event) => event.runId === run.id && isOperational(event))
 			.slice(-30);
-	const liveEdge = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
+	const {
+		canReturnToLiveEdge: _canReturnToLiveEdge,
+		returnToLiveEdge: _returnToLiveEdge,
+		...liveEdge
+	} = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
 	if (run === null) return null;
 	return (
 		<ContextPanel

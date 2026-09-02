@@ -6,7 +6,7 @@
 // harness (ADR-0067); the hook around it only reads those numbers and writes
 // scrollTop.
 
-import { type RefObject, useCallback, useEffect, useRef } from 'react';
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * How close to the bottom still counts as standing at the live edge. Fractional
@@ -24,10 +24,28 @@ export interface ScrollPosition {
 
 export type LiveEdgeIdentity = string | null;
 
+export interface LiveEdgeOptions {
+	observeResize?: boolean;
+}
+
+type ResizeObserverConstructor = new (callback: () => void) => {
+	observe(target: HTMLElement): void;
+	disconnect(): void;
+};
+
+function resizeObserverConstructor(): ResizeObserverConstructor | undefined {
+	return (globalThis as unknown as { ResizeObserver?: ResizeObserverConstructor }).ResizeObserver;
+}
+
 /** Whether this position is close enough to the bottom to keep following. */
 export function isAtLiveEdge(position: ScrollPosition): boolean {
 	const distance = position.scrollHeight - position.scrollTop - position.clientHeight;
 	return distance <= LIVE_EDGE_TOLERANCE_PX;
+}
+
+/** Whether a scroller away from its live edge needs a return control. */
+export function canReturnToLiveEdge(position: ScrollPosition): boolean {
+	return position.scrollHeight > position.clientHeight && !isAtLiveEdge(position);
 }
 
 /** The DOM-independent state machine shared by every live output region. */
@@ -83,27 +101,69 @@ function positionOf(node: HTMLElement | null): ScrollPosition | null {
 export function useLiveEdge<Element extends HTMLElement = HTMLElement>(
 	newest: number | null,
 	identity: LiveEdgeIdentity = null,
+	options: LiveEdgeOptions = {},
 ): {
 	ref: RefObject<Element | null>;
 	onScroll: () => void;
 	role: 'log';
 	tabIndex: 0;
+	canReturnToLiveEdge: boolean;
+	returnToLiveEdge: () => void;
 } {
 	const ref = useRef<Element | null>(null);
 	const session = useRef<LiveEdgeSession | null>(null);
+	const [canReturn, setCanReturn] = useState(false);
 	// This must happen during render, including renders where the region has no
 	// mounted node. A run-1 -> null -> run-1 sequence needs fresh reader state.
 	session.current = liveEdgeSession(session.current, identity);
+	const updateReturnControl = useCallback((position: ScrollPosition): void => {
+		setCanReturn(canReturnToLiveEdge(position));
+	}, []);
 	const onScroll = useCallback(() => {
 		const position = positionOf(ref.current);
-		if (position !== null) session.current?.controller.onScroll(position);
-	}, []);
+		if (position !== null) {
+			session.current?.controller.onScroll(position);
+			updateReturnControl(position);
+		}
+	}, [updateReturnControl]);
+	const returnToLiveEdge = useCallback(() => {
+		const position = positionOf(ref.current);
+		if (position === null) return;
+		position.scrollTop = position.scrollHeight;
+		session.current?.controller.onScroll(position);
+		updateReturnControl(position);
+	}, [updateReturnControl]);
 	useEffect(() => {
 		const position = positionOf(ref.current);
-		if (position !== null) session.current?.controller.onArrival(position);
-	}, [newest, identity]);
+		if (position !== null) {
+			session.current?.controller.onArrival(position);
+			updateReturnControl(position);
+		}
+	}, [newest, identity, updateReturnControl]);
+	useEffect(() => {
+		if (!options.observeResize) return;
+		const node = ref.current;
+		const ResizeObserver = resizeObserverConstructor();
+		if (node === null || ResizeObserver === undefined) return;
+		const observer = new ResizeObserver(() => {
+			const position = positionOf(ref.current);
+			if (position !== null) {
+				session.current?.controller.onScroll(position);
+				updateReturnControl(position);
+			}
+		});
+		observer.observe(node);
+		return () => observer.disconnect();
+	}, [options.observeResize, updateReturnControl]);
 	// Keep the observable region semantics and the invisible scroll bindings
 	// atomic: a consumer either attaches the complete live-edge contract or none
 	// of it.
-	return { ref, onScroll, role: 'log', tabIndex: 0 };
+	return {
+		ref,
+		onScroll,
+		role: 'log',
+		tabIndex: 0,
+		canReturnToLiveEdge: canReturn,
+		returnToLiveEdge,
+	};
 }
