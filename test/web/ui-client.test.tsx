@@ -124,6 +124,8 @@ import {
 	type Locale,
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
+import { clientNavigationTarget } from '../../webui/src/navigation.ts';
+import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -3218,6 +3220,81 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 }
 
 describe('operator shell', () => {
+	test('same-scope destinations use history while scope boundaries remain document navigations', () => {
+		const base = {
+			currentUrl: 'http://gateship.test/projects/project-current/runs',
+			defaultPrevented: false,
+			button: 0,
+			altKey: false,
+			ctrlKey: false,
+			metaKey: false,
+			shiftKey: false,
+			target: '',
+			download: false,
+		};
+
+		expect(clientNavigationTarget({ ...base, href: '/projects/project-current/work' }))
+			.toBe('/projects/project-current/work');
+		expect(clientNavigationTarget({ ...base, href: '/settings', currentUrl: 'http://gateship.test/overview' }))
+			.toBe('/settings');
+		expect(clientNavigationTarget({ ...base, href: '/projects/project-other' })).toBeNull();
+		expect(clientNavigationTarget({ ...base, href: '/overview' })).toBeNull();
+	});
+
+	test('special links keep normal browser navigation behavior', () => {
+		const base = {
+			currentUrl: 'http://gateship.test/projects/project-current',
+			href: '/projects/project-current/runs',
+			defaultPrevented: false,
+			button: 0,
+			altKey: false,
+			ctrlKey: false,
+			metaKey: false,
+			shiftKey: false,
+			target: '',
+			download: false,
+		};
+		for (const intent of [
+			{ ...base, href: 'https://example.com/runs' },
+			{ ...base, href: '/projects/project-current/runs#latest' },
+			{ ...base, target: '_blank' },
+			{ ...base, download: true },
+			{ ...base, button: 1 },
+			{ ...base, ctrlKey: true },
+			{ ...base, metaKey: true },
+			{ ...base, shiftKey: true },
+			{ ...base, altKey: true },
+			{ ...base, defaultPrevented: true },
+		]) expect(clientNavigationTarget(intent)).toBeNull();
+	});
+
+	test('the initial loading render is localized and never infers an empty project state', () => {
+		for (const [locale, label] of [['en-US', 'Loading operational data…'], ['pt-BR', 'Carregando dados operacionais…']] as const) {
+			const html = renderToStaticMarkup(<InitialOperationalLoading locale={locale} />);
+			expect(html).toContain('aria-busy="true"');
+			expect(html).toContain('role="status"');
+			expect(html).toContain(label);
+			expect(html).not.toContain('Project not registered');
+			expect(html).not.toContain('>0<');
+			expect(html).not.toContain('No active run');
+		}
+	});
+
+	test('a failed initial read is localized, actionable and never inferred as empty', () => {
+		for (const [locale, message, retry] of [
+			['en-US', 'Operational data could not be loaded.', 'Try again'],
+			['pt-BR', 'Não foi possível carregar os dados operacionais.', 'Tentar novamente'],
+		] as const) {
+			const html = renderToStaticMarkup(<InitialOperationalFailure detail="network failure" locale={locale} onRetry={() => {}} />);
+			expect(html).toContain('role="alert"');
+			expect(html).toContain(message);
+			expect(html).toContain('network failure');
+			expect(html).toContain(`>${retry}</button>`);
+			expect(html).not.toContain('Project not registered');
+			expect(html).not.toContain('>0<');
+		}
+	});
+
 	test('overview and the project selector expose the global registry in both locales', () => {
 		for (const expected of [
 			{ locale: 'en-US' as const, title: 'Control center', current: 'served by this instance', readiness: 'Readiness' },

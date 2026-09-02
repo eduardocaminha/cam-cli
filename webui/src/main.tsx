@@ -5,12 +5,10 @@
 // general polling loop -- /api/events pushes run transitions. The one bounded
 // exception polls only while an external diagnostic process is active.
 //
-// Which surface to show, and which project it is about, are read from the
-// browser path once, at mount: every link in the shell is a real navigation, so
-// the document -- and with it the event subscription -- is rebuilt whenever the
-// path changes and there is no navigation state to keep.
+// Same-scope links update browser history without rebuilding the document, so
+// the operational snapshot and its event subscription remain intact.
 
-import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 'react';
+import { type ReactElement, StrictMode, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf } from './App.tsx';
 import {
@@ -108,6 +106,8 @@ import {
 	notifyRunEvent,
 	requestBrowserNotificationPermission,
 } from './notifications.ts';
+import { clientNavigationTarget } from './navigation.ts';
+import { InitialOperationalFailure, InitialOperationalLoading } from './initial-loading.tsx';
 import {
 	invalidatesSnapshot,
 	type PlannableIssue,
@@ -138,14 +138,6 @@ const CHECKING_PROJECT: ProjectStatusView = {
 
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
 
-/**
- * The selected project, derived from the browser path alone (GSHIP-707): no
- * localStorage, no hidden state, and nothing to reconcile when the operator
- * navigates, since that rebuilds this module. `null` on the overview and on the
- * legacy paths the service redirects, which keeps the boot project's routes.
- */
-const SELECTED_PROJECT_ID = projectIdOf(window.location.pathname);
-
 async function fetchDiagnosticsForScope(scope: string | null): Promise<DiagnosticsView> {
 	if (scope === null) return fetchDiagnostics(null);
 	const status = await fetchProjectStatus(scope);
@@ -160,7 +152,7 @@ function browserTimeZone(): string {
 	}
 }
 
-function useOperationalRun(): {
+function useOperationalRun(scope: string | null, pathname: string): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
 	drafts: IssueReviewDraft[];
@@ -195,6 +187,9 @@ function useOperationalRun(): {
 	overview: ProjectOperationalOverviewView | null;
 	overviewLoading: boolean;
 	overviewError: string | null;
+	snapshotLoading: boolean;
+	snapshotError: string | null;
+	retryInitialSnapshot: () => void;
 	pending: boolean;
 	claudeCredentialError: string | null;
 	connectClaude: (token: string) => Promise<boolean>;
@@ -247,28 +242,30 @@ function useOperationalRun(): {
 	const [claudeCredentialError, setClaudeCredentialError] = useState<string | null>(null);
 	const [version, setVersion] = useState('');
 	const [overview, setOverview] = useState<ProjectOperationalOverviewView | null>(null);
-	const [pathname, setPathname] = useState(window.location.pathname);
 	const [overviewLoading, setOverviewLoading] = useState(routeOf(pathname) === '/overview');
 	const [overviewError, setOverviewError] = useState<string | null>(null);
+	const [snapshotLoading, setSnapshotLoading] = useState(true);
+	const [snapshotError, setSnapshotError] = useState<string | null>(null);
+	const refreshedScope = useRef<string | null | undefined>(undefined);
 
 	const refresh = useCallback(() => {
-		void Promise.all([
-			fetchRuns(SELECTED_PROJECT_ID),
-			fetchBacklog(SELECTED_PROJECT_ID),
-			fetchProviders(SELECTED_PROJECT_ID),
-			fetchChat(SELECTED_PROJECT_ID),
-			fetchBrief(SELECTED_PROJECT_ID),
-			fetchProposals(SELECTED_PROJECT_ID),
-			fetchResolvedProposals(SELECTED_PROJECT_ID),
-			fetchModelSettingsSnapshot(SELECTED_PROJECT_ID),
+		return Promise.all([
+			fetchRuns(scope),
+			fetchBacklog(scope),
+			fetchProviders(scope),
+			fetchChat(scope),
+			fetchBrief(scope),
+			fetchProposals(scope),
+			fetchResolvedProposals(scope),
+			fetchModelSettingsSnapshot(scope),
 			fetchAgentDefaults(),
-			fetchChainRuns(SELECTED_PROJECT_ID),
-			fetchExecutorHandoff(SELECTED_PROJECT_ID),
+			fetchChainRuns(scope),
+			fetchExecutorHandoff(scope),
 			fetchNotificationChannels(),
-			fetchProjectStatus(SELECTED_PROJECT_ID),
+			fetchProjectStatus(scope),
 			fetchProjects(),
 			fetchOperatorProfile(),
-			fetchDiagnosticsForScope(SELECTED_PROJECT_ID),
+			fetchDiagnosticsForScope(scope),
 			fetchSelfUpdate(),
 		])
 			.then(async ([
@@ -293,7 +290,7 @@ function useOperationalRun(): {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null
 					? []
-					: await fetchRunEvents(SELECTED_PROJECT_ID, latest.id);
+					: await fetchRunEvents(scope, latest.id);
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
@@ -323,9 +320,23 @@ function useOperationalRun(): {
 				setDiagnostics(diagnosticsSnapshot);
 				setSelfUpdate(selfUpdateSnapshot);
 				setEvents(history);
+				return true as const;
 			})
-			.catch((error: unknown) => setStatus(String(error)));
-	}, []);
+			.catch((error: unknown) => {
+				const detail = String(error);
+				setStatus(detail);
+				return detail;
+			});
+	}, [scope]);
+
+	const loadInitialSnapshot = useCallback(() => {
+		setSnapshotLoading(true);
+		setSnapshotError(null);
+		void refresh().then((loaded) => {
+			setSnapshotLoading(false);
+			if (loaded !== true) setSnapshotError(loaded);
+		});
+	}, [refresh]);
 
 	const send = useCallback((command: () => Promise<string>) => {
 		setPending(true);
@@ -376,14 +387,10 @@ function useOperationalRun(): {
 	}, []);
 
 	useEffect(() => {
-		refresh();
-	}, [refresh]);
-
-	useEffect(() => {
-		const onPopState = () => setPathname(window.location.pathname);
-		window.addEventListener('popstate', onPopState);
-		return () => window.removeEventListener('popstate', onPopState);
-	}, []);
+		if (refreshedScope.current === scope) return;
+		refreshedScope.current = scope;
+		loadInitialSnapshot();
+	}, [loadInitialSnapshot, scope]);
 
 	useEffect(() => {
 		if (routeOf(pathname) !== '/overview') {
@@ -434,11 +441,11 @@ function useOperationalRun(): {
 	// runtime exists from boot, so it streams while it is still in onboarding,
 	// exactly as it did before this document named it. Without a selection --
 	// the overview -- the boot stream is kept.
-	const subscribable = SELECTED_PROJECT_ID === null
+	const subscribable = scope === null
 		|| projects.some((candidate) =>
-			candidate.id === SELECTED_PROJECT_ID
+			candidate.id === scope
 			&& (candidate.current || candidate.readiness === 'ready'));
-	const streamPath = subscribable ? eventsPathOf(SELECTED_PROJECT_ID) : null;
+	const streamPath = subscribable ? eventsPathOf(scope) : null;
 
 	useEffect(() => {
 		if (streamPath === null) return;
@@ -465,12 +472,12 @@ function useOperationalRun(): {
 		const state = diagnostics.scan?.state;
 		if (state !== 'queued' && state !== 'running') return;
 		const interval = setInterval(() => {
-			void fetchDiagnosticsForScope(SELECTED_PROJECT_ID)
+			void fetchDiagnosticsForScope(scope)
 				.then(setDiagnostics)
 				.catch((error: unknown) => setStatus(String(error)));
 		}, 1_500);
 		return () => clearInterval(interval);
-	}, [diagnostics.scan?.state]);
+	}, [diagnostics.scan?.state, scope]);
 
 	// Release checks and the restart helper do not emit run events. A small
 	// read-only poll keeps Settings current across detection, handoff, rollback,
@@ -519,6 +526,9 @@ function useOperationalRun(): {
 		overview,
 		overviewLoading,
 		overviewError,
+		snapshotLoading,
+		snapshotError,
+		retryInitialSnapshot: loadInitialSnapshot,
 		pending,
 		claudeCredentialError,
 		connectClaude,
@@ -529,6 +539,8 @@ function useOperationalRun(): {
 }
 
 function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
+	const [pathname, setPathname] = useState(window.location.pathname);
+	const scope = projectIdOf(pathname);
 	const {
 		backlog,
 		ideas,
@@ -564,13 +576,16 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		overview,
 		overviewLoading,
 		overviewError,
+		snapshotLoading,
+		snapshotError,
+		retryInitialSnapshot,
 		pending,
 		claudeCredentialError,
 		connectClaude,
 		clearClaudeCredentialError,
 		enableNotifications,
 		send,
-	} = useOperationalRun();
+	} = useOperationalRun(scope, pathname);
 	const run = runs[0] ?? null;
 	const [locale, setLocale] = useState(initialLocale);
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
@@ -587,8 +602,46 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	// Every run command names the same project the screen is reading, so resume,
 	// cancel, abandon and ship all reach the selected project's runtime.
 	const command = (action: RunAction) => () => {
-		if (run !== null) send(() => commandRun(SELECTED_PROJECT_ID, run.id, action));
+		if (run !== null) send(() => commandRun(scope, run.id, action));
 	};
+
+	useEffect(() => {
+		const onPopState = () => setPathname(window.location.pathname);
+		window.addEventListener('popstate', onPopState);
+		return () => window.removeEventListener('popstate', onPopState);
+	}, []);
+
+	useEffect(() => {
+		const onClick = (event: MouseEvent): void => {
+			const element = event.target instanceof Element ? event.target.closest('a[href]') : null;
+			if (!(element instanceof HTMLAnchorElement)) return;
+			const destination = clientNavigationTarget({
+				currentUrl: window.location.href,
+				href: element.href,
+				defaultPrevented: event.defaultPrevented,
+				button: event.button,
+				altKey: event.altKey,
+				ctrlKey: event.ctrlKey,
+				metaKey: event.metaKey,
+				shiftKey: event.shiftKey,
+				target: element.target,
+				download: element.hasAttribute('download'),
+			});
+			if (destination === null) return;
+			event.preventDefault();
+			window.history.pushState(null, '', destination);
+			setPathname(destination);
+		};
+		document.addEventListener('click', onClick);
+		return () => document.removeEventListener('click', onClick);
+	}, []);
+
+	if (snapshotLoading) {
+		return <InitialOperationalLoading locale={initialLocale} />;
+	}
+	if (snapshotError !== null) {
+		return <InitialOperationalFailure detail={snapshotError} locale={initialLocale} onRetry={retryInitialSnapshot} />;
+	}
 
 	return (
 		<App
@@ -615,27 +668,27 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			// project the screen is reading (GSHIP-712), so no Work action falls
 			// back to the boot runtime while another project is selected.
 			onCreateIssue={(draft) => {
-				send(() => createIssue(SELECTED_PROJECT_ID, draft).then((created) => {
+				send(() => createIssue(scope, draft).then((created) => {
 					setSelectedIssueId(created.id);
 					return `${created.id} created and selected.`;
 				}));
 			}}
-			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, SELECTED_PROJECT_ID))}
-			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId, SELECTED_PROJECT_ID))}
+			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, scope))}
+			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId, scope))}
 			onDismissDiagnosticFinding={(findingId) =>
-				send(() => dismissDiagnosticFinding(findingId, SELECTED_PROJECT_ID))}
+				send(() => dismissDiagnosticFinding(findingId, scope))}
 			onPromoteDiagnosticFinding={(findingId, draft) => {
-				send(() => promoteDiagnosticFinding(findingId, draft, SELECTED_PROJECT_ID).then((created) =>
+				send(() => promoteDiagnosticFinding(findingId, draft, scope).then((created) =>
 					`${created.id} created from the diagnostic.`));
 			}}
-			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer, SELECTED_PROJECT_ID))}
+			onStartDiagnostic={(analyzer) => send(() => startDiagnostic(analyzer, scope))}
 			onPromoteProposal={(proposalId, draft) => {
 				// The created issue is a draft to review, not the next run: it is
 				// filed unapproved, so it is not selected to start either.
-				send(() => promoteProposal(proposalId, draft, SELECTED_PROJECT_ID).then((created) =>
+				send(() => promoteProposal(proposalId, draft, scope).then((created) =>
 					`${created.id} created from the proposal.`));
 			}}
-			onSendMessage={(message) => send(() => sendChat(message, SELECTED_PROJECT_ID))}
+			onSendMessage={(message) => send(() => sendChat(message, scope))}
 			onConnectCodex={() => {
 				const loginWindow = window.open('about:blank', 'gateship-codex-login');
 				send(() => startCodexLogin().then((authUrl) => {
@@ -657,17 +710,17 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSendNotificationTest={(channelId) => send(() => sendNotificationTest(channelId))}
 			onResume={(operatorGuidance) => {
 				if (run !== null) {
-					send(() => commandRun(SELECTED_PROJECT_ID, run.id, 'resume', operatorGuidance));
+					send(() => commandRun(scope, run.id, 'resume', operatorGuidance));
 				}
 			}}
-			onSaveBrief={(draft) => send(() => saveBrief(draft, SELECTED_PROJECT_ID))}
+			onSaveBrief={(draft) => send(() => saveBrief(draft, scope))}
 			onSaveDiagnosticSchedule={(enabled, cadence) =>
-				send(() => saveDiagnosticSchedule(enabled, cadence, SELECTED_PROJECT_ID))}
-			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft, SELECTED_PROJECT_ID))}
-			onResetModelSettings={() => send(() => resetModelSettings(SELECTED_PROJECT_ID))}
+				send(() => saveDiagnosticSchedule(enabled, cadence, scope))}
+			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft, scope))}
+			onResetModelSettings={() => send(() => resetModelSettings(scope))}
 			onSaveAgentDefaults={(draft) => send(() => saveAgentDefaults(draft))}
-			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled, SELECTED_PROJECT_ID))}
-			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled, SELECTED_PROJECT_ID))}
+			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled, scope))}
+			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled, scope))}
 			// GSHIP-718: importing clones into a checkout Gateship manages and
 			// registers it, so success navigates the same way a fresh registration
 			// does -- straight to the imported project's own URL.
@@ -709,26 +762,26 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			}}
 			onSelectIssue={setSelectedIssueId}
 			onSelectLocale={selectLocale}
-			onSelectProvider={(providerId) => send(() => selectProvider(providerId, SELECTED_PROJECT_ID))}
-			onResetProvider={() => send(() => resetSelectedProvider(SELECTED_PROJECT_ID))}
+			onSelectProvider={(providerId) => send(() => selectProvider(providerId, scope))}
+			onResetProvider={() => send(() => resetSelectedProvider(scope))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
-				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then((specified) => {
+				send(() => specifyIssue(scope, issueId, draft).then((specified) => {
 					setSelectedIssueId(specified.id);
 					return `${specified.id} specified and selected.`;
 				}));
 			}}
 			onApproveIssue={(issueId) =>
-				send(() => approveIssue(SELECTED_PROJECT_ID, issueId).then(() => `${issueId} approved.`))}
+				send(() => approveIssue(scope, issueId).then(() => `${issueId} approved.`))}
 			onAbandonIssue={(issueId, reason) => {
 				send(() =>
-					abandonIssue(SELECTED_PROJECT_ID, issueId, reason).then(() => `${issueId} abandoned.`));
+					abandonIssue(scope, issueId, reason).then(() => `${issueId} abandoned.`));
 			}}
 			onReviewIssue={(issueId, draft) => {
-				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then(() => `${issueId} revised.`));
+				send(() => specifyIssue(scope, issueId, draft).then(() => `${issueId} revised.`));
 			}}
 			onStart={() => {
-				if (selectedIssueId !== null) send(() => startRun(SELECTED_PROJECT_ID, selectedIssueId));
+				if (selectedIssueId !== null) send(() => startRun(scope, selectedIssueId));
 			}}
 			modelSettings={modelSettings}
 			modelSettingsSource={modelSettingsSource}
@@ -745,7 +798,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			providers={providers}
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
-			route={routeOf(window.location.pathname)}
+			route={routeOf(pathname)}
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}
