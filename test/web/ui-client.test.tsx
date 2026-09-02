@@ -3829,12 +3829,18 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation is five real paths, with the active one marked', () => {
+	test('navigation keeps global overview before the project selector and its four scoped paths', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
-			const active = openingTags(nav).find((tag) => tag.includes(`href="${route}"`));
+			const active = openingTags(nav).find((tag) =>
+				tag.includes(`href="${route}"`) && tag.includes('aria-current="page"'));
+			const switcher = elementWith(html, 'data-slot="project-switcher"');
+			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
+			const switcherStart = html.indexOf('data-slot="project-switcher"');
+			const switcherEnd = html.indexOf('</button>', switcherStart);
+			const switcherMarkup = html.slice(switcherStart, switcherEnd);
 
 			expect(nav).toContain('aria-label="Navigation"');
 			for (const label of ['Overview', 'Conversation', 'Runs', 'Work', 'Settings']) {
@@ -3842,9 +3848,20 @@ describe('operator shell', () => {
 			}
 			expect(nav).toContain('flex-wrap');
 			expect(nav).not.toContain('overflow-x-auto');
-			expect(nav).not.toContain('text-ellipsis');
 			expect(nav).toContain('href="/overview"');
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
+			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${route}"`));
+			expect(nav.match(/href="\/overview"/g)).toHaveLength(1);
+			expect(switcher).toContain('rounded-md');
+			expect(switcher).toContain('px-3');
+			expect(switcher).toContain('focus-visible:ring-2');
+			expect(switcherItem).toContain('w-full');
+			expect(switcherItem).toContain('min-w-0');
+			expect(switcherItem).not.toContain('shrink-0');
+			expect(switcherMarkup).toContain('size-4');
+			expect(switcherMarkup).not.toContain('size-8');
+			expect(switcherMarkup).not.toContain('border');
 			expect(active).toContain('aria-current="page"');
 			expect(nav.split('aria-current="page"')).toHaveLength(2);
 			// Navigation itself stays on served paths. The shell-level skip link is
@@ -4257,6 +4274,8 @@ describe('conversation transcript', () => {
 		const layout = elementWith(html, 'data-slot="conversation-layout"');
 		const transcript = elementWith(html, 'role="log"');
 		const inspector = elementWith(html, 'data-slot="run-inspector"');
+		const card = elementWith(html, 'data-slot="card-frame"');
+		const cardPanel = elementWith(html, 'data-slot="card-panel"');
 		const main = openingTags(html).find((tag) => tag.startsWith('<main'));
 
 		expect(layout).toContain('flex-col');
@@ -4265,7 +4284,11 @@ describe('conversation transcript', () => {
 		expect(layout).toContain('xl:overflow-hidden');
 		expect(transcript).toContain('overflow-y-visible');
 		expect(transcript).toContain('xl:overflow-y-auto');
+		expect(transcript).toContain('min-h-0');
 		expect(main).toContain('shrink-0');
+		expect(main).toContain('xl:min-h-0');
+		expect(card).toContain('xl:min-h-0');
+		expect(cardPanel).toContain('min-h-0');
 		expect(main).toContain('xl:flex-1');
 		expect(inspector).toContain('w-full');
 		expect(inspector).toContain('xl:w-96');

@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-771",
   "title": "Organizar navegação do projeto e corrigir rolagem da conversa",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-02T13:09:19.935Z",
-  "updatedAt": "2026-09-02T13:09:19.935Z",
+  "updatedAt": "2026-09-02T13:17:50.748Z",
   "description": "Refinar somente o shell esquerdo e a conversa da Web UI. Na sidebar expandida, renderizar o link global Overview antes do seletor de projeto e mantê-lo disponível em todas as rotas. Abaixo dele, renderizar o seletor e, quando houver projeto selecionado, as quatro rotas fixas Conversation, Runs, Work e Settings diretamente sob o seletor, sem duplicar Overview dentro do grupo do projeto e sem criar estado oculto, nova rota ou framework de navegação. Fazer o trigger do seletor usar a mesma anatomia visual dos links de navegação: mesmo raio, espaçamento, foco e slot de ícone; remover apenas o tile quadrado com borda ao redor do glifo, preservando nome, estado, chevron, menu, teclado e links estáticos. Corrigir a conversa no desktop garantindo que a cadeia flex do Card possa encolher: o transcript deve ter altura limitada, overflow-y-auto real e acompanhar a live edge, enquanto custo, decisões, status e compositor permanecem visíveis e alcançáveis. Em telas estreitas preservar o scroll único da página, a navegação completa e ausência de overflow horizontal. Manter o inspector, as rotas, os dados, o runtime, locales e comportamento do menu. Adicionar asserções focadas para ordem e agrupamento da navegação, anatomia do seletor e a restrição min-h-0 que torna o scroll efetivo. Não adicionar dependência, animação, estado global, persistência ou redesign de outras superfícies.",
   "specSource": "operator",
   "spec": {
