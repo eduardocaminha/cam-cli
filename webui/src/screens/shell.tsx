@@ -242,11 +242,11 @@ export function ShellNavigation({
 	selection: ReturnType<typeof routeSelection>;
 	status: { label: string; acid: boolean } | null;
 }): React.ReactElement {
-	/* Overview is global and precedes the project scope. Once a project is
-	 * selected, its four surfaces follow the switcher in the same list. */
+	/* Overview is global. The project switcher begins its own contextual group;
+	 * project surfaces are a semantic child list, visually nested on desktop. */
 	return (
 		<nav aria-label={catalog.operatorNavigationLabel}>
-			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
+			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				<li className="shrink-0">
 					<a
 						aria-current={selection.surface === 'overview' ? 'page' : undefined}
@@ -259,6 +259,9 @@ export function ShellNavigation({
 						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span>
 					</a>
 				</li>
+			</ul>
+			<div aria-hidden="true" className="my-1.5 hidden h-px bg-sidebar-border lg:block" data-slot="navigation-divider" />
+			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="project-navigation">
 				<li className="w-full min-w-0" data-slot="project-switcher-item">
 					<ProjectSwitcher
 						catalog={catalog}
@@ -266,21 +269,25 @@ export function ShellNavigation({
 						selection={selection}
 						status={status}
 					/>
+					{selection.projectId === null ? null : (
+						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:border-l lg:border-sidebar-border lg:pl-2" data-slot="project-surface-navigation">
+							{SURFACES.map((surface) => (
+								<li className="shrink-0" key={surface.surface}>
+									<a
+										aria-current={surface.surface === selection.surface ? 'page' : undefined}
+										className={cn(
+											NAV_LINK_CLASS,
+											surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
+										)}
+										href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
+									>
+										<NavGlyph name={surface.surface} /><span>{catalog.routeLabels[surface.label]}</span>
+									</a>
+								</li>
+							))}
+						</ul>
+					)}
 				</li>
-				{selection.projectId === null ? null : SURFACES.map((surface) => (
-					<li className="shrink-0" key={surface.surface}>
-						<a
-							aria-current={surface.surface === selection.surface ? 'page' : undefined}
-							className={cn(
-								NAV_LINK_CLASS,
-								surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
-							)}
-							href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
-						>
-							<NavGlyph name={surface.surface} /><span>{catalog.routeLabels[surface.label]}</span>
-						</a>
-					</li>
-				))}
 				<li className="shrink-0 lg:hidden">
 					<a
 						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}

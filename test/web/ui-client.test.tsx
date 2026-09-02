@@ -3830,7 +3830,7 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation keeps global overview before the project selector and its four scoped paths', () => {
+	test('navigation separates global overview from the nested project context on desktop', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
@@ -3839,6 +3839,11 @@ describe('operator shell', () => {
 				tag.includes(`href="${route}"`) && tag.includes('aria-current="page"'));
 			const switcher = elementWith(html, 'data-slot="project-switcher"');
 			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
+			const divider = elementWith(html, 'data-slot="navigation-divider"');
+			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
+			const globalStart = nav.indexOf('data-slot="global-navigation"');
+			const projectStart = nav.indexOf('data-slot="project-navigation"');
+			const globalGroup = nav.slice(globalStart, projectStart);
 			const switcherStart = html.indexOf('data-slot="project-switcher"');
 			const switcherEnd = html.indexOf('</button>', switcherStart);
 			const switcherMarkup = html.slice(switcherStart, switcherEnd);
@@ -3851,6 +3856,20 @@ describe('operator shell', () => {
 			expect(nav).not.toContain('overflow-x-auto');
 			expect(nav).toContain('href="/overview"');
 			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
+			expect(globalGroup).toContain('href="/overview"');
+			expect(globalGroup).not.toContain('data-slot="project-switcher"');
+			expect(globalGroup).toContain('</ul><div');
+			expect(divider).toContain('my-1.5');
+			expect(divider).toContain('hidden');
+			expect(divider).toContain('lg:block');
+			expect(divider).toContain('bg-sidebar-border');
+			expect(projectStart).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(projectSurfaceNavigation).toContain('lg:border-l');
+			expect(projectSurfaceNavigation).toContain('lg:border-sidebar-border');
+			expect(projectSurfaceNavigation).toContain('lg:pl-2');
+			expect(projectSurfaceNavigation).not.toContain(' border-l');
+			expect(projectSurfaceNavigation).not.toContain(' pl-2');
+			expect(projectSurfaceNavigation).not.toContain('pt-1');
 			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
 			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${route}"`));
 			expect(nav.match(/href="\/overview"/g)).toHaveLength(1);
@@ -3869,6 +3888,15 @@ describe('operator shell', () => {
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
 		}
+	});
+
+	test('navigation keeps only the project switcher in its contextual group without a selected project', () => {
+		const html = renderAt('/overview', { projects: [] });
+		const start = html.indexOf('<nav aria-label="Navigation"');
+		const nav = html.slice(start, html.indexOf('</nav>', start));
+
+		expect(nav).toContain('data-slot="project-switcher"');
+		expect(nav).not.toContain('data-slot="project-surface-navigation"');
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
