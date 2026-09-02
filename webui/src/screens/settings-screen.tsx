@@ -29,12 +29,16 @@ export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNod
 						onSelectProvider={props.onSelectProvider}
 						pending={props.pending}
 						providers={props.providers}
+						providerSource={props.providerSource}
+						onResetProvider={props.onResetProvider}
 						selectedProvider={props.selectedProvider}
 					/>
 					<ModelSettingsPanel
 						catalog={catalog}
 						modelSettings={props.modelSettings}
+						modelSettingsSource={props.modelSettingsSource}
 						onSaveModelSettings={props.onSaveModelSettings}
+						onResetModelSettings={props.onResetModelSettings}
 						pending={props.pending}
 					/>
 				</TabsPanel>

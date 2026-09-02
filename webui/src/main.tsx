@@ -15,6 +15,8 @@ import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf } from './App.tsx';
 import {
 	abandonIssue,
+	type AgentDefaultsView,
+	type AgentSettingSource,
 	approveIssue,
 	type ChainRunsView,
 	type ChatMessageView,
@@ -34,13 +36,14 @@ import {
 	emptyNotificationChannels,
 	emptySelfUpdate,
 	eventsPathOf,
+	fetchAgentDefaults,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
 	fetchChat,
 	fetchDiagnostics,
 	fetchExecutorHandoff,
-	fetchModelSettings,
+	fetchModelSettingsSnapshot,
 	fetchNotificationChannels,
 	fetchOperatorProfile,
 	fetchOverview,
@@ -70,8 +73,11 @@ import {
 	type RunAction,
 	registerProject,
 	removeResendCredential,
+	resetModelSettings,
+	resetSelectedProvider,
 	type SelfUpdateView,
 	type StaleServiceView,
+	saveAgentDefaults,
 	saveBrief,
 	saveChainRuns,
 	saveDiagnosticSchedule,
@@ -169,10 +175,13 @@ function useOperationalRun(): {
 	chatMessages: ChatMessageView[];
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
+	providerSource: AgentSettingSource;
 	notificationPermission: BrowserNotificationPermission;
 	brief: ProjectBriefView;
 	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
+	modelSettingsSource: AgentSettingSource;
+	agentDefaults: AgentDefaultsView;
 	chainRuns: ChainRunsView;
 	executorHandoff: ExecutorHandoffSettingView;
 	notificationChannels: NotificationChannelsView;
@@ -207,12 +216,17 @@ function useOperationalRun(): {
 	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
 	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
 	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
+	const [providerSource, setProviderSource] = useState<AgentSettingSource>('provider-default');
 	const [notificationPermission, setNotificationPermission] = useState(
 		browserNotificationPermission,
 	);
 	const [brief, setBrief] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
+	const [modelSettingsSource, setModelSettingsSource] = useState<AgentSettingSource>('provider-default');
+	const [agentDefaults, setAgentDefaults] = useState<AgentDefaultsView>({
+		provider: 'claude', modelSettings: emptyModelSettings(),
+	});
 	const [chainRuns, setChainRuns] = useState<ChainRunsView>(EMPTY_CHAIN_RUNS);
 	const [executorHandoff, setExecutorHandoff] = useState<ExecutorHandoffSettingView>(EMPTY_EXECUTOR_HANDOFF);
 	const [notificationChannels, setNotificationChannels] = useState<NotificationChannelsView>(
@@ -246,7 +260,8 @@ function useOperationalRun(): {
 			fetchBrief(SELECTED_PROJECT_ID),
 			fetchProposals(SELECTED_PROJECT_ID),
 			fetchResolvedProposals(SELECTED_PROJECT_ID),
-			fetchModelSettings(SELECTED_PROJECT_ID),
+			fetchModelSettingsSnapshot(SELECTED_PROJECT_ID),
+			fetchAgentDefaults(),
 			fetchChainRuns(SELECTED_PROJECT_ID),
 			fetchExecutorHandoff(SELECTED_PROJECT_ID),
 			fetchNotificationChannels(),
@@ -265,6 +280,7 @@ function useOperationalRun(): {
 				proposalSnapshot,
 				resolvedProposalSnapshot,
 				modelSnapshot,
+				agentDefaultsSnapshot,
 				chainRunsSnapshot,
 				executorHandoffSnapshot,
 				notificationChannelsSnapshot,
@@ -291,10 +307,13 @@ function useOperationalRun(): {
 				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
 				setSelectedProvider(providerSnapshot.selected);
+				setProviderSource(providerSnapshot.source);
 				setChatMessages(chatSnapshot);
 				setBrief(briefSnapshot.brief);
 				setHandoff(briefSnapshot.handoff);
-				setModelSettings(modelSnapshot);
+				setModelSettings(modelSnapshot.settings);
+				setModelSettingsSource(modelSnapshot.source);
+				setAgentDefaults(agentDefaultsSnapshot);
 				setChainRuns(chainRunsSnapshot);
 				setExecutorHandoff(executorHandoffSnapshot);
 				setNotificationChannels(notificationChannelsSnapshot);
@@ -480,10 +499,13 @@ function useOperationalRun(): {
 		chatMessages,
 		providers,
 		selectedProvider,
+		providerSource,
 		notificationPermission,
 		brief,
 		handoff,
 		modelSettings,
+		modelSettingsSource,
+		agentDefaults,
 		chainRuns,
 		executorHandoff,
 		notificationChannels,
@@ -522,10 +544,13 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		chatMessages,
 		providers,
 		selectedProvider,
+		providerSource,
 		notificationPermission,
 		brief,
 		handoff,
 		modelSettings,
+		modelSettingsSource,
+		agentDefaults,
 		chainRuns,
 		executorHandoff,
 		notificationChannels,
@@ -639,6 +664,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSaveDiagnosticSchedule={(enabled, cadence) =>
 				send(() => saveDiagnosticSchedule(enabled, cadence, SELECTED_PROJECT_ID))}
 			onSaveModelSettings={(draft) => send(() => saveModelSettings(draft, SELECTED_PROJECT_ID))}
+			onResetModelSettings={() => send(() => resetModelSettings(SELECTED_PROJECT_ID))}
+			onSaveAgentDefaults={(draft) => send(() => saveAgentDefaults(draft))}
 			onSetChainRuns={(enabled) => send(() => saveChainRuns(enabled, SELECTED_PROJECT_ID))}
 			onSetExecutorHandoff={(enabled) => send(() => saveExecutorHandoff(enabled, SELECTED_PROJECT_ID))}
 			// GSHIP-718: importing clones into a checkout Gateship manages and
@@ -683,6 +710,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			onSelectIssue={setSelectedIssueId}
 			onSelectLocale={selectLocale}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId, SELECTED_PROJECT_ID))}
+			onResetProvider={() => send(() => resetSelectedProvider(SELECTED_PROJECT_ID))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
 				send(() => specifyIssue(SELECTED_PROJECT_ID, issueId, draft).then((specified) => {
@@ -703,6 +731,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(SELECTED_PROJECT_ID, selectedIssueId));
 			}}
 			modelSettings={modelSettings}
+			modelSettingsSource={modelSettingsSource}
+			agentDefaults={agentDefaults}
 			selfUpdate={selfUpdate}
 			onSetSelfUpdate={(enabled) => send(() => saveSelfUpdate(enabled))}
 			onSaveOperatorProfile={(profile) => send(() => saveOperatorProfile(profile))}
@@ -719,6 +749,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}
+			providerSource={providerSource}
 			staleService={staleService}
 			status={status}
 			suggestedTimezone={browserTimeZone()}

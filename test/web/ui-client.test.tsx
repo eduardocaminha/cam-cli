@@ -20,6 +20,7 @@ import {
 	abandonIssue,
 	aggregateChatTurnCosts,
 	approveIssue,
+	AGENT_DEFAULTS_PATH,
 	BRIEF_PATH,
 	CHAIN_RUNS_PATH,
 	CHAT_PATH,
@@ -41,6 +42,7 @@ import {
 	EXECUTOR_HANDOFF_PATH,
 	type ExecutorHandoffSettingView,
 	emptyDiagnostics,
+	fetchAgentDefaults,
 	emptyModelSettings,
 	emptyNotificationChannels,
 	emptySelfUpdate,
@@ -84,8 +86,11 @@ import {
 	RUNS_PATH,
 	registerProject,
 	removeResendCredential,
+	resetModelSettings,
+	resetSelectedProvider,
 	SNAPSHOT_PATH,
 	saveBrief,
+	saveAgentDefaults,
 	saveChainRuns,
 	saveDiagnosticSchedule,
 	saveExecutorHandoff,
@@ -293,6 +298,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			chainRuns={EMPTY_CHAIN_RUNS}
 			executorHandoff={EMPTY_EXECUTOR_HANDOFF}
 			diagnostics={emptyDiagnostics()}
+			agentDefaults={{ provider: 'claude', modelSettings: EMPTY_MODEL_SETTINGS }}
 			drafts={[]}
 			brief={EMPTY_BRIEF}
 			chatMessages={[]}
@@ -302,6 +308,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			ideas={[]}
 			locale={DEFAULT_LOCALE}
 			modelSettings={EMPTY_MODEL_SETTINGS}
+			modelSettingsSource="provider-default"
 			selfUpdate={emptySelfUpdate()}
 			notificationChannels={EMPTY_NOTIFICATION_CHANNELS}
 			notificationPermission="default"
@@ -332,12 +339,15 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSaveBrief={() => {}}
 			onSaveDiagnosticSchedule={() => {}}
 			onSaveModelSettings={() => {}}
+			onResetModelSettings={() => {}}
+			onSaveAgentDefaults={() => {}}
 			onSetChainRuns={() => {}}
 			onSetExecutorHandoff={() => {}}
 			onSetSelfUpdate={() => {}}
 			onSelectIssue={() => {}}
 			onSelectLocale={() => {}}
 			onSelectProvider={() => {}}
+			onResetProvider={() => {}}
 			onSendMessage={() => {}}
 			onShip={() => {}}
 			onSpecifyIssue={() => {}}
@@ -358,6 +368,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			runs={[]}
 			selectedIssueId={null}
 			selectedProvider="claude"
+			providerSource="provider-default"
 			staleService={null}
 			status={null}
 			suggestedTimezone="America/Sao_Paulo"
@@ -2345,12 +2356,12 @@ describe('settings surface', () => {
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
 		}
 		for (const [html, labels] of [
-			[globalEnglish, ['Settings', 'Operator', 'Gateship updates', 'Notifications', 'Save profile']],
-			[globalPortuguese, ['Ajustes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
+			[globalEnglish, ['Settings', 'Agent defaults', 'Operator', 'Gateship updates', 'Notifications', 'Save profile']],
+			[globalPortuguese, ['Ajustes', 'Padrões dos agentes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo']);
-			expectNotContainsAll(html, ['Project runtime', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Automatic handoff', 'Project brief']);
+			expectNotContainsAll(html, ['Project runtime', 'Local agents', 'Automatic run chaining', 'Automatic handoff', 'Project brief']);
 		}
 		for (const html of [english, portuguese]) {
 			expectNotContainsAll(html, ['Operator profile', 'Notifications', 'Gateship updates']);
@@ -3048,6 +3059,38 @@ describe('settings surface', () => {
 
 	test('the model save is held while a command is in flight, like every other', () => {
 		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Save models')).toBe(false);
+	});
+
+	test('edits global agent defaults with the existing six free-text model slots', () => {
+		const defaults = panel(globalSettingsPage({
+			agentDefaults: {
+				provider: 'codex',
+				modelSettings: {
+					...EMPTY_MODEL_SETTINGS,
+					codex: { ...EMPTY_MODEL_SETTINGS.codex, executor: { model: 'gpt-5-codex', effort: 'high' } },
+				},
+			},
+		}), 'Agent defaults');
+		expect(defaults).toContain('name="agent-default-provider"');
+		expect(defaults).toContain('name="agent-default-provider" value="codex"');
+		expect(defaults).toContain('name="codex-executor-model"');
+		expect(defaults).toContain('value="gpt-5-codex"');
+		expect(buttonIsEnabled(defaults, 'Save agent defaults')).toBe(true);
+		expect(buttonIsEnabled(globalSettingsPage({ pending: true }), 'Save agent defaults')).toBe(false);
+	});
+
+	test('shows effective inherited settings separately from project overrides and offers matching resets', () => {
+		const inherited = settingsPage({ providerSource: 'global', modelSettingsSource: 'global' });
+		expect(panel(inherited, 'Local agents')).toContain('Inherited from global defaults.');
+		expect(panel(inherited, 'Model and effort by role')).toContain('Inherited from global defaults.');
+		expect(inherited).not.toContain('Reset provider to global default');
+		expect(inherited).not.toContain('Reset models to global defaults');
+
+		const override = settingsPage({ providerSource: 'project', modelSettingsSource: 'project' });
+		expect(panel(override, 'Local agents')).toContain('Customized for this project.');
+		expect(buttonIsEnabled(override, 'Reset provider to global default')).toBe(true);
+		expect(panel(override, 'Model and effort by role')).toContain('Customized for this project.');
+		expect(buttonIsEnabled(override, 'Reset models to global defaults')).toBe(true);
 	});
 
 	test('an empty brief and an empty handoff still render both panels', () => {
@@ -4780,6 +4823,29 @@ describe('same-origin transport', () => {
 		});
 	});
 
+	test('global defaults and project resets use their existing same-origin routes', async () => {
+		const defaults = { provider: 'codex' as const, modelSettings: EMPTY_MODEL_SETTINGS };
+		expect(AGENT_DEFAULTS_PATH).toBe('/api/agent-defaults');
+		await withRecordedFetch({ defaults: { provider: 'codex' } }, 200, async (calls) => {
+			expect(await fetchAgentDefaults()).toEqual(defaults);
+			expect(calls).toEqual([{ url: AGENT_DEFAULTS_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({ ok: true, defaults }, 200, async (calls) => {
+			expect(await saveAgentDefaults(defaults)).toBe('Agent defaults updated.');
+			expect(calls).toEqual([{
+				url: AGENT_DEFAULTS_PATH, method: 'PUT', body: JSON.stringify(defaults),
+			}]);
+		});
+		await withRecordedFetch({ ok: true, source: 'global' }, 200, async (calls) => {
+			expect(await resetModelSettings('project-current')).toBe('Models reset to global defaults.');
+			expect(await resetSelectedProvider('project-current')).toBe('Provider reset to global default.');
+			expect(calls).toEqual([
+				{ url: '/api/projects/project-current/model-settings', method: 'DELETE', body: null },
+				{ url: '/api/projects/project-current/providers/claude/select', method: 'DELETE', body: null },
+			]);
+		});
+	});
+
 	// GSHIP-620: a probed slot's own outcome is folded into the save status,
 	// with the CLI's own message when it was refused or stayed inconclusive.
 	test('the save status reports a refused or inconclusive slot with the CLI\'s own message', async () => {
@@ -5008,7 +5074,7 @@ describe('same-origin transport', () => {
 			{ id: 'codex' as const, installed: true, subscription: false, label: 'Codex', login: 'web' as const },
 		];
 		await withRecordedFetch({ providers, selected: 'claude' }, 200, async (calls) => {
-			expect(await fetchProviders()).toEqual({ providers, selected: 'claude' });
+			expect(await fetchProviders()).toEqual({ providers, selected: 'claude', source: 'provider-default' });
 			expect(calls).toEqual([{ url: PROVIDERS_PATH, method: 'GET', body: null }]);
 		});
 		await withRecordedFetch({
