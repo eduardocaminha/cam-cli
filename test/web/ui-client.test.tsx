@@ -110,6 +110,7 @@ import {
 } from '../../webui/src/client.ts';
 import {
 	createLiveEdgeController,
+	canReturnToLiveEdge,
 	isAtLiveEdge,
 	LIVE_EDGE_TOLERANCE_PX,
 	liveEdgeSession,
@@ -4191,6 +4192,12 @@ describe('conversation transcript', () => {
 		expect(isAtLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(true);
 	});
 
+	test('the return-to-latest control only applies to an overflowing transcript away from its edge', () => {
+		expect(canReturnToLiveEdge({ scrollHeight: 1000, clientHeight: 400, scrollTop: 0 })).toBe(true);
+		expect(canReturnToLiveEdge({ scrollHeight: 1000, clientHeight: 400, scrollTop: 600 })).toBe(false);
+		expect(canReturnToLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(false);
+	});
+
 	test('the shared live edge opens at newest, follows arrivals, pauses, and resumes', () => {
 		const position = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
 		const liveEdge = createLiveEdgeController();
@@ -4213,6 +4220,33 @@ describe('conversation transcript', () => {
 		position.scrollHeight = 1600;
 		liveEdge.onArrival(position);
 		expect(position.scrollTop).toBe(1600);
+	});
+
+	test('a resize away from the live edge pauses the next arrival without a scroll event', () => {
+		const position = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 };
+		const liveEdge = createLiveEdgeController();
+
+		liveEdge.onScroll(position);
+		position.clientHeight = 200;
+		// The ResizeObserver feeds the changed geometry through this same path.
+		liveEdge.onScroll(position);
+		position.scrollHeight = 1200;
+		liveEdge.onArrival(position);
+
+		expect(position.scrollTop).toBe(600);
+	});
+
+	test('run activity keeps following after its panel shrinks at the live edge', () => {
+		const position = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 };
+		const liveEdge = createLiveEdgeController();
+
+		liveEdge.onScroll(position);
+		position.clientHeight = 200;
+		// RunActivity does not opt into ResizeObserver, so no controller update runs.
+		position.scrollHeight = 1200;
+		liveEdge.onArrival(position);
+
+		expect(position.scrollTop).toBe(1200);
 	});
 
 	test('a replacement run resets a paused live edge and opens at its newest event', () => {

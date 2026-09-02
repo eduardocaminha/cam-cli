@@ -15,14 +15,21 @@ import type { ConversationCatalog, Locale } from '../locale.ts';
 import type { RunView } from '../run-view.ts';
 import { PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
 import { fieldReader, formatCostUsd, formatEventTime } from './runs.tsx';
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 
 export function ChatLog({
 	chatMessages,
 	catalog,
 	locale,
 }: Pick<AppProps, 'chatMessages'> & { catalog: ConversationCatalog; locale: Locale }): React.ReactElement {
-	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
+	const {
+		canReturnToLiveEdge,
+		returnToLiveEdge,
+		...liveEdge
+	} = useLiveEdge(chatMessages.at(-1)?.seq ?? null, null, { observeResize: true });
 	return (
+		<>
 		<section
 			{...liveEdge}
 			aria-label={catalog.transcriptLabel}
@@ -74,6 +81,19 @@ export function ChatLog({
 				</ol>
 			)}
 		</section>
+			{canReturnToLiveEdge ? (
+				<Button
+					aria-label={catalog.returnToLatest}
+					className="hidden self-end xl:inline-flex"
+					onClick={returnToLiveEdge}
+					size="sm"
+					variant="ghost"
+				>
+					<HugeiconsIcon icon={ArrowDown01Icon} />
+					{catalog.returnToLatest}
+				</Button>
+			) : null}
+		</>
 	);
 }
 

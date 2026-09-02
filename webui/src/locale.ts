@@ -140,6 +140,7 @@ export interface OverviewCatalog {
 
 export interface ConversationCatalog {
 	transcriptLabel: string;
+	returnToLatest: string;
 	emptyStateGuidance: string;
 	roleLabels: {
 		operator: string;
@@ -657,6 +658,7 @@ export const LOCALE_CATALOG = {
 		},
 		conversation: {
 			transcriptLabel: 'Conversation transcript',
+			returnToLatest: 'Return to latest message',
 			emptyStateGuidance:
 				'Describe the goal, ask for an investigation or give a command in natural language.',
 			roleLabels: {
@@ -1129,6 +1131,7 @@ export const LOCALE_CATALOG = {
 		},
 		conversation: {
 			transcriptLabel: 'Transcrição da conversa',
+			returnToLatest: 'Voltar à mensagem mais recente',
 			emptyStateGuidance:
 				'Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.',
 			roleLabels: {
