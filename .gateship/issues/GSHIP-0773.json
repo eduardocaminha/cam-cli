@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-773",
   "title": "Separar visualmente a navegação global e do projeto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-02T14:37:35.219Z",
-  "updatedAt": "2026-09-02T14:37:35.219Z",
+  "updatedAt": "2026-09-02T14:43:04.397Z",
   "description": "Refinar somente ShellNavigation. No desktop, renderizar Overview como grupo global independente e o contexto do projeto como um segundo grupo separado por um único divisor horizontal sutil, com 12 a 16 px de distância entre grupos. O ProjectSwitcher inicia o grupo contextual e continua exibindo nome e status. Quando houver projeto selecionado, renderizar Conversation, Runs, Work e Settings em uma lista semanticamente aninhada sob o seletor, com recuo pequeno e uma única linha vertical em sidebar-border para comunicar filiação; manter os estados ativos e destinos atuais. Quando não houver projeto selecionado, mostrar somente o seletor abaixo do divisor. No móvel, preservar a anatomia plana e responsiva atual, sem linha vertical, recuo hierárquico ou overflow horizontal. Global settings e versão permanecem no footer atual. Não adicionar label redundante como Project, disclosure, animação, rota, estado, dependência ou componente genérico novo. Reutilizar os tokens e classes existentes. Cobrir ordem, agrupamento semântico, divisor único, aninhamento desktop e ausência da decoração hierárquica móvel.",
   "specSource": "operator",
   "spec": {
