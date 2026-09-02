@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-778",
+  "title": "Remover o cabecalho redundante da conversa",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-02T22:28:56.197Z",
+  "updatedAt": "2026-09-02T22:28:56.197Z",
+  "description": "Remove the visible conversation card header that renders the title Conversation with the orchestrator / Conversa com o orquestrador and its explanatory description. The transcript must begin at the top of the conversation card so the reclaimed vertical space benefits the chat. Preserve an accessible name for the main conversation region using the existing localized title, but do not render that title or description as visible text. Preserve the card surface, transcript, auto-scroll and return-to-latest behavior, cost summary, waiting-user response, status output, composer, run inspector, spacing outside the card, both locales, and mobile and desktop behavior. Remove now-unused imports only; do not delete the locale catalog fields, add a replacement heading, animation, dependency, route, or unrelated visual change. Add focused assertions that the visible card header is absent while the conversation main remains localized and accessible.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Remove the visible conversation card header that renders the title Conversation with the orchestrator / Conversa com o orquestrador and its explanatory description. The transcript must begin at the top of the conversation card so the reclaimed vertical space benefits the chat. Preserve an accessible name for the main conversation region using the existing localized title, but do not render that title or description as visible text. Preserve the card surface, transcript, auto-scroll and return-to-latest behavior, cost summary, waiting-user response, status output, composer, run inspector, spacing outside the card, both locales, and mobile and desktop behavior. Remove now-unused imports only; do not delete the locale catalog fields, add a replacement heading, animation, dependency, route, or unrelated visual change. Add focused assertions that the visible card header is absent while the conversation main remains localized and accessible.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui && git diff --check"
+    ]
+  },
+  "approval": {
+    "fingerprint": "d53db4dbb3a282879826b0b53cf69edafcba7cd8d924e4c26cb8d925a705a4e5",
+    "approvedAt": "2026-09-02T22:28:56.197Z"
+  }
+}
