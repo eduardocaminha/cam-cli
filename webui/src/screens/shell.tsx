@@ -261,8 +261,12 @@ export function ShellNavigation({
 					</a>
 				</li>
 			</ul>
-			<div aria-hidden="true" className="my-1.5 hidden h-px bg-sidebar-border lg:block" data-slot="navigation-divider" />
-			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="project-navigation">
+			<div aria-hidden="true" className="my-1.5 hidden h-px bg-sidebar-border lg:my-4 lg:block" data-slot="navigation-divider" />
+			<div data-slot="project-navigation">
+				<p className="hidden px-3 pb-1 font-mono text-[10px] text-muted-foreground uppercase tracking-wider lg:block" data-slot="project-context-label">
+					{catalog.projectContextLabel}
+				</p>
+				<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
 				<li className="w-full min-w-0" data-slot="project-switcher-item">
 					<ProjectSwitcher
 						catalog={catalog}
@@ -301,7 +305,8 @@ export function ShellNavigation({
 						<NavGlyph name="globalSettings" /><span>{catalog.routeLabels.globalSettings}</span>
 					</a>
 				</li>
-			</ul>
+				</ul>
+			</div>
 		</nav>
 	);
 }
