@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-780",
   "title": "Manter a shell durante navegacao e loading",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-03T19:47:46.592Z",
-  "updatedAt": "2026-09-03T19:47:46.592Z",
+  "updatedAt": "2026-09-03T20:07:22.024Z",
   "description": "Preservar AppShell, sidebar e controles durante o carregamento inicial e durante navegacao entre superficies ou projetos. Mover loading e falha inicial para uma boundary dentro da area principal, com aria-busy, status, alerta e retry acessiveis. O placeholder deve usar skeletons estaticos, sem animacao, com largura e ritmo semelhantes a uma SurfaceColumn, sem inventar conteudo nem renderizar estados vazios. Interceptar no cliente todas as rotas internas conhecidas, inclusive mudanca de projectId, preservando links externos, modificadores, target, download, historico e popstate. Atualizar URL e selecao da sidebar imediatamente, mas nunca renderizar dados do escopo anterior sob a nova rota: enquanto o novo escopo nao estiver hidratado, mostrar somente o loading localizado. Navegacao no mesmo escopo deve manter o snapshot e nao refazer consultas. Usar a transicao do React apenas para a troca de rota; o estado de rede deve continuar explicito. A Overview deve poder iniciar sua propria leitura assim que a shell montar, sem esperar serialmente pelo snapshot operacional. Manter Vite, o roteamento leve atual e as dependencias existentes; nao adicionar router, cache externo, animacao ou mudanca visual alheia. Adicionar testes focados de navegacao cross-project, shell persistente, ausencia de flash de dados antigos ou vazios, erro localizado e retry.",
   "specSource": "operator",
   "spec": {
