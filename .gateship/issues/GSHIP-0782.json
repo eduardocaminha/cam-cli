@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-782",
   "title": "Concluir estados concorrentes de carregamento",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-03T20:58:37.963Z",
-  "updatedAt": "2026-09-03T20:58:37.963Z",
+  "updatedAt": "2026-09-03T21:23:10.107Z",
   "description": "Corrigir dois casos empiricamente reproduzidos na v0.411.0 sem adicionar dependencias, router, cache ou store. Primeiro, uma leitura inicial de escopo deve sempre sair do skeleton quando a leitura critica mais recente do mesmo escopo concluir, mesmo que eventos do stream tenham disparado refreshes concorrentes; eventos repetidos devem ser coalescidos para nao abrir uma nova bateria completa de consultas por evento nem manter o loading preso. Mudanca real de projectId continua invalidando respostas antigas. Segundo, toda leitura secundaria ainda nao resolvida no escopo atual deve ter estado pending nomeado e sua superficie deve mostrar placeholder local acessivel, nunca zero, lista vazia ou controles aparentemente prontos. Falha continua mostrando indisponibilidade local; sucesso revela o dado; refresh posterior preserva dado revelado sem skeleton. Manter a shell, URL, sidebar e dados globais persistentes. Cobrir com testes o initial superseded por refresh, rajada de eventos coalescida, core mais rapido que secundaria, sucesso, falha e retry. Manter a implementacao pequena e reutilizar OperationalReadPanel e o estado existente.",
   "specSource": "operator",
   "spec": {
