@@ -8,7 +8,7 @@
 // Same-scope links update browser history without rebuilding the document, so
 // the operational snapshot and its event subscription remain intact.
 
-import { type ReactElement, StrictMode, useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { type ReactElement, StrictMode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf } from './App.tsx';
 import {
@@ -108,11 +108,15 @@ import {
 } from './notifications.ts';
 import { clientNavigationTarget } from './navigation.ts';
 import {
-	isCurrentOperationalRead,
-	preserveGlobalOperationalLoaded,
+	createOperationalRefreshCoalescer,
+	createOperationalSnapshotCycle,
+	beginOperationalRefresh,
 	readOperationalPart,
+	settleOperationalRead,
 	type OperationalFailures,
 	type OperationalLoaded,
+	type OperationalPending,
+	type OperationalReadState,
 	type OperationalResource,
 } from './operational-snapshot.ts';
 import {
@@ -201,6 +205,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	operationalRefreshFailure: { detail: string; onRetry: () => void } | undefined;
 	operationalFailures: OperationalFailures;
 	operationalLoaded: OperationalLoaded;
+	operationalPending: OperationalPending;
 	retryInitialSnapshot: () => void;
 	pending: boolean;
 	claudeCredentialError: string | null;
@@ -259,13 +264,13 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [snapshotLoading, setSnapshotLoading] = useState(true);
 	const [snapshotError, setSnapshotError] = useState<string | null>(null);
 	const refreshedScope = useRef<string | null | undefined>(undefined);
-	const activeScope = useRef<string | null>(scope);
 	const [snapshotScope, setSnapshotScope] = useState<string | null | undefined>(undefined);
 	const [snapshotErrorScope, setSnapshotErrorScope] = useState<string | null | undefined>(undefined);
-	const [operationalFailures, setOperationalFailures] = useState<OperationalFailures>({});
-	const [operationalLoaded, setOperationalLoaded] = useState<OperationalLoaded>({});
-	const snapshotRequest = useRef(0);
-	activeScope.current = scope;
+	const [operationalReadState, setOperationalReadState] = useState<OperationalReadState>({
+		failures: {}, loaded: {}, pending: {},
+	});
+	const snapshotCycle = useRef(createOperationalSnapshotCycle(scope));
+	snapshotCycle.current.changeScope(scope);
 
 	const clearScopedData = useCallback((): void => {
 		setBacklog([]); setIdeas([]); setDrafts([]);
@@ -281,30 +286,26 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	}, []);
 
 	const refresh = useCallback((initial = false) => {
-		const request = ++snapshotRequest.current;
-		const currentRequest = (): boolean => isCurrentOperationalRead(
-			request, snapshotRequest.current, scope, activeScope.current,
-		);
+		const request = snapshotCycle.current.begin(scope, initial);
+		const currentRequest = (): boolean => snapshotCycle.current.isCurrent(request, scope);
+		if (!currentRequest()) return Promise.resolve([]);
+		setOperationalReadState((current) => beginOperationalRefresh(current, initial));
 		if (initial) {
 			setSnapshotLoading(true);
 			setSnapshotError(null);
 			setSnapshotErrorScope(undefined);
-			setOperationalFailures({});
-			setOperationalLoaded(preserveGlobalOperationalLoaded);
 			clearScopedData();
 		}
 		const unavailable = (name: OperationalResource, detail: string): void => {
-			if (currentRequest()) setOperationalFailures((current) => ({ ...current, [name]: detail }));
+			if (currentRequest()) {
+				setOperationalReadState((current) => settleOperationalRead(current, name, { state: 'unavailable', detail }));
+			}
 		};
 		const available = (name: OperationalResource): void => {
-			setOperationalFailures((current) => {
-				const { [name]: _resolved, ...remaining } = current;
-				return remaining;
-			});
-			setOperationalLoaded((current) => ({ ...current, [name]: true }));
+			setOperationalReadState((current) => settleOperationalRead(current, name, { state: 'available', value: undefined }));
 		};
-		const secondary = <T,>(name: OperationalResource, read: () => Promise<T>, commit: (value: T) => void): void => {
-			void readOperationalPart(read).then((result) => {
+		const secondary = <T,>(name: OperationalResource, read: () => Promise<T>, commit: (value: T) => void): Promise<void> => {
+			return readOperationalPart(read).then((result) => {
 				if (!currentRequest()) return;
 				if (result.state === 'unavailable') unavailable(name, result.detail);
 				else {
@@ -314,43 +315,46 @@ function useOperationalRun(scope: string | null, pathname: string): {
 			});
 		};
 
-		void readOperationalPart(() => fetchRuns(scope)).then((result) => {
+		const runsRead = readOperationalPart(() => fetchRuns(scope)).then((result) => {
 			if (!currentRequest()) return;
 			if (result.state === 'unavailable') {
 				unavailable('Runs', result.detail);
+				unavailable('Run activity', result.detail);
 				return;
 			}
 			available('Runs');
 			setRuns(result.value);
 			const latest = result.value[0] ?? null;
-			secondary('Run activity', () => latest === null ? Promise.resolve([]) : fetchRunEvents(scope, latest.id), setEvents);
+			return secondary('Run activity', () => latest === null ? Promise.resolve([]) : fetchRunEvents(scope, latest.id), setEvents);
 		});
+		const secondaryReads = [
 		secondary('Snapshot', () => fetchBacklog(scope), (value) => {
 			setBacklog(value.plannable); setIdeas(value.ideas); setDrafts(value.drafts);
 			setWorkspaceNotices(value.workspaceNotices); setStaleService(value.staleService);
 			setGitIdentity(value.gitIdentity); setVersion(value.version);
-		});
+		}),
 		secondary('Providers', () => fetchProviders(scope), (value) => {
 			setProviders(value.providers); setSelectedProvider(value.selected); setProviderSource(value.source);
-		});
-		secondary('Conversation', () => fetchChat(scope), setChatMessages);
-		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); setHandoff(value.handoff); });
-		secondary('Proposals', () => fetchProposals(scope), setProposals);
+		}),
+		secondary('Conversation', () => fetchChat(scope), setChatMessages),
+		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); setHandoff(value.handoff); }),
+		secondary('Proposals', () => fetchProposals(scope), setProposals),
 		secondary('Resolved proposals', () => fetchResolvedProposals(scope), (value) => {
 			setResolvedProposals(value.proposals); setResolvedProposalsOmittedCount(value.omittedCount);
-		});
+		}),
 		secondary('Model settings', () => fetchModelSettingsSnapshot(scope), (value) => {
 			setModelSettings(value.settings); setModelSettingsSource(value.source);
-		});
-		secondary('Agent defaults', fetchAgentDefaults, setAgentDefaults);
-		secondary('Run chain', () => fetchChainRuns(scope), setChainRuns);
-		secondary('Executor handoff', () => fetchExecutorHandoff(scope), setExecutorHandoff);
-		secondary('Notifications', fetchNotificationChannels, setNotificationChannels);
-		secondary('Operator profile', fetchOperatorProfile, setOperatorProfile);
-		secondary('Diagnostics', () => fetchDiagnosticsForScope(scope), setDiagnostics);
-		secondary('Self update', fetchSelfUpdate, setSelfUpdate);
+		}),
+		secondary('Agent defaults', fetchAgentDefaults, setAgentDefaults),
+		secondary('Run chain', () => fetchChainRuns(scope), setChainRuns),
+		secondary('Executor handoff', () => fetchExecutorHandoff(scope), setExecutorHandoff),
+		secondary('Notifications', fetchNotificationChannels, setNotificationChannels),
+		secondary('Operator profile', fetchOperatorProfile, setOperatorProfile),
+		secondary('Diagnostics', () => fetchDiagnosticsForScope(scope), setDiagnostics),
+		secondary('Self update', fetchSelfUpdate, setSelfUpdate),
+		];
 
-		return Promise.all([
+		const coreRead = Promise.all([
 			readOperationalPart(() => fetchProjectStatus(scope)),
 			readOperationalPart(fetchProjects),
 		]).then(([projectResult, projectsResult]) => {
@@ -368,13 +372,16 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		setSnapshotScope(scope);
 			return true as const;
 		}).finally(() => {
-			if (initial && currentRequest()) setSnapshotLoading(false);
+			if (snapshotCycle.current.finishCore(request, scope)) setSnapshotLoading(snapshotCycle.current.loading());
 		});
+		return Promise.all([runsRead, ...secondaryReads, coreRead]);
 	}, [clearScopedData, scope]);
 
 	const loadInitialSnapshot = useCallback(() => {
 		void refresh(snapshotScope !== scope);
 	}, [refresh, scope, snapshotScope]);
+
+	const refreshCoalescer = useMemo(() => createOperationalRefreshCoalescer(refresh), [refresh]);
 
 	const send = useCallback((command: () => Promise<string>) => {
 		setPending(true);
@@ -498,13 +505,13 @@ function useOperationalRun(scope: string | null, pathname: string): {
 					merged.set(event.seq, event);
 					return [...merged.values()].sort((a, b) => a.seq - b.seq).slice(-200);
 				});
-				if (invalidatesSnapshot(event)) refresh();
+				if (invalidatesSnapshot(event)) refreshCoalescer.queue();
 			} catch {
 				setStatus('Invalid activity event.');
 			}
 		});
-		return () => source.close();
-	}, [refresh, streamPath]);
+		return () => { source.close(); refreshCoalescer.cancel(); };
+	}, [refreshCoalescer, streamPath]);
 
 	useEffect(() => {
 		const state = diagnostics.scan?.state;
@@ -571,8 +578,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		operationalRefreshFailure: snapshotError !== null && snapshotErrorScope === scope && snapshotScope === scope
 			? { detail: snapshotError, onRetry: loadInitialSnapshot }
 			: undefined,
-		operationalFailures,
-		operationalLoaded,
+		operationalFailures: operationalReadState.failures,
+		operationalLoaded: operationalReadState.loaded,
+		operationalPending: operationalReadState.pending,
 		retryInitialSnapshot: loadInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -630,6 +638,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		operationalRefreshFailure,
 		operationalFailures,
 		operationalLoaded,
+		operationalPending,
 		retryInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -712,6 +721,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			operationalRefreshFailure={operationalRefreshFailure}
 			operationalFailures={operationalFailures}
 			operationalLoaded={operationalLoaded}
+			operationalPending={operationalPending}
 			onNavigate={navigate}
 			surfaceRoute={routeOf(surfacePathname)}
 			backlog={backlog}

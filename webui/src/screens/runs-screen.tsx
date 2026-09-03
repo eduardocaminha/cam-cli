@@ -15,13 +15,16 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 	const catalog = localeCatalog.runInspector;
 	const runsFailure = props.operationalFailures?.Runs;
 	const runsLoaded = props.operationalLoaded?.Runs === true;
+	const runsPending = props.operationalPending?.Runs === true;
 	const activityFailure = props.operationalFailures?.['Run activity'];
 	const activityLoaded = props.operationalLoaded?.['Run activity'] === true;
+	const activityPending = props.operationalPending?.['Run activity'] === true;
 	const snapshotFailure = props.operationalFailures?.Snapshot;
 	const snapshotLoaded = props.operationalLoaded?.Snapshot === true;
+	const snapshotPending = props.operationalPending?.Snapshot === true;
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.runs} status={props.status}>
-			<OperationalReadPanel detail={runsFailure} loaded={runsLoaded} locale={props.locale} resource="Runs">
+			<OperationalReadPanel detail={runsFailure} loaded={runsLoaded} locale={props.locale} pending={runsPending} resource="Runs">
 			<RunCard
 				catalog={catalog}
 				locale={props.locale}
@@ -56,7 +59,7 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 			)}
 			<div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 				<div className="flex min-w-0 flex-col gap-6">
-					<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} resource="Run activity">
+					<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} pending={activityPending} resource="Run activity">
 						<RunActivity
 							catalog={localeCatalog.runsOperational}
 							events={props.events}
@@ -88,7 +91,7 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 				runs={props.runs}
 			/>
 			</OperationalReadPanel>
-			<OperationalReadPanel detail={snapshotFailure} loaded={snapshotLoaded} locale={props.locale} resource="Snapshot">
+			<OperationalReadPanel detail={snapshotFailure} loaded={snapshotLoaded} locale={props.locale} pending={snapshotPending} resource="Snapshot">
 				<WorkspaceNoticesPanel
 					catalog={localeCatalog.runsOperational}
 					workspaceNotices={props.workspaceNotices}

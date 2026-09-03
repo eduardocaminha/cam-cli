@@ -191,13 +191,14 @@ export function ConversationColumn({
 	chatMessages,
 	operationalFailures,
 	operationalLoaded,
+	operationalPending,
 	status,
 	pending,
 	onResume,
 	onSendMessage,
 	locale,
 	catalog,
-}: Pick<AppProps, 'chatMessages' | 'operationalFailures' | 'operationalLoaded' | 'status' | 'pending' | 'onResume' | 'onSendMessage'> & {
+}: Pick<AppProps, 'chatMessages' | 'operationalFailures' | 'operationalLoaded' | 'operationalPending' | 'status' | 'pending' | 'onResume' | 'onSendMessage'> & {
 	run: RunView | null;
 	locale: Locale;
 	catalog: ConversationCatalog;
@@ -211,7 +212,7 @@ export function ConversationColumn({
 		>
 			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
 				<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
-					<OperationalReadPanel detail={operationalFailures?.Conversation} loaded={operationalLoaded?.Conversation === true} locale={locale} resource="Conversation">
+					<OperationalReadPanel detail={operationalFailures?.Conversation} loaded={operationalLoaded?.Conversation === true} locale={locale} pending={operationalPending?.Conversation === true} resource="Conversation">
 						<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
 						<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
 					</OperationalReadPanel>

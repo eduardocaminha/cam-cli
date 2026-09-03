@@ -15,14 +15,19 @@ export function OperationalUnavailable({ resource, detail, locale }: {
 }
 
 /** Keeps a previously revealed value visible while naming a failed refresh. */
-export function OperationalReadPanel({ resource, detail, loaded, locale, children }: {
+export function OperationalReadPanel({ resource, detail, loaded, pending = false, locale, children }: {
 	resource: string;
 	detail: string | undefined;
 	loaded: boolean;
+	pending?: boolean;
 	locale: Locale;
 	children: React.ReactNode;
 }): React.ReactElement {
-	if (detail === undefined) return <>{children}</>;
+	if (detail === undefined && !pending) return <>{children}</>;
+	if (detail === undefined) return loaded ? <>{children}</> : <div aria-busy="true" aria-label={locale === 'pt-BR' ? `Carregando ${resource}` : `Loading ${resource}`} className="rounded-xl border border-border bg-card p-4 text-sm" role="status">
+		<span className="sr-only">{locale === 'pt-BR' ? `Carregando ${resource}…` : `Loading ${resource}…`}</span>
+		<div aria-hidden="true" className="h-4 w-2/5 rounded-md bg-muted" />
+	</div>;
 	const unavailable = <OperationalUnavailable detail={detail} locale={locale} resource={resource} />;
 	return loaded ? <>{unavailable}{children}</> : unavailable;
 }

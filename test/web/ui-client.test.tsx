@@ -126,7 +126,16 @@ import {
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
-import { isCurrentOperationalRead, preserveGlobalOperationalLoaded, readOperationalPart } from '../../webui/src/operational-snapshot.ts';
+import {
+	createOperationalRefreshCoalescer,
+	createOperationalSnapshotCycle,
+	beginOperationalReads,
+	beginOperationalRefresh,
+	pendingOperationalReads,
+	preserveGlobalOperationalLoaded,
+	readOperationalPart,
+	settleOperationalRead,
+} from '../../webui/src/operational-snapshot.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -281,10 +290,96 @@ describe('operational snapshot reads', () => {
 		expect(revealed).toEqual({ state: 'available', value: ['CAM-900'] });
 	});
 
-	test('a retry and a scope change reject delayed reads from the prior generation', () => {
-		expect(isCurrentOperationalRead(4, 5, 'project-old', 'project-old')).toBe(false);
-		expect(isCurrentOperationalRead(5, 5, 'project-old', 'project-new')).toBe(false);
-		expect(isCurrentOperationalRead(5, 5, 'project-new', 'project-new')).toBe(true);
+	test('the latest core read settles an initial snapshot superseded by a refresh', () => {
+		const cycle = createOperationalSnapshotCycle('project-current');
+		const initial = cycle.begin('project-current', true);
+		const refresh = cycle.begin('project-current', false);
+		expect(cycle.finishCore(initial, 'project-current')).toBe(false);
+		expect(cycle.loading()).toBe(true);
+		expect(cycle.finishCore(refresh, 'project-current')).toBe(true);
+		expect(cycle.loading()).toBe(false);
+		const priorScope = cycle.begin('project-current', true);
+		cycle.changeScope('project-new');
+		expect(cycle.finishCore(priorScope, 'project-current')).toBe(false);
+		expect(cycle.loading()).toBe(true);
+		const currentScope = cycle.begin('project-new', true);
+		const staleRefresh = cycle.begin('project-current', false);
+		expect(cycle.isCurrent(staleRefresh, 'project-current')).toBe(false);
+		expect(cycle.isCurrent(currentScope, 'project-new')).toBe(true);
+		expect(cycle.finishCore(currentScope, 'project-new')).toBe(true);
+		expect(cycle.loading()).toBe(false);
+		const originalProject = cycle.begin('project-new', true);
+		cycle.changeScope('project-other');
+		cycle.changeScope('project-new');
+		expect(cycle.isCurrent(originalProject, 'project-new')).toBe(false);
+		const returnedProject = cycle.begin('project-new', true);
+		expect(cycle.isCurrent(returnedProject, 'project-new')).toBe(true);
+		expect(cycle.finishCore(returnedProject, 'project-new')).toBe(true);
+	});
+
+	test('coalesces events while the complete read battery is in flight', async () => {
+		let refreshes = 0;
+		let scheduled: (() => void) | undefined;
+		let resolveCore: (() => void) | undefined;
+		let resolveSecondary: (() => void) | undefined;
+		const refresh = createOperationalRefreshCoalescer(
+			() => {
+				refreshes += 1;
+				return Promise.all([
+					new Promise<void>((resolve) => { resolveCore = resolve; }),
+					new Promise<void>((resolve) => { resolveSecondary = resolve; }),
+				]);
+			},
+			(callback) => { scheduled = callback; },
+		);
+		refresh.queue(); refresh.queue(); refresh.queue();
+		expect(scheduled).toBeDefined();
+		scheduled?.();
+		expect(refreshes).toBe(1);
+		refresh.queue(); refresh.queue();
+		resolveCore?.();
+		await Promise.resolve();
+		expect(refreshes).toBe(1);
+		resolveSecondary?.();
+		await Promise.resolve(); await Promise.resolve();
+		expect(scheduled).toBeDefined();
+		scheduled?.();
+		expect(refreshes).toBe(2);
+		resolveCore?.(); resolveSecondary?.();
+	});
+
+	test('keeps a secondary surface pending after the core has completed', () => {
+		const html = workPage({ operationalPending: { Snapshot: true } });
+		expect(pendingOperationalReads().Snapshot).toBe(true);
+		expect(html).toContain('Loading Snapshot');
+		expect(html).not.toContain('No admissible issues right now.');
+	});
+
+	test('a same-scope retry clears failure and restores pending until its read resolves', async () => {
+		let state = beginOperationalReads({});
+		state = settleOperationalRead(state, 'Snapshot', { state: 'unavailable', detail: 'Snapshot responded with 500' });
+		let resolveRetry: ((value: typeof BACKLOG) => void) | undefined;
+		state = beginOperationalRefresh(state, false);
+		const retry = readOperationalPart(() => new Promise<typeof BACKLOG>((resolve) => { resolveRetry = resolve; }))
+			.then((result) => { state = settleOperationalRead(state, 'Snapshot', result); });
+		expect(state.failures.Snapshot).toBeUndefined();
+		expect(state.pending.Snapshot).toBe(true);
+		resolveRetry?.(BACKLOG);
+		await retry;
+		expect(state).toMatchObject({ loaded: { Snapshot: true }, failures: {}, pending: {} });
+	});
+
+	test('a Runs failure settles its dependent Run activity without leaving it pending', () => {
+		let state = beginOperationalReads({});
+		const failure = { state: 'unavailable' as const, detail: 'Runs responded with 500' };
+		state = settleOperationalRead(state, 'Runs', failure);
+		state = settleOperationalRead(state, 'Run activity', failure);
+		expect(state.pending.Runs).toBeUndefined();
+		expect(state.pending['Run activity']).toBeUndefined();
+		expect(state.failures).toEqual({ Runs: failure.detail, 'Run activity': failure.detail });
+	const html = runsPage({ operationalFailures: state.failures });
+	expect(html).toContain('Runs is unavailable.');
+	expect(html).not.toContain('Loading Run activity');
 	});
 
 	test('keeps revealed global resources loaded when a scope change refreshes them', () => {
