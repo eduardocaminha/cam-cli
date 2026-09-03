@@ -5,10 +5,13 @@ import type { AppProps } from '../app-props.ts';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { ChainRunsPanel, DiagnosticSchedulePanel, ExecutorHandoffPanel, HandoffPanel, ModelSettingsPanel, ProjectBriefPanel, ProjectPanel, ProvidersPanel } from './settings.tsx';
 
 export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNode }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
+	const failed = (resource: keyof NonNullable<typeof props.operationalFailures>): string | undefined => props.operationalFailures?.[resource];
+	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
 			<Tabs defaultValue="providers">
@@ -18,7 +21,7 @@ export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNod
 					<TabsTab value="project">{catalog.tabs.project}</TabsTab>
 				</TabsList>
 				<TabsPanel value="providers">
-					<ProvidersPanel
+					<OperationalReadPanel detail={failed('Providers')} loaded={loaded('Providers')} locale={props.locale} resource="Providers"><ProvidersPanel
 						catalog={catalog}
 						claudeCredentialError={props.claudeCredentialError}
 						locale={props.locale}
@@ -32,48 +35,48 @@ export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNod
 						providerSource={props.providerSource}
 						onResetProvider={props.onResetProvider}
 						selectedProvider={props.selectedProvider}
-					/>
-					<ModelSettingsPanel
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Model settings')} loaded={loaded('Model settings')} locale={props.locale} resource="Model settings"><ModelSettingsPanel
 						catalog={catalog}
 						modelSettings={props.modelSettings}
 						modelSettingsSource={props.modelSettingsSource}
 						onSaveModelSettings={props.onSaveModelSettings}
 						onResetModelSettings={props.onResetModelSettings}
 						pending={props.pending}
-					/>
+					/></OperationalReadPanel>
 				</TabsPanel>
 				<TabsPanel value="execution">
-					<ChainRunsPanel
+					<OperationalReadPanel detail={failed('Run chain')} loaded={loaded('Run chain')} locale={props.locale} resource="Run chain"><ChainRunsPanel
 						catalog={catalog}
 						chainRuns={props.chainRuns}
 						onSetChainRuns={props.onSetChainRuns}
 						pending={props.pending}
-					/>
-					<ExecutorHandoffPanel
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Executor handoff')} loaded={loaded('Executor handoff')} locale={props.locale} resource="Executor handoff"><ExecutorHandoffPanel
 						catalog={catalog}
 						executorHandoff={props.executorHandoff}
 						onSetExecutorHandoff={props.onSetExecutorHandoff}
 						pending={props.pending}
-					/>
+					/></OperationalReadPanel>
 					{props.project.state === 'ready' ? (
-						<DiagnosticSchedulePanel
+						<OperationalReadPanel detail={failed('Diagnostics')} loaded={loaded('Diagnostics')} locale={props.locale} resource="Diagnostics"><DiagnosticSchedulePanel
 							catalog={catalog}
 							diagnostics={props.diagnostics}
 							locale={props.locale}
 							onSave={props.onSaveDiagnosticSchedule}
 							pending={props.pending}
-						/>
+						/></OperationalReadPanel>
 					) : null}
 				</TabsPanel>
 				<TabsPanel value="project">
 					<ProjectPanel catalog={catalog} project={props.project} />
-					<ProjectBriefPanel
+					<OperationalReadPanel detail={failed('Brief')} loaded={loaded('Brief')} locale={props.locale} resource="Brief"><ProjectBriefPanel
 						brief={props.brief}
 						catalog={catalog}
 						onSaveBrief={props.onSaveBrief}
 						pending={props.pending}
-					/>
-					<HandoffPanel catalog={catalog} handoff={props.handoff} />
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Brief')} loaded={loaded('Brief')} locale={props.locale} resource="Brief"><HandoffPanel catalog={catalog} handoff={props.handoff} /></OperationalReadPanel>
 					{props.removePanel}
 				</TabsPanel>
 			</Tabs>

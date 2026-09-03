@@ -108,6 +108,14 @@ import {
 } from './notifications.ts';
 import { clientNavigationTarget } from './navigation.ts';
 import {
+	isCurrentOperationalRead,
+	preserveGlobalOperationalLoaded,
+	readOperationalPart,
+	type OperationalFailures,
+	type OperationalLoaded,
+	type OperationalResource,
+} from './operational-snapshot.ts';
+import {
 	invalidatesSnapshot,
 	type PlannableIssue,
 	type RunEventView,
@@ -190,6 +198,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	snapshotError: string | null;
 	snapshotScope: string | null | undefined;
 	snapshotErrorScope: string | null | undefined;
+	operationalRefreshFailure: { detail: string; onRetry: () => void } | undefined;
+	operationalFailures: OperationalFailures;
+	operationalLoaded: OperationalLoaded;
 	retryInitialSnapshot: () => void;
 	pending: boolean;
 	claudeCredentialError: string | null;
@@ -251,111 +262,119 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const activeScope = useRef<string | null>(scope);
 	const [snapshotScope, setSnapshotScope] = useState<string | null | undefined>(undefined);
 	const [snapshotErrorScope, setSnapshotErrorScope] = useState<string | null | undefined>(undefined);
+	const [operationalFailures, setOperationalFailures] = useState<OperationalFailures>({});
+	const [operationalLoaded, setOperationalLoaded] = useState<OperationalLoaded>({});
 	const snapshotRequest = useRef(0);
 	activeScope.current = scope;
 
-	const refresh = useCallback((request?: number) => {
-		const currentRequest = (): boolean =>
-			activeScope.current === scope
-			&& (request === undefined || request === snapshotRequest.current);
-		return Promise.all([
-			fetchRuns(scope),
-			fetchBacklog(scope),
-			fetchProviders(scope),
-			fetchChat(scope),
-			fetchBrief(scope),
-			fetchProposals(scope),
-			fetchResolvedProposals(scope),
-			fetchModelSettingsSnapshot(scope),
-			fetchAgentDefaults(),
-			fetchChainRuns(scope),
-			fetchExecutorHandoff(scope),
-			fetchNotificationChannels(),
-			fetchProjectStatus(scope),
-			fetchProjects(),
-			fetchOperatorProfile(),
-			fetchDiagnosticsForScope(scope),
-			fetchSelfUpdate(),
-		])
-			.then(async ([
-				runSnapshot,
-				backlogSnapshot,
-				providerSnapshot,
-				chatSnapshot,
-				briefSnapshot,
-				proposalSnapshot,
-				resolvedProposalSnapshot,
-				modelSnapshot,
-				agentDefaultsSnapshot,
-				chainRunsSnapshot,
-				executorHandoffSnapshot,
-				notificationChannelsSnapshot,
-				projectSnapshot,
-				projectsSnapshot,
-				operatorProfileSnapshot,
-				diagnosticsSnapshot,
-				selfUpdateSnapshot,
-			]) => {
-				if (!currentRequest()) return false as const;
-				const latest = runSnapshot[0] ?? null;
-				const history = latest === null
-					? []
-					: await fetchRunEvents(scope, latest.id);
-				if (!currentRequest()) return false as const;
-				setRuns(runSnapshot);
-				setBacklog(backlogSnapshot.plannable);
-				setIdeas(backlogSnapshot.ideas);
-				setDrafts(backlogSnapshot.drafts);
-				setProposals(proposalSnapshot);
-				setResolvedProposals(resolvedProposalSnapshot.proposals);
-				setResolvedProposalsOmittedCount(resolvedProposalSnapshot.omittedCount);
-				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
-				setStaleService(backlogSnapshot.staleService);
-				setGitIdentity(backlogSnapshot.gitIdentity);
-				setVersion(backlogSnapshot.version);
-				setProviders(providerSnapshot.providers);
-				setSelectedProvider(providerSnapshot.selected);
-				setProviderSource(providerSnapshot.source);
-				setChatMessages(chatSnapshot);
-				setBrief(briefSnapshot.brief);
-				setHandoff(briefSnapshot.handoff);
-				setModelSettings(modelSnapshot.settings);
-				setModelSettingsSource(modelSnapshot.source);
-				setAgentDefaults(agentDefaultsSnapshot);
-				setChainRuns(chainRunsSnapshot);
-				setExecutorHandoff(executorHandoffSnapshot);
-				setNotificationChannels(notificationChannelsSnapshot);
-				setProject(projectSnapshot);
-				setProjects(projectsSnapshot);
-				setOperatorProfile(operatorProfileSnapshot);
-				setDiagnostics(diagnosticsSnapshot);
-				setSelfUpdate(selfUpdateSnapshot);
-				setEvents(history);
-				return true as const;
-			})
-			.catch((error: unknown) => {
-				if (!currentRequest()) return false as const;
-				const detail = String(error);
-				setStatus(detail);
-				return detail;
-			});
-	}, [scope]);
+	const clearScopedData = useCallback((): void => {
+		setBacklog([]); setIdeas([]); setDrafts([]);
+		setProposals([]); setResolvedProposals([]); setResolvedProposalsOmittedCount(0);
+		setRuns([]); setEvents([]);
+		setWorkspaceNotices([]); setStaleService(null); setGitIdentity(null); setVersion('');
+		setChatMessages([]);
+		setProviders([]); setSelectedProvider('claude'); setProviderSource('provider-default');
+		setBrief(EMPTY_BRIEF); setHandoff(EMPTY_BRIEF);
+		setModelSettings(emptyModelSettings()); setModelSettingsSource('provider-default');
+		setChainRuns(EMPTY_CHAIN_RUNS); setExecutorHandoff(EMPTY_EXECUTOR_HANDOFF);
+		setDiagnostics(emptyDiagnostics());
+	}, []);
 
-	const loadInitialSnapshot = useCallback(() => {
+	const refresh = useCallback((initial = false) => {
 		const request = ++snapshotRequest.current;
-		setSnapshotLoading(true);
+		const currentRequest = (): boolean => isCurrentOperationalRead(
+			request, snapshotRequest.current, scope, activeScope.current,
+		);
+		if (initial) {
+			setSnapshotLoading(true);
+			setSnapshotError(null);
+			setSnapshotErrorScope(undefined);
+			setOperationalFailures({});
+			setOperationalLoaded(preserveGlobalOperationalLoaded);
+			clearScopedData();
+		}
+		const unavailable = (name: OperationalResource, detail: string): void => {
+			if (currentRequest()) setOperationalFailures((current) => ({ ...current, [name]: detail }));
+		};
+		const available = (name: OperationalResource): void => {
+			setOperationalFailures((current) => {
+				const { [name]: _resolved, ...remaining } = current;
+				return remaining;
+			});
+			setOperationalLoaded((current) => ({ ...current, [name]: true }));
+		};
+		const secondary = <T,>(name: OperationalResource, read: () => Promise<T>, commit: (value: T) => void): void => {
+			void readOperationalPart(read).then((result) => {
+				if (!currentRequest()) return;
+				if (result.state === 'unavailable') unavailable(name, result.detail);
+				else {
+					available(name);
+					commit(result.value);
+				}
+			});
+		};
+
+		void readOperationalPart(() => fetchRuns(scope)).then((result) => {
+			if (!currentRequest()) return;
+			if (result.state === 'unavailable') {
+				unavailable('Runs', result.detail);
+				return;
+			}
+			available('Runs');
+			setRuns(result.value);
+			const latest = result.value[0] ?? null;
+			secondary('Run activity', () => latest === null ? Promise.resolve([]) : fetchRunEvents(scope, latest.id), setEvents);
+		});
+		secondary('Snapshot', () => fetchBacklog(scope), (value) => {
+			setBacklog(value.plannable); setIdeas(value.ideas); setDrafts(value.drafts);
+			setWorkspaceNotices(value.workspaceNotices); setStaleService(value.staleService);
+			setGitIdentity(value.gitIdentity); setVersion(value.version);
+		});
+		secondary('Providers', () => fetchProviders(scope), (value) => {
+			setProviders(value.providers); setSelectedProvider(value.selected); setProviderSource(value.source);
+		});
+		secondary('Conversation', () => fetchChat(scope), setChatMessages);
+		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); setHandoff(value.handoff); });
+		secondary('Proposals', () => fetchProposals(scope), setProposals);
+		secondary('Resolved proposals', () => fetchResolvedProposals(scope), (value) => {
+			setResolvedProposals(value.proposals); setResolvedProposalsOmittedCount(value.omittedCount);
+		});
+		secondary('Model settings', () => fetchModelSettingsSnapshot(scope), (value) => {
+			setModelSettings(value.settings); setModelSettingsSource(value.source);
+		});
+		secondary('Agent defaults', fetchAgentDefaults, setAgentDefaults);
+		secondary('Run chain', () => fetchChainRuns(scope), setChainRuns);
+		secondary('Executor handoff', () => fetchExecutorHandoff(scope), setExecutorHandoff);
+		secondary('Notifications', fetchNotificationChannels, setNotificationChannels);
+		secondary('Operator profile', fetchOperatorProfile, setOperatorProfile);
+		secondary('Diagnostics', () => fetchDiagnosticsForScope(scope), setDiagnostics);
+		secondary('Self update', fetchSelfUpdate, setSelfUpdate);
+
+		return Promise.all([
+			readOperationalPart(() => fetchProjectStatus(scope)),
+			readOperationalPart(fetchProjects),
+		]).then(([projectResult, projectsResult]) => {
+			if (!currentRequest()) return false as const;
+			if (projectResult.state === 'unavailable') {
+				setSnapshotErrorScope(scope); setSnapshotError(projectResult.detail); return projectResult.detail;
+			}
+			if (projectsResult.state === 'unavailable') {
+				setSnapshotErrorScope(scope); setSnapshotError(projectsResult.detail); return projectsResult.detail;
+			}
+		setProject(projectResult.value);
+		setProjects(projectsResult.value);
 		setSnapshotError(null);
 		setSnapshotErrorScope(undefined);
-		void refresh(request).then((loaded) => {
-			if (request !== snapshotRequest.current || activeScope.current !== scope) return;
-			setSnapshotLoading(false);
-			if (loaded === true) setSnapshotScope(scope);
-			else if (loaded !== false) {
-				setSnapshotErrorScope(scope);
-				setSnapshotError(loaded);
-			}
+		setSnapshotScope(scope);
+			return true as const;
+		}).finally(() => {
+			if (initial && currentRequest()) setSnapshotLoading(false);
 		});
-	}, [refresh, scope]);
+	}, [clearScopedData, scope]);
+
+	const loadInitialSnapshot = useCallback(() => {
+		void refresh(snapshotScope !== scope);
+	}, [refresh, scope, snapshotScope]);
 
 	const send = useCallback((command: () => Promise<string>) => {
 		setPending(true);
@@ -549,6 +568,11 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		snapshotError,
 		snapshotScope,
 		snapshotErrorScope,
+		operationalRefreshFailure: snapshotError !== null && snapshotErrorScope === scope && snapshotScope === scope
+			? { detail: snapshotError, onRetry: loadInitialSnapshot }
+			: undefined,
+		operationalFailures,
+		operationalLoaded,
 		retryInitialSnapshot: loadInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -603,6 +627,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		snapshotError,
 		snapshotScope,
 		snapshotErrorScope,
+		operationalRefreshFailure,
+		operationalFailures,
+		operationalLoaded,
 		retryInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -670,7 +697,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		return () => document.removeEventListener('click', onClick);
 	}, [navigate]);
 
-	const currentScopeFailed = snapshotError !== null && snapshotErrorScope === scope;
+	const currentScopeFailed = snapshotError !== null && snapshotErrorScope === scope && snapshotScope !== scope;
 	const operationalBoundary = snapshotLoading || (snapshotScope !== scope && !currentScopeFailed)
 		? { state: 'loading' as const }
 		: !currentScopeFailed ? undefined : {
@@ -682,6 +709,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	return (
 		<App
 			operationalBoundary={operationalBoundary}
+			operationalRefreshFailure={operationalRefreshFailure}
+			operationalFailures={operationalFailures}
+			operationalLoaded={operationalLoaded}
 			onNavigate={navigate}
 			surfaceRoute={routeOf(surfacePathname)}
 			backlog={backlog}

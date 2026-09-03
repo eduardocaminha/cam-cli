@@ -14,6 +14,7 @@ import { useLiveEdge } from '../live-edge.ts';
 import type { ConversationCatalog, Locale } from '../locale.ts';
 import type { RunView } from '../run-view.ts';
 import { PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { fieldReader, formatCostUsd, formatEventTime } from './runs.tsx';
 import { ArrowDown01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -188,13 +189,15 @@ export function StatusOutput({ status }: Pick<AppProps, 'status'>): React.ReactE
 export function ConversationColumn({
 	run,
 	chatMessages,
+	operationalFailures,
+	operationalLoaded,
 	status,
 	pending,
 	onResume,
 	onSendMessage,
 	locale,
 	catalog,
-}: Pick<AppProps, 'chatMessages' | 'status' | 'pending' | 'onResume' | 'onSendMessage'> & {
+}: Pick<AppProps, 'chatMessages' | 'operationalFailures' | 'operationalLoaded' | 'status' | 'pending' | 'onResume' | 'onSendMessage'> & {
 	run: RunView | null;
 	locale: Locale;
 	catalog: ConversationCatalog;
@@ -208,8 +211,10 @@ export function ConversationColumn({
 		>
 			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
 				<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
-					<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
-					<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
+					<OperationalReadPanel detail={operationalFailures?.Conversation} loaded={operationalLoaded?.Conversation === true} locale={locale} resource="Conversation">
+						<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
+						<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
+					</OperationalReadPanel>
 					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
 					<StatusOutput status={status} />
 					<form

@@ -30,10 +30,14 @@ import type { Locale } from './locale.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
 import type { OperatorRoute } from './routes.ts';
 import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
+import type { OperationalFailures, OperationalLoaded } from './operational-snapshot.ts';
 
 /** Complete pure-render contract for the operator application. */
 export interface AppProps {
 	operationalBoundary?: { state: 'loading' } | { state: 'failure'; detail: string; onRetry: () => void };
+	operationalRefreshFailure?: { detail: string; onRetry: () => void };
+	operationalFailures?: OperationalFailures;
+	operationalLoaded?: OperationalLoaded;
 	onNavigate?: (destination: string) => void;
 	route: OperatorRoute;
 	surfaceRoute?: OperatorRoute;

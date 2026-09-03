@@ -4,33 +4,36 @@ import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { AgentDefaultsPanel, NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
 
 export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
+	const failed = (resource: keyof NonNullable<typeof props.operationalFailures>): string | undefined => props.operationalFailures?.[resource];
+	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
-			<AgentDefaultsPanel
+			<OperationalReadPanel detail={failed('Agent defaults')} loaded={loaded('Agent defaults')} locale={props.locale} resource="Agent defaults"><AgentDefaultsPanel
 				agentDefaults={props.agentDefaults}
 				catalog={catalog}
 				onSaveAgentDefaults={props.onSaveAgentDefaults}
 				pending={props.pending}
-			/>
-			<OperatorProfilePanel
+			/></OperationalReadPanel>
+			<OperationalReadPanel detail={failed('Operator profile')} loaded={loaded('Operator profile')} locale={props.locale} resource="Operator profile"><OperatorProfilePanel
 						catalog={catalog}
 						onSaveOperatorProfile={props.onSaveOperatorProfile}
 						operatorProfile={props.operatorProfile}
 						pending={props.pending}
 						suggestedTimezone={props.suggestedTimezone}
-					/>
-					<SelfUpdatePanel
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Self update')} loaded={loaded('Self update')} locale={props.locale} resource="Self update"><SelfUpdatePanel
 						catalog={catalog}
 						locale={props.locale}
 						onSetSelfUpdate={props.onSetSelfUpdate}
 						pending={props.pending}
 						selfUpdate={props.selfUpdate}
-					/>
-			<NotificationsPanel
+					/></OperationalReadPanel>
+			<OperationalReadPanel detail={failed('Notifications')} loaded={loaded('Notifications')} locale={props.locale} resource="Notifications"><NotificationsPanel
 						catalog={catalog}
 						notificationChannels={props.notificationChannels}
 						notificationPermission={props.notificationPermission}
@@ -39,7 +42,7 @@ export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 						onSaveResendSettings={props.onSaveResendSettings}
 						onRemoveResendCredential={props.onRemoveResendCredential}
 						pending={props.pending}
-			/>
+			/></OperationalReadPanel>
 		</SurfaceColumn>
 	);
 }
