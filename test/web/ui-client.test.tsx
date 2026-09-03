@@ -3224,7 +3224,7 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 }
 
 describe('operator shell', () => {
-	test('same-scope destinations use history while scope boundaries remain document navigations', () => {
+	test('known internal destinations use history across surfaces and projects', () => {
 		const base = {
 			currentUrl: 'http://gateship.test/projects/project-current/runs',
 			defaultPrevented: false,
@@ -3241,8 +3241,8 @@ describe('operator shell', () => {
 			.toBe('/projects/project-current/work');
 		expect(clientNavigationTarget({ ...base, href: '/settings', currentUrl: 'http://gateship.test/overview' }))
 			.toBe('/settings');
-		expect(clientNavigationTarget({ ...base, href: '/projects/project-other' })).toBeNull();
-		expect(clientNavigationTarget({ ...base, href: '/overview' })).toBeNull();
+		expect(clientNavigationTarget({ ...base, href: '/projects/project-other' })).toBe('/projects/project-other');
+		expect(clientNavigationTarget({ ...base, href: '/overview' })).toBe('/overview');
 	});
 
 	test('special links keep normal browser navigation behavior', () => {
@@ -3282,6 +3282,47 @@ describe('operator shell', () => {
 			expect(html).not.toContain('>0<');
 			expect(html).not.toContain('No active run');
 		}
+	});
+
+	test('a cross-project boundary selects its destination and hides stale scope data while loading', () => {
+		const html = renderAt('/projects/project-other', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('working', { issueId: 'CAM-OLD' })],
+			surfaceRoute: '/projects/project-current',
+			operationalBoundary: { state: 'loading' },
+		});
+
+		expect(html).toContain('data-slot="project-switcher"');
+		expect(html).toContain('href="/projects/project-other"');
+		expect(html).toContain('>other-product</span>');
+		expect(html).toContain('aria-busy="true"');
+		expect(html).toContain('Loading operational data…');
+		expect(html).not.toContain('CAM-OLD');
+		expect(html).not.toContain('Project not registered');
+		expect(html).not.toContain('animate-');
+	});
+
+	test('the deferred surface replaces the loading boundary after the destination snapshot hydrates', () => {
+		const html = renderAt('/projects/project-other/runs', {
+			projects: [{ ...CURRENT_PROJECT, current: false }, { ...OTHER_PROJECT, current: true }],
+			runs: [runIn('working', { issueId: 'CAM-NEW' })],
+			surfaceRoute: '/projects/project-other/runs',
+		});
+
+		expect(html).toContain('>other-product</span>');
+		expect(html).toContain('CAM-NEW');
+		expect(html).not.toContain('Loading operational data…');
+	});
+
+	test('the operational failure remains inside the shell with an accessible retry', () => {
+		const html = renderAt('/projects/project-current', {
+			operationalBoundary: { state: 'failure', detail: 'network failure', onRetry: () => {} },
+		});
+
+		expect(html).toContain('data-slot="project-switcher"');
+		expect(html).toContain('role="alert"');
+		expect(html).toContain('network failure');
+		expect(html).toContain('>Try again</button>');
 	});
 
 	test('a failed initial read is localized, actionable and never inferred as empty', () => {

@@ -6,6 +6,7 @@
 import React, { useEffect } from 'react';
 import type { AppProps } from './app-props.ts';
 import { AppShell } from './app-shell.tsx';
+import { InitialOperationalFailure, InitialOperationalLoading } from './initial-loading.tsx';
 import { LOCALE_CATALOG } from './locale.ts';
 import { routeSelection } from './routes.ts';
 import { RouteScreen } from './screens/route-screen.tsx';
@@ -35,6 +36,7 @@ export function handleProjectShortcut(
 	event: PanelKeyEvent,
 	projects: AppProps['projects'],
 	runtime = panelRuntime(),
+	navigate?: (destination: string) => void,
 ): boolean {
 	if ((!event.metaKey && !event.ctrlKey) || event.key.length !== 1) return false;
 	const index = event.key.charCodeAt(0) - '1'.charCodeAt(0);
@@ -42,14 +44,16 @@ export function handleProjectShortcut(
 	const project = projects[index];
 	if (project === undefined) return false;
 	event.preventDefault();
-	runtime.location?.assign(`/projects/${encodeURIComponent(project.id)}`);
+	const destination = `/projects/${encodeURIComponent(project.id)}`;
+	if (navigate === undefined) runtime.location?.assign(destination);
+	else navigate(destination);
 	return true;
 }
 
 export function App(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const currentProject = props.projects.find((project) => project.current) ?? null;
-	const selection = routeSelection(props.route, currentProject?.id ?? null);
+	const selection = routeSelection(props.surfaceRoute ?? props.route, currentProject?.id ?? null);
 	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
@@ -61,7 +65,7 @@ export function App(props: AppProps): React.ReactElement {
 				toggleSidebar();
 				return;
 			}
-			handleProjectShortcut(event, props.projects, runtime);
+			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);
 		};
 		runtime.addEventListener?.('keydown', onKeyDown);
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
@@ -72,7 +76,9 @@ export function App(props: AppProps): React.ReactElement {
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>
-			<RouteScreen
+			{props.operationalBoundary?.state === 'loading' ? <InitialOperationalLoading locale={props.locale} /> : null}
+			{props.operationalBoundary?.state === 'failure' ? <InitialOperationalFailure detail={props.operationalBoundary.detail} locale={props.locale} onRetry={props.operationalBoundary.onRetry} /> : null}
+			{props.operationalBoundary === undefined ? <RouteScreen
 				currentProjectReady={props.project.state === 'ready'}
 				screens={{
 					overview: () => <OverviewSurface {...props} />,
@@ -92,7 +98,7 @@ export function App(props: AppProps): React.ReactElement {
 				}}
 				selectedProject={selectedProject}
 				selection={selection}
-			/>
+			/> : null}
 		</AppShell>
 	);
 }

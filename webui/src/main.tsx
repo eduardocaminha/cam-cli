@@ -8,7 +8,7 @@
 // Same-scope links update browser history without rebuilding the document, so
 // the operational snapshot and its event subscription remain intact.
 
-import { type ReactElement, StrictMode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactElement, StrictMode, useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf } from './App.tsx';
 import {
@@ -107,7 +107,6 @@ import {
 	requestBrowserNotificationPermission,
 } from './notifications.ts';
 import { clientNavigationTarget } from './navigation.ts';
-import { InitialOperationalFailure, InitialOperationalLoading } from './initial-loading.tsx';
 import {
 	invalidatesSnapshot,
 	type PlannableIssue,
@@ -189,6 +188,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	overviewError: string | null;
 	snapshotLoading: boolean;
 	snapshotError: string | null;
+	snapshotScope: string | null | undefined;
+	snapshotErrorScope: string | null | undefined;
 	retryInitialSnapshot: () => void;
 	pending: boolean;
 	claudeCredentialError: string | null;
@@ -247,8 +248,16 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [snapshotLoading, setSnapshotLoading] = useState(true);
 	const [snapshotError, setSnapshotError] = useState<string | null>(null);
 	const refreshedScope = useRef<string | null | undefined>(undefined);
+	const activeScope = useRef<string | null>(scope);
+	const [snapshotScope, setSnapshotScope] = useState<string | null | undefined>(undefined);
+	const [snapshotErrorScope, setSnapshotErrorScope] = useState<string | null | undefined>(undefined);
+	const snapshotRequest = useRef(0);
+	activeScope.current = scope;
 
-	const refresh = useCallback(() => {
+	const refresh = useCallback((request?: number) => {
+		const currentRequest = (): boolean =>
+			activeScope.current === scope
+			&& (request === undefined || request === snapshotRequest.current);
 		return Promise.all([
 			fetchRuns(scope),
 			fetchBacklog(scope),
@@ -287,10 +296,12 @@ function useOperationalRun(scope: string | null, pathname: string): {
 				diagnosticsSnapshot,
 				selfUpdateSnapshot,
 			]) => {
+				if (!currentRequest()) return false as const;
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null
 					? []
 					: await fetchRunEvents(scope, latest.id);
+				if (!currentRequest()) return false as const;
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
@@ -323,6 +334,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 				return true as const;
 			})
 			.catch((error: unknown) => {
+				if (!currentRequest()) return false as const;
 				const detail = String(error);
 				setStatus(detail);
 				return detail;
@@ -330,13 +342,20 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	}, [scope]);
 
 	const loadInitialSnapshot = useCallback(() => {
+		const request = ++snapshotRequest.current;
 		setSnapshotLoading(true);
 		setSnapshotError(null);
-		void refresh().then((loaded) => {
+		setSnapshotErrorScope(undefined);
+		void refresh(request).then((loaded) => {
+			if (request !== snapshotRequest.current || activeScope.current !== scope) return;
 			setSnapshotLoading(false);
-			if (loaded !== true) setSnapshotError(loaded);
+			if (loaded === true) setSnapshotScope(scope);
+			else if (loaded !== false) {
+				setSnapshotErrorScope(scope);
+				setSnapshotError(loaded);
+			}
 		});
-	}, [refresh]);
+	}, [refresh, scope]);
 
 	const send = useCallback((command: () => Promise<string>) => {
 		setPending(true);
@@ -528,6 +547,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		overviewError,
 		snapshotLoading,
 		snapshotError,
+		snapshotScope,
+		snapshotErrorScope,
 		retryInitialSnapshot: loadInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -540,6 +561,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 
 function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	const [pathname, setPathname] = useState(window.location.pathname);
+	const [surfacePathname, setSurfacePathname] = useState(window.location.pathname);
+	const [, startRouteTransition] = useTransition();
 	const scope = projectIdOf(pathname);
 	const {
 		backlog,
@@ -578,6 +601,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		overviewError,
 		snapshotLoading,
 		snapshotError,
+		snapshotScope,
+		snapshotErrorScope,
 		retryInitialSnapshot,
 		pending,
 		claudeCredentialError,
@@ -605,11 +630,21 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		if (run !== null) send(() => commandRun(scope, run.id, action));
 	};
 
+	const setRoute = useCallback((destination: string): void => {
+		setPathname(destination);
+		startRouteTransition(() => setSurfacePathname(destination));
+	}, [startRouteTransition]);
+
 	useEffect(() => {
-		const onPopState = () => setPathname(window.location.pathname);
+		const onPopState = () => setRoute(window.location.pathname);
 		window.addEventListener('popstate', onPopState);
 		return () => window.removeEventListener('popstate', onPopState);
-	}, []);
+	}, [setRoute]);
+
+	const navigate = useCallback((destination: string): void => {
+		window.history.pushState(null, '', destination);
+		setRoute(destination);
+	}, [setRoute]);
 
 	useEffect(() => {
 		const onClick = (event: MouseEvent): void => {
@@ -629,22 +664,26 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			});
 			if (destination === null) return;
 			event.preventDefault();
-			window.history.pushState(null, '', destination);
-			setPathname(destination);
+			navigate(destination);
 		};
 		document.addEventListener('click', onClick);
 		return () => document.removeEventListener('click', onClick);
-	}, []);
+	}, [navigate]);
 
-	if (snapshotLoading) {
-		return <InitialOperationalLoading locale={initialLocale} />;
-	}
-	if (snapshotError !== null) {
-		return <InitialOperationalFailure detail={snapshotError} locale={initialLocale} onRetry={retryInitialSnapshot} />;
-	}
+	const currentScopeFailed = snapshotError !== null && snapshotErrorScope === scope;
+	const operationalBoundary = snapshotLoading || (snapshotScope !== scope && !currentScopeFailed)
+		? { state: 'loading' as const }
+		: !currentScopeFailed ? undefined : {
+			state: 'failure' as const,
+			detail: snapshotError,
+			onRetry: retryInitialSnapshot,
+		};
 
 	return (
 		<App
+			operationalBoundary={operationalBoundary}
+			onNavigate={navigate}
+			surfaceRoute={routeOf(surfacePathname)}
 			backlog={backlog}
 			chainRuns={chainRuns}
 			executorHandoff={executorHandoff}

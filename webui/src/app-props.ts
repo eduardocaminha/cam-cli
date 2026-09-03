@@ -33,7 +33,10 @@ import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
 
 /** Complete pure-render contract for the operator application. */
 export interface AppProps {
+	operationalBoundary?: { state: 'loading' } | { state: 'failure'; detail: string; onRetry: () => void };
+	onNavigate?: (destination: string) => void;
 	route: OperatorRoute;
+	surfaceRoute?: OperatorRoute;
 	locale: Locale;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];

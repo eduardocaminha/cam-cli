@@ -1,5 +1,3 @@
-import { projectIdOf, routeOf } from './routes.ts';
-
 /** The browser details that decide whether an anchor remains a normal link. */
 export interface NavigationIntent {
 	currentUrl: string;
@@ -25,7 +23,7 @@ function isOperatorPath(pathname: string): boolean {
 }
 
 /**
- * Returns the same-scope destination to place in browser history. `null`
+ * Returns an internal operator destination to place in browser history. `null`
  * leaves the anchor entirely to the browser, including every special link.
  */
 export function clientNavigationTarget(intent: NavigationIntent): string | null {
@@ -41,6 +39,5 @@ export function clientNavigationTarget(intent: NavigationIntent): string | null 
 	}
 	if (destination.origin !== current.origin || destination.hash !== '' || destination.search !== '') return null;
 	if (!isOperatorPath(destination.pathname)) return null;
-	if (projectIdOf(routeOf(destination.pathname)) !== projectIdOf(routeOf(current.pathname))) return null;
 	return destination.pathname;
 }
