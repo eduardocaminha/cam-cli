@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-781",
+  "title": "Tolerar falhas parciais no snapshot operacional",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-03T19:47:52.228Z",
+  "updatedAt": "2026-09-03T19:47:52.228Z",
+  "description": "Substituir o carregamento all-or-nothing das consultas operacionais por resultados nomeados e independentes. Definir explicitamente o pequeno nucleo necessario para identificar o projeto e a rota; falha nesse nucleo mostra a falha localizada com retry. Consultas secundarias bem-sucedidas devem ser commitadas mesmo quando outra falhar, e uma falha secundaria deve aparecer como indisponibilidade explicita na superficie que depende dela, nunca como lista vazia nem como bloqueio de toda a aplicacao. Manter dados ja revelados durante refresh e eventos; nao reativar skeleton em atualizacao de fundo. Proteger contra respostas obsoletas e concorrentes por geracao ou AbortController ao mudar de escopo ou repetir retry, para que uma leitura antiga nunca sobrescreva o projeto atual. Manter o polling especializado existente e a leitura abortavel da Overview. Nao adicionar biblioteca de cache, store global, router ou nova dependencia. Adicionar testes para falha critica, falha secundaria, sucesso parcial, refresh sem apagar dados, retry e resposta atrasada de escopo anterior ignorada.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Substituir o carregamento all-or-nothing das consultas operacionais por resultados nomeados e independentes. Definir explicitamente o pequeno nucleo necessario para identificar o projeto e a rota; falha nesse nucleo mostra a falha localizada com retry. Consultas secundarias bem-sucedidas devem ser commitadas mesmo quando outra falhar, e uma falha secundaria deve aparecer como indisponibilidade explicita na superficie que depende dela, nunca como lista vazia nem como bloqueio de toda a aplicacao. Manter dados ja revelados durante refresh e eventos; nao reativar skeleton em atualizacao de fundo. Proteger contra respostas obsoletas e concorrentes por geracao ou AbortController ao mudar de escopo ou repetir retry, para que uma leitura antiga nunca sobrescreva o projeto atual. Manter o polling especializado existente e a leitura abortavel da Overview. Nao adicionar biblioteca de cache, store global, router ou nova dependencia. Adicionar testes para falha critica, falha secundaria, sucesso parcial, refresh sem apagar dados, retry e resposta atrasada de escopo anterior ignorada.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck && bun run build:ui && git diff --check"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f6337f3b17d5dd96925a6c3acc6ffa552b9ea93ba22fa6b1254d262126b97a0d",
+    "approvedAt": "2026-09-03T19:47:52.228Z"
+  }
+}
