@@ -499,10 +499,14 @@ export function shellAttention(
 export function ShellRail({ needsYou }: { needsYou: boolean }): React.ReactElement {
 	/* pt-6 at lg matches the expanded sidebar's own p-6 (operator decision,
 	 * 2026-08-25): the mark shares the same vertical anchor collapsed and
-	 * expanded, so toggling reads as a width change, not the logo jumping. */
+	 * expanded, so toggling reads as a width change, not the logo jumping.
+	 * The rail remains 72px, but half of the content panel's 12px outer spacing
+	 * belongs to its visual corridor. That makes the corridor 78px wide, whose
+	 * centre advances 3px; the mark keeps its 1px optical adjustment, for 4px.
+	 * The expanded sidebar deliberately retains its own 1px adjustment below. */
 	return (
 		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:pt-8">
-			<GateshipMark className="size-6 translate-x-px" portal />
+			<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
 			{needsYou ? <span aria-hidden="true" className="size-2 rounded-full bg-attention" /> : null}
 		</header>
 	);
