@@ -126,6 +126,7 @@ import {
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
+import { isCurrentOperationalRead, preserveGlobalOperationalLoaded, readOperationalPart } from '../../webui/src/operational-snapshot.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -256,6 +257,199 @@ const OTHER_PROJECT: RegisteredProjectView = {
 };
 
 const EMPTY_OPERATOR_PROFILE: OperatorProfileView = { name: '', timezone: '' };
+
+describe('operational snapshot reads', () => {
+	test('keeps the project identity core explicit when its read fails', async () => {
+		await expect(readOperationalPart(async () => { throw new Error('Project responded with 500'); })).resolves.toEqual({
+			state: 'unavailable', detail: 'Error: Project responded with 500',
+		});
+	});
+
+	test('keeps successful secondary data when another secondary read is unavailable', async () => {
+		const [runs, backlog] = await Promise.all([
+			readOperationalPart(async () => [runIn('working')]),
+			readOperationalPart(async () => { throw new Error('Snapshot responded with 500'); }),
+		]);
+		expect(runs).toMatchObject({ state: 'available', value: [expect.objectContaining({ id: 'run-1' })] });
+		expect(backlog).toEqual({ state: 'unavailable', detail: 'Error: Snapshot responded with 500' });
+	});
+
+	test('a refresh failure leaves previously committed data available', async () => {
+		let revealed = await readOperationalPart(async () => ['CAM-900']);
+		const refresh = await readOperationalPart(async () => { throw new Error('Snapshot responded with 500'); });
+		if (refresh.state === 'available') revealed = refresh;
+		expect(revealed).toEqual({ state: 'available', value: ['CAM-900'] });
+	});
+
+	test('a retry and a scope change reject delayed reads from the prior generation', () => {
+		expect(isCurrentOperationalRead(4, 5, 'project-old', 'project-old')).toBe(false);
+		expect(isCurrentOperationalRead(5, 5, 'project-old', 'project-new')).toBe(false);
+		expect(isCurrentOperationalRead(5, 5, 'project-new', 'project-new')).toBe(true);
+	});
+
+	test('keeps revealed global resources loaded when a scope change refreshes them', () => {
+		expect(preserveGlobalOperationalLoaded({
+			Runs: true,
+			Snapshot: true,
+			'Agent defaults': true,
+			Notifications: true,
+			'Operator profile': true,
+			'Self update': true,
+		})).toEqual({
+			'Agent defaults': true,
+			Notifications: true,
+			'Operator profile': true,
+			'Self update': true,
+		});
+	});
+
+	test('a failed secondary read replaces its dependent empty surface with explicit unavailability', () => {
+		const runs = runsPage({ operationalFailures: { Runs: 'Runs responded with 500' } });
+		expect(runs).toContain('Runs is unavailable.');
+		expect(runs).toContain('Runs responded with 500');
+		expect(runs).not.toContain('No runs yet');
+
+		const work = workPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
+		expect(work).toContain('Snapshot is unavailable.');
+		expect(work).toContain('Snapshot responded with 500');
+		expect(work).not.toContain('Executable backlog');
+		expect(work).toContain('New issue');
+	});
+
+	test('keeps secondary failures on their dependent route and preserves successful Work suggestions', () => {
+		const settings = settingsPage({ operationalFailures: { Runs: 'Runs responded with 500' } });
+		const overview = renderAt('/overview', { operationalFailures: { Runs: 'Runs responded with 500' } });
+		expect(settings).not.toContain('Runs is unavailable.');
+		expect(overview).not.toContain('Runs is unavailable.');
+
+		const work = workPage({
+			operationalFailures: { Snapshot: 'Snapshot responded with 500' },
+			proposals: [PROPOSAL],
+		});
+		expect(work).toContain(PROPOSAL.title);
+		expect(work).not.toContain('Executable backlog');
+	});
+
+	test('keeps revealed data visible when a critical refresh fails and offers retry', () => {
+		const html = runsPage({
+			runs: [runIn('working')],
+			operationalRefreshFailure: { detail: 'Project responded with 500', onRetry: () => {} },
+		});
+		expect(html).toContain('Operational data could not be refreshed.');
+		expect(html).toContain('Project responded with 500');
+		expect(html).toContain('Try again');
+		expect(html).toContain('Phase working');
+	});
+
+	test('keeps all Snapshot-dependent Work panels visible after a failed refresh', () => {
+		const work = workPage({
+			operationalFailures: { Snapshot: 'Snapshot responded with 500' },
+			operationalLoaded: { Snapshot: true },
+			drafts: [{ ...DRAFT, id: 'draft-1' }],
+			ideas: [{ ...BACKLOG[0], id: 'idea-1', title: 'Revealed idea' }],
+		});
+		expect(work).toContain('Snapshot is unavailable.');
+		expect(work).toContain('Executable backlog');
+		expect(work).toContain('Review and approve');
+		expect(work).toContain('Revealed idea');
+	});
+
+	test('keeps runs visible when only run activity is unavailable', () => {
+		const runs = runsPage({
+			runs: [runIn('working')],
+			operationalFailures: { 'Run activity': 'Run activity responded with 500' },
+		});
+		expect(runs).toContain('Run activity is unavailable.');
+		expect(runs).toContain('Phase working');
+		expect(runs).not.toContain('Runs is unavailable.');
+	});
+
+	test('keeps revealed runs visible when their refresh is unavailable', () => {
+		const runs = runsPage({
+			runs: [runIn('working', { issueId: 'CAM-REVEALED' })],
+			operationalFailures: { Runs: 'Runs responded with 500' },
+			operationalLoaded: { Runs: true },
+		});
+		expect(runs).toContain('Runs is unavailable.');
+		expect(runs).toContain('Phase working');
+		expect(runs).toContain('CAM-REVEALED');
+	});
+
+	test('names a failed Snapshot at workspace notices without hiding revealed notices', () => {
+		const initial = runsPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
+		expect(initial).toContain('Snapshot is unavailable.');
+		expect(initial).not.toContain(NOTICES[0]?.detail ?? '');
+
+		const refresh = runsPage({
+			workspaceNotices: NOTICES,
+			operationalFailures: { Snapshot: 'Snapshot responded with 500' },
+			operationalLoaded: { Snapshot: true },
+		});
+		expect(refresh).toContain('Snapshot is unavailable.');
+		expect(refresh).toContain(NOTICES[0]?.detail ?? '');
+	});
+
+	test('keeps Snapshot workspace notices visible when Runs is initially unavailable', () => {
+		const runs = runsPage({
+			workspaceNotices: NOTICES,
+			operationalFailures: { Runs: 'Runs responded with 500' },
+			operationalLoaded: { Snapshot: true },
+		});
+		expect(runs).toContain('Runs is unavailable.');
+		expect(runs).toContain(NOTICES[0]?.detail ?? '');
+	});
+
+	test('keeps Work snapshot data visible but disables unsafe actions when Runs is initially unavailable', () => {
+		const work = workPage({
+			backlog: BACKLOG,
+			drafts: [DRAFT],
+			selectedIssueId: BACKLOG[0]?.id ?? null,
+			operationalFailures: { Runs: 'Runs responded with 500' },
+		});
+		expect(work).toContain('Runs is unavailable.');
+		expect(work).toContain(BACKLOG[0]?.title ?? '');
+		expect(work).toContain('Review and approve');
+		for (const action of ['Start run', 'Save revision', 'Approve', 'Abandon']) {
+			expect(work).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*>${action}</button>`));
+		}
+	});
+
+	test('keeps revealed Work runs and actions during a Runs refresh failure', () => {
+		const work = workPage({
+			backlog: BACKLOG,
+			drafts: [DRAFT],
+			selectedIssueId: BACKLOG[0]?.id ?? null,
+			runs: [runIn('done')],
+			operationalFailures: { Runs: 'Runs responded with 500' },
+			operationalLoaded: { Runs: true },
+		});
+		expect(work).toContain('Runs is unavailable.');
+		expect(work).toContain(BACKLOG[0]?.title ?? '');
+		expect(work).toMatch(/<button(?![^>]*disabled="")[^>]*>Start run<\/button>/);
+	});
+
+	test('localizes global read failures and preserves revealed settings on refresh', () => {
+		const settings = globalSettingsPage({
+			operatorProfile: { name: 'Eduardo', timezone: 'America/Sao_Paulo' },
+			operationalFailures: {
+				'Agent defaults': 'Agent defaults responded with 500',
+				Notifications: 'Notifications responded with 500',
+				'Operator profile': 'Operator profile responded with 500',
+				'Self update': 'Self update responded with 500',
+			},
+			operationalLoaded: {
+				'Agent defaults': true,
+				Notifications: true,
+				'Operator profile': true,
+				'Self update': true,
+			},
+		});
+		for (const resource of ['Agent defaults', 'Notifications', 'Operator profile', 'Self update']) {
+			expect(settings).toContain(`${resource} is unavailable.`);
+		}
+		expect(settings).toContain('Eduardo');
+	});
+});
 
 // GSHIP-712: one representative value per Work panel, so a surface rendered for
 // another project can be asserted on what it shows and on what it leaves out.
@@ -3300,6 +3494,28 @@ describe('operator shell', () => {
 		expect(html).not.toContain('CAM-OLD');
 		expect(html).not.toContain('Project not registered');
 		expect(html).not.toContain('animate-');
+	});
+
+	test('a destination snapshot never renders secondary values from the previous scope', () => {
+		const html = renderAt('/projects/project-other/work', {
+			projects: [{ ...CURRENT_PROJECT, current: false }, { ...OTHER_PROJECT, current: true }],
+			surfaceRoute: '/projects/project-other/work',
+			backlog: [],
+			drafts: [],
+			ideas: [],
+			proposals: [],
+			resolvedProposals: [],
+			runs: [],
+			chatMessages: [],
+			providers: [],
+			brief: EMPTY_BRIEF,
+			handoff: EMPTY_BRIEF,
+			diagnostics: emptyDiagnostics(),
+		});
+		expect(html).toContain('>other-product</span>');
+		for (const previousValue of ['CAM-OLD', BACKLOG[0]?.title ?? '', PROPOSAL.title]) {
+			expect(html).not.toContain(previousValue);
+		}
 	});
 
 	test('the deferred surface replaces the loading boundary after the destination snapshot hydrates', () => {

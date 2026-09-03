@@ -41,3 +41,20 @@ export function InitialOperationalFailure({
 		</div>
 	</main>;
 }
+
+/** A refresh can fail after data is visible: keep it visible and make retry explicit. */
+export function OperationalRefreshFailure({
+	locale,
+	detail,
+	onRetry,
+}: {
+	locale: Locale;
+	detail: string;
+	onRetry: () => void;
+}): React.ReactElement {
+	const Portuguese = locale === 'pt-BR';
+	return <div className="mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-(--content-measure) flex-wrap items-center gap-3 rounded-xl border border-warning-ui bg-warning-surface p-4 text-sm" role="alert">
+		<div className="min-w-0 flex-1"><p className="font-medium">{Portuguese ? 'Não foi possível atualizar os dados operacionais.' : 'Operational data could not be refreshed.'}</p><p className="mt-1 break-words text-muted-foreground">{detail}</p></div>
+		<Button onClick={onRetry} type="button">{Portuguese ? 'Tentar novamente' : 'Try again'}</Button>
+	</div>;
+}

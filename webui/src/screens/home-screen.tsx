@@ -19,6 +19,8 @@ export function HomeSurface(props: AppProps & { projectId: string }): React.Reac
 				<ConversationColumn
 					catalog={localeCatalog.conversation}
 					chatMessages={props.chatMessages}
+					operationalFailures={props.operationalFailures}
+					operationalLoaded={props.operationalLoaded}
 					locale={props.locale}
 					onResume={props.onResume}
 					onSendMessage={props.onSendMessage}
@@ -49,6 +51,8 @@ export function HomeSurface(props: AppProps & { projectId: string }): React.Reac
 			<ConversationColumn
 				catalog={localeCatalog.conversation}
 				chatMessages={props.chatMessages}
+				operationalFailures={props.operationalFailures}
+				operationalLoaded={props.operationalLoaded}
 				locale={props.locale}
 				onResume={props.onResume}
 				onSendMessage={props.onSendMessage}

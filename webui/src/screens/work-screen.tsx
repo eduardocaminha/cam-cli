@@ -18,6 +18,7 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, WorkCatalog } from '../locale.ts';
 import { actionsFor, activeRunIssueId } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { OperationalReadPanel, OperationalUnavailable } from '../operational-unavailable.tsx';
 import { useState } from 'react';
 import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
 import { draftChanged } from './runs-screen.tsx';
@@ -825,55 +826,64 @@ export function ResolvedProposalsPanel({
  * surface opens on approval when something actually waits there.
  */
 export function WorkSurface(props: AppProps): React.ReactElement {
-	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const catalog = localeCatalog.work;
+	const failed = (resource: keyof NonNullable<typeof props.operationalFailures>): string | undefined => props.operationalFailures?.[resource];
+	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
+	const unavailableInitially = (resource: keyof NonNullable<typeof props.operationalFailures>): boolean => failed(resource) !== undefined && !loaded(resource);
+	const runsUnavailableInitially = unavailableInitially('Runs');
+	const knownRuns = runsUnavailableInitially ? [] : props.runs;
+	const actions = actionsFor(knownRuns[0] ?? null, props.selectedIssueId !== null);
+	const runsUnavailable = failed('Runs');
+	const reviewActionsDisabled = props.pending || runsUnavailableInitially;
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
 			<Tabs defaultValue={props.drafts.length > 0 ? 'approval' : 'queue'}>
 				<TabsList aria-label={localeCatalog.shell.routeLabels.work}>
 					<TabsTab value="queue">
 						{catalog.tabs.queue}
-						<TabsCount>{props.backlog.length}</TabsCount>
+						<TabsCount>{unavailableInitially('Snapshot') ? '—' : props.backlog.length}</TabsCount>
 					</TabsTab>
 					<TabsTab value="approval">
 						{catalog.tabs.approval}
-						<TabsCount attention={props.drafts.length > 0}>{props.drafts.length}</TabsCount>
+						<TabsCount attention={!unavailableInitially('Snapshot') && props.drafts.length > 0}>{unavailableInitially('Snapshot') ? '—' : props.drafts.length}</TabsCount>
 					</TabsTab>
 					<TabsTab value="ideas">
 						{catalog.tabs.ideas}
-						<TabsCount>{props.ideas.length}</TabsCount>
+						<TabsCount>{unavailableInitially('Snapshot') ? '—' : props.ideas.length}</TabsCount>
 					</TabsTab>
 					<TabsTab value="suggestions">
 						{catalog.tabs.suggestions}
-						<TabsCount>{props.proposals.length}</TabsCount>
+						<TabsCount>{unavailableInitially('Proposals') ? '—' : props.proposals.length}</TabsCount>
 					</TabsTab>
 				</TabsList>
 				<TabsPanel value="queue">
-					<BacklogPanel
+					{runsUnavailable === undefined ? null : <OperationalUnavailable detail={runsUnavailable} locale={props.locale} resource="Runs" />}
+					<OperationalReadPanel detail={failed('Snapshot')} loaded={loaded('Snapshot')} locale={props.locale} resource="Snapshot"><BacklogPanel
 						backlog={props.backlog}
-						canStart={actions.start && !props.pending}
+						canStart={actions.start && !reviewActionsDisabled}
 						catalog={catalog.backlog}
 						locale={props.locale}
 						onSelectIssue={props.onSelectIssue}
 						onStart={props.onStart}
 						selectedIssueId={props.selectedIssueId}
-					/>
+					/></OperationalReadPanel>
 				</TabsPanel>
 				<TabsPanel value="approval">
-					<IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} runs={props.runs} />
+					{runsUnavailable === undefined ? null : <OperationalUnavailable detail={runsUnavailable} locale={props.locale} resource="Runs" />}
+					<OperationalReadPanel detail={failed('Snapshot')} loaded={loaded('Snapshot')} locale={props.locale} resource="Snapshot"><IssueReviewPanel catalog={catalog} drafts={props.drafts} locale={props.locale} onAbandonIssue={props.onAbandonIssue} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={reviewActionsDisabled} runs={knownRuns} /></OperationalReadPanel>
 				</TabsPanel>
 				<TabsPanel value="ideas">
-					<IssueSpecifyPanel
+					<OperationalReadPanel detail={failed('Snapshot')} loaded={loaded('Snapshot')} locale={props.locale} resource="Snapshot"><IssueSpecifyPanel
 						catalog={catalog}
 						ideas={props.ideas}
 						onSpecifyIssue={props.onSpecifyIssue}
 						pending={props.pending}
-					/>
+					/></OperationalReadPanel>
 					<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
 				</TabsPanel>
 				<TabsPanel value="suggestions">
-					<DiagnosticsPanel
+					<OperationalReadPanel detail={failed('Diagnostics')} loaded={loaded('Diagnostics')} locale={props.locale} resource="Diagnostics"><DiagnosticsPanel
 						catalog={catalog}
 						diagnostics={props.diagnostics}
 						locale={props.locale}
@@ -882,21 +892,21 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 						onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
-					/>
-					<ProposalsPanel
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Proposals')} loaded={loaded('Proposals')} locale={props.locale} resource="Proposals"><ProposalsPanel
 						catalog={catalog}
 						locale={props.locale}
 						onDismissProposal={props.onDismissProposal}
 						onPromoteProposal={props.onPromoteProposal}
 						pending={props.pending}
 						proposals={props.proposals}
-					/>
-					<ResolvedProposalsPanel
+					/></OperationalReadPanel>
+					<OperationalReadPanel detail={failed('Resolved proposals')} loaded={loaded('Resolved proposals')} locale={props.locale} resource="Resolved proposals"><ResolvedProposalsPanel
 						catalog={catalog}
 						locale={props.locale}
 						resolvedProposals={props.resolvedProposals}
 						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
-					/>
+					/></OperationalReadPanel>
 				</TabsPanel>
 			</Tabs>
 		</SurfaceColumn>

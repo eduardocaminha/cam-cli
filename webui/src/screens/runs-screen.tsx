@@ -6,14 +6,22 @@ import type { IssueReviewDraft } from '../client.ts';
 import { Stat } from '../components/ui/stat.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { PreviousRunsPanel, RunActivity, RunCard, RunCostPanel, RunReport, WorkflowBenchmarkPanel, WorkflowInsightsPanel, WorkspaceNoticesPanel, formatCostUsd } from './runs.tsx';
 
 export function RunsSurface(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const catalog = localeCatalog.runInspector;
+	const runsFailure = props.operationalFailures?.Runs;
+	const runsLoaded = props.operationalLoaded?.Runs === true;
+	const activityFailure = props.operationalFailures?.['Run activity'];
+	const activityLoaded = props.operationalLoaded?.['Run activity'] === true;
+	const snapshotFailure = props.operationalFailures?.Snapshot;
+	const snapshotLoaded = props.operationalLoaded?.Snapshot === true;
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.runs} status={props.status}>
+			<OperationalReadPanel detail={runsFailure} loaded={runsLoaded} locale={props.locale} resource="Runs">
 			<RunCard
 				catalog={catalog}
 				locale={props.locale}
@@ -42,18 +50,20 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 					)}
 					<Stat
 						label={catalog.stats.events}
-						value={props.events.filter((event) => event.runId === run.id).length}
+						value={activityFailure !== undefined && !activityLoaded ? '—' : props.events.filter((event) => event.runId === run.id).length}
 					/>
 				</div>
 			)}
 			<div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 				<div className="flex min-w-0 flex-col gap-6">
-					<RunActivity
-						catalog={localeCatalog.runsOperational}
-						events={props.events}
-						locale={props.locale}
-						run={run}
-					/>
+					<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} resource="Run activity">
+						<RunActivity
+							catalog={localeCatalog.runsOperational}
+							events={props.events}
+							locale={props.locale}
+							run={run}
+						/>
+					</OperationalReadPanel>
 					{run === null ? null : <RunReport catalog={catalog} run={run} />}
 				</div>
 				<div className="flex min-w-0 flex-col gap-6">
@@ -70,10 +80,6 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 						locale={props.locale}
 						runs={props.runs}
 					/>
-					<WorkspaceNoticesPanel
-						catalog={localeCatalog.runsOperational}
-						workspaceNotices={props.workspaceNotices}
-					/>
 				</div>
 			</div>
 			<PreviousRunsPanel
@@ -81,6 +87,13 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 				locale={props.locale}
 				runs={props.runs}
 			/>
+			</OperationalReadPanel>
+			<OperationalReadPanel detail={snapshotFailure} loaded={snapshotLoaded} locale={props.locale} resource="Snapshot">
+				<WorkspaceNoticesPanel
+					catalog={localeCatalog.runsOperational}
+					workspaceNotices={props.workspaceNotices}
+				/>
+			</OperationalReadPanel>
 		</SurfaceColumn>
 	);
 }

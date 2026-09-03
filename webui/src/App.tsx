@@ -6,7 +6,7 @@
 import React, { useEffect } from 'react';
 import type { AppProps } from './app-props.ts';
 import { AppShell } from './app-shell.tsx';
-import { InitialOperationalFailure, InitialOperationalLoading } from './initial-loading.tsx';
+import { InitialOperationalFailure, InitialOperationalLoading, OperationalRefreshFailure } from './initial-loading.tsx';
 import { LOCALE_CATALOG } from './locale.ts';
 import { routeSelection } from './routes.ts';
 import { RouteScreen } from './screens/route-screen.tsx';
@@ -78,6 +78,7 @@ export function App(props: AppProps): React.ReactElement {
 		>
 			{props.operationalBoundary?.state === 'loading' ? <InitialOperationalLoading locale={props.locale} /> : null}
 			{props.operationalBoundary?.state === 'failure' ? <InitialOperationalFailure detail={props.operationalBoundary.detail} locale={props.locale} onRetry={props.operationalBoundary.onRetry} /> : null}
+			{props.operationalRefreshFailure === undefined ? null : <OperationalRefreshFailure detail={props.operationalRefreshFailure.detail} locale={props.locale} onRetry={props.operationalRefreshFailure.onRetry} />}
 			{props.operationalBoundary === undefined ? <RouteScreen
 				currentProjectReady={props.project.state === 'ready'}
 				screens={{
