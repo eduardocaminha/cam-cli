@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-779",
   "title": "Centralizar a marca na sidebar colapsada",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-03T18:44:12.337Z",
-  "updatedAt": "2026-09-03T18:44:12.337Z",
+  "updatedAt": "2026-09-03T18:51:42.215Z",
   "description": "Na shell desktop com a sidebar colapsada, centralizar a marca Gateship no corredor visual completo que termina no painel de conteúdo, considerando metade do espaçamento externo de 12 px que visualmente pertence à rail. Manter a rail técnica com 72 px, o painel e seu padding, a posição vertical, o estado expandido, mobile, indicador de atenção, atalhos, acessibilidade e o desenho/viewBox da marca inalterados. Preferir um deslocamento horizontal explícito e documentado no call site da rail, sem nova dependência, animação ou alteração não relacionada. Adicionar teste focado que fixe a geometria de composição da rail e garanta que o estado expandido preserve seu ajuste próprio.",
   "specSource": "operator",
   "spec": {

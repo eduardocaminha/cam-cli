@@ -17,7 +17,7 @@ import {
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
-import type { PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
+import { ShellRail, type PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
 import {
 	abandonIssue,
 	aggregateChatTurnCosts,
@@ -4147,6 +4147,21 @@ describe('operator shell', () => {
 		// squeezed for space.
 		expect(html).toContain('>Needs you<');
 		expect(html).toContain('>v0.292.0<');
+	});
+
+	test('the collapsed rail centres its mark in the rail and panel-spacing corridor without changing the expanded mark', () => {
+		const rail = renderToStaticMarkup(<ShellRail needsYou />);
+		const expanded = shellHeader(home());
+		const expandedTitle = expanded.slice(expanded.indexOf('<h1'), expanded.indexOf('</h1>'));
+
+		// 72px rail + half of the content panel's 12px outer spacing makes a 78px
+		// corridor. Its centre advances 3px; the mark retains its 1px correction.
+		expect(rail).toContain('lg:w-18');
+		expect(rail).toContain('translate-x-px');
+		expect(rail).toContain('lg:translate-x-[4px]');
+		expect(rail).toContain('bg-attention');
+		expect(expandedTitle).toContain('translate-x-px');
+		expect(expandedTitle).not.toContain('translate-x-[4px]');
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {
