@@ -7,9 +7,8 @@
 // The operator shell uses the static mark. Motion is deliberately absent: the
 // logo identifies the product and does not need to compete with run state.
 //
-// Two exports, one per shell state: `GateshipMark` is the square gate on its
-// own (the collapsed rail), `GateshipWordmark` is the word on its own (the
-// expanded sidebar) -- mark and word never render together in the shell.
+// The shell keeps `GateshipMark` on its collapsed-rail axis in both states.
+// `GateshipWordmark` is added beside it only in the expanded sidebar.
 
 import type React from 'react';
 

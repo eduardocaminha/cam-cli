@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-783",
   "title": "Fixar o eixo da marca ao expandir a sidebar",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T10:17:32.011Z",
-  "updatedAt": "2026-09-04T10:17:32.011Z",
+  "updatedAt": "2026-09-04T10:22:40.545Z",
   "description": "Manter o GateshipMark exatamente no mesmo eixo horizontal e vertical ao alternar entre a sidebar recolhida e expandida. No estado expandido, preservar o ícone no trilho da sidebar recolhida e apenas acrescentar o GateshipWordmark à direita, sem transladar o ícone. Preservar dimensões da sidebar, navegação, acessibilidade, responsividade e ativos atuais. Não adicionar animação nem dependência. Atualizar o teste focado para provar que ambos os estados usam a mesma correção de posicionamento e validar a geometria final no navegador.",
   "specSource": "operator",
   "spec": {
