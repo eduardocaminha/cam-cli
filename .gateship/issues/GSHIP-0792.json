@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-792",
+  "title": "Permitir recolher o painel da execução em qualquer projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-04T20:38:45.335Z",
+  "updatedAt": "2026-09-04T20:38:45.335Z",
+  "description": "Objetivo\nCorrigir a ausência do controle do painel direito em conversas de projetos registrados e prontos que não são o checkout hospedando o processo atual, como Reporter.\n\nContrato\n- Exibir o botão de recolher ou expandir o painel da execução em Conversation sempre que houver um projeto selecionado cuja conversa esteja operacional e pronta, seja ele o projeto current ou um projeto registrado não current.\n- A elegibilidade do botão deve refletir a mesma condição usada pelo roteamento para renderizar HomeSurface: projeto current requer props.project.state ready; projeto não current requer selectedProject.readiness ready.\n- Remover a abertura forçada do inspector em NonCurrentProjectSurface. Propagar inspectorOpen a essa superfície e fazer HomeSurface respeitar o estado persistido gship-inspector da mesma forma que no projeto current.\n- O botão deve continuar oculto em Central de controle, gerenciamento de projetos, Runs, Work, Settings, projeto inexistente, onboarding e projeto indisponível.\n- Preservar posição, ícone, espessura, aria-labels, atalho e estado persistido do painel. Não adicionar controles duplicados nem animação.\n\nEvidência de aceite\n- Render de uma conversa current pronta mantém o botão e o painel.\n- Render de uma conversa não current pronta mostra o mesmo botão e painel.\n- Com gship-inspector closed, ambas as conversas mostram Expandir e omitem run-inspector.\n- Superfícies que não são Conversation e projetos não prontos não exibem o controle.\n- Testes de UI, TypeScript, lint e build passam.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Objetivo\nCorrigir a ausência do controle do painel direito em conversas de projetos registrados e prontos que não são o checkout hospedando o processo atual, como Reporter.\n\nContrato\n- Exibir o botão de recolher ou expandir o painel da execução em Conversation sempre que houver um projeto selecionado cuja conversa esteja operacional e pronta, seja ele o projeto current ou um projeto registrado não current.\n- A elegibilidade do botão deve refletir a mesma condição usada pelo roteamento para renderizar HomeSurface: projeto current requer props.project.state ready; projeto não current requer selectedProject.readiness ready.\n- Remover a abertura forçada do inspector em NonCurrentProjectSurface. Propagar inspectorOpen a essa superfície e fazer HomeSurface respeitar o estado persistido gship-inspector da mesma forma que no projeto current.\n- O botão deve continuar oculto em Central de controle, gerenciamento de projetos, Runs, Work, Settings, projeto inexistente, onboarding e projeto indisponível.\n- Preservar posição, ícone, espessura, aria-labels, atalho e estado persistido do painel. Não adicionar controles duplicados nem animação.\n\nEvidência de aceite\n- Render de uma conversa current pronta mantém o botão e o painel.\n- Render de uma conversa não current pronta mostra o mesmo botão e painel.\n- Com gship-inspector closed, ambas as conversas mostram Expandir e omitem run-inspector.\n- Superfícies que não são Conversation e projetos não prontos não exibem o controle.\n- Testes de UI, TypeScript, lint e build passam.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx && bun run typecheck && bun run lint && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "60d625022099486643c1f857553dec5acc31394faf27cf177b675e73c6dcb7fb",
+    "approvedAt": "2026-09-04T20:38:45.335Z"
+  }
+}
