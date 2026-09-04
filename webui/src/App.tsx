@@ -39,9 +39,11 @@ export function handleProjectShortcut(
 	runtime = panelRuntime(),
 	navigate?: (destination: string) => void,
 ): boolean {
-	if ((!event.metaKey && !event.ctrlKey) || event.key.length !== 1) return false;
-	const index = event.key.charCodeAt(0) - '1'.charCodeAt(0);
-	if (index < 0 || index > 8) return false;
+	if (!event.altKey || event.metaKey || event.ctrlKey) return false;
+	const shortcut = /^Digit([1-9])$/.exec(event.code ?? '')?.[1]
+		?? (event.code === undefined || event.code === '' ? /^[1-9]$/.exec(event.key)?.[0] : undefined);
+	if (shortcut === undefined) return false;
+	const index = Number(shortcut) - 1;
 	const project = projects[index];
 	if (project === undefined) return false;
 	event.preventDefault();

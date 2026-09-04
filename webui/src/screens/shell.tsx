@@ -14,7 +14,7 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
-import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, CubeIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Message01Icon, Moon02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, CubeIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Message01Icon, Moon02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
 
@@ -154,7 +154,16 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
  */
 export const SWITCHER_ITEM_CLASS =
 	'flex w-full cursor-default select-none items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none ' +
-	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
+	'data-highlighted:bg-accent data-highlighted:text-accent-foreground ' +
+	'aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground';
+
+function ProjectShortcut({ index }: { index: number | undefined }): React.ReactElement {
+	return (
+		<span className="flex w-10 shrink-0 justify-center">
+			{index === undefined ? null : <kbd aria-hidden="true" className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground">Alt+{index + 1}</kbd>}
+		</span>
+	);
+}
 
 export function ProjectSwitcher({
 	projects,
@@ -168,6 +177,8 @@ export function ProjectSwitcher({
 	catalog: ShellCatalog;
 }): React.ReactElement {
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
+	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
+	const selectedShortcut = selectedIndex === undefined || selectedIndex > 8 ? undefined : selectedIndex;
 	return (
 		<>
 			<Menu.Root>
@@ -175,7 +186,7 @@ export function ProjectSwitcher({
 					className={cn(NAV_LINK_CLASS, 'w-full text-left data-[popup-open]:bg-sidebar-accent')}
 					data-slot="project-switcher"
 				>
-					<NavGlyph name="project" />
+					<ProjectShortcut index={selectedShortcut} />
 				<span className="grid min-w-0 flex-1 leading-tight">
 					<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
 						{selected?.name ?? catalog.switcherPlaceholder}
@@ -197,25 +208,22 @@ export function ProjectSwitcher({
 						</div>
 						{projects.map((project, index) => (
 							<Menu.Item
+								aria-current={project.id === selection.projectId ? 'page' : undefined}
 								className={SWITCHER_ITEM_CLASS}
 								key={project.id}
 								render={<a href={`/projects/${encodeURIComponent(project.id)}`} />}
 							>
-								<NavGlyph name="project" />
+								<ProjectShortcut index={index < 9 ? index : undefined} />
 								<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 									{project.name}
 								</span>
-								{index < 9 ? <kbd aria-hidden="true" className="shrink-0 rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground">⌘{index + 1}</kbd> : null}
-								{project.id === selection.projectId ? (
-									<HugeiconsIcon className="size-3.5 shrink-0" icon={Tick02Icon} size={14} strokeWidth={2.25} />
-								) : null}
 							</Menu.Item>
 						))}
 						<Menu.Item
 							className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
 							render={<a href="/projects" />}
 						>
-							<NavGlyph name="project" />
+							<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} />
 							<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
 						</Menu.Item>
 					</Menu.Popup>
@@ -230,7 +238,7 @@ export function ProjectSwitcher({
 			<ul>
 				{projects.map((project, index) => (
 					<li key={project.id}>
-						<a href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}{index < 9 ? <kbd aria-hidden="true">⌘{index + 1}</kbd> : null}</a>
+						<a aria-current={project.id === selection.projectId ? 'page' : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < 9 ? index : undefined} />{project.name}</a>
 					</li>
 				))}
 				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
@@ -331,6 +339,8 @@ export interface PanelRuntime {
 
 export interface PanelKeyEvent {
 	key: string;
+	code?: string;
+	altKey: boolean;
 	metaKey: boolean;
 	ctrlKey: boolean;
 	preventDefault: () => void;
@@ -476,7 +486,7 @@ export function ShellControls({
 export function PanelToggleGlyph({ side }: { side: 'left' | 'right' }): React.ReactElement {
 	return (
 		<svg aria-hidden="true" className="size-3.5" data-side={side} data-slot="panel-toggle-glyph" fill="none" viewBox="0 0 16 16">
-			<rect height="12" rx="1.5" stroke="currentColor" width="12" x="2" y="2" />
+			<rect height="12" rx="1.5" stroke="currentColor" strokeWidth="2.5" width="12" x="2" y="2" />
 			<rect fill="currentColor" height="12" rx="1" width="3.5" x={side === 'left' ? '2' : '10.5'} y="2" />
 		</svg>
 	);
