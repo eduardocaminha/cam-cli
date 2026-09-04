@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-790",
   "title": "Corrigir estado vazio do seletor de projetos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T19:56:15.590Z",
-  "updatedAt": "2026-09-04T19:56:15.590Z",
+  "updatedAt": "2026-09-04T20:00:53.882Z",
   "description": "Objetivo\nCorrigir o desalinhamento visual do gatilho do seletor de projetos quando nenhum projeto está selecionado.\n\nContrato\n- Quando selection.projectId não resolver um projeto, não renderizar a coluna vazia de ProjectShortcut no trigger. O placeholder deve começar na mesma coluna de texto dos demais itens principais da sidebar, mantendo o chevron no fim.\n- Não introduzir novo ícone no estado vazio.\n- Quando houver projeto selecionado entre os nove primeiros, preservar o kbd Alt+N na coluna inicial. Projetos selecionados sem atalho continuam preservando o alinhamento reservado já definido.\n- Não alterar as linhas do menu, seus atalhos, fundo do projeto selecionado, aria-current, rotas, temas, breakpoints ou comportamento do Base UI Menu.\n- Não adicionar animação.\n\nEvidência de aceite\n- Render estático do estado vazio confirma ausência da coluna w-10 antes do placeholder.\n- Render estático com projeto selecionado confirma permanência do Alt+1 no trigger.\n- Testes existentes do seletor, TypeScript, lint e build da UI passam.",
   "specSource": "operator",
   "spec": {
