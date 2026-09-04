@@ -17,7 +17,7 @@ import {
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
-import { ShellRail, type PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
+import { PanelToggleGlyph, ShellRail, type PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
 import {
 	abandonIssue,
 	aggregateChatTurnCosts,
@@ -4317,11 +4317,10 @@ describe('operator shell', () => {
 			expect(switcherItem).toContain('w-full');
 			expect(switcherItem).toContain('min-w-0');
 			expect(switcherItem).not.toContain('shrink-0');
-			expect(switcherMarkup).toContain('size-4');
+			expect(switcherMarkup).toContain('w-10');
 			expect(switcherMarkup).not.toContain('size-8');
-			expect(switcherMarkup).not.toContain('border');
 			expect(active).toContain('aria-current="page"');
-			expect(nav.split('aria-current="page"')).toHaveLength(2);
+			expect(nav.split('aria-current="page"')).toHaveLength(3);
 			// Navigation itself stays on served paths. The shell-level skip link is
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
@@ -4376,7 +4375,7 @@ describe('operator shell', () => {
 		expect(nav).not.toContain('data-slot="project-surface-navigation"');
 	});
 
-	test('project switcher renders shortcuts for the first nine projects in visible order', () => {
+	test('project switcher renders Alt shortcuts in the leading column and marks the selection', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
@@ -4384,44 +4383,66 @@ describe('operator shell', () => {
 			current: index === 0,
 		}));
 		const html = renderAt('/overview', { projects });
-		const shortcuts = [...html.matchAll(/<kbd[^>]*>(⌘[1-9])<\/kbd>/g)].map((match) => match[1]);
+		const selectedHtml = renderAt('/projects/project-1', { projects });
+		const triggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
+		const trigger = selectedHtml.slice(triggerStart, selectedHtml.indexOf('</button>', triggerStart));
+		const shortcuts = [...html.matchAll(/<kbd[^>]*>(Alt\+[1-9])<\/kbd>/g)].map((match) => match[1]);
 
-		expect(shortcuts).toEqual(['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9']);
+		expect(shortcuts).toEqual(['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5', 'Alt+6', 'Alt+7', 'Alt+8', 'Alt+9']);
+		expect(trigger).toContain('Alt+1');
+		expect(selectedHtml).toContain('aria-current="page"');
+		expect(html).not.toContain('⌘');
 		expect(html).toContain('href="/projects/project-9"');
 		expect(html).toContain('href="/projects/project-10"');
-		expect(html).not.toContain('⌘10');
+		expect(html).not.toContain('Alt+10');
 	});
 
-	test('project shortcuts navigate with Command or Control and leave unavailable combinations alone', () => {
+	test('project shortcuts navigate with Alt+Digit1 through Alt+Digit9 and reject other combinations', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
 			current: index === 0,
 		}));
 		const locations: string[] = [];
-		const invoke = (key: string, modifiers: Pick<PanelKeyEvent, 'metaKey' | 'ctrlKey'>): { handled: boolean; prevented: boolean } => {
+		const invoke = (key: string, code: string | undefined, modifiers: Pick<PanelKeyEvent, 'altKey' | 'metaKey' | 'ctrlKey'>): { handled: boolean; prevented: boolean } => {
 			let prevented = false;
 			const handled = handleProjectShortcut(
-				{ key, ...modifiers, preventDefault: () => { prevented = true; } },
+				{ key, code, ...modifiers, preventDefault: () => { prevented = true; } },
 				projects,
 				{ location: { assign: (url) => { locations.push(url); } } },
 			);
 			return { handled, prevented };
 		};
 
-		expect(invoke('1', { metaKey: true, ctrlKey: false })).toEqual({ handled: true, prevented: true });
-		expect(invoke('9', { metaKey: false, ctrlKey: true })).toEqual({ handled: true, prevented: true });
+		expect(invoke('&', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('(', 'Digit9', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
-		expect(invoke('1', { metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		expect(invoke('0', { metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('1', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('2', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('3', 'Numpad3', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('1', 'Digit1', { altKey: false, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('1', 'Digit1', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('9', 'Digit9', { altKey: true, metaKey: false, ctrlKey: true })).toEqual({ handled: false, prevented: false });
+		expect(invoke('0', 'Digit0', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		let missingPrevented = false;
 		expect(handleProjectShortcut(
-			{ key: '3', metaKey: true, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
+			{ key: '3', code: 'Digit3', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
 			projects.slice(0, 2),
 			{ location: { assign: (url) => { locations.push(url); } } },
 		)).toBe(false);
 		expect(missingPrevented).toBe(false);
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-1', '/projects/project-2']);
+	});
+
+	test('panel toggle glyph thickens only its outer stroke', () => {
+		const html = renderToStaticMarkup(<><PanelToggleGlyph side="left" /><PanelToggleGlyph side="right" /></>);
+		const glyphs = [...html.matchAll(/<svg[^>]*data-slot="panel-toggle-glyph"[\s\S]*?<\/svg>/g)].map((match) => match[0]);
+
+		expect(glyphs).toHaveLength(2);
+		for (const glyph of glyphs) {
+			expect(glyph).toContain('stroke-width="2.5"');
+			expect(glyph).toContain('fill="currentColor"');
+		}
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
