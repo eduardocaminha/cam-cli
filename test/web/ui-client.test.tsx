@@ -4397,7 +4397,7 @@ describe('operator shell', () => {
 		expect(html).not.toContain('Alt+10');
 	});
 
-	test('project switcher omits the shortcut column when its selection does not resolve', () => {
+	test('project switcher uses a glyph-sized spacer when its selection does not resolve', () => {
 		const emptySelectionHtml = renderAt('/projects/project-missing');
 		const emptyTriggerStart = emptySelectionHtml.indexOf('data-slot="project-switcher"');
 		const emptyTrigger = emptySelectionHtml.slice(emptyTriggerStart, emptySelectionHtml.indexOf('</button>', emptyTriggerStart));
@@ -4406,8 +4406,10 @@ describe('operator shell', () => {
 		const selectedTrigger = selectedHtml.slice(selectedTriggerStart, selectedHtml.indexOf('</button>', selectedTriggerStart));
 
 		expect(emptyTrigger).toContain('>Select a project<');
+		expect(emptyTrigger).toContain('aria-hidden="true" class="size-4 shrink-0"');
 		expect(emptyTrigger).not.toContain('w-10');
 		expect(emptyTrigger).not.toContain('<kbd');
+		expect(selectedTrigger).toContain('w-10');
 		expect(selectedTrigger).toContain('Alt+1');
 	});
 

@@ -186,7 +186,9 @@ export function ProjectSwitcher({
 					className={cn(NAV_LINK_CLASS, 'w-full text-left data-[popup-open]:bg-sidebar-accent')}
 					data-slot="project-switcher"
 				>
-					{selected === null ? null : <ProjectShortcut index={selectedShortcut} />}
+					{selected === null
+						? <span aria-hidden="true" className="size-4 shrink-0" />
+						: <ProjectShortcut index={selectedShortcut} />}
 				<span className="grid min-w-0 flex-1 leading-tight">
 					<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
 						{selected?.name ?? catalog.switcherPlaceholder}
