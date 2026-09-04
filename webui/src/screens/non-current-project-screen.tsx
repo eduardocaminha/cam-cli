@@ -22,7 +22,7 @@ export function NonCurrentProjectSurface({
 	surface: RouteSelection['surface'];
 }): React.ReactElement {
 	if (selectedProject.readiness === 'ready') {
-		if (surface === 'conversation') return <HomeSurface {...props} projectId={selectedProject.id} />;
+		if (surface === 'conversation') return <HomeSurface {...props} inspectorOpen projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} />;
 		if (surface === 'settings') {

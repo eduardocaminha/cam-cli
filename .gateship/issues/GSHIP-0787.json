@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-787",
   "title": "Alinhar os controles dos painéis e simplificar o inspector da conversa",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T13:20:34.938Z",
-  "updatedAt": "2026-09-04T13:20:34.938Z",
+  "updatedAt": "2026-09-04T13:27:29.058Z",
   "description": "Refinar o shell sem adicionar dependências ou novos estados persistentes. Substituir o glyph atual do controle de recolher e expandir a sidebar esquerda por um ícone de painel cuja faixa lateral seja preenchida integralmente com currentColor, preservando os labels acessíveis e o atalho existente. Usar a mesma linguagem visual espelhada para o inspector da run, com a faixa direita preenchida. Exibir o controle de layout largo somente no breakpoint 2xl ou superior, isto é, a partir de 1536px, sem breakpoint personalizado; em 1512px e abaixo ele não deve ocupar espaço nem aparecer. Na rota de conversa do projeto atual, elevar o estado persistido do inspector ao shell, remover o chevron e sua linha interna no topo do aside, posicionar o novo toggle do inspector como o controle mais à direita da barra superior, com a mesma variante, tamanho e eixo vertical do toggle da sidebar esquerda. Remover a divisória vertical entre conversa e inspector. Quando fechado, o inspector não deve reservar uma coluna vazia; quando aberto, preservar o card Current run, o comportamento lateral em desktop e sequencial em telas estreitas, rolagem e todos os comandos. O toggle do inspector deve aparecer somente na conversa de um projeto operacional. Adicionar testes observáveis para glyphs, visibilidade 2xl, ausência de border-l e do toggle interno, estado aberto e fechado e posição dos controles. Preservar en-US, pt-BR, navegação, tema, largura persistida e responsividade. Validar em 1440px, 1512px, 1536px e 390px sem iniciar outro Gateship dentro do worktree.",
   "specSource": "operator",
   "spec": {

@@ -4903,6 +4903,47 @@ describe('conversation transcript', () => {
 		expect(html.indexOf('<main')).toBeLessThan(html.indexOf('data-slot="run-inspector"'));
 	});
 
+	test('the shell owns the matched panel controls and removes the inspector column when closed', () => {
+		const open = home();
+		const sidebar = elementWith(open, 'aria-label="Collapse the sidebar"');
+		const inspectorToggle = elementWith(open, 'aria-label="Collapse the run panel"');
+		const inspector = elementWith(open, 'data-slot="run-inspector"');
+		const glyphs = [...open.matchAll(/<svg[^>]*data-slot="panel-toggle-glyph"[^>]*>/g)].map((match) => match[0]);
+		const leftGlyph = glyphs.find((glyph) => glyph.includes('data-side="left"'));
+		const rightGlyph = glyphs.find((glyph) => glyph.includes('data-side="right"'));
+
+		expect(sidebar).toContain('border-input');
+		expect(sidebar).toContain('size-9');
+		expect(inspectorToggle).toContain('border-input');
+		expect(inspectorToggle).toContain('size-9');
+		expect(leftGlyph).toBeDefined();
+		expect(rightGlyph).toBeDefined();
+		for (const glyph of [leftGlyph, rightGlyph]) {
+			const index = open.indexOf(glyph ?? '');
+			const svg = open.slice(index, open.indexOf('</svg>', index));
+			expect(svg).toContain('fill="currentColor"');
+		}
+		expect(open.indexOf('aria-label="Collapse the sidebar"')).toBeLessThan(open.indexOf('aria-label="Collapse the run panel"'));
+		expect(elementWith(open, 'aria-label="Wide layout"')).toContain('hidden 2xl:inline-flex');
+		expect(inspector).not.toContain('border-l');
+		expect(open).not.toContain('xl:border-l');
+
+		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
+		const previousStorage = runtime.localStorage;
+		runtime.localStorage = {
+			getItem: (key) => key === 'gship-inspector' ? 'closed' : null,
+			setItem: () => {},
+		};
+		try {
+			const closed = home();
+			expect(closed).toContain('aria-label="Expand the run panel"');
+			expect(closed).not.toContain('data-slot="run-inspector"');
+			expect(closed).not.toContain('Current run');
+		} finally {
+			runtime.localStorage = previousStorage;
+		}
+	});
+
 	test('conversation and run output use the same focusable live-edge contract', () => {
 		const conversation = home({
 			chatMessages: [{
