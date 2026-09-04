@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-788",
   "title": "Excluir worktrees da lista global de projetos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T13:38:44.807Z",
-  "updatedAt": "2026-09-04T13:38:44.807Z",
+  "updatedAt": "2026-09-04T13:58:51.972Z",
   "description": "Objetivo\nA lista global de projetos deve representar repositórios GitHub principais. Worktrees ligados são infraestrutura efêmera de execução e nunca podem virar um projeto visível.\n\nContrato\n- Criar um único seam determinístico, baseado em metadados do próprio Git, que resolva qualquer diretório dentro de um checkout para o checkout principal e identifique os worktrees ligados. Não usar nome de pasta, regex de caminho ou convenção .gship/worktrees.\n- projects.register, inclusive quando recebe subdiretório ou symlink de um worktree, deve reconciliar o checkout principal e devolver esse projeto. Nunca deve criar uma linha para o worktree.\n- O boot do serviço a partir de um worktree deve usar o checkout principal como projectRoot e, quando o stateDir implícito aponta para o .gship daquele worktree, usar o .gship do checkout principal. Um stateDir explicitamente externo continua respeitado.\n- Durante essa reconciliação, remover do registro global quaisquer linhas legadas que apontem para worktrees ligados do mesmo checkout. Preservar a identidade da linha do checkout principal quando ela já existe. A limpeza é apenas de metadados do registro: nunca remover checkout, worktree, branch, .gship ou histórico.\n- projects.list, projects.overview, seletores e métricas recebem apenas as linhas reconciliadas do backend. Não adicionar filtro visual nem dependência.\n- Checkouts principais, importação e criação de projetos continuam funcionando como hoje.\n\nEvidência de aceite\n- Teste com repositório Git real demonstra que registrar o checkout principal, um subdiretório do worktree e o próprio worktree produz um único projeto cujo root e stateDir são os do checkout principal.\n- Teste de boot a partir de worktree demonstra o mesmo comportamento.\n- Teste de migração demonstra que uma linha legada de worktree desaparece do registro sem apagar nenhum arquivo, preservando a identidade principal.\n- Os testes existentes de registro, importação, criação e lançamento permanecem verdes.",
   "specSource": "operator",
   "spec": {

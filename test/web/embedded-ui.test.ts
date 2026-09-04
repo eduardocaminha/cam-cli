@@ -22,7 +22,11 @@ async function get(handle: { hostname: string; port: number }, path: string): Pr
 
 describe('embedded web bundle', () => {
 	test('serves the built document and application bundle with the right types', async () => {
-		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-embedded-ui-'),
+			gateshipHome: createTestTmpdir('gship-embedded-ui-home-'),
+		});
 		try {
 			const page = await get(handle, '/');
 			const html = await page.text();
@@ -67,7 +71,11 @@ describe('embedded web bundle', () => {
 	});
 
 	test('canonical project surfaces share one document and legacy paths redirect to them', async () => {
-		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-embedded-ui-'),
+			gateshipHome: createTestTmpdir('gship-embedded-ui-home-'),
+		});
 		try {
 			const overview = await get(handle, '/overview');
 			const home = await overview.text();
@@ -163,7 +171,11 @@ describe('embedded web bundle', () => {
 
 		const previous = process.env[WEB_DIR_ENV];
 		process.env[WEB_DIR_ENV] = dir;
-		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-embedded-ui-'),
+			gateshipHome: createTestTmpdir('gship-embedded-ui-home-'),
+		});
 		try {
 			expect(await (await get(handle, '/')).text()).toContain('disco');
 			expect(await (await get(handle, '/app.js')).text()).toContain('fromDisk');

@@ -15,6 +15,7 @@ import {
 	type ProjectCommandRunner,
 	type ProjectStatus,
 } from './project-readiness.ts';
+import { resolveProjectCheckout } from './project-checkout.ts';
 import type { ProjectRegistry, RegisteredProject } from './project-registry.ts';
 
 /** Project-owned mutable state lives beside the checkout, never in the global home. */
@@ -110,13 +111,6 @@ function visibleDirectory(root: string): string {
 	return resolved;
 }
 
-/** `null` when the path is not inside a repository at all; readiness names why. */
-function repositoryTopLevel(root: string, run: ProjectCommandRunner): string | null {
-	const result = run(root, ['rev-parse', '--show-toplevel']);
-	if (result.exitCode !== 0 || result.stdout === '') return null;
-	return realpathSync(result.stdout);
-}
-
 /**
  * Register an existing checkout, by absolute path, into the global registry.
  * Any subdirectory or symlink of a repository resolves to its one real
@@ -130,7 +124,7 @@ export function registerExistingCheckout(
 	run: ProjectCommandRunner = readLocalGitMetadata,
 ): RegisteredProject {
 	const visible = visibleDirectory(requestedRoot(body));
-	const root = repositoryTopLevel(visible, run) ?? visible;
+	const root = resolveProjectCheckout(visible, run)?.primaryRoot ?? visible;
 	const readiness = inspectProject(root, run);
 	if (readiness.state !== 'ready') {
 		throw new ProjectRegistrationError('project-not-ready', readiness.detail, 409, readiness);

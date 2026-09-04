@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import type { ProjectStatus } from './project-readiness.ts';
+import { resolveProjectCheckout } from './project-checkout.ts';
 import type { AgentProviderId } from './agent-session.ts';
 import {
 	normalizeModelSettings,
@@ -178,8 +179,12 @@ export class ProjectRegistry {
 	}
 
 	reconcile(input: ProjectRegistration): RegisteredProject {
-		const root = canonicalRoot(input.root);
-		const stateDir = resolve(input.stateDir);
+		const checkout = resolveProjectCheckout(input.root);
+		const root = checkout?.primaryRoot ?? canonicalRoot(input.root);
+		const requestedStateDir = resolve(input.stateDir);
+		const stateDir = checkout?.linked && requestedStateDir === join(checkout.root, '.gship')
+			? join(root, '.gship')
+			: requestedStateDir;
 		const now = new Date().toISOString();
 		const repository = input.readiness.state === 'ready' ? input.readiness.repository : null;
 		this.#db.query(`
@@ -196,7 +201,24 @@ export class ProjectRegistry {
 			randomUUID(), basename(root), root, stateDir, input.readiness.state,
 			repository, now, now,
 		);
+		this.removeLinkedWorktreeRows(root);
 		return this.list(root).find((project) => project.current)!;
+	}
+
+	/** Drops only obsolete registry metadata for linked worktrees of this checkout. */
+	private removeLinkedWorktreeRows(primaryRoot: string): void {
+		const rows = this.#db.query('SELECT id, root FROM projects WHERE root != $root')
+			.all({ root: primaryRoot }) as Array<Pick<ProjectRow, 'id' | 'root'>>;
+		for (const row of rows) {
+			try {
+				const checkout = resolveProjectCheckout(row.root);
+				if (checkout?.linked && checkout.primaryRoot === primaryRoot) {
+					this.#db.query('DELETE FROM projects WHERE id = $id').run({ id: row.id });
+				}
+			} catch {
+				// A stale or inaccessible path is not evidence that its row is a worktree.
+			}
+		}
 	}
 
 	list(currentRoot?: string): RegisteredProject[] {

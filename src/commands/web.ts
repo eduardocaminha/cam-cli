@@ -52,6 +52,7 @@ import {
 	ReactDoctorAdapter,
 } from '../runtime/diagnostics.ts';
 import { checkGitIdentity, ensureGitIdentity, type GitIdentityResult } from '../runtime/git-identity.ts';
+import { resolveProjectCheckout } from '../runtime/project-checkout.ts';
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
@@ -2759,8 +2760,20 @@ function updateSelfUpdate(request: Request, selfUpdate: SelfUpdateAccess | undef
 		: writeSelfUpdatePolicy(request, selfUpdate);
 }
 
-function resolveProjectStateDir(options: Pick<WebServerOptions, 'cwd' | 'stateDir'>): string {
-	return resolve(options.stateDir ?? join(options.cwd, PROJECT_STATE_DIRECTORY));
+function resolveProjectStateDir(
+	options: Pick<WebServerOptions, 'cwd' | 'stateDir'>,
+	projectRoot: string,
+): string {
+	return resolve(options.stateDir ?? join(projectRoot, PROJECT_STATE_DIRECTORY));
+}
+
+/** Refuse a linked worktree before a boot can open any project or global state. */
+function resolveBootProjectRoot(cwd: string): string {
+	const checkout = resolveProjectCheckout(cwd);
+	if (checkout?.linked) {
+		throw new Error('Gateship cannot start from a linked Git worktree.');
+	}
+	return checkout?.primaryRoot ?? realpathSync(resolve(cwd));
 }
 
 /**
@@ -2800,7 +2813,7 @@ function initializeAgentDefaultsFromBootRuntime(
 
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
-	const stateDir = resolveProjectStateDir(options);
+	const projectRoot = resolveBootProjectRoot(options.cwd);
 	const ownsRunRuntime = options.runRuntime === undefined;
 	const ownsDiagnostics = options.diagnostics === undefined;
 	const ownsSelfUpdate = options.selfUpdate === undefined;
@@ -2810,7 +2823,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// container without a known build SHA falls back to the release version.
 	const buildSha = options.buildSha !== undefined ? options.buildSha : readBuildSha();
 	const containerBuild = isContainerBuild();
-	const projectRoot = realpathSync(resolve(options.cwd));
+	const stateDir = resolveProjectStateDir(options, projectRoot);
+	const bootOptions = { ...options, cwd: projectRoot };
 	const { registry: projectRegistry, close: closeProjectRegistry } =
 		composeProjectRegistry(options);
 	// Global, not project-scoped (GSHIP-704): the same dedicated Claude
@@ -2837,7 +2851,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const bootSourceSha = resolveBootSourceSha(
 		buildSha,
 		containerBuild,
-		() => readSourceSha(options.cwd),
+		() => readSourceSha(projectRoot),
 	);
 	const workflowRevisionSha = resolveWorkflowRevisionSha(buildSha, containerBuild, readRuntimeSourceSha);
 	const workflowRevision = workflowRevisionSha ?? `v${GSHIP_VERSION}`;
@@ -2859,11 +2873,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// permanently missing for the rest of the process and let the first
 	// commit fail with "Author identity unknown" regardless of a login that
 	// happens seconds later -- exactly the failure this exists to prevent.
-	const ensureGitIdentityFn = options.ensureGitIdentity ?? (() => ensureGitIdentity(options.cwd));
+	const ensureGitIdentityFn = options.ensureGitIdentity ?? (() => ensureGitIdentity(projectRoot));
 	const ensureGitIdentityOnce = cachedGitIdentity(ensureGitIdentityFn);
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(
-			options.cwd,
+			projectRoot,
 			ensureGitIdentityOnce,
 			workflowRevision,
 			stateDir,
@@ -2877,9 +2891,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	initializeAgentDefaultsFromBootRuntime(projectRegistry, runRuntime);
 	const diagnostics = options.diagnostics ?? new DiagnosticsRuntime({
 		store: new RunStore(ownsRunRuntime ? join(stateDir, 'runtime.sqlite') : ':memory:'),
-		workspace: new GitDiagnosticWorkspace(options.cwd, undefined, stateDir),
+		workspace: new GitDiagnosticWorkspace(projectRoot, undefined, stateDir),
 		adapters: [
-			new ReactDoctorAdapter(options.cwd, undefined, stateDir),
+			new ReactDoctorAdapter(projectRoot, undefined, stateDir),
 			new ProjectDiagnosticAdapter(),
 		],
 		isProjectIdle: () => runRuntime.listRuns().every((run) => isTerminalRunState(run.state)),
@@ -2889,13 +2903,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	// (GSHIP-651); a missing GATESHIP_NTFY_URL and project file (GSHIP-652)
 	// makes this a no-op subscriber.
 	const unsubscribeRemoteNotifier = runRuntime.subscribe(createRemoteNotifier({
-		cwd: options.cwd,
+		cwd: projectRoot,
 		stateDir: globalNotificationStateDir,
 		legacyStateDir: stateDir,
 	}));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
-		resolveIssueWriters(options, ensureGitIdentityOnce);
-	const issueReader = resolveIssueReader(options);
+		resolveIssueWriters(bootOptions, ensureGitIdentityOnce);
+	const issueReader = resolveIssueReader(bootOptions);
 	// Only for the real NativeProviderAuth this process owns: an injected fake
 	// in tests has no reason to touch the filesystem, and CODEX_HOME is unset
 	// outside the container image anyway.
@@ -3114,7 +3128,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/icon-512.png': () => serveWebAsset(assets.icon512),
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
-			'/api/project': () => Response.json({ project: inspectProject(options.cwd) }),
+			'/api/project': () => Response.json({ project: inspectProject(projectRoot) }),
 			'/api/overview': (request) => {
 				const rawWindow = new URL(request.url).searchParams.get('window') ?? '7d';
 				if (rawWindow !== '7d' && rawWindow !== '30d' && rawWindow !== 'all') {
@@ -3166,7 +3180,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					projectRegistry,
 					providerAuth,
 					modelProber,
-					options.cwd,
+					projectRoot,
 				),
 			},
 			'/api/projects/:projectId/status': (request) => {
@@ -3459,7 +3473,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					),
 				),
 			},
-			'/api/backlog': () => Response.json(readIdleSnapshotState(options.cwd)),
+			'/api/backlog': () => Response.json(readIdleSnapshotState(projectRoot)),
 			'/api/update': {
 				GET: () => readSelfUpdate(selfUpdate),
 				PUT: (request) => updateSelfUpdate(request, selfUpdate),
@@ -3533,7 +3547,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				GET: () => Response.json({
 					settings: runRuntime.getModelSettings(), source: runRuntime.getModelSettingsSource(),
 				}),
-				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, options.cwd),
+				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, projectRoot),
 				DELETE: (request) => clearModelSettings(request, runRuntime),
 			},
 			// The chain switch (GSHIP-638), stored beside the provider and the model
@@ -3558,18 +3572,18 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// reads. Resend's dedicated same-origin routes accept a write-only key
 			// and non-secret sender/recipient settings without involving SQLite.
 			'/api/notifications': {
-				GET: () => Response.json({ channels: notificationChannelsSnapshot(options.cwd, globalNotificationStateDir, stateDir) }),
+				GET: () => Response.json({ channels: notificationChannelsSnapshot(projectRoot, globalNotificationStateDir, stateDir) }),
 			},
 			'/api/notifications/resend': {
-				PUT: (request) => writeResendConfiguration(request, options.cwd, globalNotificationStateDir, stateDir),
+				PUT: (request) => writeResendConfiguration(request, projectRoot, globalNotificationStateDir, stateDir),
 			},
 			'/api/notifications/resend/credential': {
-				DELETE: (request) => removeResendCredential(request, options.cwd, globalNotificationStateDir, stateDir),
+				DELETE: (request) => removeResendCredential(request, projectRoot, globalNotificationStateDir, stateDir),
 			},
 			'/api/notifications/:channelId/test': {
 				POST: (request) => sendNotificationChannelTest(
 					request,
-					options.cwd,
+					projectRoot,
 					globalNotificationStateDir,
 					stateDir,
 					request.params.channelId,
@@ -3600,7 +3614,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				DELETE: (request) => disconnectClaudeCredential(request, gateshipHome, bootClaudeEnv),
 			},
 			'/api/issues': {
-				GET: () => listPublishedIssues(options.cwd),
+				GET: () => listPublishedIssues(projectRoot),
 				POST: (request) => createIssueFromOperator(request, issueIntake),
 			},
 			'/api/issues/create-approved': {
@@ -3697,7 +3711,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		throw new Error('Bun.serve did not report its resolved TCP address');
 	}
 	selfUpdate = resolveSelfUpdate({
-		options,
+		options: bootOptions,
 		runRuntime,
 		diagnostics,
 		workflowRevisionSha,
