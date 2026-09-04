@@ -61,7 +61,11 @@ export function App(props: AppProps): React.ReactElement {
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
-	const showInspectorToggle = selection.surface === 'conversation' && selectedProject?.current === true && props.project.state === 'ready';
+	const showInspectorToggle = selection.surface === 'conversation' && (
+		selectedProject?.current === true
+			? props.project.state === 'ready'
+			: selectedProject?.readiness === 'ready'
+	);
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
@@ -96,7 +100,7 @@ export function App(props: AppProps): React.ReactElement {
 							<p className="text-muted-foreground text-sm">{localeCatalog.projects.notFoundDescription}</p>
 						</SurfaceColumn>
 					),
-					nonCurrent: (project, surface) => <NonCurrentProjectSurface props={props} selectedProject={project} surface={surface} />,
+					nonCurrent: (project, surface) => <NonCurrentProjectSurface inspectorOpen={inspectorOpen} props={props} selectedProject={project} surface={surface} />,
 					onboarding: (project) => <OnboardingSurface catalog={localeCatalog.onboarding} project={props.project} settingsHref={`/projects/${encodeURIComponent(project.id)}/settings`} status={props.status} />,
 					conversation: () => <HomeSurface {...props} inspectorOpen={inspectorOpen} projectId={selectedProject?.id ?? ''} />,
 					runs: () => <RunsSurface {...props} />,

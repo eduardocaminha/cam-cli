@@ -13,16 +13,18 @@ import { UnavailableProjectSurface } from './unavailable-project-screen.tsx';
 import { WorkSurface } from './work-screen.tsx';
 
 export function NonCurrentProjectSurface({
+	inspectorOpen,
 	props,
 	selectedProject,
 	surface,
 }: {
+	inspectorOpen: boolean;
 	props: AppProps;
 	selectedProject: RegisteredProjectView;
 	surface: RouteSelection['surface'];
 }): React.ReactElement {
 	if (selectedProject.readiness === 'ready') {
-		if (surface === 'conversation') return <HomeSurface {...props} inspectorOpen projectId={selectedProject.id} />;
+		if (surface === 'conversation') return <HomeSurface {...props} inspectorOpen={inspectorOpen} projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} />;
 		if (surface === 'settings') {
