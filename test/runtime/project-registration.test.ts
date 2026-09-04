@@ -123,6 +123,24 @@ describe('registering an existing checkout', () => {
 		restarted.close();
 	});
 
+	test('reconciles a linked worktree and its subdirectory to the primary checkout', () => {
+		const home = createTestTmpdir('gship-register-worktree-home-');
+		const root = scratchRoot('gship-register-worktree-root-');
+		const worktree = scratchRoot('gship-register-worktree-linked-');
+		readyCheckout(root);
+		execFileSync('git', ['worktree', 'add', '-b', 'linked-registration', worktree], { cwd: root });
+		mkdirSync(join(worktree, 'src'), { recursive: true });
+		const currentRoot = scratchRoot('gship-register-worktree-current-');
+		const registry = openProjectRegistry(home);
+
+		const primary = registerExistingCheckout({ root }, registry, currentRoot);
+		expect(registerExistingCheckout({ root: join(worktree, 'src') }, registry, currentRoot))
+			.toEqual(primary);
+		expect(registerExistingCheckout({ root: worktree }, registry, currentRoot)).toEqual(primary);
+		expect(registry.list()).toEqual([primary]);
+		registry.close();
+	});
+
 	test('keeps one state directory per registered checkout', () => {
 		const home = createTestTmpdir('gship-register-state-home-');
 		const currentRoot = scratchRoot('gship-register-state-current-');

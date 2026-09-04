@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
 
 import { startWebServer, type WebServerHandle } from '../../src/commands/web.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
-const REPO_ROOT = join(import.meta.dir, '..', '..');
 const DESCRIPTION =
 	'Local operator control center for planning, reviewing, and shipping software changes.';
 
@@ -17,7 +16,11 @@ describe('application metadata and icons', () => {
 	let handle: WebServerHandle;
 
 	beforeAll(() => {
-		handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-app-metadata-'),
+			gateshipHome: createTestTmpdir('gship-app-metadata-home-'),
+		});
 	});
 
 	afterAll(async () => {

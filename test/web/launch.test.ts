@@ -9,7 +9,8 @@
 // through parseWebArgs/DEFAULT_WEB_PORT, without opening a socket.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseWebArgs } from '../../index.ts';
@@ -21,7 +22,11 @@ import {
 	startWebServer,
 	WEB_HOSTNAME,
 } from '../../src/commands/web.ts';
-import { GATESHIP_HOME_ENV_VAR, openProjectRegistry } from '../../src/runtime/project-registry.ts';
+import {
+	GATESHIP_HOME_ENV_VAR,
+	openProjectRegistry,
+	PROJECT_REGISTRY_DATABASE,
+} from '../../src/runtime/project-registry.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
@@ -49,6 +54,15 @@ function createWebProcessFixture(prefix: string): WebProcessFixture {
 
 function fixtureEnv(fixture: WebProcessFixture): Record<string, string | undefined> {
 	return { ...process.env, [GATESHIP_HOME_ENV_VAR]: fixture.gateshipHome };
+}
+
+function readyCheckout(root: string): void {
+	execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: root });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: root });
+	writeFileSync(join(root, 'README.md'), '# product\n');
+	execFileSync('git', ['add', 'README.md'], { cwd: root });
+	execFileSync('git', ['commit', '-m', 'seed'], { cwd: root });
 }
 
 async function collectTextUntilClose(
@@ -166,6 +180,20 @@ describe('web server launch', () => {
 		} finally {
 			await handle.stop();
 		}
+	});
+
+	test('refuses boot from a linked worktree before opening project state', () => {
+		const root = createTestTmpdir('gship-web-worktree-root-');
+		const worktree = createTestTmpdir('gship-web-worktree-linked-');
+		const home = createTestTmpdir('gship-web-worktree-home-');
+		readyCheckout(root);
+		execFileSync('git', ['worktree', 'add', '-b', 'linked-web', worktree], { cwd: root });
+
+		expect(() => startWebServer({ port: 0, cwd: worktree, gateshipHome: home }))
+			.toThrow('Gateship cannot start from a linked Git worktree.');
+		expect(existsSync(join(home, PROJECT_REGISTRY_DATABASE))).toBe(false);
+		expect(existsSync(join(root, '.gship'))).toBe(false);
+		expect(existsSync(join(worktree, '.gship'))).toBe(false);
 	});
 
 	test('the CLI default port is 7777 and needs no socket to resolve', () => {

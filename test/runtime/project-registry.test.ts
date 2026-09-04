@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { Database } from 'bun:sqlite';
 import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
@@ -23,6 +25,15 @@ const ready = {
 	remoteUrl: 'git@github.com:acme/product.git',
 	sourceRef: 'origin/main' as const,
 };
+
+function readyCheckout(root: string): void {
+	execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+	execFileSync('git', ['config', 'user.name', 'Test Operator'], { cwd: root });
+	execFileSync('git', ['config', 'user.email', 'operator@example.com'], { cwd: root });
+	writeFileSync(join(root, 'README.md'), '# product\n');
+	execFileSync('git', ['add', 'README.md'], { cwd: root });
+	execFileSync('git', ['commit', '-m', 'seed'], { cwd: root });
+}
 
 describe('global project registry', () => {
 	test('stores the operator profile globally and imports a legacy value only once', () => {
@@ -137,6 +148,56 @@ describe('global project registry', () => {
 
 		expect(registry.get(registered.id, root)).toEqual(registered);
 		expect(registry.get('unknown-project', root)).toBeNull();
+		registry.close();
+	});
+
+	test('removes legacy linked-worktree rows while preserving the primary project identity', () => {
+		const home = createTestTmpdir('gship-project-registry-worktree-home-');
+		const root = scratchRoot('gship-project-registry-worktree-root-');
+		const worktree = scratchRoot('gship-project-registry-worktree-linked-');
+		readyCheckout(root);
+		execFileSync('git', ['worktree', 'add', '-b', 'linked-registry', worktree], { cwd: root });
+		mkdirSync(join(worktree, '.gship'), { recursive: true });
+		writeFileSync(join(worktree, '.gship', 'runtime.sqlite'), 'legacy runtime');
+
+		const first = openProjectRegistry(home);
+		const primary = first.reconcile({ root, stateDir: join(root, '.gship'), readiness: ready });
+		first.close();
+		const db = new Database(join(home, PROJECT_REGISTRY_DATABASE));
+		db.query(`INSERT INTO projects (id, name, root, state_dir, readiness, repository, created_at, updated_at)
+			VALUES ($id, $name, $root, $stateDir, 'ready', $repository, $now, $now)`).run({
+			$id: 'legacy-worktree-row', $name: 'linked', $root: worktree,
+			$stateDir: join(worktree, '.gship'), $repository: 'acme/product', $now: new Date().toISOString(),
+		});
+		db.close();
+
+		const restarted = openProjectRegistry(home);
+		expect(restarted.reconcile({ root, stateDir: join(root, '.gship'), readiness: ready }))
+			.toMatchObject({ id: primary.id, root, stateDir: join(root, '.gship') });
+		expect(restarted.list().map((project) => project.id)).toEqual([primary.id]);
+		expect(readFileSync(join(worktree, '.gship', 'runtime.sqlite'), 'utf8')).toBe('legacy runtime');
+		restarted.close();
+	});
+
+	test('reconciles a linked worktree implicit state directory to its primary checkout', () => {
+		const home = createTestTmpdir('gship-project-registry-worktree-state-home-');
+		const root = scratchRoot('gship-project-registry-worktree-state-root-');
+		const worktree = scratchRoot('gship-project-registry-worktree-state-linked-');
+		readyCheckout(root);
+		execFileSync('git', ['worktree', 'add', '-b', 'linked-registry-state', worktree], { cwd: root });
+
+		const registry = openProjectRegistry(home);
+		expect(registry.reconcile({
+			root: worktree,
+			stateDir: join(worktree, '.gship'),
+			readiness: ready,
+		})).toMatchObject({ root, stateDir: join(root, '.gship') });
+		const externalState = createTestTmpdir('gship-project-registry-worktree-external-state-');
+		expect(registry.reconcile({
+			root: worktree,
+			stateDir: externalState,
+			readiness: ready,
+		})).toMatchObject({ root, stateDir: externalState });
 		registry.close();
 	});
 
