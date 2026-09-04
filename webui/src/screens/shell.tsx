@@ -557,7 +557,7 @@ export function ShellSidebar({
 	 * element-level override is all it takes. */
 	return (
 		<header className="flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
-			<h1 className="flex items-center gap-2">
+			<h1 className="flex items-center gap-2 lg:gap-3">
 				<span aria-hidden="true">
 					<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
 				</span>
