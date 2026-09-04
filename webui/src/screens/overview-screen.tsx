@@ -120,7 +120,7 @@ export function OverviewData({ props, overview, catalog, attention, activeProjec
 		 * allowed to go acid, and only while something actually waits; a zero
 		 * stays as quiet as every other number.
 		 */}
-		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+		<div className="card-ring-group grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
 			<Stat
 				className={cn(
 					attention > 0
