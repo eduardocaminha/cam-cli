@@ -4025,6 +4025,8 @@ describe('operator shell', () => {
 		});
 		expect(openingTags(conversation).find((tag) => tag.startsWith('<main')))
 			.toContain('aria-label="Conversation with the orchestrator"');
+		expect(conversation).toContain('aria-label="Collapse the run panel"');
+		expect(conversation).toContain('data-slot="run-inspector"');
 		expect(conversation).toContain('/projects/project-other/runs');
 		expect(conversation).not.toContain('Project runtime not loaded');
 
@@ -4976,6 +4978,26 @@ describe('conversation transcript', () => {
 			expect(closed).toContain('aria-label="Expand the run panel"');
 			expect(closed).not.toContain('data-slot="run-inspector"');
 			expect(closed).not.toContain('Current run');
+		} finally {
+			runtime.localStorage = previousStorage;
+		}
+	});
+
+	test('the persisted inspector state applies to current and ready non-current conversations', () => {
+		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
+		const previousStorage = runtime.localStorage;
+		runtime.localStorage = {
+			getItem: (key) => key === 'gship-inspector' ? 'closed' : null,
+			setItem: () => {},
+		};
+		try {
+			for (const html of [
+				home(),
+				renderAt('/projects/project-other', { projects: [CURRENT_PROJECT, OTHER_PROJECT] }),
+			]) {
+				expect(html).toContain('aria-label="Expand the run panel"');
+				expect(html).not.toContain('data-slot="run-inspector"');
+			}
 		} finally {
 			runtime.localStorage = previousStorage;
 		}
