@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-785",
   "title": "Separar o Control Center da gestão de projetos e uniformizar suas grades",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T12:50:07.621Z",
-  "updatedAt": "2026-09-04T12:50:07.621Z",
+  "updatedAt": "2026-09-04T12:57:46.158Z",
   "description": "Reorganizar a arquitetura da informação sem criar um novo modelo persistente de workspaces. A sidebar deve manter o link global Control Center sempre disponível e tratar o ProjectSwitcher existente como a fronteira de workspace: remover a divisória horizontal e o rótulo explicativo Project/Projeto, separando os grupos somente por espaço. Preservar o seletor, atalhos Cmd/Ctrl+1..9, rotas de projeto e ajustes globais. Criar a rota global /projects para gestão de projetos, acessível por uma ação localizada no menu do ProjectSwitcher, e mover para essa rota, sem duplicação, os painéis existentes de criar repositório, importar repositório e registrar checkout. O /overview deve manter apenas a visão agregada: remover o título e subtítulo visíveis do Control Center, preservando o nome acessível do main; manter métricas e cards de estado dos projetos como drill-down, não como formulário de seleção ou onboarding. Tornar os seis cards de estatística iguais no desktop, removendo o span especial de Needs attention, mas preservar sua superfície de atenção quando o valor for maior que zero. Tornar os cards de projeto uniformes em largura e altura, inclusive quando o conteúdo difere, sem deixar uma coluna curta em viewports largas. Preservar en-US, pt-BR, loading/error/empty states, navegação cliente, links sem JavaScript, responsividade a 390px e o design system. Não adicionar dependência, animação, painel lateral, barra ou divisória. Adicionar testes observáveis de rota, navegação, ausência de duplicação dos painéis e classes de grade. Na validação visual, não iniciar o binário Gateship dentro do worktree; usar o harness web apropriado para não registrar o worktree como projeto.",
   "specSource": "operator",
   "spec": {

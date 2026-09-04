@@ -3098,6 +3098,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// redirect, so there is one navigable location for every surface.
 			'/': redirect('/overview'),
 			'/overview': () => serveWebAsset(assets.indexHtml),
+			'/projects': () => serveWebAsset(assets.indexHtml),
 			'/runs': redirect(`${projectPath}/runs`),
 			'/work': redirect(`${projectPath}/work`),
 			'/settings': () => serveWebAsset(assets.indexHtml),

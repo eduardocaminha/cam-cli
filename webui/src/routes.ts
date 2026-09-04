@@ -1,13 +1,13 @@
 import type { ShellCatalog } from './locale.ts';
 
 /** Project selection and surface both come from this URL, never hidden state. */
-export type OperatorRoute = '/overview' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
+export type OperatorRoute = '/overview' | '/projects' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
 
 export type ProjectSurface = 'conversation' | 'runs' | 'work' | 'settings';
 
 export interface RouteSelection {
 	projectId: string | null;
-	surface: ProjectSurface | 'overview' | 'global-settings';
+	surface: ProjectSurface | 'overview' | 'projects' | 'global-settings';
 }
 
 export const PROJECT_SURFACES: readonly {
@@ -25,6 +25,7 @@ export function routeOf(pathname: string): OperatorRoute {
 	const normalized = pathname.replace(/\/+$/, '');
 	const path = normalized === '' ? '/' : normalized;
 	if (path === '/overview') return path;
+	if (path === '/projects') return path;
 	if (path === '/' || path === '/runs' || path === '/work' || path === '/settings') return path;
 	if (/^\/projects\/[^/]+(?:\/(?:runs|work|settings))?$/.test(path)) {
 		return path as `/projects/${string}`;
@@ -34,6 +35,7 @@ export function routeOf(pathname: string): OperatorRoute {
 
 export function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
 	if (route === '/overview') return { projectId: null, surface: 'overview' };
+	if (route === '/projects') return { projectId: null, surface: 'projects' };
 	const legacy = route === '/' ? 'conversation' : route.slice(1);
 	if (route === '/settings') return { projectId: null, surface: 'global-settings' };
 	if (route === '/' || route === '/runs' || route === '/work') {

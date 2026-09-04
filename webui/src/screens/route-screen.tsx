@@ -4,6 +4,7 @@ import type { ProjectSurface, RouteSelection } from '../routes.ts';
 
 interface RouteScreens {
 	overview: () => React.ReactElement;
+	projects: () => React.ReactElement;
 	globalSettings: () => React.ReactElement;
 	notFound: () => React.ReactElement;
 	nonCurrent: (project: RegisteredProjectView, surface: ProjectSurface) => React.ReactElement;
@@ -27,6 +28,7 @@ export function RouteScreen({
 	screens: RouteScreens;
 }): React.ReactElement {
 	if (selection.surface === 'overview') return screens.overview();
+	if (selection.surface === 'projects') return screens.projects();
 	if (selection.surface === 'global-settings') return screens.globalSettings();
 	if (selectedProject === null) return screens.notFound();
 	if (!selectedProject.current) return screens.nonCurrent(selectedProject, selection.surface);

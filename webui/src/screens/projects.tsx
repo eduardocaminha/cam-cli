@@ -54,7 +54,7 @@ export function RegisterProjectPanel({
 }
 
 /**
- * The other onboarding write the overview offers: a GitHub repository, not a
+ * The other onboarding write project management offers: a GitHub repository, not a
  * path. Gateship owns the destination, the clone and the credential -- the
  * operator only ever names the repository, using their existing GitHub login.
  */
