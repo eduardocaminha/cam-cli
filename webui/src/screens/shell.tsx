@@ -503,7 +503,7 @@ export function ShellRail({ needsYou }: { needsYou: boolean }): React.ReactEleme
 	 * The rail remains 72px, but half of the content panel's 12px outer spacing
 	 * belongs to its visual corridor. That makes the corridor 78px wide, whose
 	 * centre advances 3px; the mark keeps its 1px optical adjustment, for 4px.
-	 * The expanded sidebar deliberately retains its own 1px adjustment below. */
+	 * The expanded sidebar uses the same correction so the mark stays fixed. */
 	return (
 		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:pt-8">
 			<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
@@ -559,7 +559,7 @@ export function ShellSidebar({
 		<header className="flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
 			<h1 className="flex items-center gap-2">
 				<span aria-hidden="true">
-					<GateshipMark className="size-6 translate-x-px" portal />
+					<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
 				</span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
 			</h1>
