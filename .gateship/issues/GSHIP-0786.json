@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-786",
   "title": "Uniformizar a altura das estatísticas no Control Center",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T13:06:02.325Z",
-  "updatedAt": "2026-09-04T13:06:02.325Z",
+  "updatedAt": "2026-09-04T13:08:56.789Z",
   "description": "Corrigir a regressão visual observada após a GSHIP-785: em desktop, os seis cards de estatística do Control Center já têm a mesma largura, mas as duas linhas têm alturas diferentes porque Known cost possui uma linha auxiliar. A grade deve produzir seis cards com largura e altura uniformes, sem remover a informação auxiliar, sem alturas em pixels, sem nova dependência e preservando responsividade, estados e superfície de atenção. Adicionar um teste observável que exija a regra de linhas uniformes. Manter intactas a rota /projects e a separação espacial da sidebar. Na validação visual, não iniciar outro Gateship dentro do worktree.",
   "specSource": "operator",
   "spec": {

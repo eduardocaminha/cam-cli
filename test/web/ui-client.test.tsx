@@ -3884,7 +3884,7 @@ describe('operator shell', () => {
 
 		expect(html).toMatch(/>Activity<\/p><p[^>]*>3<\/p>/s);
 		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toContain('card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-3');
+		expect(html).toContain('card-ring-group grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3');
 		expect(html).not.toContain('xl:col-span-2');
 		expect(html).toMatch(/class="[^"]*" data-slot="stat"><p[^>]*>Needs attention<\/p>/);
 		expect(html).toContain('aria-label="Outcomes"');
