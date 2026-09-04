@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-784",
   "title": "Restaurar o espaçamento visual entre marca e wordmark",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-04T12:33:41.422Z",
-  "updatedAt": "2026-09-04T12:33:41.422Z",
+  "updatedAt": "2026-09-04T12:37:46.983Z",
   "description": "Preservar exatamente a posição do GateshipMark já corrigida nos estados expandido e recolhido. Na sidebar expandida em desktop, aumentar somente a separação do GateshipWordmark para que o intervalo visual entre o fim do ícone transladado e o início do wordmark seja 8px. Preservar o espaçamento móvel atual, dimensões, alinhamento vertical, acessibilidade e ausência de animação. Atualizar o teste focado para provar a classe responsiva escolhida e validar no navegador que o ícone continua com delta x/y zero entre estados e que o wordmark fica 8px à direita do ícone.",
   "specSource": "operator",
   "spec": {

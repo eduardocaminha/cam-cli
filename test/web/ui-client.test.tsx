@@ -4508,13 +4508,16 @@ describe('operator shell', () => {
 
 		// 72px rail + half of the content panel's 12px outer spacing makes a 78px
 		// corridor. Its centre advances 3px; the mark retains its 1px correction
-		// in both shell states, while only the expanded state adds the wordmark.
+		// in both shell states. Desktop adds 12px layout spacing, which minus the
+		// mark's 4px translation leaves the required 8px visual wordmark gap.
 		expect(rail).toContain('lg:w-18');
 		expect(rail).toContain('translate-x-px');
 		expect(rail).toContain('lg:translate-x-[4px]');
 		expect(rail).toContain('bg-attention');
 		expect(expandedTitle).toContain('translate-x-px');
 		expect(expandedTitle).toContain('lg:translate-x-[4px]');
+		expect(expandedTitle).toContain('gap-2');
+		expect(expandedTitle).toContain('lg:gap-3');
 		expect(expandedTitle).toContain('aspect-[10187/2750]');
 	});
 
