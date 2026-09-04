@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-791",
+  "title": "Alinhar placeholder do seletor à coluna de texto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-04T20:07:56.728Z",
+  "updatedAt": "2026-09-04T20:07:56.728Z",
+  "description": "Objetivo\nCorrigir o alinhamento final do seletor de projetos vazio após a validação visual da v0.420.0.\n\nContrato\n- Quando nenhum projeto estiver selecionado, renderizar no trigger apenas um espaçador sem conteúdo de 16 px, equivalente ao slot de NavGlyph, antes do placeholder. Isso deve alinhar o texto do placeholder à coluna de texto de Central de controle e demais itens principais.\n- O espaçador é aria-hidden, não desenha ícone, borda, kbd ou outro sinal visual.\n- Não usar a largura de 40 px reservada ao ProjectShortcut no estado vazio.\n- Quando houver projeto selecionado entre os nove primeiros, preservar o ProjectShortcut de 40 px e seu kbd Alt+N. Projetos selecionados sem atalho mantêm o alinhamento já definido.\n- Não alterar as linhas do menu, atalhos, seleção, chevron, rotas, temas, breakpoints ou acessibilidade.\n- Não adicionar animação.\n\nEvidência de aceite\n- Render estático vazio confirma um slot aria-hidden de 16 px, ausência de w-10 e ausência de kbd antes do placeholder.\n- Render selecionado mantém w-10 e Alt+1.\n- Testes do seletor, TypeScript, lint e build da UI passam.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Objetivo\nCorrigir o alinhamento final do seletor de projetos vazio após a validação visual da v0.420.0.\n\nContrato\n- Quando nenhum projeto estiver selecionado, renderizar no trigger apenas um espaçador sem conteúdo de 16 px, equivalente ao slot de NavGlyph, antes do placeholder. Isso deve alinhar o texto do placeholder à coluna de texto de Central de controle e demais itens principais.\n- O espaçador é aria-hidden, não desenha ícone, borda, kbd ou outro sinal visual.\n- Não usar a largura de 40 px reservada ao ProjectShortcut no estado vazio.\n- Quando houver projeto selecionado entre os nove primeiros, preservar o ProjectShortcut de 40 px e seu kbd Alt+N. Projetos selecionados sem atalho mantêm o alinhamento já definido.\n- Não alterar as linhas do menu, atalhos, seleção, chevron, rotas, temas, breakpoints ou acessibilidade.\n- Não adicionar animação.\n\nEvidência de aceite\n- Render estático vazio confirma um slot aria-hidden de 16 px, ausência de w-10 e ausência de kbd antes do placeholder.\n- Render selecionado mantém w-10 e Alt+1.\n- Testes do seletor, TypeScript, lint e build da UI passam.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx && bun run typecheck && bun run lint && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "b253dfe14e7f16d3714947eee5a88b9baed21c946ea1e12c6d277de3f068410d",
+    "approvedAt": "2026-09-04T20:07:56.728Z"
+  }
+}
