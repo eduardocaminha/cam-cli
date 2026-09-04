@@ -58,6 +58,8 @@ export function App(props: AppProps): React.ReactElement {
 	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
+	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
+	const showInspectorToggle = selection.surface === 'conversation' && selectedProject?.current === true && props.project.state === 'ready';
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
@@ -73,7 +75,7 @@ export function App(props: AppProps): React.ReactElement {
 	}, [props.projects, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleSidebar={toggleSidebar} sidebarOpen={sidebarOpen} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={showInspectorToggle} sidebarOpen={sidebarOpen} />}
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>
@@ -94,7 +96,7 @@ export function App(props: AppProps): React.ReactElement {
 					),
 					nonCurrent: (project, surface) => <NonCurrentProjectSurface props={props} selectedProject={project} surface={surface} />,
 					onboarding: (project) => <OnboardingSurface catalog={localeCatalog.onboarding} project={props.project} settingsHref={`/projects/${encodeURIComponent(project.id)}/settings`} status={props.status} />,
-					conversation: () => <HomeSurface {...props} projectId={selectedProject?.id ?? ''} />,
+					conversation: () => <HomeSurface {...props} inspectorOpen={inspectorOpen} projectId={selectedProject?.id ?? ''} />,
 					runs: () => <RunsSurface {...props} />,
 					work: () => <WorkSurface {...props} />,
 					settings: () => <SettingsSurface {...props} />,

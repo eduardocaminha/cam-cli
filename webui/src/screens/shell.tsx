@@ -14,7 +14,7 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
-import { Activity01Icon, ArrowExpand01Icon, ArrowLeft01Icon, ArrowRight01Icon, ArrowShrink01Icon, CubeIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Message01Icon, Moon02Icon, Settings01Icon, SidebarLeft01Icon, SidebarLeftIcon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, CubeIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Message01Icon, Moon02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
 
@@ -369,10 +369,16 @@ export function ShellControls({
 	catalog,
 	sidebarOpen,
 	onToggleSidebar,
+	inspectorOpen,
+	onToggleInspector,
+	showInspectorToggle,
 }: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
 	catalog: ShellCatalog;
 	sidebarOpen: boolean;
 	onToggleSidebar: () => void;
+	inspectorOpen: boolean;
+	onToggleInspector: () => void;
+	showInspectorToggle: boolean;
 }): React.ReactElement {
 	const [dark, setDark] = useState(() => {
 		const runtime = panelRuntime();
@@ -400,9 +406,7 @@ export function ShellControls({
 	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
 	return (
 		<div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 lg:px-6">
-			{/* The sidebar toggle lives in the content area, not the sidebar
-			 * (operator decision, 2026-08-25): a panel glyph whose side bar is
-			 * wide while the sidebar is open and narrow while it is collapsed. */}
+			{/* The sidebar toggle lives in the content area, not the sidebar. */}
 			<Button
 				aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
 				onClick={onToggleSidebar}
@@ -410,12 +414,7 @@ export function ShellControls({
 				type="button"
 				variant="outline"
 			>
-				<HugeiconsIcon
-					className="size-3.5"
-					icon={sidebarOpen ? SidebarLeftIcon : SidebarLeft01Icon}
-					size={14}
-					strokeWidth={3}
-				/>
+				<PanelToggleGlyph side="left" />
 			</Button>
 			<div aria-label={catalog.languageLabel} className="flex items-center gap-2" role="group">
 			<Button
@@ -444,6 +443,7 @@ export function ShellControls({
 			</Button>
 			<Button
 				aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
+				className="hidden 2xl:inline-flex"
 				onClick={toggleWidth}
 				size="icon"
 				type="button"
@@ -456,21 +456,29 @@ export function ShellControls({
 					strokeWidth={3}
 				/>
 			</Button>
+			{showInspectorToggle ? (
+				<Button
+					aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
+					onClick={onToggleInspector}
+					size="icon"
+					type="button"
+					variant="outline"
+				>
+					<PanelToggleGlyph side="right" />
+				</Button>
+			) : null}
 			</div>
 		</div>
 	);
 }
 
-/* The sidebar's group label: mono, tiny, quiet (dashboard-01's anatomy). */
-/* A chevron pointing where the panel will go; the label carries the meaning. */
-export function PanelChevron({ direction }: { direction: 'left' | 'right' }): React.ReactElement {
+/** A panel silhouette with its visible side fully filled in currentColor. */
+export function PanelToggleGlyph({ side }: { side: 'left' | 'right' }): React.ReactElement {
 	return (
-		<HugeiconsIcon
-			className="size-3.5"
-			icon={direction === 'left' ? ArrowLeft01Icon : ArrowRight01Icon}
-			size={14}
-			strokeWidth={3}
-		/>
+		<svg aria-hidden="true" className="size-3.5" data-side={side} data-slot="panel-toggle-glyph" fill="none" viewBox="0 0 16 16">
+			<rect height="12" rx="1.5" stroke="currentColor" width="12" x="2" y="2" />
+			<rect fill="currentColor" height="12" rx="1" width="3.5" x={side === 'left' ? '2' : '10.5'} y="2" />
+		</svg>
 	);
 }
 
