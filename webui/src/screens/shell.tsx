@@ -211,6 +211,13 @@ export function ProjectSwitcher({
 								) : null}
 							</Menu.Item>
 						))}
+						<Menu.Item
+							className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
+							render={<a href="/projects" />}
+						>
+							<NavGlyph name="project" />
+							<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
+						</Menu.Item>
 					</Menu.Popup>
 				</Menu.Positioner>
 			</Menu.Portal>
@@ -226,6 +233,7 @@ export function ProjectSwitcher({
 						<a href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}{index < 9 ? <kbd aria-hidden="true">⌘{index + 1}</kbd> : null}</a>
 					</li>
 				))}
+				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
 			</ul>
 		</div>
 		</>
@@ -261,11 +269,7 @@ export function ShellNavigation({
 					</a>
 				</li>
 			</ul>
-			<div aria-hidden="true" className="my-1.5 hidden h-px bg-sidebar-border lg:my-4 lg:block" data-slot="navigation-divider" />
-			<div data-slot="project-navigation">
-				<p className="hidden px-3 pb-1 font-mono text-[10px] text-muted-foreground uppercase tracking-wider lg:block" data-slot="project-context-label">
-					{catalog.projectContextLabel}
-				</p>
+			<div className="mt-3 lg:mt-5" data-slot="project-navigation">
 				<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
 				<li className="w-full min-w-0" data-slot="project-switcher-item">
 					<ProjectSwitcher
@@ -592,7 +596,7 @@ export function ShellSidebar({
 }
 
 /**
- * The one onboarding write the overview offers: an absolute path to a checkout
+ * The one onboarding write project management offers: an absolute path to a checkout
  * the operator already has. No file picker, no clone and no new repository --
  * the service reads local Git metadata and refuses anything not ready.
  */

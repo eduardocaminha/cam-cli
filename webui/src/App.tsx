@@ -16,6 +16,7 @@ import { HomeSurface } from './screens/home-screen.tsx';
 import { NonCurrentProjectSurface } from './screens/non-current-project-screen.tsx';
 import { OnboardingSurface } from './screens/onboarding-screen.tsx';
 import { OverviewSurface } from './screens/overview-screen.tsx';
+import { ProjectsManagementSurface } from './screens/projects-management-screen.tsx';
 import { RunsSurface } from './screens/runs-screen.tsx';
 import { SettingsSurface } from './screens/settings-screen.tsx';
 import {
@@ -83,6 +84,7 @@ export function App(props: AppProps): React.ReactElement {
 				currentProjectReady={props.project.state === 'ready'}
 				screens={{
 					overview: () => <OverviewSurface {...props} />,
+					projects: () => <ProjectsManagementSurface {...props} />,
 					globalSettings: () => <GlobalSettingsSurface {...props} />,
 					notFound: () => (
 						<SurfaceColumn label={localeCatalog.projects.notFoundTitle} status={props.status}>

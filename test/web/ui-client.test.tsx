@@ -3651,14 +3651,14 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('overview and the project selector expose the global registry in both locales', () => {
+	test('overview keeps the global registry as drill-down cards without management forms', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, title: 'Control center', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, title: 'Central de controle', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, label: 'Control center', current: 'served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, label: 'Central de controle', current: 'servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
-			expect(html).toContain(`aria-label="${expected.title}"`);
-			expect(html).toContain(`>${expected.title}</h2>`);
+			expect(html).toContain(`aria-label="${expected.label}"`);
+			expect(html).not.toContain(`<h2 class="font-semibold text-xl tracking-tight">`);
 			expect(html).toContain(`>${expected.current}</span>`);
 			expect(html).toContain(`>${expected.readiness}</dt>`);
 			expect(html).toContain('acme/gateship');
@@ -3666,6 +3666,11 @@ describe('operator shell', () => {
 			expect(html).toContain('href="/overview"');
 			expect(html).toContain('href="/projects/project-current"');
 			expect(html).toContain('href="/projects/project-other"');
+			expect(html).toContain('card-ring-group grid auto-rows-fr gap-6 lg:grid-cols-2 2xl:grid-cols-3');
+			expect(html).toMatch(/class="[^"]*h-full[^"]*"/);
+			expect(html).not.toContain('name="project-create-repository"');
+			expect(html).not.toContain('name="project-import-repository"');
+			expect(html).not.toContain('name="project-root"');
 		}
 	});
 
@@ -3879,19 +3884,16 @@ describe('operator shell', () => {
 
 		expect(html).toMatch(/>Activity<\/p><p[^>]*>3<\/p>/s);
 		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
-		// At xl, the attention hero spans two of seven columns and the other
-		// five metrics take one each, so the whole set stays on one row.
-		expect(html).toContain('card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-7');
-		expect(html).toMatch(/class="[^"]*xl:col-span-2[^"]*" data-slot="stat"><p[^>]*>Needs attention<\/p>/);
+		expect(html).toContain('card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-3');
+		expect(html).not.toContain('xl:col-span-2');
+		expect(html).toMatch(/class="[^"]*" data-slot="stat"><p[^>]*>Needs attention<\/p>/);
 		expect(html).toContain('aria-label="Outcomes"');
 		expect(html).toContain('2026-08-31: Activity 3; shipped 2; failed 1; cancelled 0; incomplete 0');
 		expect(html).not.toContain('<polyline');
 		expect(html).not.toContain('preserveAspectRatio="none"');
 	});
 
-	// GSHIP-716: onboarding a checkout the operator already has is one absolute
-	// path, offered on the overview beside the list that stays the selection.
-	test('the overview offers registering an existing checkout by absolute path in both locales', () => {
+	test('project management offers registering an existing checkout by absolute path in both locales', () => {
 		for (const expected of [
 			{
 				locale: 'en-US' as const,
@@ -3910,7 +3912,7 @@ describe('operator shell', () => {
 				docker: 'No Docker o caminho precisa existir dentro do contêiner',
 			},
 		]) {
-			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT] });
+			const html = renderAt('/projects', { locale: expected.locale, projects: [CURRENT_PROJECT] });
 			expect(html).toContain(`>${expected.title}</h2>`);
 			expect(html).toContain(`>${expected.label}</span>`);
 			expect(html).toContain(expected.topLevel);
@@ -3921,13 +3923,13 @@ describe('operator shell', () => {
 			expect(html).not.toContain('type="file"');
 		}
 		// A typed refusal reaches the operator on the surface that asked for it.
-		expect(renderAt('/overview', {
+		expect(renderAt('/projects', {
 			status: 'The origin remote must point to a repository on GitHub.com.',
 		})).toContain('The origin remote must point to a repository on GitHub.com.');
-		expect(buttonIsEnabled(renderAt('/overview', { pending: true }), 'Register project')).toBe(false);
+		expect(buttonIsEnabled(renderAt('/projects', { pending: true }), 'Register project')).toBe(false);
 	});
 
-	test('the overview keeps new GitHub creation separate, private by default and confirmation-gated', () => {
+	test('project management keeps new GitHub creation separate, private by default and confirmation-gated', () => {
 		for (const expected of [
 			{
 				locale: 'en-US' as const,
@@ -3946,7 +3948,7 @@ describe('operator shell', () => {
 				publicWarning: 'visível para qualquer pessoa no GitHub',
 			},
 		]) {
-			const html = renderAt('/overview', { locale: expected.locale });
+			const html = renderAt('/projects', { locale: expected.locale });
 			expect(html).toContain(`>${expected.title}</h2>`);
 			expect(html).toContain(expected.destination);
 			expect(html).toContain(expected.credential);
@@ -3961,10 +3963,10 @@ describe('operator shell', () => {
 			expect(html).not.toContain(expected.publicWarning);
 			expect(html).not.toContain('type="password"');
 		}
-		expect(renderAt('/overview', {
+		expect(renderAt('/projects', {
 			status: 'The managed checkout was preserved at /managed/acme/product.',
 		})).toContain('preserved at /managed/acme/product');
-		const creating = renderAt('/overview', {
+		const creating = renderAt('/projects', {
 			pending: true,
 			projectOnboardingPending: 'create',
 		});
@@ -3972,10 +3974,10 @@ describe('operator shell', () => {
 		expect(creating).not.toContain('Cloning the repository');
 	});
 
-	// GSHIP-718: the other onboarding write is a GitHub repository, never a
+	// The other onboarding write is a GitHub repository, never a
 	// path -- Gateship owns the destination and clones with the operator's
 	// existing GitHub login, so no token or credential field is ever offered.
-	test('the overview offers importing a GitHub repository in both locales', () => {
+	test('project management offers importing a GitHub repository in both locales', () => {
 		for (const expected of [
 			{
 				locale: 'en-US' as const,
@@ -3996,7 +3998,7 @@ describe('operator shell', () => {
 				credential: 'usa o seu login do GitHub já existente',
 			},
 		]) {
-			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT] });
+			const html = renderAt('/projects', { locale: expected.locale, projects: [CURRENT_PROJECT] });
 			expect(html).toContain(`>${expected.title}</h2>`);
 			expect(html).toContain(`>${expected.label}</span>`);
 			expect(html).toContain(expected.destination);
@@ -4006,12 +4008,12 @@ describe('operator shell', () => {
 			expect(html).not.toContain('type="password"');
 			expect(html).not.toContain(expected.pending);
 		}
-		const importing = renderAt('/overview', { pending: true, projectOnboardingPending: 'import' });
+		const importing = renderAt('/projects', { pending: true, projectOnboardingPending: 'import' });
 		expect(buttonIsEnabled(importing, 'Import repository')).toBe(false);
 		expect(importing).toContain('Cloning the repository');
 		expect(importing).not.toContain('Creating the repository and pushing main');
 		// A typed refusal reaches the operator on the surface that asked for it.
-		expect(renderAt('/overview', {
+		expect(renderAt('/projects', {
 			status: 'That repository is already a checkout of a different one.',
 		})).toContain('That repository is already a checkout of a different one.');
 	});
@@ -4267,7 +4269,7 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-		test('navigation separates all projects from the nested project context on desktop', () => {
+	test('navigation keeps Control Center global and separates the project switcher only by space', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
@@ -4276,8 +4278,6 @@ describe('operator shell', () => {
 				tag.includes(`href="${route}"`) && tag.includes('aria-current="page"'));
 			const switcher = elementWith(html, 'data-slot="project-switcher"');
 			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
-			const divider = elementWith(html, 'data-slot="navigation-divider"');
-			const contextLabel = elementWith(html, 'data-slot="project-context-label"');
 			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
 			const globalStart = nav.indexOf('data-slot="global-navigation"');
 			const projectStart = nav.indexOf('data-slot="project-navigation"');
@@ -4297,18 +4297,11 @@ describe('operator shell', () => {
 			expect(globalGroup).toContain('href="/overview"');
 			expect(globalGroup).not.toContain('data-slot="project-switcher"');
 			expect(globalGroup).toContain('</ul><div');
-			expect(divider).toContain('my-1.5');
-			expect(divider).toContain('lg:my-4');
-			expect(divider).toContain('hidden');
-			expect(divider).toContain('lg:block');
-			expect(divider).toContain('bg-sidebar-border');
+			expect(nav).not.toContain('data-slot="navigation-divider"');
+			expect(nav).not.toContain('data-slot="project-context-label"');
 			expect(projectStart).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(contextLabel).toContain('hidden');
-			expect(contextLabel).toContain('lg:block');
-			expect(contextLabel).toContain('font-mono');
-			expect(contextLabel).toContain('text-muted-foreground');
-			expect(contextLabel).toContain('uppercase');
-			expect(nav.indexOf('data-slot="project-context-label"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('mt-3');
+			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('lg:mt-5');
 			expect(projectSurfaceNavigation).toContain('lg:pl-2');
 			expect(projectSurfaceNavigation).toContain('lg:mt-1');
 			expect(projectSurfaceNavigation).not.toContain('border-l');
@@ -4351,17 +4344,26 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('navigation localizes the global destination and desktop project context', () => {
+	test('navigation localizes the global destination and project-management menu action', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, overview: 'Control center', context: 'Project' },
-			{ locale: 'pt-BR' as const, overview: 'Central de controle', context: 'Projeto' },
+			{ locale: 'en-US' as const, overview: 'Control center', manage: 'Manage projects' },
+			{ locale: 'pt-BR' as const, overview: 'Central de controle', manage: 'Gerenciar projetos' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
 			const start = html.indexOf('<nav aria-label=');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
 
 			expect(nav).toContain(`>${expected.overview}</span>`);
-			expect(nav).toContain(`>${expected.context}</p>`);
+			expect(html).toContain(`href="/projects">${expected.manage}</a>`);
+		}
+	});
+
+	test('project management is a global route with the existing three registry actions', () => {
+		const html = renderAt('/projects');
+		expect(openingTags(html).find((tag) => tag.startsWith('<main'))).toContain('aria-label="Projects"');
+		expect(html).toContain('>Projects</h2>');
+		for (const field of ['project-create-repository', 'project-import-repository', 'project-root']) {
+			expect(html).toContain(`name="${field}"`);
 		}
 	});
 
@@ -4462,6 +4464,7 @@ describe('operator shell', () => {
 
 	test('reads canonical project routes and falls unknown paths back to overview', () => {
 		expect(routeOf('/overview')).toBe('/overview');
+		expect(routeOf('/projects')).toBe('/projects');
 		expect(routeOf('/projects/project-current')).toBe('/projects/project-current');
 		expect(routeOf('/projects/project-current/runs/')).toBe('/projects/project-current/runs');
 		expect(routeOf('/projects/project-current/work')).toBe('/projects/project-current/work');

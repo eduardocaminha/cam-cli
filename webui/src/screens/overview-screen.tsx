@@ -16,7 +16,6 @@ import type { RunState } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import type { OverviewCardEntry } from './projects.tsx';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
-import { CreateProjectPanel, ImportProjectPanel, RegisterProjectPanel } from './projects.tsx';
 import { formatCostUsd, formatRunTimestamp } from './runs.tsx';
 import { MODEL_PROVIDER_LABELS } from './settings.tsx';
 
@@ -103,13 +102,13 @@ export function OverviewProjectDetails({ entry, catalog, projectCatalog, locale 
 
 export function OverviewProjectCard({ entry, catalog, projectCatalog, locale }: { entry: OverviewCardEntry; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
 	const project = entry.project;
-	return <li className="min-w-0"><Card><CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle><a className={TITLE_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>{project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</div><CardDescription className="break-all font-mono text-xs">{project.repository ?? projectCatalog.repositoryUnknown}</CardDescription></CardHeader><CardPanel><dl className="flex flex-col gap-1.5 text-sm"><OverviewProjectDetails entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={locale} /></dl></CardPanel></Card></li>;
+	return <li className="min-w-0"><Card className="h-full"><CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle><a className={TITLE_LINK_CLASS} href={`/projects/${encodeURIComponent(project.id)}`}>{project.name}</a></CardTitle>{project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</div><CardDescription className="break-all font-mono text-xs">{project.repository ?? projectCatalog.repositoryUnknown}</CardDescription></CardHeader><CardPanel><dl className="flex flex-col gap-1.5 text-sm"><OverviewProjectDetails entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={locale} /></dl></CardPanel></Card></li>;
 }
 
 export function OverviewProjectCards({ props, overview, catalog, projectCatalog }: { props: AppProps; overview: ProjectOperationalOverviewView | null; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog }): React.ReactElement | null {
 	if (overview === null && props.overviewLoading) return null;
 	const entries: OverviewCardEntry[] = overview === null ? props.projects.map((project) => ({ project, snapshot: false })) : overview.projects.map((entry) => ({ ...entry, snapshot: true }));
-	return <ul className="card-ring-group grid gap-6 lg:grid-cols-2 2xl:grid-cols-3">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
+	return <ul className="card-ring-group grid auto-rows-fr gap-6 lg:grid-cols-2 2xl:grid-cols-3">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
 }
 
 export function OverviewData({ props, overview, catalog, attention, activeProjects }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number; activeProjects: number }): React.ReactElement {
@@ -121,10 +120,9 @@ export function OverviewData({ props, overview, catalog, attention, activeProjec
 		 * allowed to go acid, and only while something actually waits; a zero
 		 * stays as quiet as every other number.
 		 */}
-		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
+		<div className="card-ring-group grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 			<Stat
 				className={cn(
-					'xl:col-span-2',
 					attention > 0
 						&& 'border-attention-ui bg-attention-surface shadow-[0_6px_28px_rgba(200,255,0,0.09)]',
 				)}
@@ -168,37 +166,12 @@ export function OverviewSurface(props: AppProps): React.ReactElement {
 		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
-			{/* One title, one description: the middle line duplicated the main
-			 * region's own label and diluted the page header. */}
-			<div>
-				<h2 className="font-semibold text-xl tracking-tight">{projectCatalog.title}</h2>
-				<p className="mt-1 text-muted-foreground text-sm">{catalog.description}</p>
-			</div>
 			{props.overviewLoading && overview === null ? <p role="status">{catalog.loading}</p> : null}
 			{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
 			{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <Card><CardPanel><EmptyState>{catalog.empty}</EmptyState></CardPanel></Card> : null}
 			{props.overviewError ? <p className="text-warning-foreground text-sm" role="alert">{catalog.error}: {props.overviewError}</p> : null}
 			{overview === null || overview.projects.length === 0 ? null : <OverviewData props={props} overview={overview} catalog={catalog} attention={attention} activeProjects={activeProjects} />}
 			<OverviewProjectCards props={props} overview={overview} catalog={catalog} projectCatalog={projectCatalog} />
-			<CreateProjectPanel
-				catalog={projectCatalog}
-				onCreateProject={props.onCreateProject}
-				pending={props.pending}
-				projectOnboardingPending={props.projectOnboardingPending}
-			/>
-			<div className="grid gap-6 md:grid-cols-2">
-				<ImportProjectPanel
-					catalog={projectCatalog}
-					onImportProject={props.onImportProject}
-					pending={props.pending}
-					projectOnboardingPending={props.projectOnboardingPending}
-				/>
-				<RegisterProjectPanel
-					catalog={projectCatalog}
-					onRegisterProject={props.onRegisterProject}
-					pending={props.pending}
-				/>
-			</div>
 		</SurfaceColumn>
 	);
 }

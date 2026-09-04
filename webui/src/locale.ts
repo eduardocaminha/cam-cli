@@ -39,7 +39,7 @@ export interface ShellCatalog {
 	inspectorToggle: { collapse: string; expand: string };
 	operatorNavigationLabel: string;
 	projectNavigationLabel: string;
-	projectContextLabel: string;
+	manageProjectsLabel: string;
 	switcherPlaceholder: string;
 	skipLinkLabel: string;
 	languageLabel: string;
@@ -581,7 +581,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Navigation',
 			projectNavigationLabel: 'Projects',
-			projectContextLabel: 'Project',
+			manageProjectsLabel: 'Manage projects',
 			switcherPlaceholder: 'Select a project',
 			skipLinkLabel: 'Skip to content',
 			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
@@ -599,7 +599,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		projects: {
-			title: 'Control center',
+			title: 'Projects',
 			description: 'Registered projects available to this Gateship installation.',
 			currentBadge: 'served by this instance',
 			repositoryUnknown: 'Repository not known',
@@ -1055,7 +1055,7 @@ export const LOCALE_CATALOG = {
 		shell: {
 			operatorNavigationLabel: 'Navegação',
 			projectNavigationLabel: 'Projetos',
-			projectContextLabel: 'Projeto',
+			manageProjectsLabel: 'Gerenciar projetos',
 			switcherPlaceholder: 'Selecionar projeto',
 			skipLinkLabel: 'Pular para o conteúdo',
 			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
@@ -1073,7 +1073,7 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		projects: {
-			title: 'Central de controle',
+			title: 'Projetos',
 			description: 'Projetos registrados disponíveis nesta instalação do Gateship.',
 			currentBadge: 'servido por esta instância',
 			repositoryUnknown: 'Repositório desconhecido',
