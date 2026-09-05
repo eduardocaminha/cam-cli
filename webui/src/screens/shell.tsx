@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
+import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -416,70 +417,78 @@ export function ShellControls({
 		setWide(next);
 	};
 	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
+	const inspectorColumnOpen = showInspectorToggle && inspectorOpen;
+	const inspectorToggle = (className?: string): React.ReactElement | null => showInspectorToggle ? (
+		<Button
+			aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
+			className={className}
+			onClick={onToggleInspector}
+			size="icon"
+			type="button"
+			variant="outline"
+		>
+			<PanelToggleGlyph side="right" />
+		</Button>
+	) : null;
 	return (
-		<div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 lg:px-6">
-			{/* The sidebar toggle lives in the content area, not the sidebar. */}
-			<Button
-				aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-				onClick={onToggleSidebar}
-				size="icon"
-				type="button"
-				variant="outline"
-			>
-				<PanelToggleGlyph side="left" />
-			</Button>
-			<div aria-label={catalog.languageLabel} className="flex items-center gap-2" role="group">
-			<Button
-				aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
-				id="gateship-locale"
-				onClick={() => onSelectLocale(targetLocale)}
-				size="icon"
-				type="button"
-				variant="outline"
-			>
-				<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
-			</Button>
-			<Button
-				aria-label={dark ? catalog.themeToggle.light : catalog.themeToggle.dark}
-				onClick={toggleTheme}
-				size="icon"
-				type="button"
-				variant="outline"
-			>
-				<HugeiconsIcon
-					className="size-3.5"
-					icon={dark ? Sun02Icon : Moon02Icon}
-					size={14}
-					strokeWidth={3}
-				/>
-			</Button>
-			<Button
-				aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
-				className="hidden 2xl:inline-flex"
-				onClick={toggleWidth}
-				size="icon"
-				type="button"
-				variant="outline"
-			>
-				<HugeiconsIcon
-					className="size-3.5"
-					icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon}
-					size={14}
-					strokeWidth={3}
-				/>
-			</Button>
-			{showInspectorToggle ? (
-				<Button
-					aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
-					onClick={onToggleInspector}
-					size="icon"
-					type="button"
-					variant="outline"
-				>
-					<PanelToggleGlyph side="right" />
-				</Button>
-			) : null}
+		<div className={cn('w-full shrink-0', inspectorColumnOpen && 'xl:grid xl:grid-cols-[minmax(0,1fr)_24rem]')} data-slot="shell-controls-layout">
+			<div className="min-w-0 px-4 pt-4 lg:px-6">
+				<ShellContentFrame className="flex items-center justify-between gap-2">
+					{/* The sidebar toggle lives in the content area, not the sidebar. */}
+					<Button
+						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+						onClick={onToggleSidebar}
+						size="icon"
+						type="button"
+						variant="outline"
+					>
+						<PanelToggleGlyph side="left" />
+					</Button>
+					<div aria-label={catalog.languageLabel} className="flex items-center gap-2" role="group">
+						<Button
+							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
+							id="gateship-locale"
+							onClick={() => onSelectLocale(targetLocale)}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
+						</Button>
+						<Button
+							aria-label={dark ? catalog.themeToggle.light : catalog.themeToggle.dark}
+							onClick={toggleTheme}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<HugeiconsIcon
+								className="size-3.5"
+								icon={dark ? Sun02Icon : Moon02Icon}
+								size={14}
+								strokeWidth={3}
+							/>
+						</Button>
+						<Button
+							aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
+							className="hidden 2xl:inline-flex"
+							onClick={toggleWidth}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<HugeiconsIcon
+								className="size-3.5"
+								icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon}
+								size={14}
+								strokeWidth={3}
+							/>
+						</Button>
+						{inspectorToggle(inspectorColumnOpen ? 'xl:hidden' : undefined)}
+					</div>
+				</ShellContentFrame>
 			</div>
+			{inspectorColumnOpen ? <div className="hidden items-center justify-end px-4 pt-4 lg:px-6 xl:flex">{inspectorToggle('hidden xl:inline-flex')}</div> : null}
 		</div>
 	);
 }

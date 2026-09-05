@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
-import { MAIN_CONTENT_ID } from '../app-shell.tsx';
+import { MAIN_CONTENT_ID, ShellContentFrame } from '../app-shell.tsx';
 import { aggregateChatTurnCosts } from '../client.ts';
 import { AttentionCard } from '../components/ui/attention-card.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -210,55 +210,57 @@ export function ConversationColumn({
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<Card className="mx-auto flex w-full max-w-(--content-measure) flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
-				<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
-					<OperationalReadPanel detail={operationalFailures?.Conversation} loaded={operationalLoaded?.Conversation === true} locale={locale} pending={operationalPending?.Conversation === true} resource="Conversation">
-						<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
-						<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
-					</OperationalReadPanel>
-					<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
-					<StatusOutput status={status} />
-					<form
-						className="flex gap-2"
-						onSubmit={(event) => {
-							event.preventDefault();
-							const form = event.currentTarget as unknown as { reset: () => void };
-							const value = fieldReader(event.currentTarget)('message');
-							if (value.length > 0) {
-								onSendMessage(value);
-								form.reset();
-							}
-						}}
-					>
-						<label className="sr-only" htmlFor="orchestrator-message">
-							{catalog.composer.label}
-						</label>
-						<Textarea
-							className="max-h-40 min-w-0"
-							disabled={pending}
-							id="orchestrator-message"
-							name="message"
-							onKeyDown={(event) => {
-								if (event.key === 'Enter' && !event.shiftKey) {
-									event.preventDefault();
-									// Same idiom as the reset() cast below: the root tsconfig
-									// checks this file without the DOM lib.
-									const field = event.currentTarget as unknown as {
-										closest: (selector: string) => { requestSubmit: () => void } | null;
-									};
-									field.closest('form')?.requestSubmit();
+			<ShellContentFrame className="flex flex-1 flex-col xl:min-h-0">
+				<Card className="flex w-full flex-col xl:min-h-0 xl:flex-1 xl:[&>[data-slot=card]]:min-h-0">
+					<CardPanel className="flex min-h-0 flex-col gap-4 xl:flex-1">
+						<OperationalReadPanel detail={operationalFailures?.Conversation} loaded={operationalLoaded?.Conversation === true} locale={locale} pending={operationalPending?.Conversation === true} resource="Conversation">
+							<ChatLog catalog={catalog} chatMessages={chatMessages} locale={locale} />
+							<ChatCostSummary catalog={catalog} chatMessages={chatMessages} locale={locale} />
+						</OperationalReadPanel>
+						<OperatorAnswer catalog={catalog} onResume={onResume} pending={pending} run={run} />
+						<StatusOutput status={status} />
+						<form
+							className="flex gap-2"
+							onSubmit={(event) => {
+								event.preventDefault();
+								const form = event.currentTarget as unknown as { reset: () => void };
+								const value = fieldReader(event.currentTarget)('message');
+								if (value.length > 0) {
+									onSendMessage(value);
+									form.reset();
 								}
 							}}
-							placeholder={catalog.composer.placeholder}
-							required
-							rows={1}
-						/>
-						<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
-							{catalog.composer.button}
-						</button>
-					</form>
-				</CardPanel>
-			</Card>
+						>
+							<label className="sr-only" htmlFor="orchestrator-message">
+								{catalog.composer.label}
+							</label>
+							<Textarea
+								className="max-h-40 min-w-0"
+								disabled={pending}
+								id="orchestrator-message"
+								name="message"
+								onKeyDown={(event) => {
+									if (event.key === 'Enter' && !event.shiftKey) {
+										event.preventDefault();
+										// Same idiom as the reset() cast below: the root tsconfig
+										// checks this file without the DOM lib.
+										const field = event.currentTarget as unknown as {
+											closest: (selector: string) => { requestSubmit: () => void } | null;
+										};
+										field.closest('form')?.requestSubmit();
+									}
+								}}
+								placeholder={catalog.composer.placeholder}
+								required
+								rows={1}
+							/>
+							<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+								{catalog.composer.button}
+							</button>
+						</form>
+					</CardPanel>
+				</Card>
+			</ShellContentFrame>
 		</main>
 	);
 }
