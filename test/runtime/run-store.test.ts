@@ -846,7 +846,34 @@ describe('operator profile', () => {
 });
 
 describe('project brief', () => {
-	test('round-trips the brief and clears the generated handoff in the same write', () => {
+	test('does not create conversational tables in a new database and opens a legacy database without querying them', () => {
+		const freshPath = join(createTestTmpdir('gship-run-store-fresh-schema-'), 'runtime.sqlite');
+		const fresh = new RunStore(freshPath);
+		fresh.close();
+		const freshDb = new Database(freshPath);
+		const freshTables = freshDb.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+		expect(freshTables.map((table) => table.name)).not.toContain('orchestrator_messages');
+		expect(freshTables.map((table) => table.name)).not.toContain('orchestrator_handoff');
+		freshDb.close();
+
+		const dbPath = join(createTestTmpdir('gship-run-store-brief-schema-'), 'runtime.sqlite');
+		const legacy = new Database(dbPath);
+		legacy.exec('CREATE TABLE orchestrator_messages (seq INTEGER PRIMARY KEY); CREATE TABLE orchestrator_handoff (id INTEGER PRIMARY KEY);');
+		legacy.close();
+
+		const store = new RunStore(dbPath);
+		store.setProjectBrief({ objective: 'Brief', decisions: [], constraints: [], openItems: [] }, '2026-09-05T13:00:00.000Z');
+		store.close();
+
+		const db = new Database(dbPath);
+		const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+		expect(tables.map((table) => table.name)).toContain('project_brief');
+		expect(tables.map((table) => table.name)).toContain('orchestrator_messages');
+		expect(tables.map((table) => table.name)).toContain('orchestrator_handoff');
+		db.close();
+	});
+
+	test('round-trips the brief', () => {
 		const store = new RunStore(':memory:');
 		expect(store.getProjectBrief()).toEqual(EMPTY_BRIEF);
 
@@ -856,51 +883,12 @@ describe('project brief', () => {
 			constraints: ['Somente o serviço determinístico persiste o brief.'],
 			openItems: ['Construir o editor web na fatia 2.'],
 		};
-		store.setOrchestratorHandoff({
-			objective: 'Memória automática antiga.',
-			decisions: ['Uma decisão gerada.'],
-			constraints: [],
-			openItems: [],
-		}, '2026-08-16T20:59:00.000Z');
 		store.setProjectBrief(brief, '2026-08-16T21:00:00.000Z');
 		expect(store.getProjectBrief()).toEqual(brief);
-		expect(store.getOrchestratorHandoff()).toEqual(EMPTY_BRIEF);
 
 		const rewritten = { ...brief, objective: 'Objetivo substituído.', openItems: [] };
 		store.setProjectBrief(rewritten, '2026-08-16T21:05:00.000Z');
 		expect(store.getProjectBrief()).toEqual(rewritten);
-		store.close();
-	});
-
-	test('rolls back the brief when SQLite refuses the handoff invalidation', () => {
-		const dbPath = join(createTestTmpdir('gship-run-store-brief-atomic-'), 'runtime.sqlite');
-		const store = new RunStore(dbPath);
-		const original = {
-			objective: 'Brief anterior.', decisions: [], constraints: [], openItems: [],
-		};
-		const handoff = {
-			objective: 'Handoff anterior.', decisions: [], constraints: [], openItems: [],
-		};
-		store.setProjectBrief(original, '2026-08-16T21:00:00.000Z');
-		store.setOrchestratorHandoff(handoff, '2026-08-16T21:01:00.000Z');
-
-		const guard = new Database(dbPath);
-		guard.exec(`
-			CREATE TRIGGER refuse_empty_handoff
-			BEFORE UPDATE ON orchestrator_handoff
-			WHEN NEW.handoff_json = '{"objective":"","decisions":[],"constraints":[],"openItems":[]}'
-			BEGIN
-				SELECT RAISE(ABORT, 'refused handoff invalidation');
-			END;
-		`);
-		guard.close();
-
-		expect(() => store.setProjectBrief(
-			{ ...original, objective: 'Não pode sobreviver sozinho.' },
-			'2026-08-16T21:02:00.000Z',
-		)).toThrow('refused handoff invalidation');
-		expect(store.getProjectBrief()).toEqual(original);
-		expect(store.getOrchestratorHandoff()).toEqual(handoff);
 		store.close();
 	});
 
@@ -1234,46 +1222,5 @@ describe('claude usage windows', () => {
 		appendRateLimit(store, 'run-usage-unnamed', 'provider.rate-limit', '2026-08-17T10:00:00.000Z', {});
 		expect(store.getClaudeUsageWindows('2026-08-17T10:00:00.000Z')).toEqual([]);
 		store.close();
-	});
-});
-
-// GSHIP-634: orchestrator_messages already wrote exactly one row per turn, so
-// its usage columns are added to that table instead of a new one, migrated by
-// PRAGMA the same way promoted_issue_id was.
-describe('orchestrator message usage migration', () => {
-	test('a pre-GSHIP-634 database gains the usage columns without losing its messages', () => {
-		const dbPath = join(createTestTmpdir('gship-run-store-orchestrator-usage-'), 'runtime.sqlite');
-		const legacy = new Database(dbPath, { create: true });
-		legacy.exec(`
-			CREATE TABLE orchestrator_messages (
-				seq INTEGER PRIMARY KEY AUTOINCREMENT,
-				provider_id TEXT NOT NULL,
-				role TEXT NOT NULL,
-				text TEXT NOT NULL,
-				created_at TEXT NOT NULL
-			);
-			INSERT INTO orchestrator_messages (provider_id, role, text, created_at) VALUES
-				('claude', 'operator', 'Qual é o objetivo desta fatia?', '2026-08-18T10:00:00Z'),
-				('claude', 'orchestrator', 'Vou investigar o core.', '2026-08-18T10:00:05Z');
-		`);
-		legacy.close();
-
-		const migrated = new RunStore(dbPath);
-		const messages = migrated.listOrchestratorMessages();
-		expect(messages).toHaveLength(2);
-		// A row written before the columns existed reads back with no usage at
-		// all -- never a fabricated free turn.
-		for (const message of messages) expect(message.usage).toBeUndefined();
-
-		// The migrated table still accepts a usage-carrying write going forward.
-		const withUsage = migrated.appendOrchestratorMessage({
-			providerId: 'claude',
-			role: 'orchestrator',
-			text: 'Contexto recuperado.',
-			createdAt: '2026-08-18T10:00:10Z',
-			usage: { model: 'opus', effort: 'high', totalCostUsd: 0.08, inputTokens: 500 },
-		});
-		expect(withUsage.usage).toEqual({ model: 'opus', effort: 'high', totalCostUsd: 0.08, inputTokens: 500 });
-		migrated.close();
 	});
 });

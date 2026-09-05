@@ -28,9 +28,9 @@ flowchart TD
 
 - `RunRuntime` owns the run state machine and process cancellation.
 - `RunStore` persists runs and events in `.gship/runtime.sqlite`.
-- `ConversationalOrchestrator` resolves typed cycle questions internally. The
+- `AgentCycleQuestionResolver` resolves typed cycle questions internally. The
   external agent investigates conversationally and invokes typed commands; the
-  browser does not render its transcript.
+  project brief is the durable handoff between its sessions.
 - `GitWorkspaceManager` creates one isolated worktree per run from
   `origin/main`, releases it after a confirmed merge, and preserves dirty or
   unknown leftovers for operator inspection. It never moves local `main`.

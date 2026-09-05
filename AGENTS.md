@@ -21,7 +21,8 @@ are installed in the image and authenticated by the operator on first boot.
   on the volume. Never copy host credentials into the image, and never trade the
   operator's subscription login for API-key billing.
 - The external agent is the operator's primary conversational interface. It may
-  investigate the project, refine intent and invoke typed Gateship commands.
+	 investigate the project, refine intent and invoke typed Gateship commands.
+	 The project brief is the only durable handoff between external sessions.
   The deterministic runtime, not the conversational agent, owns run state,
   verification and shipping.
 - The operator specification is the execution contract. Do not require planner

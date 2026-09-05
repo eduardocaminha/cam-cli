@@ -183,7 +183,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	providerSource: AgentSettingSource;
 	notificationPermission: BrowserNotificationPermission;
 	brief: ProjectBriefView;
-	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
 	modelSettingsSource: AgentSettingSource;
 	agentDefaults: AgentDefaultsView;
@@ -234,7 +233,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		browserNotificationPermission,
 	);
 	const [brief, setBrief] = useState<ProjectBriefView>(EMPTY_BRIEF);
-	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [modelSettings, setModelSettings] = useState<ModelSettingsView>(emptyModelSettings);
 	const [modelSettingsSource, setModelSettingsSource] = useState<AgentSettingSource>('provider-default');
 	const [agentDefaults, setAgentDefaults] = useState<AgentDefaultsView>({
@@ -279,7 +277,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		setRuns([]); setEvents([]);
 		setWorkspaceNotices([]); setStaleService(null); setGitIdentity(null); setVersion('');
 		setProviders([]); setSelectedProvider('claude'); setProviderSource('provider-default');
-		setBrief(EMPTY_BRIEF); setHandoff(EMPTY_BRIEF);
+		setBrief(EMPTY_BRIEF);
 		setModelSettings(emptyModelSettings()); setModelSettingsSource('provider-default');
 		setChainRuns(EMPTY_CHAIN_RUNS); setExecutorHandoff(EMPTY_EXECUTOR_HANDOFF);
 		setDiagnostics(emptyDiagnostics());
@@ -336,7 +334,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		secondary('Providers', () => fetchProviders(scope), (value) => {
 			setProviders(value.providers); setSelectedProvider(value.selected); setProviderSource(value.source);
 		}),
-		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); setHandoff(value.handoff); }),
+		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); }),
 		secondary('Proposals', () => fetchProposals(scope), setProposals),
 		secondary('Resolved proposals', () => fetchResolvedProposals(scope), (value) => {
 			setResolvedProposals(value.proposals); setResolvedProposalsOmittedCount(value.omittedCount);
@@ -552,7 +550,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		providerSource,
 		notificationPermission,
 		brief,
-		handoff,
 		modelSettings,
 		modelSettingsSource,
 		agentDefaults,
@@ -613,7 +610,6 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		providerSource,
 		notificationPermission,
 		brief,
-		handoff,
 		modelSettings,
 		modelSettingsSource,
 		agentDefaults,
@@ -740,10 +736,8 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			diagnostics={diagnostics}
 			drafts={drafts}
 			brief={brief}
-			chatMessages={[]}
 			events={events}
 			gitIdentity={gitIdentity}
-			handoff={handoff}
 			ideas={ideas}
 			locale={locale}
 			overview={overview}
@@ -777,7 +771,6 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => promoteProposal(proposalId, draft, scope).then((created) =>
 					`${created.id} created from the proposal.`));
 			}}
-			onSendMessage={() => {}}
 			onConnectCodex={() => {
 				const loginWindow = window.open('about:blank', 'gateship-codex-login');
 				send(() => startCodexLogin().then((authUrl) => {

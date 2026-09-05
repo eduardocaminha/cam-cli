@@ -16,7 +16,7 @@ import { printError } from '../logging/color.ts';
 import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
-import { type AgentProviderId, ProviderCallError } from '../runtime/agent-session.ts';
+import type { AgentProviderId } from '../runtime/agent-session.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
 import {
@@ -27,18 +27,11 @@ import {
 	writeClaudeCredential,
 } from '../runtime/claude-credential.ts';
 import {
-	CodexAgentSession,
 	CodexCliExecutor,
 	CodexReviewSession,
 	probeCodexModel,
 } from '../runtime/codex-cli-executor.ts';
 import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
-import {
-	ConversationalOrchestrator,
-	OrchestratorBusyError,
-	type OrchestratorCommand,
-	type OrchestratorTurnResult,
-} from '../runtime/conversational-orchestrator.ts';
 import { DiagnosticTransitionError } from '../runtime/diagnostic-finding.ts';
 import {
 	DIAGNOSTIC_CADENCES,
@@ -152,7 +145,6 @@ import {
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
 import {
-	type OrchestratorMessage,
 	PROJECT_BRIEF_LIMITS,
 	type ProjectBrief,
 	type RunEvent,
@@ -238,13 +230,6 @@ export interface WebServerOptions {
 	/** Test seam for the operator-maintained project brief. */
 	projectBrief?: ProjectBriefAccess;
 	/**
-	 * Test seam for the read-only conversational facade. It is built over the
-	 * deterministic command executor the production orchestrator also runs on.
-	 */
-	orchestrator?: (
-		execute: (command: OrchestratorCommand) => Promise<string>,
-	) => OrchestratorRuntime;
-	/**
 	 * Test seam for the commit the running binary was compiled from (GSHIP-648).
 	 * Production reads `readBuildSha()`, which only resolves to something other
 	 * than null inside a binary `scripts/build-release.sh` produced. `undefined`
@@ -262,15 +247,9 @@ export interface SelfUpdateAccess {
 	close?(): void;
 }
 
-export interface OrchestratorRuntime {
-	listMessages(limit?: number): OrchestratorMessage[];
-	turn(text: string): Promise<OrchestratorTurnResult>;
-	stop(): Promise<void>;
-}
-
 export interface ProjectBriefAccess {
 	get(): ProjectBrief;
-	/** Persists the complete brief and atomically invalidates automatic handoff. */
+	/** Persists the complete brief. */
 	set(brief: ProjectBrief): void;
 }
 
@@ -286,7 +265,6 @@ interface ProjectCycleContext {
 	approveIssue: IssueApprover;
 	issueAbandoner: IssueAbandoner;
 	issueReader: (id: string) => IssueEntry | null;
-	orchestrator: OrchestratorRuntime;
 	close(): Promise<void>;
 }
 
@@ -1353,64 +1331,6 @@ function disconnectClaudeCredential(
 	return Response.json({ ok: true, removed });
 }
 
-async function converse(
-	request: Request,
-	orchestrator: OrchestratorRuntime,
-): Promise<Response> {
-	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
-	let body: unknown;
-	try {
-		body = await request.json();
-	} catch {
-		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'A JSON message is required.' },
-			{ status: 400 },
-		);
-	}
-	const message = body !== null && typeof body === 'object'
-		? (body as { message?: unknown }).message
-		: undefined;
-	if (typeof message !== 'string' || message.trim().length === 0) {
-		return Response.json(
-			{ ok: false, code: 'invalid-request', message: 'A non-empty message is required.' },
-			{ status: 400 },
-		);
-	}
-	try {
-		const turn = await orchestrator.turn(message);
-		return Response.json({ ok: true, turn, messages: orchestrator.listMessages() });
-	} catch (error) {
-		return orchestratorFailureResponse(error);
-	}
-}
-
-function orchestratorFailureResponse(error: unknown): Response {
-	if (error instanceof OrchestratorBusyError) {
-		return Response.json(
-			{ ok: false, code: 'orchestrator-busy', message: error.message },
-			{ status: 409 },
-		);
-	}
-	if (error instanceof ProviderCallError) {
-		return Response.json({
-			ok: false,
-			code: `provider-${error.kind}`,
-			message: error.message,
-			provider: error.provider,
-			kind: error.kind,
-			...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
-		}, { status: 503 });
-	}
-	return Response.json(
-		{
-			ok: false,
-			code: 'orchestrator-failed',
-			message: error instanceof Error ? error.message : String(error),
-		},
-		{ status: 503 },
-	);
-}
-
 /**
  * The issue file belongs to the run while one is in flight. The shipper closes
  * the issue on the run's branch and never on main, so a write here during a run
@@ -2410,9 +2330,7 @@ export function createDefaultRunRuntimeOptions(
 	/**
 	 * The dedicated Claude subscription token (GSHIP-704), read fresh at every
 	 * spawn by the executor, reviewer and the read-only cycle-question
-	 * session -- the same three of the four surfaces this issue names that
-	 * live inside the durable run runtime; the fourth, the conversational
-	 * orchestrator, is wired the same way by `createDefaultOrchestrator`.
+	 * session -- the same three model-calling runtime roles.
 	 * Defaults to "never configured", exactly this function's behavior before
 	 * this issue.
 	 */
@@ -2460,175 +2378,6 @@ export function createDefaultRunRuntimeOptions(
 		// admitted against, so a just-shipped issue is never re-offered.
 		listBacklog: () => readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF),
 	};
-}
-
-async function executeOrchestratorCommand(
-	command: OrchestratorCommand,
-	runtime: RunRuntime,
-	issueIntake: IssueIntakeWriter,
-	issueSpecifier: IssueSpecifier,
-	issueApprover: IssueApprover,
-	issueAbandoner: IssueAbandoner,
-	admission?: { start(): void; resume(runId: string): void },
-): Promise<string> {
-	switch (command.type) {
-		case 'none':
-			return 'No command requested.';
-		case 'update_project_brief':
-			runtime.setProjectBrief(command.brief);
-			return 'Project brief updated and automatic handoff cleared.';
-		case 'create_issue': {
-			const issue = await issueIntake(command);
-			return `${issue.id} created in the backlog.`;
-		}
-		case 'create_and_start_issue': {
-			const issue = await issueIntake(command, { approve: true });
-			// The publication is already durable: a failing start must report the
-			// created id instead of escaping as a generic refusal.
-			try {
-				admission?.start();
-				const run = await runtime.startRun(issue.id);
-				return `${issue.id} created in the backlog and run ${run.id} started.`;
-			} catch (error) {
-				const reason = error instanceof Error ? error.message : String(error);
-				return `${issue.id} was created in the backlog, but the run did not start: ${reason}.`
-					+ ` Use start_run with ${issue.id} when you want to start it.`;
-			}
-		}
-		// The three typed commands that rewrite an existing issue file ask the same
-		// ownership question the operator routes ask, so a conversation cannot do
-		// on main what the screen refuses while a run is in flight.
-		case 'specify_issue': {
-			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = await issueSpecifier(command.issueId, command);
-			return `${issue.id} specified in the backlog.`;
-		}
-		case 'approve_issue': {
-			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = await issueApprover(command.issueId);
-			return `${issue.id} approved in the backlog.`;
-		}
-		case 'abandon_issue': {
-			assertIssueFileIsFree(runtime, command.issueId);
-			const issue = await issueAbandoner(command.issueId, command);
-			return `${issue.id} abandoned in the backlog.`;
-		}
-		case 'start_run': {
-			admission?.start();
-			const run = await runtime.startRun(command.issueId);
-			return `Run ${run.id} started for ${run.issueId}.`;
-		}
-		case 'resume_run': {
-			admission?.resume(command.runId);
-			const run = runtime.resumeRun(command.runId, command.guidance);
-			return `Run ${run.id} retomada.`;
-		}
-		case 'cancel_run': {
-			const run = await runtime.cancelRun(command.runId);
-			if (run === null) throw new Error(`run not found: ${command.runId}`);
-			return `Run ${run.id} is ${run.state}.`;
-		}
-		case 'abandon_run': {
-			const run = runtime.abandonRun(command.runId);
-			return `Run ${run.id} abandoned without resuming the provider.`;
-		}
-		case 'ship_run': {
-			const run = runtime.shipRun(command.runId);
-			return `Shipping started for run ${run.id}.`;
-		}
-	}
-}
-
-/**
- * Limits enforced when pending proposals ride along in the orchestrator
- * context: a large inbox must not dominate the prompt, and how many
- * proposals were left out of the window is always reported, never silently
- * dropped.
- */
-const ORCHESTRATOR_PENDING_PROPOSALS_LIMITS = {
-	maxItems: 5,
-	evidence: 200,
-} as const;
-
-interface OrchestratorPendingProposalView {
-	id: string;
-	title: string;
-	evidence: string;
-	sourceIssueId: string;
-	sourceRunId: string;
-	createdAt: string;
-}
-
-interface OrchestratorPendingProposalsView {
-	pending: OrchestratorPendingProposalView[];
-	omittedCount: number;
-}
-
-/**
- * The most recent pending proposals, read through the same
- * `listPendingProposals` the operator's inbox API already uses (GSHIP-635).
- * Undefined when nothing is pending, so an idle inbox leaves the snapshot
- * exactly as it read before this existed.
- */
-function readPendingProposalsContext(runtime: RunRuntime): OrchestratorPendingProposalsView | undefined {
-	const all = runtime.listPendingProposals();
-	if (all.length === 0) return undefined;
-	const { maxItems, evidence: evidenceLimit } = ORCHESTRATOR_PENDING_PROPOSALS_LIMITS;
-	const kept = all.slice(-maxItems);
-	const pending = kept.map((proposal) => ({
-		id: proposal.id,
-		title: proposal.title,
-		evidence: proposal.evidence.length > evidenceLimit
-			? `${proposal.evidence.slice(0, evidenceLimit)}…`
-			: proposal.evidence,
-		sourceIssueId: proposal.sourceIssueId,
-		sourceRunId: proposal.sourceRunId,
-		createdAt: proposal.createdAt,
-	}));
-	return { pending, omittedCount: all.length - kept.length };
-}
-
-/**
- * The read-only snapshot handed to every orchestrator turn. Exported for
- * direct unit coverage: the production context lives inside a closure that
- * also wires a live provider CLI, which a unit test has no reason to spin up.
- */
-export function buildOrchestratorContext(
-	cwd: string,
-	runtime: RunRuntime,
-	operatorProfile: Pick<ProjectRegistry, 'getOperatorProfile'> = runtime,
-) {
-	const pendingProposals = readPendingProposalsContext(runtime);
-	return {
-		provider: runtime.getSelectedProvider(),
-		operatorProfile: operatorProfile.getOperatorProfile(),
-		backlog: readIdleSnapshotState(cwd).backlog,
-		runs: runtime.listRuns(10),
-		workspaceNotices: runtime.listWorkspaceNotices(),
-		...(pendingProposals === undefined ? {} : { pendingProposals }),
-	};
-}
-
-function createDefaultOrchestrator(
-	cwd: string,
-	runtime: RunRuntime,
-		execute: (command: OrchestratorCommand) => Promise<string>,
-	/** See `createDefaultRunRuntimeOptions`'s own parameter of the same name (GSHIP-704). */
-	resolveClaudeCredential: () => string | undefined = () => undefined,
-	operatorProfile: Pick<ProjectRegistry, 'getOperatorProfile'> = runtime,
-): ConversationalOrchestrator {
-	const model = (providerId: AgentProviderId) =>
-		modelResolver(() => runtime.getModelSettings(), providerId, 'orchestrator');
-	return new ConversationalOrchestrator({
-		cwd,
-		persistence: runtime,
-		sessions: {
-			claude: new ClaudeAgentSession({ resolveModel: model('claude'), resolveClaudeCredential }),
-			codex: new CodexAgentSession({ resolveModel: model('codex') }),
-		},
-		context: () => buildOrchestratorContext(cwd, runtime, operatorProfile),
-		execute,
-	});
 }
 
 /**
@@ -2939,40 +2688,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		issueAbandoner,
 		issueReader,
 	} as ProjectCycleContext;
-	bootContext.orchestrator = options.orchestrator?.((command) =>
-		executeOrchestratorCommand(
-			command,
-			bootContext.runtime,
-			bootContext.issueIntake,
-			bootContext.issueSpecifier,
-			bootContext.approveIssue,
-			bootContext.issueAbandoner,
-			{
-				start: () => { projectRuntimes.admitStart(currentProject.id); },
-				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
-			},
-		),
-	) ?? createDefaultOrchestrator(
-		projectRoot,
-		bootContext.runtime,
-		(command) => executeOrchestratorCommand(
-			command,
-			bootContext.runtime,
-			bootContext.issueIntake,
-			bootContext.issueSpecifier,
-			bootContext.approveIssue,
-			bootContext.issueAbandoner,
-			{
-				start: () => { projectRuntimes.admitStart(currentProject.id); },
-				resume: (runId) => { projectRuntimes.admitResume(currentProject.id, runId); },
-			},
-		),
-		resolveClaudeCredentialForSpawn,
-		projectRegistry,
-	);
-	bootContext.close = async () => {
-		if (options.orchestrator === undefined) await bootContext.orchestrator.stop();
-	};
+	bootContext.close = async () => {};
 	const composeProjectRuntime = (project: RegisteredProject): ProjectCycleContext => {
 		ensureProjectStateIgnored(project.root, project.stateDir);
 		const ensureIdentity = cachedGitIdentity(() => ensureGitIdentity(project.root));
@@ -3017,40 +2733,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			),
 			issueReader: (id) => readPublishedIssue(project.root, id),
 		} as ProjectCycleContext;
-		context.orchestrator = options.orchestrator?.((command) =>
-			executeOrchestratorCommand(
-				command,
-				context.runtime,
-				context.issueIntake,
-				context.issueSpecifier,
-				context.approveIssue,
-				context.issueAbandoner,
-				{
-					start: () => { projectRuntimes.admitStart(project.id); },
-					resume: (runId) => { projectRuntimes.admitResume(project.id, runId); },
-				},
-			),
-		) ?? createDefaultOrchestrator(
-			project.root,
-			context.runtime,
-			(command) => executeOrchestratorCommand(
-				command,
-				context.runtime,
-				context.issueIntake,
-				context.issueSpecifier,
-				context.approveIssue,
-				context.issueAbandoner,
-				{
-					start: () => { projectRuntimes.admitStart(project.id); },
-					resume: (runId) => { projectRuntimes.admitResume(project.id, runId); },
-				},
-			),
-			resolveClaudeCredentialForSpawn,
-			projectRegistry,
-		);
 		context.close = async () => {
 			unsubscribe();
-			if (options.orchestrator === undefined) await context.orchestrator.stop();
 			await runtime.stop();
 			await diagnostics.stop();
 			diagnostics.close();
@@ -3276,24 +2960,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/projects/:projectId/brief': {
 				GET: (request) => projectOperation(
 					request.params.projectId,
-					(context) => Response.json({
-						brief: context.projectBrief.get(),
-						handoff: context.runtime.getOrchestratorHandoff(),
-					}),
+					(context) => Response.json({ brief: context.projectBrief.get() }),
 				),
 				PUT: (request) => projectOperation(
 					request.params.projectId,
 					(context) => writeProjectBrief(request, context.projectBrief),
-				),
-			},
-			'/api/projects/:projectId/chat': {
-				GET: (request) => projectOperation(
-					request.params.projectId,
-					(context) => Response.json({ messages: context.orchestrator.listMessages() }),
-				),
-				POST: (request) => projectOperation(
-					request.params.projectId,
-					(context) => converse(request, context.orchestrator),
 				),
 			},
 			'/api/projects/:projectId/issues': {
@@ -3529,15 +3200,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// port is published on the host, e.g. compose.yaml's `127.0.0.1:<port>`.
 			// A route published on any other interface is unauthenticated.
 			//
-			// The automatic handoff rides along on the same read because the screen
-			// shows it beside the brief the operator is correcting. The PUT takes
-			// only the brief; its shared runtime operation clears the generated
-			// handoff atomically rather than accepting a handoff from the browser.
 			'/api/brief': {
-				GET: () => Response.json({
-					brief: projectBrief.get(),
-					handoff: runRuntime.getOrchestratorHandoff(),
-				}),
+				GET: () => Response.json({ brief: projectBrief.get() }),
 				PUT: (request) => writeProjectBrief(request, projectBrief),
 			},
 			// The per-role model and effort choice. The read is unguarded like every
@@ -3588,10 +3252,6 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					stateDir,
 					request.params.channelId,
 				),
-			},
-			'/api/chat': {
-				GET: () => Response.json({ messages: bootContext.orchestrator.listMessages() }),
-				POST: (request) => converse(request, bootContext.orchestrator),
 			},
 			'/api/providers/:providerId/select': {
 				POST: (request) => selectProvider(

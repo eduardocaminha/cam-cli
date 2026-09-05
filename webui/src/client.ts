@@ -24,7 +24,6 @@ export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
 export const PROVIDERS_PATH = '/api/providers';
-export const CHAT_PATH = '/api/chat';
 export const BRIEF_PATH = '/api/brief';
 export const PROPOSALS_PATH = '/api/proposals';
 export const RESOLVED_PROPOSALS_PATH = '/api/proposals/resolved';
@@ -73,10 +72,6 @@ function snapshotPathOf(scope: ProjectScope): string {
 
 function runsPathOf(scope: ProjectScope): string {
 	return scope === null ? RUNS_PATH : projectApiPath(scope, '/runs');
-}
-
-function chatPathOf(scope: ProjectScope): string {
-	return scope === null ? CHAT_PATH : projectApiPath(scope, '/chat');
 }
 
 function briefPathOf(scope: ProjectScope): string {
@@ -458,10 +453,7 @@ export interface ProviderStatusView {
 	credential?: { envManaged: boolean };
 }
 
-/**
- * The four fields the brief and the automatic handoff both carry. One shape,
- * two records: the operator writes the first and only reads the second.
- */
+/** The durable context maintained by the operator. */
 export interface ProjectBriefView {
 	objective: string;
 	decisions: readonly string[];
@@ -470,10 +462,7 @@ export interface ProjectBriefView {
 }
 
 export interface BriefSnapshot {
-	/** Authoritative human context, the only one the screen can write. */
 	brief: ProjectBriefView;
-	/** Session state written by orchestrator turns; read-only here. */
-	handoff: ProjectBriefView;
 }
 
 export const MODEL_PROVIDER_IDS = ['claude', 'codex'] as const;
@@ -509,52 +498,6 @@ export function emptyModelSettings(): ModelSettingsView {
 		reviewer: { model: '', effort: '' },
 	});
 	return { claude: roles(), codex: roles() };
-}
-
-/**
- * One orchestrator turn's own reported usage (GSHIP-634). Mirrors
- * OrchestratorMessageUsage in src/runtime/run-store.ts: a field the CLI never
- * reported stays absent, never a fabricated zero.
- */
-export interface ChatMessageUsageView {
-	model?: string;
-	effort?: string;
-	totalCostUsd?: number;
-	inputTokens?: number;
-	outputTokens?: number;
-	cacheCreationInputTokens?: number;
-	cacheReadInputTokens?: number;
-	thinkingTokens?: number;
-}
-
-export interface ChatMessageView {
-	seq: number;
-	providerId: ProviderStatusView['id'];
-	role: 'operator' | 'orchestrator' | 'system';
-	text: string;
-	createdAt: string;
-	/** Present only on the orchestrator's own message, and only when that turn reported usage. */
-	usage?: ChatMessageUsageView;
-}
-
-/** A cost total plus exactly how many orchestrator turns it spans (GSHIP-634). */
-export interface ChatCostAggregate {
-	totalCostUsd: number | null;
-	turnCount: number;
-}
-
-/**
- * The expected cost across every orchestrator turn the transcript carries a
- * usage event for -- never the executor's or the reviewer's own runs, which
- * report through RunCostView instead. A turn that reported nothing measurable
- * contributes nothing to the sum and is not counted in `turnCount`, the same
- * absence-over-zero rule GSHIP-623 established for a run's cost.
- */
-export function aggregateChatTurnCosts(messages: readonly ChatMessageView[]): ChatCostAggregate {
-	const known = messages.filter((message) => message.usage?.totalCostUsd !== undefined);
-	if (known.length === 0) return { totalCostUsd: null, turnCount: 0 };
-	const totalCostUsd = known.reduce((sum, message) => sum + (message.usage?.totalCostUsd ?? 0), 0);
-	return { totalCostUsd, turnCount: known.length };
 }
 
 interface SnapshotPayload {
@@ -651,13 +594,8 @@ interface ClaudeCredentialPayload extends CommandPayload {
 	removed?: boolean;
 }
 
-interface ChatPayload extends CommandPayload {
-	messages?: ChatMessageView[];
-}
-
 interface BriefPayload extends CommandPayload {
 	brief?: Partial<ProjectBriefView>;
-	handoff?: Partial<ProjectBriefView>;
 }
 
 async function readJson<T>(response: Response, what: string): Promise<T> {
@@ -1020,22 +958,6 @@ export async function fetchProviders(scope: ProjectScope = null): Promise<Provid
 	};
 }
 
-export async function fetchChat(scope: ProjectScope = null): Promise<ChatMessageView[]> {
-	const payload = await readJson<ChatPayload>(await fetch(chatPathOf(scope)), 'Conversation');
-	return payload.messages ?? [];
-}
-
-export async function sendChat(message: string, scope: ProjectScope = null): Promise<string> {
-	const response = await fetch(chatPathOf(scope), {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ message }),
-	});
-	const payload = (await response.json()) as ChatPayload;
-	if (!response.ok) throw new Error(payload.message ?? `Conversation rejected (${response.status}).`);
-	return 'Orchestrator response received.';
-}
-
 /** A record whose fields are all missing reads as the empty one, not as a hole. */
 function briefRecord(record: Partial<ProjectBriefView> | undefined): ProjectBriefView {
 	return {
@@ -1046,17 +968,12 @@ function briefRecord(record: Partial<ProjectBriefView> | undefined): ProjectBrie
 	};
 }
 
-/** One read for both records: the brief to edit and the handoff to read. */
 export async function fetchBrief(scope: ProjectScope = null): Promise<BriefSnapshot> {
 	const payload = await readJson<BriefPayload>(await fetch(briefPathOf(scope)), 'Brief');
-	return { brief: briefRecord(payload.brief), handoff: briefRecord(payload.handoff) };
+	return { brief: briefRecord(payload.brief) };
 }
 
-/**
- * The whole brief is overwritten at once. The handoff is never sent back; the
- * service invalidates it as part of the successful brief write. A refusal
- * surfaces the server's own validation message.
- */
+/** The whole brief is overwritten at once. A refusal surfaces the server's validation message. */
 export async function saveBrief(brief: ProjectBriefView, scope: ProjectScope = null): Promise<string> {
 	const response = await fetch(briefPathOf(scope), {
 		method: 'PUT',

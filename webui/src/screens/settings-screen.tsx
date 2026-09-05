@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
-import { ChainRunsPanel, DiagnosticSchedulePanel, ExecutorHandoffPanel, HandoffPanel, ModelSettingsPanel, ProjectBriefPanel, ProjectPanel, ProvidersPanel } from './settings.tsx';
+import { ChainRunsPanel, DiagnosticSchedulePanel, ExecutorHandoffPanel, ModelSettingsPanel, ProjectBriefPanel, ProjectPanel, ProvidersPanel } from './settings.tsx';
 
 export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNode }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
@@ -77,7 +77,6 @@ export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNod
 						onSaveBrief={props.onSaveBrief}
 						pending={props.pending}
 					/></OperationalReadPanel>
-					<OperationalReadPanel detail={failed('Brief')} loaded={loaded('Brief')} locale={props.locale} pending={pending('Brief')} resource="Brief"><HandoffPanel catalog={catalog} handoff={props.handoff} /></OperationalReadPanel>
 					{props.removePanel}
 				</TabsPanel>
 			</Tabs>

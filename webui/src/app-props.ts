@@ -2,7 +2,6 @@ import type {
 	ChainRunsView,
 	AgentDefaultsView,
 	AgentSettingSource,
-	ChatMessageView,
 	CreateProjectInput,
 	DiagnosticCadenceView,
 	DiagnosticsView,
@@ -55,8 +54,6 @@ export interface AppProps {
 	events: readonly RunEventView[];
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
-	/** Retained for the dormant transcript component; routed UI never reads it. */
-	chatMessages: readonly ChatMessageView[];
 	brief: ProjectBriefView;
 	project: ProjectStatusView;
 	projects: readonly RegisteredProjectView[];
@@ -65,7 +62,6 @@ export interface AppProps {
 	overviewError?: string | null;
 	operatorProfile: OperatorProfileView;
 	suggestedTimezone: string;
-	handoff: ProjectBriefView;
 	modelSettings: ModelSettingsView;
 	modelSettingsSource: AgentSettingSource;
 	agentDefaults: AgentDefaultsView;
@@ -114,8 +110,6 @@ export interface AppProps {
 	onRemoveResendCredential: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onResetProvider: () => void;
-	/** Retained for the dormant transcript component; routed UI never invokes it. */
-	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
 	onSaveModelSettings: (settings: ModelSettingsView) => void;
 	onResetModelSettings: () => void;

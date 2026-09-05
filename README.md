@@ -142,16 +142,16 @@ a different port.
 
 From the browser you can:
 
-1. describe the work once, in conversation with a read-only orchestrator that
-   investigates the repository;
-2. authorize it explicitly, and that same turn records the task in the backlog
-   and starts the run instead of asking you for two separate requests;
+1. describe and refine the work with an external agent, which invokes typed
+   Gateship commands;
+2. maintain the project brief as the durable handoff between external sessions,
+   then authorize the task explicitly;
 3. let decisions interrupt the work and wait for you as `Needs you`;
 4. follow progress as `Working`, with public agent text, tool names,
    verification, and review over SSE;
 5. enable local browser notifications, so a decision, a failure, or the
    completed run reaches you outside the tab;
-6. switch between Claude and Codex without losing the durable conversation;
+6. switch between Claude and Codex without losing durable run state;
 7. run an optional advisory React diagnostic against an isolated exact-SHA
    checkout, manually or on a daily/weekly schedule while the project is idle,
    then dismiss a finding or promote it into an unapproved task;
@@ -271,8 +271,8 @@ volume remain writable by design.
 
 ```text
 operator task
-  -> read-only conversational orchestrator
-  -> at most one typed Gateship command
+  -> external conversational agent
+  -> typed Gateship command
   -> remote-main backlog record
   -> isolated .gship/worktrees/<run>
   -> selected Claude/Codex implementation session
@@ -315,8 +315,6 @@ The current runtime is deliberately small:
 - `src/runtime/agent-session.ts`: provider-neutral session contract;
 - `src/runtime/agent-process.ts`: shared child/process-group lifecycle;
 - `src/runtime/child-env.ts`: allowlisted agent and GitHub CLI environments;
-- `src/runtime/conversational-orchestrator.ts`: read-only conversation and the
-  single typed-command boundary;
 - `src/runtime/claude-cli-*`: Claude stream-json execution and locked review;
 - `src/runtime/codex-cli-*`: Codex JSONL execution and built-in read-only review;
 - `src/runtime/codex-app-server.ts`: managed ChatGPT browser login without
@@ -337,13 +335,13 @@ state, child processes, and HTTP lifecycle.
 
 ## Durable state and recovery
 
-Run metadata, provider selection, events, the public orchestrator transcript,
-and one native orchestrator session id per provider live in
-`.gship/runtime.sqlite`. The shared transcript is the handoff between Claude,
-Codex, and later service sessions. Each run stores its own provider, native
-session id, and worktree path. When the service restarts, an unowned in-flight
-run becomes `interrupted`; the operator can resume it instead of losing the
-workspace or silently starting a duplicate run.
+Run metadata, provider selection, events, the operator-maintained project brief,
+and one native cycle-resolver session id per provider live in
+`.gship/runtime.sqlite`. The brief is the durable handoff between external
+agent sessions. Each run stores its own provider, native session id, and
+worktree path. When the service restarts, an unowned in-flight run becomes
+`interrupted`; the operator can resume it instead of losing the workspace or
+silently starting a duplicate run.
 
 After a confirmed merge, Gateship removes the clean managed worktree, its local
 branch, and its stale remote-tracking ref. A run that ends `failed` releases the
@@ -384,14 +382,12 @@ that boundary; the selected repository keeps its own `.gship` state on the
 bind. This is process containment for a trusted single operator, not a
 multi-tenant secret sandbox.
 
-The conversational orchestrator is mechanically read-only: Claude exposes only
+The cycle-question resolver is mechanically read-only: Claude exposes only
 Read/Grep/Glob with MCP and slash commands disabled; Codex runs in its read-only
 sandbox with user configuration/MCP disabled. Review uses the same restrictions
-in a fresh independent session. Only the service interprets and executes the
-orchestrator's typed command. An explicitly requested project-brief update is
-therefore persisted by the service, not the agent process; the same atomic
-operation used by the trusted editor also clears the generated automatic
-handoff, while preserving the transcript and provider sessions.
+in a fresh independent session. The external agent invokes typed service
+commands, while project-brief updates stay explicitly authorized and are
+persisted by the service.
 
 Agent and GitHub CLI children receive an environment allowlist, so unrelated
 PATs and API keys are not inherited accidentally. Verification commands are

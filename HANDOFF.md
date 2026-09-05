@@ -21,7 +21,8 @@ credential-blind: no provider or GitHub token ever reaches the UI or SQLite.
 
 The external agent is the primary conversational interface. It may investigate
 and return typed Gateship commands; the deterministic runtime alone owns
-mutations and lifecycle state. The browser opens a project's Runs surface,
+mutations and lifecycle state. The project brief is the only durable handoff
+between external sessions. The browser opens a project's Runs surface,
 while keeping Central, Runs, Trabalho and Ajustes available. Approved runs
 start from a fresh `origin/main` worktree without moving local `main`, execute
 the task's explicit verification, receive an independent mechanically read-only
