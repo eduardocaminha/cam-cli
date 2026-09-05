@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-794",
   "title": "Preservar o grupo de controles na moldura alinhada",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T10:25:54.932Z",
-  "updatedAt": "2026-09-05T10:25:54.932Z",
+  "updatedAt": "2026-09-05T10:33:08.269Z",
   "description": "Corrigir a regressão visual derivada de GSHIP-793 sem desfazer a moldura compartilhada.\n\nEvidência no v0.423.0, viewport 1728 px, sidebar aberta e inspector aberto: idioma, tema e largura terminam em x=1307, enquanto o botão do inspector começa em x=1659. O intervalo de 352 px fragmenta um único grupo de controles que antes permanecia unido no canto superior direito.\n\nContrato:\n- Manter o alinhamento exato de GSHIP-793: botão esquerdo e anel externo da coluna principal com delta horizontal zero nos estados centralizado/largo, sidebar aberta/fechada e inspector aberto/fechado.\n- Idioma, tema, largura e controle do inspector permanecem um único grupo visual, na mesma ordem, sem lacuna estrutural entre eles.\n- Com inspector aberto em xl ou maior, o grupo inteiro ocupa a extremidade direita da coluna do inspector e o botão direito coincide com o anel externo do card do inspector.\n- Com inspector fechado, o grupo preservva o posicionamento anterior do shell no canto superior direito; não deve alterar o cálculo da coluna principal.\n- Abaixo de xl, o grupo permanece disponível e unido, sem sobreposição com o botão esquerdo.\n- Renderizar cada controle uma única vez sempre que possível; não introduzir IDs duplicados, offsets específicos por rota ou position: fixed. Posicionamento estrutural dentro do shell é permitido.\n- Preservar o padding apenas horizontal e superior, a altura da faixa, a área de scroll, os hit targets, os breakpoints e a ausência de animação.\n- Reutilizar a primitiva ShellContentFrame e centralizar a largura reservada do inspector em uma única constante/classe estrutural, sem repetir valores divergentes.\n- Adicionar cobertura determinística da coesão do grupo e dos estados responsivos.",
   "specSource": "operator",
   "spec": {
