@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-799",
   "title": "Eliminar a sessão órfã da antiga conversa",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T13:40:31.318Z",
-  "updatedAt": "2026-09-05T13:40:31.318Z",
+  "updatedAt": "2026-09-05T13:45:02.573Z",
   "description": "Remover o último resíduo da Conversa aposentada que ficou fora de GSHIP-798: a criação da tabela orchestrator_sessions e os métodos getOrchestratorSession/setOrchestratorSession de RunStore e RunRuntime. O AgentCycleQuestionResolver usa randomUUID e uma sessão fresca por pergunta, portanto não depende dessa persistência; preservar seu funcionamento, o slot interno de modelo orchestrator e a telemetria run.cycle-response. Atualizar a cobertura de RunStore para provar que bancos novos não criam orchestrator_sessions, orchestrator_messages nem orchestrator_handoff, enquanto bancos antigos contendo as três tabelas continuam abrindo sem DROP, leitura ou mutação desses dados. Remover comentários ou fixtures que afirmem dependência inexistente. Não alterar brief, rotas, UI, executor, reviewer ou autenticação.",
   "specSource": "operator",
   "spec": {

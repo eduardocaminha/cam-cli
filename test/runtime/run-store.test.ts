@@ -846,19 +846,27 @@ describe('operator profile', () => {
 });
 
 describe('project brief', () => {
-	test('does not create conversational tables in a new database and opens a legacy database without querying them', () => {
+	test('does not create conversational tables in a new database and leaves legacy tables untouched', () => {
 		const freshPath = join(createTestTmpdir('gship-run-store-fresh-schema-'), 'runtime.sqlite');
 		const fresh = new RunStore(freshPath);
 		fresh.close();
 		const freshDb = new Database(freshPath);
 		const freshTables = freshDb.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+		expect(freshTables.map((table) => table.name)).not.toContain('orchestrator_sessions');
 		expect(freshTables.map((table) => table.name)).not.toContain('orchestrator_messages');
 		expect(freshTables.map((table) => table.name)).not.toContain('orchestrator_handoff');
 		freshDb.close();
 
 		const dbPath = join(createTestTmpdir('gship-run-store-brief-schema-'), 'runtime.sqlite');
 		const legacy = new Database(dbPath);
-		legacy.exec('CREATE TABLE orchestrator_messages (seq INTEGER PRIMARY KEY); CREATE TABLE orchestrator_handoff (id INTEGER PRIMARY KEY);');
+		legacy.exec(`
+			CREATE TABLE orchestrator_sessions (legacy_value TEXT NOT NULL);
+			CREATE TABLE orchestrator_messages (legacy_value TEXT NOT NULL);
+			CREATE TABLE orchestrator_handoff (legacy_value TEXT NOT NULL);
+			INSERT INTO orchestrator_sessions VALUES ('session');
+			INSERT INTO orchestrator_messages VALUES ('message');
+			INSERT INTO orchestrator_handoff VALUES ('handoff');
+		`);
 		legacy.close();
 
 		const store = new RunStore(dbPath);
@@ -868,8 +876,12 @@ describe('project brief', () => {
 		const db = new Database(dbPath);
 		const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
 		expect(tables.map((table) => table.name)).toContain('project_brief');
+		expect(tables.map((table) => table.name)).toContain('orchestrator_sessions');
 		expect(tables.map((table) => table.name)).toContain('orchestrator_messages');
 		expect(tables.map((table) => table.name)).toContain('orchestrator_handoff');
+		expect(db.query('SELECT legacy_value FROM orchestrator_sessions').get()).toEqual({ legacy_value: 'session' });
+		expect(db.query('SELECT legacy_value FROM orchestrator_messages').get()).toEqual({ legacy_value: 'message' });
+		expect(db.query('SELECT legacy_value FROM orchestrator_handoff').get()).toEqual({ legacy_value: 'handoff' });
 		db.close();
 	});
 
