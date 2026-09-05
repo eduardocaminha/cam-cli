@@ -426,7 +426,7 @@ export function RunCard({
 				)}
 			</CardHeader>
 			{run === null && footer === undefined ? null : (
-				<CardPanel className="flex flex-col gap-4">
+				<CardPanel>
 					{run === null ? null : (
 						<RunCardContent
 							catalog={catalog}

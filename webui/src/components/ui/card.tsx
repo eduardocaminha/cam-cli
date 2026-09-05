@@ -144,7 +144,7 @@ export function CardPanel({
 }: React.ComponentProps<'div'>): React.ReactElement {
 	return (
 		<div className={INNER_CARD} data-slot="card">
-			<div className={cn('flex-1 p-6', className)} data-slot="card-panel" {...props}>
+			<div className={cn('flex flex-1 flex-col gap-4 p-6', className)} data-slot="card-panel" {...props}>
 				{children}
 			</div>
 		</div>

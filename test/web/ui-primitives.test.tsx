@@ -3,8 +3,8 @@
 // The four primitives the operator screen is built from, exercised through
 // static rendering and no DOM harness (ADR-0067). What is asserted is what the
 // operator or a screen reader can observe -- a real disclosure, a progress bar
-// that states its position, a badge that carries its family -- never the class
-// list a component happens to spell.
+// that states its position, a badge that carries its family. Layout primitives
+// additionally assert their spacing roles, because those roles are their API.
 
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -17,6 +17,7 @@ import {
 	CardSummary,
 	CardTitle,
 } from '../../webui/src/components/ui/card.tsx';
+import { CardGrid, CardSplit, CardStack, FormField, FormStack } from '../../webui/src/components/ui/card-layout.tsx';
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
@@ -29,6 +30,22 @@ import {
 import { cn } from '../../webui/src/lib/cn.ts';
 
 describe('ui primitives', () => {
+	test('card composition owns its standard, compact, split and form rhythm', () => {
+		const standard = renderToStaticMarkup(<CardStack><div>one</div><div>two</div></CardStack>);
+		const compact = renderToStaticMarkup(<CardGrid as="ul" compact equalHeight><li>one</li></CardGrid>);
+		const split = renderToStaticMarkup(<CardSplit><div>left</div><div>right</div></CardSplit>);
+		const form = renderToStaticMarkup(<FormStack><FormField htmlFor="name">Name</FormField></FormStack>);
+		expect(standard).toContain('data-slot="card-stack"');
+		expect(standard).toContain('gap-6');
+		expect(compact).toContain('data-density="compact"');
+		expect(compact).toContain('gap-4');
+		expect(compact).toContain('auto-rows-fr');
+		expect(split).toContain('xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]');
+		expect(form).toContain('data-slot="form-stack"');
+		expect(form).toContain('gap-3');
+		expect(form).toContain('data-slot="form-field"');
+		expect(form).toContain('gap-1');
+	});
 	test('a card disclosure is native, and closed never means absent', () => {
 		const html = renderToStaticMarkup(
 			<CardDisclosure>

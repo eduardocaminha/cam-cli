@@ -4,6 +4,7 @@ import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { cn } from '../lib/cn.ts';
@@ -26,15 +27,14 @@ export function RegisterProjectPanel({
 				<CardDescription>{catalog.register.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<form
-					className="flex flex-col gap-3"
+				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
 						const root = fieldReader(event.currentTarget)('project-root');
 						if (root !== '') onRegisterProject(root);
 					}}
 				>
-					<label className="flex flex-col gap-1 text-sm" htmlFor="project-root">
+					<FormField className="text-sm" htmlFor="project-root">
 						<span className="font-medium">{catalog.register.rootLabel}</span>
 						<Input
 							id="project-root"
@@ -43,11 +43,11 @@ export function RegisterProjectPanel({
 						/>
 						<span className="text-muted-foreground text-xs">{catalog.register.rootGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
-					</label>
+					</FormField>
 					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 						{catalog.register.submit}
 					</button>
-				</form>
+				</FormStack>
 			</CardPanel>
 		</Card>
 	);
@@ -73,15 +73,14 @@ export function ImportProjectPanel({
 				<CardDescription>{catalog.import.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<form
-					className="flex flex-col gap-3"
+				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
 						const repository = fieldReader(event.currentTarget)('project-import-repository');
 						if (repository !== '') onImportProject(repository);
 					}}
 				>
-					<label className="flex flex-col gap-1 text-sm" htmlFor="project-import-repository">
+					<FormField className="text-sm" htmlFor="project-import-repository">
 						<span className="font-medium">{catalog.import.repositoryLabel}</span>
 						<Input
 							id="project-import-repository"
@@ -90,14 +89,14 @@ export function ImportProjectPanel({
 						/>
 						<span className="text-muted-foreground text-xs">{catalog.import.destinationGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.import.credentialGuidance}</span>
-					</label>
+					</FormField>
 					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 						{catalog.import.submit}
 					</button>
 					{projectOnboardingPending === 'import'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
 						: null}
-				</form>
+				</FormStack>
 			</CardPanel>
 		</Card>
 	);
@@ -128,8 +127,7 @@ export function CreateProjectPanel({
 				<CardDescription>{catalog.create.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<form
-					className="flex flex-col gap-3"
+				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
 						if (namedRepository === '' || !confirmed) return;
@@ -141,7 +139,7 @@ export function CreateProjectPanel({
 						});
 					}}
 				>
-					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-repository">
+					<FormField className="text-sm" htmlFor="project-create-repository">
 						<span className="font-medium">{catalog.create.repositoryLabel}</span>
 						<Input
 							id="project-create-repository"
@@ -153,8 +151,8 @@ export function CreateProjectPanel({
 							placeholder={catalog.create.repositoryPlaceholder}
 							value={repository}
 						/>
-					</label>
-					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-description">
+					</FormField>
+					<FormField className="text-sm" htmlFor="project-create-description">
 						<span className="font-medium">{catalog.create.descriptionLabel}</span>
 						<Input
 							id="project-create-description"
@@ -165,8 +163,8 @@ export function CreateProjectPanel({
 							placeholder={catalog.create.descriptionPlaceholder}
 							value={description}
 						/>
-					</label>
-					<label className="flex flex-col gap-1 text-sm" htmlFor="project-create-visibility">
+					</FormField>
+					<FormField className="text-sm" htmlFor="project-create-visibility">
 						<span className="font-medium">{catalog.create.visibilityLabel}</span>
 						<SelectField
 							id="project-create-visibility"
@@ -181,7 +179,7 @@ export function CreateProjectPanel({
 							}}
 							value={visibility}
 						/>
-					</label>
+					</FormField>
 					{visibility === 'public' ? (
 						<p className="text-destructive text-sm" role="alert">{catalog.create.publicWarning}</p>
 					) : null}
@@ -204,7 +202,7 @@ export function CreateProjectPanel({
 					{projectOnboardingPending === 'create'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
-				</form>
+				</FormStack>
 			</CardPanel>
 		</Card>
 	);
@@ -232,7 +230,7 @@ export function UnregisterProjectPanel({
 				<CardTitle>{catalog.remove.title}</CardTitle>
 				<CardDescription>{catalog.remove.description}</CardDescription>
 			</CardHeader>
-			<CardPanel className="flex flex-col gap-3">
+			<CardPanel>
 				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
 				<label className="flex items-start gap-2 text-sm">
 					<input

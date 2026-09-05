@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-802",
   "title": "Padronizar espaçamento de cards, stacks e grids da interface",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T17:28:06.906Z",
-  "updatedAt": "2026-09-05T17:28:06.906Z",
+  "updatedAt": "2026-09-05T17:38:59.039Z",
   "description": "Auditar e padronizar margens, paddings e gaps de todas as composições de cards da web UI. Criar uma API pequena e compartilhada de layout para cards, sem novos subsistemas: ritmo standard de 24px para distância entre cards, colunas de cards e seções principais; ritmo compact de 16px para grids de métricas e conteúdo interno de painéis; ritmo de formulário de 12px entre campos e 4px entre label, controle e ajuda. O container, não cada card, deve ser dono do espaçamento entre irmãos. Preservar o aro externo contado de 7px e sua geometria. Formalizar grids standard, compactos, equal-height e split-column por composição compartilhada, mantendo semântica ul/div e colapso para uma coluna no mobile. Aplicar às telas Overview, Runs, Trabalho, Ajustes, gestão de projetos, onboarding, estados vazios/indisponíveis e aos componentes Card, CardDisclosure, CardPanel, Stat e AttentionCard. CardHeader deve manter inset horizontal de 24px e vertical compacto de 16px; CardPanel deve ter inset de 24px e stack interno padrão de 16px; Stat, AttentionCard e estados operacionais compactos devem usar inset de 16px. Remover classes duplicadas e exceções sem justificativa, sem mudar conteúdo, ordem, rotas, comportamento, cores, raios ou a hierarquia informacional. Atualizar o design system e testes para cobrir os papéis de espaçamento e impedir novos gaps arbitrários entre cards.",
   "specSource": "operator",
   "spec": {

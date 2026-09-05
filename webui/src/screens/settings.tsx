@@ -5,6 +5,7 @@ import type { AppProps } from '../app-props.ts';
 import { MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS, emptyModelSettings } from '../client.ts';
 import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
+import { FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
@@ -560,8 +561,7 @@ export function ModelSettingsPanel({
 			title={catalog.models.title}
 	>
 		<AgentSourceNotice catalog={catalog} source={modelSettingsSource} />
-		<form
-				className="flex flex-col gap-6"
+		<FormStack
 				// Re-synced with the server's answer after a save, the only thing that
 				// changes this record while the operator is looking at it.
 				key={JSON.stringify(modelSettings)}
@@ -581,7 +581,7 @@ export function ModelSettingsPanel({
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.models.save}
 				</button>
-			</form>
+			</FormStack>
 		{modelSettingsSource === 'project' ? (
 			<button className={cn(BUTTON_CLASS, 'self-start')} disabled={pending} onClick={onResetModelSettings} type="button">
 				{catalog.agentSources.resetModels}
@@ -600,8 +600,7 @@ export function AgentDefaultsPanel({
 }: Pick<AppProps, 'agentDefaults' | 'pending' | 'onSaveAgentDefaults'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel actionLabels={catalog.disclosure} description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
-			<form
-				className="flex flex-col gap-6"
+			<FormStack
 				key={JSON.stringify(agentDefaults)}
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -627,7 +626,7 @@ export function AgentDefaultsPanel({
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.agentDefaults.save}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
@@ -984,8 +983,7 @@ export function ProjectBriefPanel({
 			open
 			title={catalog.brief.title}
 		>
-			<form
-				className="flex flex-col gap-4"
+			<FormStack
 				key={JSON.stringify(brief)}
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -1026,7 +1024,7 @@ export function ProjectBriefPanel({
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.brief.save}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
@@ -1087,8 +1085,7 @@ export function OperatorProfilePanel({
 			open
 			title={catalog.operator.title}
 		>
-			<form
-				className="flex flex-col gap-4"
+			<FormStack
 				key={JSON.stringify([operatorProfile, suggestedTimezone])}
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -1123,7 +1120,7 @@ export function OperatorProfilePanel({
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.operator.save}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
@@ -1149,9 +1146,8 @@ export function DiagnosticSchedulePanel({
 			description={catalog.diagnostics.description}
 			title={catalog.diagnostics.title}
 		>
-			<form
+			<FormStack
 				aria-busy={active}
-				className="flex flex-col gap-4"
 				key={JSON.stringify(schedule)}
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -1195,7 +1191,7 @@ export function DiagnosticSchedulePanel({
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.diagnostics.save}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
