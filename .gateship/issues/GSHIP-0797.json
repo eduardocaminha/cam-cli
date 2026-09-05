@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-797",
+  "title": "Rebaixar a marca para uma assinatura discreta da sidebar",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-05T12:05:48.103Z",
+  "updatedAt": "2026-09-05T12:05:48.103Z",
+  "description": "Na sidebar desktop aberta, remover o wordmark do topo, fazer a Central de controle ocupar a primeira posição visual e colocar no rodapé, abaixo de Ajustes globais, uma assinatura discreta com símbolo Gateship de 18 a 20 px, nome pequeno e versão em texto secundário. Na sidebar recolhida, manter no rodapé apenas o símbolo pequeno, corretamente centralizado na mesma coluna dos controles. A marca não deve competir com a navegação nem funcionar como uma segunda entrada para a Central. Preservar o cabeçalho compacto e todos os destinos em 390 px, os dois idiomas, temas, foco visível e os estados aberto/recolhido. Não adicionar animação à alternância rotineira. Atualizar o contrato de design para registrar a hierarquia.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Na sidebar desktop aberta, remover o wordmark do topo, fazer a Central de controle ocupar a primeira posição visual e colocar no rodapé, abaixo de Ajustes globais, uma assinatura discreta com símbolo Gateship de 18 a 20 px, nome pequeno e versão em texto secundário. Na sidebar recolhida, manter no rodapé apenas o símbolo pequeno, corretamente centralizado na mesma coluna dos controles. A marca não deve competir com a navegação nem funcionar como uma segunda entrada para a Central. Preservar o cabeçalho compacto e todos os destinos em 390 px, os dois idiomas, temas, foco visível e os estados aberto/recolhido. Não adicionar animação à alternância rotineira. Atualizar o contrato de design para registrar a hierarquia.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "1ff53ceec751c78c56cf4150d3173c03e915a2d306fdc4d1e41f589a20faab17",
+    "approvedAt": "2026-09-05T12:05:48.103Z"
+  }
+}
