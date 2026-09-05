@@ -56,7 +56,11 @@ export function handleProjectShortcut(
 export function App(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	const currentProject = props.projects.find((project) => project.current) ?? null;
-	const selection = routeSelection(props.surfaceRoute ?? props.route, currentProject?.id ?? null);
+	const selection = routeSelection(
+		props.surfaceRoute ?? props.route,
+		currentProject?.id ?? null,
+		props.selectedProjectId ?? null,
+	);
 	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
@@ -82,7 +86,7 @@ export function App(props: AppProps): React.ReactElement {
 	return (
 		<AppShell
 			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={showInspectorToggle} sidebarOpen={sidebarOpen} />}
-			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
+			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={props.selectedProjectId ?? null} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>
 			{props.operationalBoundary?.state === 'loading' ? <InitialOperationalLoading locale={props.locale} /> : null}

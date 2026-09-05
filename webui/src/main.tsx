@@ -108,6 +108,12 @@ import {
 } from './notifications.ts';
 import { clientNavigationTarget } from './navigation.ts';
 import {
+	PROJECT_SELECTION_STORAGE_KEY,
+	reconciledProjectSelection,
+	readProjectSelection,
+	writeProjectSelection,
+} from './project-selection.ts';
+import {
 	createOperationalRefreshCoalescer,
 	createOperationalSnapshotCycle,
 	beginOperationalRefresh,
@@ -594,6 +600,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	const [pathname, setPathname] = useState(window.location.pathname);
 	const [surfacePathname, setSurfacePathname] = useState(window.location.pathname);
+	const [selectedProjectId, setSelectedProjectId] = useState(() =>
+		readProjectSelection(() => window.localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)));
 	const [, startRouteTransition] = useTransition();
 	const scope = projectIdOf(pathname);
 	const {
@@ -652,6 +660,17 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const [projectOnboardingPending, setProjectOnboardingPending] =
 		useState<'create' | 'import' | null>(null);
+	const routeProjectId = projectIdOf(pathname);
+	useEffect(() => {
+		// Wait for the registry before accepting or clearing browser state. This
+		// makes a direct project URL update the preference and drops a project
+		// removed since the last visit, without selecting a project by default.
+		if (snapshotScope !== scope) return;
+		const next = reconciledProjectSelection(routeProjectId, selectedProjectId, projects);
+		if (next === selectedProjectId) return;
+		setSelectedProjectId(next);
+		writeProjectSelection(window.localStorage, next);
+	}, [projects, routeProjectId, scope, selectedProjectId, snapshotScope]);
 	const selectLocale = (selectedLocale: Locale) => {
 		applyLocalePreference(
 			selectedLocale,
@@ -873,6 +892,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			proposals={proposals}
 			project={project}
 			projects={projects}
+			selectedProjectId={selectedProjectId}
 			operatorProfile={operatorProfile}
 			providers={providers}
 			resolvedProposals={resolvedProposals}
