@@ -115,6 +115,7 @@ import {
 import {
 	applyLocalePreference,
 	DEFAULT_LOCALE,
+	LOCALE_CATALOG,
 	type Locale,
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
@@ -4302,12 +4303,45 @@ describe('operator shell', () => {
 		expect(signature).toContain('text-sidebar-foreground/50');
 	});
 
-	test('the collapsed rail keeps its attention signal and a centered footer mark', () => {
-		const rail = renderToStaticMarkup(<ShellRail needsYou />);
+	test('the collapsed rail is compact operational navigation with a centered footer mark', () => {
+		const rail = renderToStaticMarkup(
+			<ShellRail
+				catalog={LOCALE_CATALOG['en-US'].shell}
+				projects={[CURRENT_PROJECT]}
+				selection={routeSelection('/projects/project-current/work', CURRENT_PROJECT.id)}
+				status={{ label: 'Needs you', acid: true }}
+			/>,
+		);
 		const signatureStart = rail.indexOf('data-slot="sidebar-signature"');
 		const signature = rail.slice(rail.lastIndexOf('<div', signatureStart), rail.indexOf('</div>', signatureStart));
+		const navStart = rail.indexOf('<nav aria-label="Navigation"');
+		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
 
 		expect(rail).toContain('lg:w-18');
+		expect(nav).toContain('lg:flex-1');
+		expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('href="/projects/project-current/runs"'));
+		expect(nav.indexOf('href="/projects/project-current/runs"')).toBeLessThan(nav.indexOf('href="/projects/project-current/work"'));
+		expect(nav.indexOf('href="/projects/project-current/work"')).toBeLessThan(nav.indexOf('href="/projects/project-current/settings"'));
+		expect(nav.indexOf('href="/projects/project-current/settings"')).toBeLessThan(nav.indexOf('href="/settings"'));
+		for (const [href, label] of [
+			['/overview', 'Control center'],
+			['/projects/project-current/runs', 'Runs'],
+			['/projects/project-current/work', 'Work'],
+			['/projects/project-current/settings', 'Settings'],
+			['/settings', 'Global settings'],
+		]) {
+			const link = openingTags(nav).find((tag) => tag.includes(`href="${href}"`));
+			expect(link).toContain(`aria-label="${label}"`);
+			expect(link).toContain(`title="${label}"`);
+		}
+		const switcherStart = nav.indexOf('data-slot="project-switcher"');
+		const switcher = nav.slice(nav.lastIndexOf('<button', switcherStart), nav.indexOf('</button>', switcherStart));
+		expect(switcher).toContain('aria-label="gateship"');
+		expect(switcher).toContain('title="gateship"');
+		expect(switcher).toContain('Alt+1');
+		expect(elementWith(nav, 'data-slot="sidebar-attention"')).toContain('bg-attention');
+		expect(openingTags(nav).find((tag) => tag.includes('href="/projects/project-current/work"'))).toContain('aria-current="page"');
 		expect(signature).toContain('size-6');
 		expect(signature).toContain('translate-x-px');
 		expect(signature).toContain('lg:size-5');
@@ -4315,9 +4349,28 @@ describe('operator shell', () => {
 		expect(signature).toContain('lg:mt-auto');
 		expect(signature).toContain('items-center');
 		expect(signature).toContain('lg:justify-center');
-		expect(rail).toContain('bg-attention');
-		expect(signatureStart).toBeLessThan(rail.indexOf('bg-attention'));
-		expect(rail).toContain('lg:order-first');
+		expect(signatureStart).toBeGreaterThan(navStart);
+	});
+
+	test('the collapsed rail keeps the project selector but hides project surfaces without selection', () => {
+		const rail = renderToStaticMarkup(
+			<ShellRail
+				catalog={LOCALE_CATALOG['en-US'].shell}
+				projects={[CURRENT_PROJECT]}
+				selection={routeSelection('/overview', CURRENT_PROJECT.id, null)}
+				status={null}
+			/>,
+		);
+		const navStart = rail.indexOf('<nav aria-label="Navigation"');
+		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
+
+		expect(elementWith(nav, 'data-slot="project-switcher"')).toContain('aria-label="Select a project"');
+		expect(nav).toContain('data-slot="project-switcher"');
+		expect(nav).toContain('data-slot="project-switcher-placeholder"');
+		expect(nav).not.toContain('href="/projects/project-current/runs"');
+		expect(nav).not.toContain('href="/projects/project-current/work"');
+		expect(nav).not.toContain('href="/projects/project-current/settings"');
+		expect(nav).toContain('href="/settings"');
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {

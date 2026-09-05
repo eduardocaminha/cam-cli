@@ -54,8 +54,12 @@ styling. Hugeicons supplies the icon set.
 - On desktop, the sidebar begins with the Control center navigation item. Its
   footer places Global settings before a quiet, non-interactive Gateship
   signature: the official small foreground wordmark and a secondary version.
-  The collapsed rail keeps only the centered small mark at its footer; neither
-  form is a second route to the Control center.
+  The collapsed desktop rail is compact operational navigation: it keeps the
+  Control center, project selector and selected project's icon-only surfaces in
+  that order, then Global settings before the centered small mark. Icon-only
+  destinations keep their accessible label, tooltip and active background; the
+  project selector carries the attention signal. Neither signature is a second
+  route to the Control center.
 
 ## Responsive behavior
 
