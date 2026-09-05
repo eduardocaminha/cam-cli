@@ -58,61 +58,24 @@ function event(
 	};
 }
 
-/** The chain-paused event's own from/toState equal the run's unchanged current state (GSHIP-650), same shape as `workspace.cleanup-warning`. */
-function chainPaused(payload: Record<string, unknown>): RunEvent {
-	return event('done', 'run.chain-paused', payload, 'done');
-}
-
 describe('remoteNotificationForRunEvent', () => {
-	test('reports each transition or queue outcome selected for remote notification', () => {
+	test('reports a real entry into waiting-user', () => {
 		expect(remoteNotificationForRunEvent(
 			event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }),
 		)).toEqual({ title: 'Gateship needs you', body: 'Escolha o seam.' });
-
-		expect(remoteNotificationForRunEvent(
-			event('waiting-provider', 'run.provider-waiting', {
-				message: 'Claude usage limit reached.',
-			}),
-		)).toEqual({
-			title: 'Provider temporarily unavailable',
-			body: 'Claude usage limit reached.',
-		});
-
-		expect(remoteNotificationForRunEvent(
-			event('failed', 'run.verification-failed', { error: 'checks red' }),
-		)).toEqual({ title: 'Run failed', body: 'checks red' });
-
-		// `run.interrupted` is what RunRuntime#interrupt actually emits on an
-		// aborted signal -- see the real-RunRuntime coverage below for why
-		// `run.recovered-interrupted` can never reach a subscriber.
-		expect(remoteNotificationForRunEvent(
-			event('interrupted', 'run.interrupted'),
-		)).toEqual({ title: 'Run interrupted', body: 'The run can be resumed from Gateship.' });
-
-		expect(remoteNotificationForRunEvent(
-			event('ready-to-ship', 'run.ship-failed', { error: 'checks red' }),
-		)).toEqual({ title: 'Shipping needs another attempt', body: 'checks red' });
-
-		expect(remoteNotificationForRunEvent(
-			chainPaused({ reason: 'no-admissible-issue', issueId: 'GSHIP-9' }),
-		)).toEqual({
-			title: 'Queue complete',
-			body: 'The run queue is complete. No eligible work remains.',
-		});
 	});
 
-	test('does not alert on progress, a clean finish, an operator cancellation, or a disabled chain', () => {
+	test('does not alert on provider waits, recoverable failures, shipping, preserved workspaces, queue states, merges or repeated waiting-user', () => {
+		expect(remoteNotificationForRunEvent(event('waiting-provider', 'run.provider-waiting'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('interrupted', 'run.interrupted'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('failed', 'run.verification-failed'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('ready-to-ship', 'run.ship-failed'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('done', 'workspace.cleanup-warning', {}, 'done'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('done', 'run.chain-paused', { reason: 'operator-paused' }, 'done'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('done', 'run.chain-paused', { reason: 'no-admissible-issue' }, 'done'))).toBeNull();
+		expect(remoteNotificationForRunEvent(event('waiting-user', 'run.operator-guidance', {}, 'waiting-user'))).toBeNull();
 		expect(remoteNotificationForRunEvent(event('review', 'run.review-started'))).toBeNull();
-		expect(remoteNotificationForRunEvent(event('ready-to-ship', 'run.review-clean'))).toBeNull();
-		// The operator's own cancellation of a run with nothing active to abort
-		// (RunRuntime#cancelRun's inactive-run branch) -- already visible on the
-		// screen that triggered it.
-		expect(remoteNotificationForRunEvent(event('interrupted', 'run.cancelled'))).toBeNull();
 		expect(remoteNotificationForRunEvent(event('done', 'run.shipped'))).toBeNull();
-		expect(remoteNotificationForRunEvent(
-			event('working', 'workspace.cleanup-warning', { detail: 'sujo' }, 'working'),
-		)).toBeNull();
-		expect(remoteNotificationForRunEvent(chainPaused({ reason: 'chain-disabled' }))).toBeNull();
 	});
 });
 
@@ -193,7 +156,7 @@ describe('createRemoteNotifier', () => {
 	 * result is discarded inside the `RunRuntime` constructor, before
 	 * `subscribe` can be called on the instance it returns.
 	 */
-	test('notifies once when RunRuntime interrupts an actively running executor', async () => {
+	test('does not notify when RunRuntime interrupts an actively running executor', async () => {
 		const store = new RunStore(':memory:');
 		let markStarted = (): void => {};
 		const executorStarted = new Promise<void>((resolve) => {
@@ -224,9 +187,7 @@ describe('createRemoteNotifier', () => {
 		expect(runtime.listEvents().at(-1)?.kind).toBe('run.interrupted');
 		await flush();
 
-		const call = onlyCall(calls);
-		expect(new URL(call.url).searchParams.get('title')).toBe('Run interrupted');
-		expect(call.init?.body).toBe('The run can be resumed from Gateship.');
+		expect(calls).toHaveLength(0);
 
 		await runtime.stop();
 		runtime.close();
@@ -318,7 +279,7 @@ describe('createRemoteNotifier', () => {
 		const { fetchImpl, calls } = stubFetch(() => Promise.reject(new Error(`network down: ${TOPIC_URL}`)));
 		const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
 
-		expect(() => notifier(event('failed', 'run.verification-failed', { error: 'boom' }))).not.toThrow();
+		expect(() => notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }))).not.toThrow();
 		await flush();
 
 		expect(calls).toHaveLength(1);
@@ -341,7 +302,7 @@ describe('createRemoteNotifier', () => {
 
 			let thrown: unknown;
 			try {
-				notifier(event('failed', 'run.verification-failed', { error: 'boom' }));
+			notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
 			} catch (error) {
 				thrown = error;
 			}
@@ -464,11 +425,11 @@ describe('the project-local secret file (GSHIP-652)', () => {
 		expect(calls).toHaveLength(0);
 
 		writeNtfyUrlFile(cwd, TOPIC_URL);
-		notifier(event('failed', 'run.verification-failed', { error: 'boom' }));
+		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
 		await flush();
 
 		const call = onlyCall(calls);
-		expect(new URL(call.url).searchParams.get('title')).toBe('Run failed');
+		expect(new URL(call.url).searchParams.get('title')).toBe('Gateship needs you');
 	});
 
 	// GSHIP-652 review: one stored value must answer the same everywhere --
@@ -611,7 +572,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		const { fetchImpl, calls } = stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`)));
 		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
 
-		expect(() => notifier(event('failed', 'run.verification-failed', { error: 'boom' }))).not.toThrow();
+		expect(() => notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }))).not.toThrow();
 		await flush();
 
 		expect(calls).toHaveLength(1);
@@ -623,7 +584,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		const { fetchImpl, calls } = stubFetch();
 		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
 
-		notifier(event('failed', 'run.verification-failed', { error: 'checks red' }));
+		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
 		await flush();
 
 		expect(calls).toHaveLength(2);
@@ -660,7 +621,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 
 			let thrown: unknown;
 			try {
-				notifier(event('failed', 'run.verification-failed', { error: 'boom' }));
+			notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
 			} catch (error) {
 				thrown = error;
 			}

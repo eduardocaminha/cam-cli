@@ -217,10 +217,10 @@ another folder on the same volume would not provide it.
 
 The first notification adapter is the browser's native Notifications API. The
 operator enables it with a browser gesture; Gateship alerts only while the tab
-is hidden and only for an operator decision, an unexpected interruption, a
-failed/retryable ship, a run failure or a completed merge. It needs no account,
-network service or secret. These notifications are non-persistent: closing the
-browser also closes this channel.
+is hidden and a run has actually entered `waiting-user` after its internal
+cycle resolution is exhausted. It needs no account, network service or secret.
+These notifications are non-persistent: closing the browser also closes this
+channel.
 
 Closed-browser delivery is optional. The current server supports one ntfy topic
 and one Resend destination, independently; when neither is configured, the
@@ -230,8 +230,7 @@ runtime behaves exactly as before. These channels obey the following contract:
 - resolve it only inside the notifier, from a mode-`0600` file or the service
   environment, outside the browser, SQLite, logs and agent prompts;
 - never inject it into Claude, Codex, `gh` or task verification environments;
-- send the same small set of durable run transitions used by local
-  notifications;
+- send the same `waiting-user` transition used by local notifications;
 - keep each concrete channel direct; there is no generic integration bus.
 
 The file-backed option is protection against accidental inheritance and
@@ -255,8 +254,7 @@ The service prepares a replacement key in the same `.gship` directory, sets
 mode `0600`, and only then atomically renames it over the live file. A failed
 preparation therefore leaves the previous valid key intact. Sender and
 recipient are non-secret values stored in `.gship/resend-settings.json`, never
-in SQLite, and are resolved fresh for status, tests, run notifications and
-service notifications.
+in SQLite, and are resolved fresh for status, tests and run notifications.
 
 Environment precedence is independent per field. `GATESHIP_RESEND_API_KEY`,
 `GATESHIP_RESEND_FROM` and `GATESHIP_RESEND_TO` each override only their
@@ -268,6 +266,6 @@ For a container or manual fallback, place the bare key followed by a newline in
 `.gship/resend-api-key`, set its mode to `0600`, and put the non-secret sender
 and recipient in Settings or the two environment variables above. The project
 and its `.gship` directory must be writable by the Gateship process. Notification
-recipients receive only the transactional run and service alerts described
+recipients receive only the transactional `waiting-user` alerts described
 here; configuring a recipient never enrolls that address in marketing or a
 mailing list.

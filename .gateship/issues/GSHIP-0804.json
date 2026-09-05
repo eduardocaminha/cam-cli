@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-804",
   "title": "Notificar apenas bloqueios que exigem o operador",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T22:29:12.352Z",
-  "updatedAt": "2026-09-05T22:29:12.352Z",
+  "updatedAt": "2026-09-05T22:39:24.864Z",
   "description": "Reduzir o contrato de notificações locais e remotas a uma única transição elegível: entrada real em waiting-user, depois de esgotada a resolução interna do ciclo. Não notificar espera temporária de provider, falha ou interrupção recuperável, falha de ship/CI, workspace preservado, fila pausada/concluída, merge concluído nem atualização do Gateship. Manter os testes manuais de ntfy e Resend e as configurações existentes. Fazer browser, ntfy e Resend compartilharem a mesma semântica de elegibilidade, atualizar os textos da interface e a documentação, e cobrir positivamente waiting-user e negativamente todas as categorias removidas. Não introduzir fila, atraso, preferência adicional ou novo subsistema.",
   "specSource": "operator",
   "spec": {
