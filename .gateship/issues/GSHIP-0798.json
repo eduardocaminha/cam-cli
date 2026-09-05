@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-798",
+  "title": "Remover o backend conversacional aposentado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-05T13:21:48.873Z",
+  "updatedAt": "2026-09-05T13:21:48.873Z",
+  "description": "Após a validação da interface sem Conversa, remover o caminho conversacional interno que ficou sem consumidor. Excluir src/runtime/conversational-orchestrator.ts e seus testes; remover as rotas GET/POST /api/chat, tanto do projeto atual quanto das rotas escopadas, e toda composição, factory, opção, sessão ou executor de comando usada apenas por elas em src/commands/web.ts. Remover do cliente CHAT_PATH, tipos, agregadores, fetch/send, props e valores vazios que existiam apenas para transcript. Remover o painel de handoff gerado pela antiga conversa e seus catálogos; o brief do projeto passa a ser o único contexto durável entre sessões externas e deve continuar legível e atualizável pelas operações tipadas existentes. No RunStore e RunRuntime, remover APIs, decoders e criação de tabelas exclusivas a sessões, mensagens e handoff conversacional; não executar DROP nem apagar tabelas ou dados de bancos existentes. Um banco novo não deve criar essas tabelas, e um banco antigo deve continuar abrindo sem consultá-las. Preservar integralmente o AgentCycleQuestionResolver, run.cycle-response, o slot persistido interno orchestrator usado pelo resolvedor nesta etapa, telemetria de runs, executor, reviewer, autenticação e todas as operações gship agent. Renomear test/web/orchestrator-api.test.ts para test/web/project-brief-api.test.ts mantendo somente a cobertura do brief e remover testes exclusivos do chat. Atualizar AGENTS.md, HANDOFF.md, FLOW.md, posicionamento e contrato de design para registrar que o agente externo é a interface conversacional e o brief é o handoff durável entre sessões.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Após a validação da interface sem Conversa, remover o caminho conversacional interno que ficou sem consumidor. Excluir src/runtime/conversational-orchestrator.ts e seus testes; remover as rotas GET/POST /api/chat, tanto do projeto atual quanto das rotas escopadas, e toda composição, factory, opção, sessão ou executor de comando usada apenas por elas em src/commands/web.ts. Remover do cliente CHAT_PATH, tipos, agregadores, fetch/send, props e valores vazios que existiam apenas para transcript. Remover o painel de handoff gerado pela antiga conversa e seus catálogos; o brief do projeto passa a ser o único contexto durável entre sessões externas e deve continuar legível e atualizável pelas operações tipadas existentes. No RunStore e RunRuntime, remover APIs, decoders e criação de tabelas exclusivas a sessões, mensagens e handoff conversacional; não executar DROP nem apagar tabelas ou dados de bancos existentes. Um banco novo não deve criar essas tabelas, e um banco antigo deve continuar abrindo sem consultá-las. Preservar integralmente o AgentCycleQuestionResolver, run.cycle-response, o slot persistido interno orchestrator usado pelo resolvedor nesta etapa, telemetria de runs, executor, reviewer, autenticação e todas as operações gship agent. Renomear test/web/orchestrator-api.test.ts para test/web/project-brief-api.test.ts mantendo somente a cobertura do brief e remover testes exclusivos do chat. Atualizar AGENTS.md, HANDOFF.md, FLOW.md, posicionamento e contrato de design para registrar que o agente externo é a interface conversacional e o brief é o handoff durável entre sessões.",
+    "verify": [
+      "bun test test/runtime/run-store.test.ts test/web/project-brief-api.test.ts test/web/ui-client.test.tsx test/commands/agent.test.ts test/web/project-scoped-agent-api.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "eaa7ad1c150d4ccab280f7886941ee8487e5969186d01df2554a5dd236a75419",
+    "approvedAt": "2026-09-05T13:21:48.873Z"
+  }
+}
