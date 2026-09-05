@@ -4955,6 +4955,12 @@ describe('conversation transcript', () => {
 		expect(sidebar).toContain('size-9');
 		expect(inspectorToggle).toContain('border-input');
 		expect(inspectorToggle).toContain('size-9');
+		expect(inspectorToggle).toContain('xl:hidden');
+		const inspectorToggles = openingTags(open).filter((tag) => tag.includes('aria-label="Collapse the run panel"'));
+		expect(inspectorToggles).toHaveLength(2);
+		expect(inspectorToggles[1]).toContain('hidden xl:inline-flex');
+		expect(open).toContain('class="min-w-0 px-4 pt-4 lg:px-6"');
+		expect(open).toContain('class="hidden items-center justify-end px-4 pt-4 lg:px-6 xl:flex"');
 		expect(leftGlyph).toBeDefined();
 		expect(rightGlyph).toBeDefined();
 		for (const glyph of [leftGlyph, rightGlyph]) {
@@ -4978,6 +4984,40 @@ describe('conversation transcript', () => {
 			expect(closed).toContain('aria-label="Expand the run panel"');
 			expect(closed).not.toContain('data-slot="run-inspector"');
 			expect(closed).not.toContain('Current run');
+		} finally {
+			runtime.localStorage = previousStorage;
+		}
+	});
+
+	test('the shell content frame gives controls and surfaces one responsive measure', () => {
+		const open = home();
+		const surface = runsPage();
+		const nonCurrent = renderAt('/projects/project-other', { projects: [CURRENT_PROJECT, OTHER_PROJECT] });
+		const frameClass = 'mx-auto w-full max-w-(--content-measure)';
+
+		for (const html of [open, surface, nonCurrent]) {
+			const frames = openingTags(html).filter((tag) => tag.includes('data-slot="shell-content-frame"'));
+			expect(frames.length).toBeGreaterThanOrEqual(2);
+			for (const frame of frames) expect(frame).toContain(frameClass);
+		}
+		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+		expect(elementWith(surface, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+		expect(elementWith(nonCurrent, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+
+		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
+		const previousStorage = runtime.localStorage;
+		runtime.localStorage = {
+			getItem: (key) => key === 'gship-sidebar' || key === 'gship-inspector' ? 'closed' : key === 'gship-width' ? 'wide' : null,
+			setItem: () => {},
+		};
+		try {
+			const wide = home();
+			expect(wide).toContain('aria-label="Expand the sidebar"');
+			expect(wide).toContain('aria-label="Expand the run panel"');
+			expect(elementWith(wide, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+			for (const frame of openingTags(wide).filter((tag) => tag.includes('data-slot="shell-content-frame"'))) {
+				expect(frame).toContain(frameClass);
+			}
 		} finally {
 			runtime.localStorage = previousStorage;
 		}

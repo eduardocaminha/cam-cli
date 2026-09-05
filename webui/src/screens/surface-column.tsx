@@ -1,5 +1,5 @@
 import type React from 'react';
-import { MAIN_CONTENT_ID } from '../app-shell.tsx';
+import { MAIN_CONTENT_ID, ShellContentFrame } from '../app-shell.tsx';
 
 /** Shared scrolling column for route-owned screens. */
 export function SurfaceColumn({
@@ -18,14 +18,14 @@ export function SurfaceColumn({
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>
-			<div className="mx-auto flex w-full max-w-(--content-measure) flex-1 flex-col gap-6">
+			<ShellContentFrame className="flex flex-1 flex-col gap-6">
 				{status === null ? null : (
 					<output aria-live="polite" className="break-words text-muted-foreground text-sm">
 						{status}
 					</output>
 				)}
 				{children}
-			</div>
+			</ShellContentFrame>
 		</main>
 	);
 }

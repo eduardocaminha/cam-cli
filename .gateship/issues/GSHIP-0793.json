@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-793",
   "title": "Alinhar controles à moldura externa do conteúdo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T10:05:19.582Z",
-  "updatedAt": "2026-09-05T10:05:19.582Z",
+  "updatedAt": "2026-09-05T10:18:28.786Z",
   "description": "Fazer a faixa de controles e as superfícies compartilharem uma única geometria horizontal, para que os botões de recolher painéis fiquem alinhados à borda externa visível do conteúdo em todos os estados.\n\nHoje ShellControls usa padding próprio, enquanto ConversationColumn e SurfaceColumn centralizam o conteúdo com --content-measure. Com a inspeção aberta, a coluna é estreita e o desalinhamento fica oculto. Ao fechar a inspeção, o card chega a 80rem, centraliza, e o botão esquerdo continua no recuo antigo. A medição atual em 1728 px mostrou o botão em x=109 e a borda externa em x=253 no estado centralizado sem inspector.\n\nContrato:\n- A geometria deve pertencer ao shell por meio de uma primitiva estrutural compartilhada, reutilizada pela faixa de controles e pelas superfícies. Não usar offsets por rota, margens mágicas nem position: fixed.\n- \"Fixo\" significa uma mesma moldura responsiva: o recuo e o limite mudam apenas pelos breakpoints e pela preferência de largura, nunca pelo conteúdo da página.\n- O botão esquerdo deve acompanhar a borda externa do anel do conteúdo quando o conteúdo estiver limitado e quando estiver largo.\n- Na conversa, a faixa deve considerar a coluna reservada ao inspector quando ele estiver aberto; ao fechá-lo, deve recalcular pela mesma regra usada pela coluna principal.\n- O botão direito deve permanecer alinhado à aresta externa direita da área que controla, sem deslocar o cálculo da coluna principal.\n- Cobrir sidebar aberta e fechada, inspector aberto e fechado, layouts centralizado e largo, projetos atual e não atual e as superfícies sem inspector.\n- Preservar larguras das sidebars, ordem e hit targets dos controles, breakpoints existentes, persistência, ausência de divisórias e comportamento de scroll.\n- Não adicionar animação a esses controles frequentes.\n- Adicionar cobertura determinística para a primitiva compartilhada e seus estados representativos.",
   "specSource": "operator",
   "spec": {

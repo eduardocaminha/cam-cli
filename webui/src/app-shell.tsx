@@ -1,6 +1,18 @@
 import type React from 'react';
+import { cn } from './lib/cn.ts';
 
 export const MAIN_CONTENT_ID = 'main-content';
+
+/**
+ * The one horizontal frame shared by the shell controls and every route
+ * surface. Its measure is a shell preference, never a page-local offset.
+ */
+export function ShellContentFrame({
+	className,
+	...props
+}: React.ComponentProps<'div'>): React.ReactElement {
+	return <div className={cn('mx-auto w-full max-w-(--content-measure)', className)} data-slot="shell-content-frame" {...props} />;
+}
 
 /** Structural shell. Navigation and controls remain independent slots. */
 export function AppShell({
