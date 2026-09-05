@@ -4316,42 +4316,39 @@ describe('operator shell', () => {
 		expect(released).not.toContain('8146b060');
 	});
 
-	test('the header carries the product mark as its accessible title, the badge in full, and the version', () => {
+	test('the sidebar reserves the brand for its quiet desktop footer signature', () => {
 		const html = shellHeader(runsPage({ runs: [runIn('failed')], version: '0.292.0' }));
-		const title = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
+		const signatureStart = html.indexOf('data-slot="sidebar-signature"');
+		const signature = html.slice(signatureStart, html.indexOf('</div>', signatureStart));
+		const settingsStart = html.indexOf('<nav aria-label="Global settings"');
+		const settingsEnd = html.indexOf('</nav>', settingsStart);
+		const compactHeader = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
 
-		// The wordmark replaces the text h1, but the h1 itself stays: its
-		// accessible name now comes from the mark's own role="img" label.
-		expect(title).toContain('role="img"');
-		expect(title).toContain('aria-label="Gateship"');
-		// The lockup carries no intrinsic size, so the box only holds the art
-		// when the viewBox and the reserved ratio agree on the wordmark's canvas.
-		expect(title).toContain('viewBox="3250 0 10187 2750"');
-		expect(title).toContain('aspect-[10187/2750]');
-		// The badge moved off the title's row, so its longest label is never
-		// squeezed for space.
-		expect(html).toContain('>Needs you<');
-		expect(html).toContain('>v0.292.0<');
+		expect(compactHeader).toContain('lg:hidden');
+		expect(compactHeader).toContain('viewBox="3250 0 10187 2750"');
+		expect(html.indexOf('>Control center</span>')).toBeLessThan(html.indexOf('data-slot="project-navigation"'));
+		expect(settingsEnd).toBeLessThan(signatureStart);
+		expect(signature).toContain('size-5');
+		expect(signature).toContain('>Gateship</span>');
+		expect(signature).toContain('>v0.292.0</span>');
 	});
 
-	test('the sidebar keeps its mark on the collapsed rail axis in both states', () => {
+	test('the collapsed rail keeps its attention signal and a centered footer mark', () => {
 		const rail = renderToStaticMarkup(<ShellRail needsYou />);
-		const expanded = shellHeader(home());
-		const expandedTitle = expanded.slice(expanded.indexOf('<h1'), expanded.indexOf('</h1>'));
+		const signatureStart = rail.indexOf('data-slot="sidebar-signature"');
+		const signature = rail.slice(rail.lastIndexOf('<div', signatureStart), rail.indexOf('</div>', signatureStart));
 
-		// 72px rail + half of the content panel's 12px outer spacing makes a 78px
-		// corridor. Its centre advances 3px; the mark retains its 1px correction
-		// in both shell states. Desktop adds 12px layout spacing, which minus the
-		// mark's 4px translation leaves the required 8px visual wordmark gap.
 		expect(rail).toContain('lg:w-18');
-		expect(rail).toContain('translate-x-px');
-		expect(rail).toContain('lg:translate-x-[4px]');
+		expect(signature).toContain('size-6');
+		expect(signature).toContain('translate-x-px');
+		expect(signature).toContain('lg:size-5');
+		expect(signature).toContain('lg:translate-x-0');
+		expect(signature).toContain('lg:mt-auto');
+		expect(signature).toContain('items-center');
+		expect(signature).toContain('lg:justify-center');
 		expect(rail).toContain('bg-attention');
-		expect(expandedTitle).toContain('translate-x-px');
-		expect(expandedTitle).toContain('lg:translate-x-[4px]');
-		expect(expandedTitle).toContain('gap-2');
-		expect(expandedTitle).toContain('lg:gap-3');
-		expect(expandedTitle).toContain('aspect-[10187/2750]');
+		expect(signatureStart).toBeLessThan(rail.indexOf('bg-attention'));
+		expect(rail).toContain('lg:order-first');
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {

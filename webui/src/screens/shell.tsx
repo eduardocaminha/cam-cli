@@ -525,21 +525,17 @@ export function shellAttention(
 }
 
 /**
- * The collapsed shell: the mark, the attention signal if any, and the way
- * back. Everything else waits behind the toggle (or Cmd/Ctrl+B).
+ * The collapsed shell reserves its desktop foot for the product mark. Its
+ * attention signal stays independent at the top, while compact navigation
+ * retains the mark and signal together below `lg`.
  */
 export function ShellRail({ needsYou }: { needsYou: boolean }): React.ReactElement {
-	/* pt-6 at lg matches the expanded sidebar's own p-6 (operator decision,
-	 * 2026-08-25): the mark shares the same vertical anchor collapsed and
-	 * expanded, so toggling reads as a width change, not the logo jumping.
-	 * The rail remains 72px, but half of the content panel's 12px outer spacing
-	 * belongs to its visual corridor. That makes the corridor 78px wide, whose
-	 * centre advances 3px; the mark keeps its 1px optical adjustment, for 4px.
-	 * The expanded sidebar uses the same correction so the mark stays fixed. */
 	return (
-		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:pt-8">
-			<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
-			{needsYou ? <span aria-hidden="true" className="size-2 rounded-full bg-attention" /> : null}
+		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center">
+			<div className="flex size-6 items-center lg:mt-auto lg:size-8 lg:justify-center" data-slot="sidebar-signature">
+				<GateshipMark className="size-6 translate-x-px lg:size-5 lg:translate-x-0" portal />
+			</div>
+			{needsYou ? <span aria-hidden="true" className="size-2 rounded-full bg-attention lg:order-first" /> : null}
 		</header>
 	);
 }
@@ -591,10 +587,8 @@ export function ShellSidebar({
 	 * element-level override is all it takes. */
 	return (
 		<header className="flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
-			<h1 className="flex items-center gap-2 lg:gap-3">
-				<span aria-hidden="true">
-					<GateshipMark className="size-6 translate-x-px lg:translate-x-[4px]" portal />
-				</span>
+			<h1 className="flex items-center gap-2 lg:hidden">
+				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
 			</h1>
 			<ShellNavigation
@@ -618,9 +612,11 @@ export function ShellSidebar({
 					<NavGlyph name="globalSettings" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.globalSettings}</span>
 				</a>
 			</nav>
-			{version === '' ? null : (
-				<span className="hidden px-3 font-mono text-[10px] text-sidebar-foreground/50 uppercase tracking-wider lg:inline">v{humanVersion}</span>
-			)}
+			<div className="hidden items-center gap-2 px-3 text-sidebar-foreground/60 lg:flex" data-slot="sidebar-signature">
+				<GateshipMark className="size-5 shrink-0" portal />
+				<span className="text-xs">Gateship</span>
+				{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
+			</div>
 		</header>
 	);
 }

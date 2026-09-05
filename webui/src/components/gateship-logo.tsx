@@ -7,8 +7,7 @@
 // The operator shell uses the static mark. Motion is deliberately absent: the
 // logo identifies the product and does not need to compete with run state.
 //
-// The shell keeps `GateshipMark` on its collapsed-rail axis in both states.
-// `GateshipWordmark` is added beside it only in the expanded sidebar.
+// The shell uses `GateshipMark` in its quiet footer signature.
 
 import type React from 'react';
 
