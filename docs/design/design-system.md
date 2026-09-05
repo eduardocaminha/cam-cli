@@ -53,9 +53,9 @@ styling. Hugeicons supplies the icon set.
   or generated handoff panel.
 - On desktop, the sidebar begins with the Control center navigation item. Its
   footer places Global settings before a quiet, non-interactive Gateship
-  signature: a 18 to 20px mark, small name and secondary version. The collapsed
-  rail keeps only the centered small mark at its footer; neither form is a
-  second route to the Control center.
+  signature: the official small foreground wordmark and a secondary version.
+  The collapsed rail keeps only the centered small mark at its footer; neither
+  form is a second route to the Control center.
 
 ## Responsive behavior
 

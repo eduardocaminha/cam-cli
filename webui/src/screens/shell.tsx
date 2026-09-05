@@ -612,9 +612,8 @@ export function ShellSidebar({
 					<NavGlyph name="globalSettings" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.globalSettings}</span>
 				</a>
 			</nav>
-			<div className="hidden items-center gap-2 px-3 text-sidebar-foreground/60 lg:flex" data-slot="sidebar-signature">
-				<GateshipMark className="size-5 shrink-0" portal />
-				<span className="text-xs">Gateship</span>
+			<div className="hidden items-center gap-2 px-3 lg:flex" data-slot="sidebar-signature">
+				<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
 				{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
 			</div>
 		</header>
