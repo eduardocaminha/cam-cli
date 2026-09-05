@@ -19,13 +19,14 @@ events in SQLite, and supervises subscription-authenticated Claude Code or
 Codex CLI children through provider adapters. Authentication stays
 credential-blind: no provider or GitHub token ever reaches the UI or SQLite.
 
-The browser conversation is the primary operator surface. A read-only
-orchestrator may investigate and return one typed command; the deterministic
-runtime alone owns mutations and lifecycle state. Approved runs start from a
-fresh `origin/main` worktree without moving local `main`, execute the task's
-explicit verification, receive an independent mechanically read-only review,
-and ship through a squash-merged pull request. Clean merged workspaces are
-released; dirty, failed, or uncertain leftovers are preserved and surfaced.
+The external agent is the primary conversational interface. It may investigate
+and return typed Gateship commands; the deterministic runtime alone owns
+mutations and lifecycle state. The browser opens a project's Runs surface,
+while keeping Central, Runs, Trabalho and Ajustes available. Approved runs
+start from a fresh `origin/main` worktree without moving local `main`, execute
+the task's explicit verification, receive an independent mechanically read-only
+review, and ship through a squash-merged pull request. Clean merged workspaces
+are released; dirty, failed, or uncertain leftovers are preserved and surfaced.
 
 Two boundaries are narrower than they look. A provider hold is a schedule, not
 a dead end: the run resumes by itself when the refusal's own `retryAt` arrives,
@@ -111,7 +112,7 @@ answer. No physical state migration is planned.
 
 The beta surface includes the project registry, checkout registration, GitHub
 import and creation, removal without data deletion, project-scoped surfaces and
-policies, global profile and notifications, conversation, run inspection, work
+policies, global profile and notifications, run inspection, work
 and proposal queues, provider management, technical startup reconciliation,
 recorded internal answers, resumable CI, safe provider handoff, advisory React
 diagnostics, revision-cohort facts, and bounded native self-update. The current

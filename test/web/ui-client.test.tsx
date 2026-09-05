@@ -13,14 +13,12 @@ import {
 	App,
 	handleProjectShortcut,
 	type AppProps,
-	ConversationColumn,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
 import { PanelToggleGlyph, ShellRail, type PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
 import {
 	abandonIssue,
-	aggregateChatTurnCosts,
 	approveIssue,
 	AGENT_DEFAULTS_PATH,
 	BRIEF_PATH,
@@ -120,7 +118,6 @@ import {
 import {
 	applyLocalePreference,
 	DEFAULT_LOCALE,
-	LOCALE_CATALOG,
 	type Locale,
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
@@ -686,28 +683,46 @@ const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/proje
 const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/settings', overrides);
 const globalSettingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
 
-function conversationAt(
-	locale: Locale,
-	overrides: Partial<{
-		chatMessages: AppProps['chatMessages'];
-		pending: boolean;
-		run: RunView | null;
-		status: string | null;
-	}> = {},
-): string {
-	return renderToStaticMarkup(
-		<ConversationColumn
-			catalog={LOCALE_CATALOG[locale].conversation}
-			chatMessages={overrides.chatMessages ?? []}
-			locale={locale}
-			onResume={() => {}}
-			onSendMessage={() => {}}
-			pending={overrides.pending ?? false}
-			run={overrides.run ?? null}
-			status={overrides.status ?? null}
-		/>,
-	);
-}
+test('a project root is Runs, keeps the explicit Runs address, and omits Conversation in both locales', () => {
+	for (const locale of ['en-US', 'pt-BR'] as const) {
+		const root = renderAt('/projects/project-current', { locale });
+		const explicitRuns = renderAt('/projects/project-current/runs', { locale });
+		const settings = renderAt('/projects/project-current/settings', { locale });
+		const runsLabel = locale === 'en-US' ? 'Runs' : 'Runs';
+		const conversationLabel = locale === 'en-US' ? 'Conversation' : 'Conversa';
+
+		for (const html of [root, explicitRuns]) {
+			expect(openingTags(html).find((tag) => tag.startsWith('<main')))
+				.toContain(`aria-label="${runsLabel}"`);
+			expect(html).toContain('href="/projects/project-current"');
+			expect(html).toContain('href="/projects/project-current/runs"');
+			expect(html).toContain('href="/projects/project-current/work"');
+			expect(html).toContain('href="/projects/project-current/settings"');
+			expect(html).not.toContain(`>${conversationLabel}</span>`);
+		}
+		expect(settings).toContain(locale === 'en-US' ? 'Cycle resolver' : 'Resolvedor do ciclo');
+	}
+	expect(routeSelection('/projects/project-current', CURRENT_PROJECT.id)).toEqual({
+		projectId: CURRENT_PROJECT.id,
+		surface: 'runs',
+	});
+	expect(routeSelection('/projects/project-current/runs', CURRENT_PROJECT.id)).toEqual({
+		projectId: CURRENT_PROJECT.id,
+		surface: 'runs',
+	});
+});
+
+test('status is announced where it was issued on retained surfaces', () => {
+	const runs = runsPage({ status: 'Falha ao ler /api/runs' });
+	const work = workPage({ status: 'CAM-902 criada e selecionada.' });
+
+	for (const [html, status] of [[runs, 'Falha ao ler /api/runs'], [work, 'CAM-902 criada e selecionada.']] as const) {
+		expect(html).toContain(status);
+		const output = elementWith(html, 'aria-live="polite"');
+		expect(output).toContain('<output');
+		expect(output).toContain('aria-live="polite"');
+	}
+});
 
 /** Whether a command is offered at all, by the label only that button carries. */
 function hasButton(html: string, label: string): boolean {
@@ -911,304 +926,6 @@ describe('project onboarding', () => {
 		}
 	});
 });
-
-describe('conversation surface', () => {
-	test('the typed conversation catalog renders the complete owned surface in both locales', () => {
-		const cases = [
-			{
-				locale: 'en-US',
-				transcript: 'Conversation transcript',
-				empty: 'Describe the goal, ask for an investigation or give a command in natural language.',
-				title: 'Conversation with the orchestrator',
-				description: 'It can investigate the project; actions go through the deterministic runtime.',
-				operator: 'you',
-				orchestrator: 'orchestrator',
-				cost: 'Expected cumulative cost for 1 orchestrator turn: $0.08.',
-				waiting: 'The run is waiting for your decision.',
-				responseLabel: 'Your response',
-				responsePlaceholder: 'Decision or guidance for the agent',
-				responseButton: 'Respond and resume',
-				composerLabel: 'Message for the orchestrator',
-				composerPlaceholder: 'What do you want to do now?',
-				composerButton: 'Send',
-			},
-			{
-				locale: 'pt-BR',
-				transcript: 'Transcrição da conversa',
-				empty: 'Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.',
-				title: 'Conversa com o orquestrador',
-				description: 'Ele pode investigar o projeto; as ações passam pelo runtime determinístico.',
-				operator: 'você',
-				orchestrator: 'orquestrador',
-				cost: 'Custo cumulativo esperado para 1 turno do orquestrador: US$',
-				waiting: 'A execução está aguardando sua decisão.',
-				responseLabel: 'Sua resposta',
-				responsePlaceholder: 'Decisão ou orientação para o agente',
-				responseButton: 'Responder e retomar',
-				composerLabel: 'Mensagem para o orquestrador',
-				composerPlaceholder: 'O que você quer fazer agora?',
-				composerButton: 'Enviar',
-			},
-		] as const satisfies readonly ({ locale: Locale } & Record<string, string>)[];
-
-		for (const expected of cases) {
-			const empty = conversationAt(expected.locale);
-			const conversationMain = openingTags(empty).find((tag) => tag.startsWith('<main'));
-			expect(conversationMain).toContain(`aria-label="${expected.title}"`);
-			expect(empty).toContain(`aria-label="${expected.transcript}"`);
-			expect(empty).toContain(expected.empty);
-			expect(empty).not.toContain('data-slot="card-frame-header"');
-			expect(empty).not.toContain('data-slot="card-frame-title"');
-			expect(empty).not.toContain(expected.description);
-
-			const populated = conversationAt(expected.locale, {
-				chatMessages: [
-					{
-						seq: 1,
-						providerId: 'codex',
-						role: 'operator',
-						text: 'Preserve esta mensagem.',
-						createdAt: '2026-08-21T10:00:00.000Z',
-					},
-					{
-						seq: 2,
-						providerId: 'claude',
-						role: 'orchestrator',
-						text: 'Keep this message unchanged.',
-						createdAt: '2026-08-21T10:01:00.000Z',
-						usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.08 },
-					},
-				],
-				run: runIn('waiting-user', { summary: 'Durable run summary.' }),
-			});
-			expect(populated).toContain(`>${expected.operator}</span>`);
-			expect(populated).toContain(`>${expected.orchestrator}</span>`);
-			expect(populated).toContain('Preserve esta mensagem.');
-			expect(populated).toContain('Keep this message unchanged.');
-			expect(populated).toContain('codex');
-			expect(populated).toContain('claude');
-			expect(populated).toContain(expected.cost);
-			if (expected.locale === 'pt-BR') expect(populated).toContain('0,08');
-			expect(populated).toContain(expected.waiting);
-			expect(populated).toContain(`>${expected.responseLabel}</label>`);
-			expect(elementWith(populated, 'name="operatorGuidance"'))
-				.toContain(`placeholder="${expected.responsePlaceholder}"`);
-			expect(hasButton(populated, expected.responseButton)).toBe(true);
-			expect(populated).toContain(`>${expected.composerLabel}</label>`);
-			expect(elementWith(populated, 'name="message"'))
-				.toContain(`placeholder="${expected.composerPlaceholder}"`);
-			expect(hasButton(populated, expected.composerButton)).toBe(true);
-		}
-	});
-
-	test('the lateral is the compact inspector and nothing else', () => {
-		const html = home({
-			events: [{
-				seq: 1,
-				runId: 'run-1',
-				kind: 'provider.activity',
-				fromState: 'working',
-				toState: 'working',
-				payload: { text: 'Vou ajustar o parser.' },
-				createdAt: '2026-08-16T03:04:05.000Z',
-			}],
-			ideas: [{ id: 'CAM-42', title: 'ideia antiga' }],
-			providers: [
-				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
-			],
-			runs: [
-				runIn('done', { summary: 'Relatório longo do runtime.' }),
-				runIn('failed', { id: 'run-0', issueId: 'CAM-801' }),
-			],
-			workspaceNotices: [{
-				kind: 'dirty',
-				runId: null,
-				workspacePath: '/project/.gship/worktrees/orphan',
-				branch: 'gship/cam-1-orphan',
-				detail: 'workspace is not owned by a persisted run',
-			}],
-		});
-
-		// What the inspector is for: the issue, the state, the progress, the way on.
-		expect(html).toContain('CAM-900');
-		expect(html).toContain('done');
-		expect(html).toContain('100%');
-		expect(html).toContain('href="/projects/project-current/runs"');
-		// Telemetry, configuration, history and planning are other surfaces.
-		expect(html).not.toContain('run-1');
-		expect(html).not.toContain('Relatório longo do runtime.');
-		expect(html).not.toContain('Activity');
-		expect(html).not.toContain('Runs anteriores');
-		expect(html).not.toContain('Preserved workspaces');
-		expect(html).not.toContain('Backlog plannable');
-		expect(html).not.toContain('New issue');
-		expect(html).not.toContain('Specify idea');
-		expect(html).not.toContain('Local agents');
-		expect(html).not.toContain('Notifications');
-	});
-
-	test('the inspector offers the commands the run admits, and renders no others', () => {
-		const idle = home();
-		expect(idle).toContain('No runs recorded yet.');
-		expect(idle).toContain('Idle');
-		expect(hasButton(idle, 'Cancel')).toBe(false);
-		expect(hasButton(idle, 'Ship')).toBe(false);
-		expect(hasButton(idle, 'Resume')).toBe(false);
-
-		const working = home({ runs: [runIn('working')] });
-		expect(working).toContain('Phase working');
-		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
-		expect(hasButton(working, 'Ship')).toBe(false);
-		expect(hasButton(working, 'Resume')).toBe(false);
-
-		const readyToShip = home({ runs: [runIn('ready-to-ship')] });
-		expect(buttonIsEnabled(readyToShip, 'Ship')).toBe(true);
-		expect(buttonIsEnabled(readyToShip, 'Cancel')).toBe(true);
-
-		const interrupted = home({ runs: [runIn('interrupted')] });
-		expect(buttonIsEnabled(interrupted, 'Resume')).toBe(true);
-		// The interrupted run is the only one that can be ended without resuming.
-		expect(buttonIsEnabled(interrupted, 'Abandon')).toBe(true);
-		expect(hasButton(working, 'Abandon')).toBe(false);
-		expect(hasButton(readyToShip, 'Abandon')).toBe(false);
-
-		const cancelled = home({ runs: [runIn('cancelled')] });
-		expect(cancelled).toContain('cancelled');
-		expect(cancelled).toContain('Idle');
-		expect(hasButton(cancelled, 'Abandon')).toBe(false);
-		expect(hasButton(cancelled, 'Resume')).toBe(false);
-		expect(hasButton(cancelled, 'Cancel')).toBe(false);
-		expect(hasButton(cancelled, 'Ship')).toBe(false);
-	});
-
-	test('a command in flight holds the commands that are offered', () => {
-		const html = home({ pending: true, runs: [runIn('ready-to-ship')] });
-
-		expect(buttonIsEnabled(html, 'Ship')).toBe(false);
-		expect(buttonIsEnabled(html, 'Cancel')).toBe(false);
-	});
-
-	test('conversation renders the durable cross-provider handoff', () => {
-		const html = home({
-			chatMessages: [
-				{
-					seq: 1,
-					providerId: 'codex',
-					role: 'operator',
-					text: 'Investigue o core.',
-					createdAt: '2026-08-16T03:00:00.000Z',
-				},
-				{
-					seq: 2,
-					providerId: 'claude',
-					role: 'orchestrator',
-					text: 'Retomei o contexto e encontrei o loop.',
-					createdAt: '2026-08-16T03:01:00.000Z',
-				},
-			],
-		});
-
-		expect(openingTags(html).find((tag) => tag.startsWith('<main')))
-			.toContain('aria-label="Conversation with the orchestrator"');
-		expect(html).toContain('for="orchestrator-message"');
-		expect(html).toContain('>Message for the orchestrator</label>');
-		expect(html).toContain('name="message"');
-		expect(html).toContain('Investigue o core.');
-		expect(html).toContain('Retomei o contexto e encontrei o loop.');
-		expect(html).toContain('codex');
-		expect(html).toContain('claude');
-	});
-
-	// GSHIP-634: the orchestrator's own turns were invisible next to the
-	// executor and reviewer, which already show an expected-cost total (GSHIP-
-	// 623/628) -- this is the same label and honesty rules, applied to the
-	// conversation surface, and it covers exactly the turns that reported usage.
-	test('shows the accumulated expected cost of the orchestrator turns that reported usage, with the turn count', () => {
-		const chatMessages: AppProps['chatMessages'] = [
-			{
-				seq: 1,
-				providerId: 'claude',
-				role: 'operator',
-				text: 'Qual é o objetivo desta fatia?',
-				createdAt: '2026-08-18T03:00:00.000Z',
-			},
-			{
-				seq: 2,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: 'Investiguei o core.',
-				createdAt: '2026-08-18T03:00:05.000Z',
-				usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.08 },
-			},
-			{
-				seq: 3,
-				providerId: 'claude',
-				role: 'operator',
-				text: 'E agora?',
-				createdAt: '2026-08-18T03:01:00.000Z',
-			},
-			{
-				seq: 4,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: 'Segui em frente.',
-				createdAt: '2026-08-18T03:01:05.000Z',
-				usage: { model: 'claude-opus-4-6', effort: 'high', totalCostUsd: 0.05 },
-			},
-		];
-		const aggregate = aggregateChatTurnCosts(chatMessages);
-		expect(aggregate.totalCostUsd).toBeCloseTo(0.13, 6);
-		expect(aggregate.turnCount).toBe(2);
-
-		const html = home({ chatMessages });
-		expect(html).toContain('Expected cumulative cost');
-		expect(html).toContain('2 orchestrator turns');
-		expect(html).toContain('$');
-	});
-
-	// A turn that never reported usage stays entirely out of the total and the
-	// count -- never a fabricated zero, the same rule GSHIP-623 established.
-	test('shows no accumulated turn cost when no orchestrator turn ever reported usage', () => {
-		const chatMessages: AppProps['chatMessages'] = [
-			{
-				seq: 1,
-				providerId: 'claude',
-				role: 'operator',
-				text: 'Investigue o core.',
-				createdAt: '2026-08-18T03:00:00.000Z',
-			},
-			{
-				seq: 2,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: 'Sem custo reportado pelo CLI.',
-				createdAt: '2026-08-18T03:00:05.000Z',
-			},
-		];
-		expect(aggregateChatTurnCosts(chatMessages)).toEqual({ totalCostUsd: null, turnCount: 0 });
-		expect(home({ chatMessages })).not.toContain('Expected cumulative cost');
-	});
-
-	test('the run asks for its decision on the conversation surface, once', () => {
-		const html = home({
-			runs: [runIn('waiting-user', { summary: 'Escolha o seam de migração.' })],
-		});
-
-		expect(html).toContain('waiting-user');
-		expect(html).toContain('name="operatorGuidance"');
-		expect(buttonIsEnabled(html, 'Respond and resume')).toBe(true);
-		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
-		// Resuming is the answer itself while the run waits, never a bare command.
-		expect(hasButton(html, 'Resume')).toBe(false);
-	});
-
-	test('a transport error is announced where the command was issued', () => {
-		expect(home({ status: 'Falha ao ler /api/runs' })).toContain('Falha ao ler /api/runs');
-		expect(workPage({ status: 'CAM-902 criada e selecionada.' }))
-			.toContain('CAM-902 criada e selecionada.');
-	});
-});
-
 describe('runs surface', () => {
 	test('the detail card shows the phase and the commands the state admits', () => {
 		expect(runsPage()).toContain('No runs recorded yet.');
@@ -1345,7 +1062,7 @@ describe('runs surface', () => {
 		expect(html).not.toContain('Executor handed off from Claude Code to Codex');
 	});
 
-	test('an explicit pt-BR locale translates the shared run inspector and preserves runtime text', () => {
+	test('an explicit pt-BR locale translates the Runs surface and preserves runtime text', () => {
 		const retryAt = '2026-08-20T12:10:00.000Z';
 		const formattedRetryAt = new Date(retryAt).toLocaleString('pt-BR', {
 			dateStyle: 'short',
@@ -1403,9 +1120,9 @@ describe('runs surface', () => {
 		expect(buttonIsEnabled(ready, 'Cancelar')).toBe(true);
 
 		const current = home({ locale: 'pt-BR', runs: [waitingRun] });
-		expect(current).toContain('aria-label="Inspetor da execução"');
-		expect(current).toContain('Execução atual');
-		expect(current).toContain('Ver detalhes da execução');
+		expect(openingTags(current).find((tag) => tag.startsWith('<main')))
+			.toContain('aria-label="Runs"');
+		expect(current).toContain('Execução mais recente');
 		expect(shellHeader(home({ locale: 'pt-BR', runs: [runIn('working')] })))
 			.toContain('Trabalhando');
 		expect(shellHeader(home({ locale: 'pt-BR' }))).toContain('Ocioso');
@@ -3295,7 +3012,7 @@ describe('settings surface', () => {
 		});
 		const models = panel(html, 'Model and effort by role');
 
-		for (const role of ['Orchestrator', 'Executor', 'Reviewer']) {
+		for (const role of ['Cycle resolver', 'Executor', 'Reviewer']) {
 			expect(models).toContain(`${role} — model`);
 			expect(models).toContain(`${role} — effort`);
 		}
@@ -4025,17 +3742,17 @@ describe('operator shell', () => {
 		})).toContain('That repository is already a checkout of a different one.');
 	});
 
-	test('a ready non-current project has conversation and project-scoped settings', () => {
-		const conversation = renderAt('/projects/project-other', {
+	test('a ready non-current project has Runs and project-scoped settings', () => {
+		const runs = renderAt('/projects/project-other', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 		});
-		expect(openingTags(conversation).find((tag) => tag.startsWith('<main')))
-			.toContain('aria-label="Conversation with the orchestrator"');
-		expect(conversation).toContain('aria-label="Collapse the run panel"');
-		expect(conversation).toContain('data-slot="run-inspector"');
-		expect(conversation).toContain('/projects/project-other/runs');
-		expect(conversation).not.toContain('Project runtime not loaded');
+		expect(openingTags(runs).find((tag) => tag.startsWith('<main')))
+			.toContain('aria-label="Runs"');
+		expect(runs).toContain('CAM-900');
+		expect(buttonIsEnabled(runs, 'Resume')).toBe(true);
+		expect(runs).toContain('/projects/project-other/runs');
+		expect(runs).not.toContain('Project runtime not loaded');
 
 		const settings = renderAt('/projects/project-other/settings', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
@@ -4283,8 +4000,11 @@ describe('operator shell', () => {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
+			const activeRoute = route === '/projects/project-current'
+				? '/projects/project-current/runs'
+				: route;
 			const active = openingTags(nav).find((tag) =>
-				tag.includes(`href="${route}"`) && tag.includes('aria-current="page"'));
+				tag.includes(`href="${activeRoute}"`) && tag.includes('aria-current="page"'));
 			const switcher = elementWith(html, 'data-slot="project-switcher"');
 			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
 			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
@@ -4296,7 +4016,7 @@ describe('operator shell', () => {
 			const switcherMarkup = html.slice(switcherStart, switcherEnd);
 
 			expect(nav).toContain('aria-label="Navigation"');
-			for (const label of ['Control center', 'Conversation', 'Runs', 'Work', 'Settings']) {
+			for (const label of ['Control center', 'Runs', 'Work', 'Settings']) {
 				expect(nav).toContain(`>${label}</span>`);
 			}
 			expect(nav).toContain('flex-wrap');
@@ -4318,7 +4038,7 @@ describe('operator shell', () => {
 			expect(projectSurfaceNavigation).not.toContain(' pl-2');
 			expect(projectSurfaceNavigation).not.toContain('pt-1');
 			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${route}"`));
+			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${activeRoute}"`));
 			expect(nav.match(/href="\/overview"/g)).toHaveLength(1);
 			expect(switcher).toContain('rounded-md');
 			expect(switcher).toContain('px-3');
@@ -4540,7 +4260,7 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Central de controle', 'Conversa', 'Runs', 'Trabalho', 'Ajustes']) {
+		for (const label of ['Central de controle', 'Runs', 'Trabalho', 'Ajustes']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
 		expect(html).toContain('>Pular para o conteúdo</a>');
@@ -4816,21 +4536,50 @@ describe('operator shell', () => {
 		expect(off).not.toContain('GSHIP-9');
 	});
 });
-
-describe('conversation transcript', () => {
+describe('shared live edge and responsive surface content', () => {
 	const HASH = 'a'.repeat(64);
+	const CONTENT_SURFACE_PATHS: readonly OperatorRoute[] = [
+		'/projects/project-current/runs',
+		'/projects/project-current/work',
+		'/projects/project-current/settings',
+	];
 
-	/** Every long, unbreakable string the operator can be shown, per surface. */
+	test('Run activity is one focusable, announced live region', () => {
+		const html = runsPage({
+			runs: [runIn('working')],
+			events: [{
+				seq: 2,
+				runId: 'run-1',
+				kind: 'provider.activity',
+				fromState: 'working',
+				toState: 'working',
+				payload: { text: 'Editing the client.' },
+				createdAt: '2026-08-16T03:04:05.000Z',
+			}],
+		});
+		const activity = elementWith(html, 'role="log"');
+
+		expect(activity).toContain('aria-label="Activity"');
+		expect(activity).toContain('tabindex="0"');
+		expect(activity).toContain('overflow-y-auto');
+	});
+
+	test('the shell content frame gives current routes one responsive measure', () => {
+		const frameClass = 'mx-auto w-full max-w-(--content-measure)';
+
+		for (const route of SURFACE_PATHS) {
+			const frames = openingTags(renderAt(route)).filter((tag) => tag.includes('data-slot="shell-content-frame"'));
+			expect(frames.length).toBeGreaterThanOrEqual(2);
+			for (const frame of frames) expect(frame).toContain(frameClass);
+		}
+		expect(elementWith(runsPage(), 'data-slot="shell-controls-layout"'))
+			.not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
+	});
+
+	/** Every long, unbreakable string the retained surfaces can show. */
 	function renderLongContent(route: OperatorRoute): string {
 		return renderAt(route, {
 			backlog: [{ id: `CAM-${HASH}`, title: `issue ${HASH}` }],
-			chatMessages: [{
-				seq: 1,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: `Comparei com ${HASH} rodando bun test test/web/ui-client.test.tsx --coverage`,
-				createdAt: '2026-08-16T03:00:00.000Z',
-			}],
 			ideas: [{ id: `CAM-idea-${HASH}`, title: `ideia ${HASH}` }],
 			providers: [
 				{ id: 'claude', installed: true, subscription: false, label: `Claude ${HASH}`, login: 'external' },
@@ -4868,15 +4617,13 @@ describe('conversation transcript', () => {
 		const geometry = { scrollHeight: 1000, clientHeight: 400 };
 
 		expect(isAtLiveEdge({ ...geometry, scrollTop: 600 })).toBe(true);
-		// A fraction of a pixel short of the bottom is still the bottom.
 		expect(isAtLiveEdge({ ...geometry, scrollTop: 600 - LIVE_EDGE_TOLERANCE_PX })).toBe(true);
 		expect(isAtLiveEdge({ ...geometry, scrollTop: 599 - LIVE_EDGE_TOLERANCE_PX })).toBe(false);
 		expect(isAtLiveEdge({ ...geometry, scrollTop: 0 })).toBe(false);
-		// Nothing to scroll: the operator is at the edge by definition.
 		expect(isAtLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(true);
 	});
 
-	test('the return-to-latest control only applies to an overflowing transcript away from its edge', () => {
+	test('the return-to-latest control only applies to overflowing Run activity away from its edge', () => {
 		expect(canReturnToLiveEdge({ scrollHeight: 1000, clientHeight: 400, scrollTop: 0 })).toBe(true);
 		expect(canReturnToLiveEdge({ scrollHeight: 1000, clientHeight: 400, scrollTop: 600 })).toBe(false);
 		expect(canReturnToLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(false);
@@ -4888,17 +4635,14 @@ describe('conversation transcript', () => {
 
 		liveEdge.onArrival(position);
 		expect(position.scrollTop).toBe(1000);
-
 		position.scrollHeight = 1200;
 		liveEdge.onArrival(position);
 		expect(position.scrollTop).toBe(1200);
-
 		position.scrollTop = 500;
 		liveEdge.onScroll(position);
 		position.scrollHeight = 1400;
 		liveEdge.onArrival(position);
 		expect(position.scrollTop).toBe(500);
-
 		position.scrollTop = position.scrollHeight - position.clientHeight;
 		liveEdge.onScroll(position);
 		position.scrollHeight = 1600;
@@ -4912,11 +4656,9 @@ describe('conversation transcript', () => {
 
 		liveEdge.onScroll(position);
 		position.clientHeight = 200;
-		// The ResizeObserver feeds the changed geometry through this same path.
 		liveEdge.onScroll(position);
 		position.scrollHeight = 1200;
 		liveEdge.onArrival(position);
-
 		expect(position.scrollTop).toBe(600);
 	});
 
@@ -4926,10 +4668,8 @@ describe('conversation transcript', () => {
 
 		liveEdge.onScroll(position);
 		position.clientHeight = 200;
-		// RunActivity does not opt into ResizeObserver, so no controller update runs.
 		position.scrollHeight = 1200;
 		liveEdge.onArrival(position);
-
 		expect(position.scrollTop).toBe(1200);
 	});
 
@@ -4943,7 +4683,6 @@ describe('conversation transcript', () => {
 		position.scrollHeight = 800;
 		session = liveEdgeSession(session, 'run-2');
 		session.controller.onArrival(position);
-
 		expect(position.scrollTop).toBe(800);
 	});
 
@@ -4954,225 +4693,32 @@ describe('conversation transcript', () => {
 		session.controller.onArrival(position);
 		position.scrollTop = 100;
 		session.controller.onScroll(position);
-		// The null identity has no node, so there is deliberately no arrival.
 		session = liveEdgeSession(session, null);
 		session = liveEdgeSession(session, 'run-1');
 		position.scrollHeight = 1200;
 		session.controller.onArrival(position);
-
 		expect(position.scrollTop).toBe(1200);
 	});
 
-	test('the transcript is one focusable, announced region in every state', () => {
-		const empty = home();
-		const loaded = home({
-			chatMessages: [{
-				seq: 1,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: 'Pronto.',
-				createdAt: '2026-08-16T03:00:00.000Z',
-			}],
-		});
-
-		for (const html of [empty, loaded]) {
-			const region = elementWith(html, 'role="log"');
-			expect(region).toContain('aria-label="Conversation transcript"');
-			expect(region).toContain('tabindex="0"');
-			expect(region).toContain('overflow-y-auto');
-			expect(html.split('role="log"')).toHaveLength(2);
-		}
-		// The empty state is inside the region, so the region never moves.
-		expect(empty.indexOf('role="log"')).toBeLessThan(empty.indexOf('Describe the goal'));
-		expect(loaded.indexOf('role="log"')).toBeLessThan(loaded.indexOf('Pronto.'));
-	});
-
-	test('the run inspector follows the conversation on narrow screens and stays lateral on desktop', () => {
-		const html = home();
-		const layout = elementWith(html, 'data-slot="conversation-layout"');
-		const transcript = elementWith(html, 'role="log"');
-		const inspector = elementWith(html, 'data-slot="run-inspector"');
-		const card = elementWith(html, 'data-slot="card-frame"');
-		const cardPanel = elementWith(html, 'data-slot="card-panel"');
-		const main = openingTags(html).find((tag) => tag.startsWith('<main'));
-
-		expect(layout).toContain('flex-col');
-		expect(layout).toContain('overflow-y-auto');
-		expect(layout).toContain('xl:flex-row');
-		expect(layout).toContain('xl:overflow-hidden');
-		expect(transcript).toContain('overflow-y-visible');
-		expect(transcript).toContain('xl:overflow-y-auto');
-		expect(transcript).toContain('min-h-0');
-		expect(main).toContain('shrink-0');
-		expect(main).toContain('xl:min-h-0');
-		expect(card).toContain('xl:min-h-0');
-		expect(cardPanel).toContain('min-h-0');
-		expect(main).toContain('xl:flex-1');
-		expect(inspector).toContain('w-full');
-		expect(inspector).toContain('xl:w-(--inspector-column-width)');
-		expect(html.indexOf('<main')).toBeLessThan(html.indexOf('data-slot="run-inspector"'));
-	});
-
-	test('the shell owns the matched panel controls and removes the inspector column when closed', () => {
-		const open = home();
-		const sidebar = elementWith(open, 'aria-label="Collapse the sidebar"');
-		const inspectorToggle = elementWith(open, 'aria-label="Collapse the run panel"');
-		const inspector = elementWith(open, 'data-slot="run-inspector"');
-		const glyphs = [...open.matchAll(/<svg[^>]*data-slot="panel-toggle-glyph"[^>]*>/g)].map((match) => match[0]);
-		const leftGlyph = glyphs.find((glyph) => glyph.includes('data-side="left"'));
-		const rightGlyph = glyphs.find((glyph) => glyph.includes('data-side="right"'));
-
-		expect(sidebar).toContain('border-input');
-		expect(sidebar).toContain('size-9');
-		expect(inspectorToggle).toContain('border-input');
-		expect(inspectorToggle).toContain('size-9');
-		const inspectorToggles = openingTags(open).filter((tag) => tag.includes('aria-label="Collapse the run panel"'));
-		expect(inspectorToggles).toHaveLength(1);
-		expect(inspectorToggle).not.toContain('xl:hidden');
-		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
-		expect(leftGlyph).toBeDefined();
-		expect(rightGlyph).toBeDefined();
-		for (const glyph of [leftGlyph, rightGlyph]) {
-			const index = open.indexOf(glyph ?? '');
-			const svg = open.slice(index, open.indexOf('</svg>', index));
-			expect(svg).toContain('fill="currentColor"');
-		}
-		expect(open.indexOf('aria-label="Collapse the sidebar"')).toBeLessThan(open.indexOf('aria-label="Collapse the run panel"'));
-		expect(elementWith(open, 'aria-label="Wide layout"')).toContain('hidden 2xl:inline-flex');
-		expect(inspector).not.toContain('border-l');
-		expect(open).not.toContain('xl:border-l');
-
-		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
-		const previousStorage = runtime.localStorage;
-		runtime.localStorage = {
-			getItem: (key) => key === 'gship-inspector' ? 'closed' : null,
-			setItem: () => {},
-		};
-		try {
-			const closed = home();
-			expect(closed).toContain('aria-label="Expand the run panel"');
-			expect(closed).not.toContain('data-slot="run-inspector"');
-			expect(closed).not.toContain('Current run');
-		} finally {
-			runtime.localStorage = previousStorage;
-		}
-	});
-
-	test('the shell content frame gives controls and surfaces one responsive measure', () => {
-		const open = home();
-		const surface = runsPage();
-		const nonCurrent = renderAt('/projects/project-other', { projects: [CURRENT_PROJECT, OTHER_PROJECT] });
-		const frameClass = 'mx-auto w-full max-w-(--content-measure)';
-
-		for (const html of [open, surface, nonCurrent]) {
-			const frames = openingTags(html).filter((tag) => tag.includes('data-slot="shell-content-frame"'));
-			expect(frames.length).toBeGreaterThanOrEqual(2);
-			for (const frame of frames) expect(frame).toContain(frameClass);
-		}
-		expect(open).toContain('[--inspector-column-width:24rem]');
-		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
-		expect(elementWith(surface, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
-		expect(elementWith(nonCurrent, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
-
-		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
-		const previousStorage = runtime.localStorage;
-		runtime.localStorage = {
-			getItem: (key) => key === 'gship-sidebar' || key === 'gship-inspector' ? 'closed' : key === 'gship-width' ? 'wide' : null,
-			setItem: () => {},
-		};
-		try {
-			const wide = home();
-			expect(wide).toContain('aria-label="Expand the sidebar"');
-			expect(wide).toContain('aria-label="Expand the run panel"');
-			expect(elementWith(wide, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
-			for (const frame of openingTags(wide).filter((tag) => tag.includes('data-slot="shell-content-frame"'))) {
-				expect(frame).toContain(frameClass);
-			}
-		} finally {
-			runtime.localStorage = previousStorage;
-		}
-	});
-
-	test('the persisted inspector state applies to current and ready non-current conversations', () => {
-		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
-		const previousStorage = runtime.localStorage;
-		runtime.localStorage = {
-			getItem: (key) => key === 'gship-inspector' ? 'closed' : null,
-			setItem: () => {},
-		};
-		try {
-			for (const html of [
-				home(),
-				renderAt('/projects/project-other', { projects: [CURRENT_PROJECT, OTHER_PROJECT] }),
-			]) {
-				expect(html).toContain('aria-label="Expand the run panel"');
-				expect(html).not.toContain('data-slot="run-inspector"');
-			}
-		} finally {
-			runtime.localStorage = previousStorage;
-		}
-	});
-
-	test('conversation and run output use the same focusable live-edge contract', () => {
-		const conversation = home({
-			chatMessages: [{
-				seq: 1,
-				providerId: 'claude',
-				role: 'orchestrator',
-				text: 'Watching the run.',
-				createdAt: '2026-08-16T03:00:00.000Z',
-			}],
-		});
-		const activity = runsPage({
-			runs: [runIn('working')],
-			events: [{
-				seq: 2,
-				runId: 'run-1',
-				kind: 'provider.activity',
-				fromState: 'working',
-				toState: 'working',
-				payload: { text: 'Editing the client.' },
-				createdAt: '2026-08-16T03:04:05.000Z',
-			}],
-		});
-		const liveRegions = [conversation, activity].map((html) => elementWith(html, 'role="log"'));
-
-		expect(liveRegions).toHaveLength(2);
-		expect(liveRegions.map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
-			'Conversation transcript',
-			'Activity',
-		]);
-		for (const region of liveRegions) {
-			expect(region).toContain('tabindex="0"');
-			expect(region).toContain('overflow-y-auto');
-		}
-	});
-
 	test('long hashes, commands and ids are rendered with a rule that breaks them', () => {
-		const surfaces = SURFACE_PATHS.map(renderLongContent);
+		const surfaces = CONTENT_SURFACE_PATHS.map(renderLongContent);
 		const unbreakable = surfaces.flatMap((html) =>
-			openingTags(html).filter((tag) =>
-				tag.startsWith('<code') || tag.includes('whitespace-pre-wrap')));
+			openingTags(html).filter((tag) => tag.startsWith('<code') || tag.includes('whitespace-pre-wrap')));
 
 		expect(unbreakable.length).toBeGreaterThan(3);
 		for (const tag of unbreakable) expect(tag).toMatch(/break-(all|words)/);
-		// The content itself is still there, whole.
-		expect(renderLongContent('/')).toContain(`Comparei com ${HASH}`);
-		expect(renderLongContent('/runs')).toContain(`provider.activity.${HASH}`);
-		expect(renderLongContent('/runs')).toContain(`/project/.gship/worktrees/${HASH}`);
-		expect(renderLongContent('/work')).toContain(`issue ${HASH}`);
+		expect(renderLongContent('/projects/project-current/runs')).toContain(`provider.activity.${HASH}`);
+		expect(renderLongContent('/projects/project-current/runs')).toContain(`/project/.gship/worktrees/${HASH}`);
+		expect(renderLongContent('/projects/project-current/work')).toContain(`issue ${HASH}`);
 	});
 
 	test('horizontal scrolling is confined to named tab lists and table containers', () => {
-		for (const route of SURFACE_PATHS) {
+		for (const route of CONTENT_SURFACE_PATHS) {
 			const html = renderLongContent(route);
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
-
-			// The page body never scrolls sideways: wide content scrolls inside
-			// its own container. Tab lists own one deliberate scroller; dense tables
-			// keep owning their own horizontal overflow.
 			const tables = horizontal.filter((tag) => tag.includes('data-slot="table-container"'));
 			const local = horizontal.filter((tag) => !tag.includes('data-slot="table-container"'));
+
 			for (const scroller of local) expect(scroller).toContain('data-slot="tabs-scroll"');
 			if (route.endsWith('/work')) expect(local).not.toHaveLength(0);
 			const operatorNav = html.indexOf('<nav aria-label="Navigation"');

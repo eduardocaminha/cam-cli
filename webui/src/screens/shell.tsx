@@ -15,7 +15,7 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
-import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, CubeIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Message01Icon, Moon02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, CubeIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
 
@@ -128,7 +128,6 @@ export function humanVersionOf(version: string): string {
 export const NAV_GLYPHS = {
 	overview: Grid2X2Icon,
 	project: CubeIcon,
-	conversation: Message01Icon,
 	runs: Activity01Icon,
 	work: ListViewIcon,
 	settings: Settings01Icon,

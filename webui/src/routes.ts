@@ -3,7 +3,7 @@ import type { ShellCatalog } from './locale.ts';
 /** The URL owns the surface and project scope; overview may retain navigation context. */
 export type OperatorRoute = '/overview' | '/projects' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
 
-export type ProjectSurface = 'conversation' | 'runs' | 'work' | 'settings';
+export type ProjectSurface = 'runs' | 'work' | 'settings';
 
 export interface RouteSelection {
 	projectId: string | null;
@@ -15,7 +15,6 @@ export const PROJECT_SURFACES: readonly {
 	label: keyof ShellCatalog['routeLabels'];
 	surface: ProjectSurface;
 }[] = [
-	{ suffix: '', label: 'conversation', surface: 'conversation' },
 	{ suffix: '/runs', label: 'runs', surface: 'runs' },
 	{ suffix: '/work', label: 'work', surface: 'work' },
 	{ suffix: '/settings', label: 'settings', surface: 'settings' },
@@ -36,7 +35,7 @@ export function routeOf(pathname: string): OperatorRoute {
 export function routeSelection(route: OperatorRoute, currentId: string | null, selectedProjectId: string | null = null): RouteSelection {
 	if (route === '/overview') return { projectId: selectedProjectId, surface: 'overview' };
 	if (route === '/projects') return { projectId: null, surface: 'projects' };
-	const legacy = route === '/' ? 'conversation' : route.slice(1);
+	const legacy = route === '/' ? 'runs' : route.slice(1);
 	if (route === '/settings') return { projectId: null, surface: 'global-settings' };
 	if (route === '/' || route === '/runs' || route === '/work') {
 		return { projectId: currentId, surface: legacy as ProjectSurface };
@@ -45,7 +44,7 @@ export function routeSelection(route: OperatorRoute, currentId: string | null, s
 	if (match === null) return { projectId: null, surface: 'overview' };
 	let projectId = match[1] ?? '';
 	try { projectId = decodeURIComponent(projectId); } catch { /* unmatched id stays unavailable */ }
-	return { projectId, surface: (match[2] ?? 'conversation') as ProjectSurface };
+	return { projectId, surface: (match[2] ?? 'runs') as ProjectSurface };
 }
 
 export function projectIdOf(pathname: string): string | null {

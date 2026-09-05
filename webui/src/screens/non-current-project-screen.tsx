@@ -5,7 +5,6 @@ import type { AppProps } from '../app-props.ts';
 import type { RegisteredProjectView } from '../client.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RouteSelection } from '../routes.ts';
-import { HomeSurface } from './home-screen.tsx';
 import { UnregisterProjectPanel } from './projects.tsx';
 import { RunsSurface } from './runs-screen.tsx';
 import { SettingsSurface } from './settings-screen.tsx';
@@ -13,18 +12,15 @@ import { UnavailableProjectSurface } from './unavailable-project-screen.tsx';
 import { WorkSurface } from './work-screen.tsx';
 
 export function NonCurrentProjectSurface({
-	inspectorOpen,
 	props,
 	selectedProject,
 	surface,
 }: {
-	inspectorOpen: boolean;
 	props: AppProps;
 	selectedProject: RegisteredProjectView;
 	surface: RouteSelection['surface'];
 }): React.ReactElement {
 	if (selectedProject.readiness === 'ready') {
-		if (surface === 'conversation') return <HomeSurface {...props} inspectorOpen={inspectorOpen} projectId={selectedProject.id} />;
 		if (surface === 'runs') return <RunsSurface {...props} />;
 		if (surface === 'work') return <WorkSurface {...props} />;
 		if (surface === 'settings') {

@@ -17,7 +17,6 @@ import {
 	type AgentSettingSource,
 	approveIssue,
 	type ChainRunsView,
-	type ChatMessageView,
 	cancelDiagnostic,
 	commandRun,
 	connectClaudeCredential,
@@ -38,7 +37,6 @@ import {
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
-	fetchChat,
 	fetchDiagnostics,
 	fetchExecutorHandoff,
 	fetchModelSettingsSnapshot,
@@ -85,7 +83,6 @@ import {
 	saveResendSettings,
 	saveSelfUpdate,
 	selectProvider,
-	sendChat,
 	sendNotificationTest,
 	specifyIssue,
 	startCodexLogin,
@@ -181,7 +178,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	workspaceNotices: WorkspaceNoticeView[];
 	staleService: StaleServiceView | null;
 	gitIdentity: GitIdentityView | null;
-	chatMessages: ChatMessageView[];
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
 	providerSource: AgentSettingSource;
@@ -231,7 +227,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
 	const [staleService, setStaleService] = useState<StaleServiceView | null>(null);
 	const [gitIdentity, setGitIdentity] = useState<GitIdentityView | null>(null);
-	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
 	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
 	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
 	const [providerSource, setProviderSource] = useState<AgentSettingSource>('provider-default');
@@ -283,7 +278,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		setProposals([]); setResolvedProposals([]); setResolvedProposalsOmittedCount(0);
 		setRuns([]); setEvents([]);
 		setWorkspaceNotices([]); setStaleService(null); setGitIdentity(null); setVersion('');
-		setChatMessages([]);
 		setProviders([]); setSelectedProvider('claude'); setProviderSource('provider-default');
 		setBrief(EMPTY_BRIEF); setHandoff(EMPTY_BRIEF);
 		setModelSettings(emptyModelSettings()); setModelSettingsSource('provider-default');
@@ -342,7 +336,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		secondary('Providers', () => fetchProviders(scope), (value) => {
 			setProviders(value.providers); setSelectedProvider(value.selected); setProviderSource(value.source);
 		}),
-		secondary('Conversation', () => fetchChat(scope), setChatMessages),
 		secondary('Brief', () => fetchBrief(scope), (value) => { setBrief(value.brief); setHandoff(value.handoff); }),
 		secondary('Proposals', () => fetchProposals(scope), setProposals),
 		secondary('Resolved proposals', () => fetchResolvedProposals(scope), (value) => {
@@ -554,7 +547,6 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		workspaceNotices,
 		staleService,
 		gitIdentity,
-		chatMessages,
 		providers,
 		selectedProvider,
 		providerSource,
@@ -616,7 +608,6 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		workspaceNotices,
 		staleService,
 		gitIdentity,
-		chatMessages,
 		providers,
 		selectedProvider,
 		providerSource,
@@ -749,7 +740,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			diagnostics={diagnostics}
 			drafts={drafts}
 			brief={brief}
-			chatMessages={chatMessages}
+			chatMessages={[]}
 			events={events}
 			gitIdentity={gitIdentity}
 			handoff={handoff}
@@ -786,7 +777,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				send(() => promoteProposal(proposalId, draft, scope).then((created) =>
 					`${created.id} created from the proposal.`));
 			}}
-			onSendMessage={(message) => send(() => sendChat(message, scope))}
+			onSendMessage={() => {}}
 			onConnectCodex={() => {
 				const loginWindow = window.open('about:blank', 'gateship-codex-login');
 				send(() => startCodexLogin().then((authUrl) => {

@@ -55,6 +55,7 @@ export interface AppProps {
 	events: readonly RunEventView[];
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
+	/** Retained for the dormant transcript component; routed UI never reads it. */
 	chatMessages: readonly ChatMessageView[];
 	brief: ProjectBriefView;
 	project: ProjectStatusView;
@@ -113,6 +114,7 @@ export interface AppProps {
 	onRemoveResendCredential: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onResetProvider: () => void;
+	/** Retained for the dormant transcript component; routed UI never invokes it. */
 	onSendMessage: (message: string) => void;
 	onSaveBrief: (brief: ProjectBriefView) => void;
 	onSaveModelSettings: (settings: ModelSettingsView) => void;

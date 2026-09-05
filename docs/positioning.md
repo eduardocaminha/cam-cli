@@ -17,18 +17,17 @@ sessions.
 
 The loop is deliberately short:
 
-1. the operator converses with a read-only orchestrator;
-2. the orchestrator may return one typed service command;
+1. the operator converses with an external agent;
+2. the external agent invokes typed Gateship service commands;
 3. Gateship creates a worktree from fresh `origin/main`;
 4. a resumable selected-provider session implements the task;
 5. Gateship executes the named verification;
 6. a fresh capability-restricted session reviews the change;
 7. a clean run can be committed, pushed, and squash-merged.
 
-SQLite records state, public activity, the operator-owned project brief, and the
-shared conversational transcript. A successful brief write atomically clears
-the generated handoff, so explicit operator intent replaces stale session
-memory while provider switches and process restarts remain durable.
+SQLite records state, public activity and the operator-owned project brief. The
+external agent is the conversational interface; Gateship's deterministic
+runtime retains ownership of state, verification, recovery and shipping.
 
 ## Differentiation
 
@@ -37,8 +36,7 @@ memory while provider switches and process restarts remain durable.
 - Evidence-first: completion requires executable verification and independent
   review, not a model's self-report.
 - Durable: the browser can close, the provider can change, or the service can
-  restart without discarding the transcript, run workspace, or native session
-  ids.
+  restart without discarding run state, the workspace, or native session ids.
 - Small control plane: one Bun process owns HTTP, SQLite, child processes, and
   cancellation. There is no separate daemon, sidecar, or message broker.
 
