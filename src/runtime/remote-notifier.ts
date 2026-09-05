@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
+import { needsOperatorNotification } from '../notification-eligibility.ts';
 import type { RunEvent } from './run-store.ts';
 
 /**
@@ -49,95 +50,26 @@ function notificationStateDirs(cwd: string, stateDir?: string, fallbackStateDir?
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 
-/** Reasons `run.chain-paused` carries that are chaining's default-off steady state, not a stopped queue (mirrors webui/src/App.tsx's stoppedQueuePause, GSHIP-650). */
-const SILENT_CHAIN_PAUSE_REASONS = new Set(['chain-disabled']);
-
 interface RemoteNotification {
 	title: string;
 	body: string;
 }
 
-function payloadText(event: RunEvent, key: string): string | null {
-	const value = event.payload[key];
+function payloadText(event: RunEvent): string | null {
+	const value = event.payload['summary'];
 	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-/** Split out of `remoteNotificationForRunEvent` to keep its own branching under the complexity budget. */
-function chainPauseNotification(event: RunEvent): RemoteNotification | null {
-	const reason = event.payload['reason'];
-	if (typeof reason !== 'string' || SILENT_CHAIN_PAUSE_REASONS.has(reason)) return null;
-	if (reason === 'no-admissible-issue') {
-		return {
-			title: 'Queue complete',
-			body: 'The run queue is complete. No eligible work remains.',
-		};
-	}
-	const issueId = payloadText(event, 'issueId');
-	return {
-		title: 'Queue stopped',
-		body: issueId === null
-			? 'The run queue stopped and needs attention.'
-			: `The run queue stopped at ${issueId}.`,
-	};
-}
-
 /**
- * The durable transitions worth waking someone up for (GSHIP-651): an
- * operator decision, a failure, an interruption nobody asked for, a ship
- * that needs a retry, and a stopped chain queue. Deliberately narrower than
- * the browser's own `notificationForRunEvent`: a clean `done` and a
- * preserved-workspace warning already read fine at the next glance and are
- * not worth a page in the middle of the night. `run.chain-paused` is decided
- * before the transition guard below because the runtime emits it on the
- * state the run already holds (GSHIP-650), same as the browser's
- * `workspace.cleanup-warning`.
+ * Browser, ntfy and Resend share one eligibility rule: notify only when the
+ * runtime has actually entered waiting-user after internal resolution.
  */
 export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotification | null {
-	if (event.kind === 'run.chain-paused') return chainPauseNotification(event);
-	if (event.fromState === event.toState) return null;
-
-	if (event.toState === 'waiting-user') {
-		return {
-			title: 'Gateship needs you',
-			body: payloadText(event, 'summary') ?? 'The run is waiting for an operator decision.',
-		};
-	}
-	if (event.toState === 'waiting-provider') {
-		return {
-			title: 'Provider temporarily unavailable',
-			body: payloadText(event, 'message') ?? 'The run was preserved and can be resumed later.',
-		};
-	}
-	if (event.toState === 'ready-to-ship' && event.kind === 'run.ship-failed') {
-		return {
-			title: 'Shipping needs another attempt',
-			body: payloadText(event, 'error') ?? 'The code remains preserved and ready to retry.',
-		};
-	}
-	// `run.cancelled` (RunRuntime#cancelRun on a run with nothing active to
-	// abort) is the operator's own action, already visible on the screen that
-	// triggered it. Every other path to `interrupted` goes through
-	// RunRuntime#interrupt on an aborted signal -- an active run's `cancelRun`
-	// and RunRuntime#stop both abort that same signal -- and kind
-	// `run.recovered-interrupted` (run-store.ts's own startup recovery) can
-	// never reach a subscriber: it is produced and discarded inside the
-	// RunRuntime constructor, before `subscribe` can ever be called on the
-	// instance it returns. `run.interrupted` is therefore the one kind an
-	// operator genuinely was not watching happen, which is what this alert
-	// exists for.
-	if (event.toState === 'interrupted' && event.kind !== 'run.cancelled') {
-		return {
-			title: 'Run interrupted',
-			body: 'The run can be resumed from Gateship.',
-		};
-	}
-	if (event.toState === 'failed') {
-		return {
-			title: 'Run failed',
-			body: payloadText(event, 'error') ?? 'Open Gateship to inspect the error.',
-		};
-	}
-	return null;
+	if (!needsOperatorNotification(event)) return null;
+	return {
+		title: 'Gateship needs you',
+		body: payloadText(event) ?? 'The run is waiting for an operator decision.',
+	};
 }
 
 /**
@@ -288,30 +220,6 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 		const { config } = resolveResendConfig(cwd, env, stateDir, options.legacyStateDir);
 		if (config !== null) void sendResendDelivery(config, notification, fetchImpl, timeoutMs);
 	};
-}
-
-/**
- * Final service-lifecycle outcomes use the same optional server-side channels
- * as run alerts. The caller supplies only public result text; channel secrets
- * remain resolved here and never enter SQLite, a browser response, or a child
- * environment assembled for an agent.
- */
-export async function sendRemoteServiceNotification(
-	cwd: string,
-	title: string,
-	body: string,
-	options: Omit<RemoteNotifierOptions, 'cwd'> = {},
-): Promise<void> {
-	const env = options.env ?? process.env;
-	const fetchImpl = options.fetchImpl ?? fetch;
-	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	const notification = { title, body };
-	const deliveries: Promise<void>[] = [];
-	const topicUrl = resolveNtfyTopicUrl(cwd, env, options.stateDir, options.legacyStateDir);
-	if (topicUrl !== null) deliveries.push(sendNtfyDelivery(topicUrl, notification, fetchImpl, timeoutMs));
-	const { config } = resolveResendConfig(cwd, env, options.stateDir, options.legacyStateDir);
-	if (config !== null) deliveries.push(sendResendDelivery(config, notification, fetchImpl, timeoutMs));
-	await Promise.all(deliveries);
 }
 
 /** What Ajustes' "send test" button reports; `detail` never carries the topic URL, only the delivery's own outcome. */

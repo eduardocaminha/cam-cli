@@ -14,7 +14,6 @@ import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
 import { RunStore } from './run-store.ts';
-import { sendRemoteServiceNotification } from './remote-notifier.ts';
 
 export const SELF_UPDATE_SETTING_KEY = 'self-update';
 export const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -610,12 +609,6 @@ async function persistHandoff(plan: HandoffPlan, result: SelfUpdateResult): Prom
 	} finally {
 		store.close();
 	}
-	const title = result.status === 'success'
-		? 'Gateship updated'
-		: result.status === 'rollback' ? 'Gateship update rolled back' : 'Gateship update failed';
-	await sendRemoteServiceNotification(plan.cwd, title, result.reason, {
-		stateDir: effectiveStateDir(plan),
-	});
 }
 
 const DEFAULT_HANDOFF_DEPENDENCIES: HandoffDependencies = {

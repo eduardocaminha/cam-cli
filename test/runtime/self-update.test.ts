@@ -16,10 +16,6 @@ import {
 } from '../../src/runtime/self-update.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
-import {
-	NTFY_URL_ENV_VAR,
-	sendRemoteServiceNotification,
-} from '../../src/runtime/remote-notifier.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const COMMIT = 'a'.repeat(40);
@@ -478,14 +474,10 @@ describe('transient update handoff', () => {
 		expect(fixture.results).toEqual(['success']);
 	});
 
-	test('an unavailable final channel does not change a verified update outcome', async () => {
+	test('persists a verified update outcome without a remote notification', async () => {
 		const fixture = handoffFixture([true]);
 		fixture.deps.persist = async (_plan, result) => {
 			fixture.results.push(result.status);
-			await sendRemoteServiceNotification('/project', 'Gateship updated', result.reason, {
-				env: { [NTFY_URL_ENV_VAR]: 'https://ntfy.test/topic' },
-				fetchImpl: (() => Promise.reject(new Error('offline'))) as unknown as typeof fetch,
-			});
 		};
 
 		const result = await executeSelfUpdateHandoff(plan(), fixture.deps);

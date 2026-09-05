@@ -149,8 +149,8 @@ From the browser you can:
 3. let decisions interrupt the work and wait for you as `Needs you`;
 4. follow progress as `Working`, with public agent text, tool names,
    verification, and review over SSE;
-5. enable local browser notifications, so a decision, a failure, or the
-   completed run reaches you outside the tab;
+5. enable local browser notifications, so a run that needs an operator
+   decision reaches you outside the tab;
 6. switch between Claude and Codex without losing durable run state;
 7. run an optional advisory React diagnostic against an isolated exact-SHA
    checkout, manually or on a daily/weekly schedule while the project is idle,

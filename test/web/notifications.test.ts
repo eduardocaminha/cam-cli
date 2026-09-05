@@ -7,70 +7,41 @@ function event(
 	toState: RunState,
 	kind: string,
 	payload: Record<string, unknown> = {},
+	fromState: RunState | null = 'working',
 ): RunEventView {
 	return {
 		seq: 1,
 		runId: 'run-1',
 		kind,
-		fromState: 'working',
+		fromState,
 		toState,
 		payload,
 		createdAt: '2026-08-16T00:00:00.000Z',
 	};
 }
 
-/** The workspace warning the runtime emits on the state the run already holds. */
-const CLEANUP_WARNING: RunEventView = {
-	...event('done', 'workspace.cleanup-warning', { detail: 'workspace ficou sujo' }),
-	fromState: 'done',
-};
-
 describe('run notifications', () => {
-	test('alerts on operator decisions, retryable ship failures, failures and completion', () => {
+	test('alerts when a run really enters waiting-user', () => {
 		expect(notificationForRunEvent(event('waiting-user', 'run.waiting-user', {
 			summary: 'Escolha o seam.',
 		}))).toMatchObject({ title: 'Gateship needs you', body: 'Escolha o seam.' });
-		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting', {
-			message: 'Claude usage limit reached.',
-		}))).toMatchObject({
-			title: 'Provider temporarily unavailable',
-			body: 'Claude usage limit reached.',
-		});
-		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed', {
-			error: 'checks red',
-		}))).toMatchObject({ title: 'Shipping needs another attempt', body: 'checks red' });
-		expect(notificationForRunEvent(event('failed', 'run.verification-failed')))
-			.toMatchObject({ title: 'Run failed' });
-		expect(notificationForRunEvent(event('done', 'run.shipped')))
-			.toMatchObject({ title: 'Run completed' });
 	});
 
-	test('does not alert on ordinary progress, automatic ready state, or operator cancellation', () => {
+	test('does not alert on provider waits, recoverable failures, shipping, preserved workspaces, queue states, merges or repeated waiting-user', () => {
+		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting'))).toBeNull();
+		expect(notificationForRunEvent(event('interrupted', 'run.interrupted'))).toBeNull();
+		expect(notificationForRunEvent(event('failed', 'run.verification-failed'))).toBeNull();
+		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed'))).toBeNull();
+		expect(notificationForRunEvent(event('done', 'workspace.cleanup-warning', {}, 'done'))).toBeNull();
+		expect(notificationForRunEvent(event('done', 'run.chain-paused', { reason: 'operator-paused' }, 'done'))).toBeNull();
+		expect(notificationForRunEvent(event('done', 'run.chain-paused', { reason: 'no-admissible-issue' }, 'done'))).toBeNull();
+		expect(notificationForRunEvent(event('done', 'run.shipped'))).toBeNull();
+		expect(notificationForRunEvent(event('waiting-user', 'run.operator-guidance', {}, 'waiting-user'))).toBeNull();
 		expect(notificationForRunEvent(event('review', 'run.review-started'))).toBeNull();
-		expect(notificationForRunEvent(event('ready-to-ship', 'run.review-clean'))).toBeNull();
-		expect(notificationForRunEvent(event('interrupted', 'run.cancelled'))).toBeNull();
 	});
 
-	test('a decision opens the conversation and every other alert opens the runs surface', () => {
+	test('a decision opens the conversation', () => {
 		expect(notificationForRunEvent(event('waiting-user', 'run.waiting-user'))?.url).toBe('/');
-		expect(notificationForRunEvent(event('waiting-provider', 'run.provider-waiting'))?.url)
-			.toBe('/runs');
-		expect(notificationForRunEvent(event('ready-to-ship', 'run.ship-failed'))?.url).toBe('/runs');
-		expect(notificationForRunEvent(event('interrupted', 'run.interrupted'))?.url).toBe('/runs');
-		expect(notificationForRunEvent(event('failed', 'run.verification-failed'))?.url).toBe('/runs');
-		expect(notificationForRunEvent(event('done', 'run.shipped'))?.url).toBe('/runs');
-	});
-
-	test('a preserved workspace alerts even though the run state does not change', () => {
-		expect(CLEANUP_WARNING.fromState).toBe(CLEANUP_WARNING.toState);
-		expect(notificationForRunEvent(CLEANUP_WARNING)).toMatchObject({
-			title: 'Workspace preserved',
-			body: 'workspace ficou sujo',
-			url: '/runs',
-		});
-		// Its own tag, so it does not replace the outcome notification of the run.
-		expect(notificationForRunEvent(CLEANUP_WARNING)?.tag)
-			.not.toBe(notificationForRunEvent(event('done', 'run.shipped'))?.tag);
 	});
 });
 
@@ -126,13 +97,13 @@ describe('notification click', () => {
 	});
 
 	test('focuses the tab and navigates when it is parked on another surface', () => {
-		const seam = installBrowser('/');
-		expect(notifyRunEvent(event('failed', 'run.verification-failed'))).toBe(true);
+		const seam = installBrowser('/runs');
+		expect(notifyRunEvent(event('waiting-user', 'run.waiting-user'))).toBe(true);
 
 		const notification = StubNotification.sent[0];
 		notification?.onclick?.();
 		expect(seam.focused).toBe(1);
-		expect(seam.navigated).toEqual(['/runs']);
+		expect(seam.navigated).toEqual(['/']);
 		expect(notification?.closed).toBe(true);
 	});
 
@@ -148,11 +119,11 @@ describe('notification click', () => {
 	test('the hidden-tab and permission guards still decide whether anything is shown', () => {
 		installBrowser('/');
 		(mutableGlobal['document'] as { visibilityState: string }).visibilityState = 'visible';
-		expect(notifyRunEvent(event('failed', 'run.verification-failed'))).toBe(false);
+		expect(notifyRunEvent(event('waiting-user', 'run.waiting-user'))).toBe(false);
 
 		(mutableGlobal['document'] as { visibilityState: string }).visibilityState = 'hidden';
 		StubNotification.permission = 'default';
-		expect(notifyRunEvent(event('failed', 'run.verification-failed'))).toBe(false);
+		expect(notifyRunEvent(event('waiting-user', 'run.waiting-user'))).toBe(false);
 		StubNotification.permission = 'granted';
 		expect(StubNotification.sent).toHaveLength(0);
 	});
