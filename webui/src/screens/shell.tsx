@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
-import { ShellContentFrame } from '../app-shell.tsx';
+import { INSPECTOR_GRID_CLASS, ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -418,10 +418,9 @@ export function ShellControls({
 	};
 	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
 	const inspectorColumnOpen = showInspectorToggle && inspectorOpen;
-	const inspectorToggle = (className?: string): React.ReactElement | null => showInspectorToggle ? (
+	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
 		<Button
 			aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
-			className={className}
 			onClick={onToggleInspector}
 			size="icon"
 			type="button"
@@ -431,20 +430,23 @@ export function ShellControls({
 		</Button>
 	) : null;
 	return (
-		<div className={cn('w-full shrink-0', inspectorColumnOpen && 'xl:grid xl:grid-cols-[minmax(0,1fr)_24rem]')} data-slot="shell-controls-layout">
-			<div className="min-w-0 px-4 pt-4 lg:px-6">
-				<ShellContentFrame className="flex items-center justify-between gap-2">
-					{/* The sidebar toggle lives in the content area, not the sidebar. */}
-					<Button
-						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-						onClick={onToggleSidebar}
-						size="icon"
-						type="button"
-						variant="outline"
-					>
-						<PanelToggleGlyph side="left" />
-					</Button>
-					<div aria-label={catalog.languageLabel} className="flex items-center gap-2" role="group">
+		<div className="w-full shrink-0 px-4 pt-4 lg:px-6">
+			<ShellContentFrame className={cn('flex items-center justify-between gap-2', inspectorColumnOpen && `${INSPECTOR_GRID_CLASS} xl:max-w-none`)} data-slot="shell-controls-layout">
+				<div className="shrink-0 xl:min-w-0">
+					<ShellContentFrame>
+						{/* The sidebar toggle lives in the content area, not the sidebar. */}
+						<Button
+							aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+							onClick={onToggleSidebar}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<PanelToggleGlyph side="left" />
+						</Button>
+					</ShellContentFrame>
+				</div>
+				<div aria-label={catalog.languageLabel} className="flex shrink-0 items-center justify-end gap-2" role="group">
 						<Button
 							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
 							id="gateship-locale"
@@ -484,11 +486,9 @@ export function ShellControls({
 								strokeWidth={3}
 							/>
 						</Button>
-						{inspectorToggle(inspectorColumnOpen ? 'xl:hidden' : undefined)}
-					</div>
-				</ShellContentFrame>
-			</div>
-			{inspectorColumnOpen ? <div className="hidden items-center justify-end px-4 pt-4 lg:px-6 xl:flex">{inspectorToggle('hidden xl:inline-flex')}</div> : null}
+					{inspectorToggle()}
+				</div>
+			</ShellContentFrame>
 		</div>
 	);
 }

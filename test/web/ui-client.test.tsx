@@ -4938,7 +4938,7 @@ describe('conversation transcript', () => {
 		expect(cardPanel).toContain('min-h-0');
 		expect(main).toContain('xl:flex-1');
 		expect(inspector).toContain('w-full');
-		expect(inspector).toContain('xl:w-96');
+		expect(inspector).toContain('xl:w-(--inspector-column-width)');
 		expect(html.indexOf('<main')).toBeLessThan(html.indexOf('data-slot="run-inspector"'));
 	});
 
@@ -4955,12 +4955,10 @@ describe('conversation transcript', () => {
 		expect(sidebar).toContain('size-9');
 		expect(inspectorToggle).toContain('border-input');
 		expect(inspectorToggle).toContain('size-9');
-		expect(inspectorToggle).toContain('xl:hidden');
 		const inspectorToggles = openingTags(open).filter((tag) => tag.includes('aria-label="Collapse the run panel"'));
-		expect(inspectorToggles).toHaveLength(2);
-		expect(inspectorToggles[1]).toContain('hidden xl:inline-flex');
-		expect(open).toContain('class="min-w-0 px-4 pt-4 lg:px-6"');
-		expect(open).toContain('class="hidden items-center justify-end px-4 pt-4 lg:px-6 xl:flex"');
+		expect(inspectorToggles).toHaveLength(1);
+		expect(inspectorToggle).not.toContain('xl:hidden');
+		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
 		expect(leftGlyph).toBeDefined();
 		expect(rightGlyph).toBeDefined();
 		for (const glyph of [leftGlyph, rightGlyph]) {
@@ -5000,9 +4998,10 @@ describe('conversation transcript', () => {
 			expect(frames.length).toBeGreaterThanOrEqual(2);
 			for (const frame of frames) expect(frame).toContain(frameClass);
 		}
-		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
-		expect(elementWith(surface, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
-		expect(elementWith(nonCurrent, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+		expect(open).toContain('[--inspector-column-width:24rem]');
+		expect(elementWith(open, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
+		expect(elementWith(surface, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
+		expect(elementWith(nonCurrent, 'data-slot="shell-controls-layout"')).toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
 
 		const runtime = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
 		const previousStorage = runtime.localStorage;
@@ -5014,7 +5013,7 @@ describe('conversation transcript', () => {
 			const wide = home();
 			expect(wide).toContain('aria-label="Expand the sidebar"');
 			expect(wide).toContain('aria-label="Expand the run panel"');
-			expect(elementWith(wide, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_24rem]');
+			expect(elementWith(wide, 'data-slot="shell-controls-layout"')).not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
 			for (const frame of openingTags(wide).filter((tag) => tag.includes('data-slot="shell-content-frame"'))) {
 				expect(frame).toContain(frameClass);
 			}

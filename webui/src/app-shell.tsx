@@ -2,6 +2,10 @@ import type React from 'react';
 import { cn } from './lib/cn.ts';
 
 export const MAIN_CONTENT_ID = 'main-content';
+/** The conversation inspector and matching shell-control column share one width. */
+export const INSPECTOR_COLUMN_WIDTH_CLASS = '[--inspector-column-width:24rem]';
+export const INSPECTOR_COLUMN_CLASS = 'xl:w-(--inspector-column-width) xl:shrink-0';
+export const INSPECTOR_GRID_CLASS = 'xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]';
 
 /**
  * The one horizontal frame shared by the shell controls and every route
@@ -27,7 +31,7 @@ export function AppShell({
 	children: React.ReactNode;
 }): React.ReactElement {
 	return (
-		<div className="flex h-svh w-full flex-col overflow-hidden bg-sidebar [--sidebar:var(--color-neutral-100)] lg:flex-row dark:[--sidebar:var(--color-neutral-950)]">
+		<div className={cn('flex h-svh w-full flex-col overflow-hidden bg-sidebar [--sidebar:var(--color-neutral-100)] lg:flex-row dark:[--sidebar:var(--color-neutral-950)]', INSPECTOR_COLUMN_WIDTH_CLASS)}>
 			<a
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}
