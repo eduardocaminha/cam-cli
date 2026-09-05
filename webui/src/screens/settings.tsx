@@ -7,7 +7,6 @@ import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelR
 import { Badge } from '../components/ui/badge.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
-import { Separator } from '../components/ui/separator.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
@@ -970,10 +969,7 @@ export function briefLines(value: string): string[] {
 }
 
 /**
- * The context the operator owns. It is the authority the orchestrator reads
- * before every turn, so correcting it here is how stale intent gets fixed.
- * A successful write clears the generated handoff below without touching the
- * conversation, runs, or provider sessions.
+ * The durable context the operator owns between external agent sessions.
  */
 export function ProjectBriefPanel({
 	brief,
@@ -990,8 +986,6 @@ export function ProjectBriefPanel({
 		>
 			<form
 				className="flex flex-col gap-4"
-				// Re-synced with the server's answer after either the editor or an
-				// explicitly authorized conversational brief write.
 				key={JSON.stringify(brief)}
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -1033,54 +1027,6 @@ export function ProjectBriefPanel({
 					{catalog.brief.save}
 				</button>
 			</form>
-		</ContextPanel>
-	);
-}
-
-/**
- * The same four fields, written by the orchestrator instead of by the operator:
- * observed session state, printed and never edited. It can lag behind what the
- * brief above already says, and when the two disagree the brief is the one that
- * counts -- which is why this panel offers nothing to type into.
- */
-export function HandoffPanel({ handoff, catalog }: Pick<AppProps, 'handoff'> & { catalog: SettingsCatalog }): React.ReactElement {
-	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
-			description={catalog.handoff.description}
-			title={catalog.handoff.title}
-		>
-			<div className="flex flex-col gap-3">
-				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">{catalog.handoff.readOnly}</Badge>
-					<span className="text-muted-foreground text-sm">
-						{catalog.handoff.rewritten}
-					</span>
-				</div>
-				<Separator />
-				<div className="flex flex-col gap-1 text-sm">
-					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
-					<p className="whitespace-pre-wrap break-words text-muted-foreground">
-						{handoff.objective === '' ? catalog.handoff.nothingRecorded : handoff.objective}
-					</p>
-				</div>
-				{BRIEF_LISTS.map((field) => (
-					<div className="flex flex-col gap-1 text-sm" key={field.name}>
-						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
-						{handoff[field.name].length === 0 ? (
-							<p className="text-muted-foreground">{catalog.handoff.nothingRecorded}</p>
-						) : (
-							<ul className="flex flex-col gap-1">
-								{handoff[field.name].map((item) => (
-									<li className="whitespace-pre-wrap break-words text-muted-foreground" key={item}>
-										{item}
-									</li>
-								))}
-							</ul>
-						)}
-					</div>
-				))}
-			</div>
 		</ContextPanel>
 	);
 }

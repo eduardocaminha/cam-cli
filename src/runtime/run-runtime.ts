@@ -32,10 +32,6 @@ import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
 	type ClaudeUsageWindow,
-	type OrchestratorHandoff,
-	type OrchestratorMessage,
-	type OrchestratorMessageRole,
-	type OrchestratorMessageUsage,
 	type ProjectBrief,
 	type RunCostSummary,
 	type RunEvent,
@@ -1051,21 +1047,11 @@ export class RunRuntime {
 		this.#store.setOrchestratorSession(providerId, sessionId, this.#now());
 	}
 
-	getOrchestratorHandoff(): OrchestratorHandoff {
-		return this.#store.getOrchestratorHandoff();
-	}
-
-	setOrchestratorHandoff(handoff: OrchestratorHandoff): void {
-		this.#store.setOrchestratorHandoff(handoff, this.#now());
-	}
-
 	getProjectBrief(): ProjectBrief {
 		return this.#store.getProjectBrief();
 	}
 
 	setProjectBrief(brief: ProjectBrief): void {
-		// One transport-neutral store operation persists operator intent and
-		// invalidates the generated handoff atomically.
 		this.#store.setProjectBrief(brief, this.#now());
 	}
 
@@ -1075,25 +1061,6 @@ export class RunRuntime {
 
 	setOperatorProfile(profile: OperatorProfile): void {
 		this.#store.setOperatorProfile(profile);
-	}
-
-	appendOrchestratorMessage(
-		providerId: AgentProviderId,
-		role: OrchestratorMessageRole,
-		text: string,
-		usage?: OrchestratorMessageUsage,
-	): OrchestratorMessage {
-		return this.#store.appendOrchestratorMessage({
-			providerId,
-			role,
-			text,
-			createdAt: this.#now(),
-			...(usage === undefined ? {} : { usage }),
-		});
-	}
-
-	listOrchestratorMessages(limit?: number): OrchestratorMessage[] {
-		return this.#store.listOrchestratorMessages(limit);
 	}
 
 	subscribe(listener: EventListener): () => void {

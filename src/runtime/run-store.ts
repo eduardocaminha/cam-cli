@@ -222,49 +222,14 @@ export interface RunEvent {
 	eventClass: RunEventClass;
 }
 
-export type OrchestratorMessageRole = 'operator' | 'orchestrator' | 'system';
-
-/**
- * One orchestrator turn's own reported usage (GSHIP-634), captured from the
- * CLI's `.usage` event during that turn's call and stored beside the message
- * the turn produced -- never on the operator's or the system's own message. A
- * field the CLI never reported stays absent, never a fabricated zero, the
- * same honesty rule GSHIP-623 established for a run's cost.
- */
-export interface OrchestratorMessageUsage {
-	model?: string;
-	effort?: string;
-	totalCostUsd?: number;
-	inputTokens?: number;
-	outputTokens?: number;
-	cacheCreationInputTokens?: number;
-	cacheReadInputTokens?: number;
-	thinkingTokens?: number;
-}
-
-/** Durable public transcript shared across orchestrator provider sessions. */
-export interface OrchestratorMessage {
-	seq: number;
-	providerId: AgentProviderId;
-	role: OrchestratorMessageRole;
-	text: string;
-	createdAt: string;
-	/** Present only on the orchestrator's own message, and only when the turn reported usage. */
-	usage?: OrchestratorMessageUsage;
-}
-
-/**
- * Durable synthesis of the conversation, stored as a single overwritten record
- * so every provider session reads the same handoff.
- */
-export interface OrchestratorHandoff {
+export interface ProjectBrief {
 	objective: string;
 	decisions: string[];
 	constraints: string[];
 	openItems: string[];
 }
 
-export function emptyOrchestratorHandoff(): OrchestratorHandoff {
+export function emptyProjectBrief(): ProjectBrief {
 	return { objective: '', decisions: [], constraints: [], openItems: [] };
 }
 
@@ -276,27 +241,26 @@ function decodeHandoffList(value: unknown): string[] {
 		.filter((item) => item.length > 0);
 }
 
-/** Accepts any shape; anything unusable degrades to the empty handoff. */
-export function normalizeOrchestratorHandoff(value: unknown): OrchestratorHandoff {
+/** Defensive read/write shaping; the PUT contract validates strictly instead. */
+export function normalizeProjectBrief(value: unknown): ProjectBrief {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		return emptyOrchestratorHandoff();
+		return emptyProjectBrief();
 	}
 	const record = value as Record<string, unknown>;
 	const objective = record['objective'];
-	return {
+	const brief = {
 		objective: typeof objective === 'string' ? objective.trim() : '',
 		decisions: decodeHandoffList(record['decisions']),
 		constraints: decodeHandoffList(record['constraints']),
 		openItems: decodeHandoffList(record['openItems']),
 	};
+	return {
+		objective: brief.objective.slice(0, PROJECT_BRIEF_LIMITS.objective),
+		decisions: clampBriefList(brief.decisions),
+		constraints: clampBriefList(brief.constraints),
+		openItems: clampBriefList(brief.openItems),
+	};
 }
-
-/**
- * Small brief maintained by the operator. It carries the same four fields as
- * the handoff, but every write is explicitly human-authorized rather than
- * generated automatically from an orchestrator turn.
- */
-export type ProjectBrief = OrchestratorHandoff;
 
 /** Enforced on every write so one oversized record cannot grow the prompt. */
 export const PROJECT_BRIEF_LIMITS = {
@@ -305,25 +269,10 @@ export const PROJECT_BRIEF_LIMITS = {
 	itemLength: 500,
 } as const;
 
-export function emptyProjectBrief(): ProjectBrief {
-	return emptyOrchestratorHandoff();
-}
-
 function clampBriefList(items: readonly string[]): string[] {
 	return items
 		.slice(0, PROJECT_BRIEF_LIMITS.listItems)
 		.map((item) => item.slice(0, PROJECT_BRIEF_LIMITS.itemLength));
-}
-
-/** Defensive read/write shaping; the PUT contract validates strictly instead. */
-export function normalizeProjectBrief(value: unknown): ProjectBrief {
-	const brief = normalizeOrchestratorHandoff(value);
-	return {
-		objective: brief.objective.slice(0, PROJECT_BRIEF_LIMITS.objective),
-		decisions: clampBriefList(brief.decisions),
-		constraints: clampBriefList(brief.constraints),
-		openItems: clampBriefList(brief.openItems),
-	};
 }
 
 export interface CreateRunInput {
@@ -517,53 +466,6 @@ function decodeThinkingTokens(payload: Record<string, unknown>): number | undefi
 	return decodeUsageNumber((usage as Record<string, unknown>)['thinkingTokens']);
 }
 
-/** `payload.model`, the slot `emitUsage` (claude-cli-process.ts) passed for the whole invocation. */
-function decodeUsageModel(payload: Record<string, unknown>): string | undefined {
-	const value = payload['model'];
-	return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-/** One field out of `payload.usage`, the invocation-level object `ClaudeResultUsage` reports. */
-function decodeUsageObjectField(payload: Record<string, unknown>, field: string): number | undefined {
-	const usage = payload['usage'];
-	if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
-	return decodeUsageNumber((usage as Record<string, unknown>)[field]);
-}
-
-/**
- * Decodes one orchestrator turn's raw `orchestrator.usage` emit payload
- * (GSHIP-634) into the single-invocation shape `appendOrchestratorMessage`
- * persists: the model/effort pair the turn's call was made with, the total
- * cost it reported, and the five token counts `ClaudeResultUsage` extracts
- * (GSHIP-623). A field the CLI never reported stays absent -- never a
- * fabricated zero -- and the whole result is `undefined` when the turn
- * reported nothing measurable at all.
- */
-export function decodeOrchestratorTurnUsage(
-	payload: Record<string, unknown>,
-): OrchestratorMessageUsage | undefined {
-	const model = decodeUsageModel(payload);
-	const effort = decodeEffort(payload);
-	const eventTotalCostUsd = payload['totalCostUsd'];
-	const totalCostUsd = typeof eventTotalCostUsd === 'number' ? eventTotalCostUsd : undefined;
-	const inputTokens = decodeUsageObjectField(payload, 'inputTokens');
-	const outputTokens = decodeUsageObjectField(payload, 'outputTokens');
-	const cacheCreationInputTokens = decodeUsageObjectField(payload, 'cacheCreationInputTokens');
-	const cacheReadInputTokens = decodeUsageObjectField(payload, 'cacheReadInputTokens');
-	const thinkingTokens = decodeThinkingTokens(payload);
-	const usage: OrchestratorMessageUsage = {
-		...(model === undefined ? {} : { model }),
-		...(effort === undefined ? {} : { effort }),
-		...(totalCostUsd === undefined ? {} : { totalCostUsd }),
-		...(inputTokens === undefined ? {} : { inputTokens }),
-		...(outputTokens === undefined ? {} : { outputTokens }),
-		...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
-		...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
-		...(thinkingTokens === undefined ? {} : { thinkingTokens }),
-	};
-	return Object.keys(usage).length === 0 ? undefined : usage;
-}
-
 interface RoleUsageAccumulator {
 	thinkingTokens: number | undefined;
 	effort: string | undefined;
@@ -692,22 +594,6 @@ interface DiagnosticFindingRow {
 	first_seen_at: string;
 	last_seen_at: string;
 	status_updated_at: string;
-}
-
-interface OrchestratorMessageRow {
-	seq: number;
-	provider_id: string;
-	role: string;
-	text: string;
-	created_at: string;
-	model: string | null;
-	effort: string | null;
-	total_cost_usd: number | null;
-	input_tokens: number | null;
-	output_tokens: number | null;
-	cache_creation_input_tokens: number | null;
-	cache_read_input_tokens: number | null;
-	thinking_tokens: number | null;
 }
 
 function decodeState(value: string): RunState {
@@ -872,38 +758,6 @@ function decodeDiagnosticFinding(row: DiagnosticFindingRow): DiagnosticFinding {
 	};
 }
 
-/** Absence over a fabricated zero: a column the row never had reads as no usage at all, never as a free turn. */
-function decodeOrchestratorMessageUsage(row: OrchestratorMessageRow): OrchestratorMessageUsage | undefined {
-	const usage: OrchestratorMessageUsage = {
-		...(row.model === null ? {} : { model: row.model }),
-		...(row.effort === null ? {} : { effort: row.effort }),
-		...(row.total_cost_usd === null ? {} : { totalCostUsd: row.total_cost_usd }),
-		...(row.input_tokens === null ? {} : { inputTokens: row.input_tokens }),
-		...(row.output_tokens === null ? {} : { outputTokens: row.output_tokens }),
-		...(row.cache_creation_input_tokens === null
-			? {}
-			: { cacheCreationInputTokens: row.cache_creation_input_tokens }),
-		...(row.cache_read_input_tokens === null ? {} : { cacheReadInputTokens: row.cache_read_input_tokens }),
-		...(row.thinking_tokens === null ? {} : { thinkingTokens: row.thinking_tokens }),
-	};
-	return Object.keys(usage).length === 0 ? undefined : usage;
-}
-
-function decodeOrchestratorMessage(row: OrchestratorMessageRow): OrchestratorMessage {
-	const role = row.role === 'orchestrator' || row.role === 'system'
-		? row.role
-		: 'operator';
-	const usage = decodeOrchestratorMessageUsage(row);
-	return {
-		seq: row.seq,
-		providerId: row.provider_id === 'codex' ? 'codex' : 'claude',
-		role,
-		text: row.text,
-		createdAt: row.created_at,
-		...(usage === undefined ? {} : { usage }),
-	};
-}
-
 export class RunStore {
 	readonly #db: Database;
 
@@ -995,30 +849,10 @@ export class RunStore {
 				session_id TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			);
-			CREATE TABLE IF NOT EXISTS orchestrator_handoff (
-					id INTEGER PRIMARY KEY CHECK (id = 1),
-					handoff_json TEXT NOT NULL,
-					updated_at TEXT NOT NULL
-				);
-				CREATE TABLE IF NOT EXISTS project_brief (
-						id INTEGER PRIMARY KEY CHECK (id = 1),
-						brief_json TEXT NOT NULL,
-						updated_at TEXT NOT NULL
-					);
-					CREATE TABLE IF NOT EXISTS orchestrator_messages (
-				seq INTEGER PRIMARY KEY AUTOINCREMENT,
-				provider_id TEXT NOT NULL,
-				role TEXT NOT NULL,
-				text TEXT NOT NULL,
-				created_at TEXT NOT NULL,
-				model TEXT,
-				effort TEXT,
-				total_cost_usd REAL,
-				input_tokens INTEGER,
-				output_tokens INTEGER,
-				cache_creation_input_tokens INTEGER,
-				cache_read_input_tokens INTEGER,
-				thinking_tokens INTEGER
+			CREATE TABLE IF NOT EXISTS project_brief (
+				id INTEGER PRIMARY KEY CHECK (id = 1),
+				brief_json TEXT NOT NULL,
+				updated_at TEXT NOT NULL
 			);
 		`);
 		const columns = this.#db.query('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
@@ -1052,23 +886,6 @@ export class RunStore {
 			this.#db.exec(`
 				UPDATE run_events SET event_class = 'activity'
 				WHERE kind LIKE '%.system' OR kind LIKE '%.activity';
-			`);
-		}
-		// A pre-GSHIP-634 database has no usage columns at all: every existing row
-		// reads back with no usage, the same as a turn that never reported one.
-		const orchestratorMessageColumns = this.#db
-			.query('PRAGMA table_info(orchestrator_messages)')
-			.all() as Array<{ name: string }>;
-		if (!orchestratorMessageColumns.some((column) => column.name === 'model')) {
-			this.#db.exec(`
-				ALTER TABLE orchestrator_messages ADD COLUMN model TEXT;
-				ALTER TABLE orchestrator_messages ADD COLUMN effort TEXT;
-				ALTER TABLE orchestrator_messages ADD COLUMN total_cost_usd REAL;
-				ALTER TABLE orchestrator_messages ADD COLUMN input_tokens INTEGER;
-				ALTER TABLE orchestrator_messages ADD COLUMN output_tokens INTEGER;
-				ALTER TABLE orchestrator_messages ADD COLUMN cache_creation_input_tokens INTEGER;
-				ALTER TABLE orchestrator_messages ADD COLUMN cache_read_input_tokens INTEGER;
-				ALTER TABLE orchestrator_messages ADD COLUMN thinking_tokens INTEGER;
 			`);
 		}
 	}
@@ -1757,31 +1574,6 @@ export class RunStore {
 		`).run({ providerId, sessionId: normalized, updatedAt });
 	}
 
-	/** Single shared record: a missing or corrupt row reads as the empty handoff. */
-	getOrchestratorHandoff(): OrchestratorHandoff {
-		const row = this.#db.query(`
-			SELECT handoff_json FROM orchestrator_handoff WHERE id = 1
-		`).get() as { handoff_json: string } | null;
-		if (row === null) return emptyOrchestratorHandoff();
-		try {
-			return normalizeOrchestratorHandoff(JSON.parse(row.handoff_json) as unknown);
-		} catch {
-			// A malformed handoff must never block the next turn.
-			return emptyOrchestratorHandoff();
-		}
-	}
-
-	setOrchestratorHandoff(handoff: OrchestratorHandoff, updatedAt: string): void {
-		const normalized = normalizeOrchestratorHandoff(handoff);
-		this.#db.query(`
-			INSERT INTO orchestrator_handoff (id, handoff_json, updated_at)
-			VALUES (1, $handoffJson, $updatedAt)
-			ON CONFLICT(id) DO UPDATE SET
-				handoff_json = excluded.handoff_json,
-				updated_at = excluded.updated_at
-		`).run({ handoffJson: JSON.stringify(normalized), updatedAt });
-	}
-
 	/** Single operator-owned record: a missing or corrupt row reads as empty. */
 	getProjectBrief(): ProjectBrief {
 		const row = this.#db.query(`
@@ -1798,70 +1590,13 @@ export class RunStore {
 
 	setProjectBrief(brief: ProjectBrief, updatedAt: string): void {
 		const normalized = normalizeProjectBrief(brief);
-		const replace = this.#db.transaction(() => {
-			this.#db.query(`
-				INSERT INTO project_brief (id, brief_json, updated_at)
-				VALUES (1, $briefJson, $updatedAt)
-				ON CONFLICT(id) DO UPDATE SET
-					brief_json = excluded.brief_json,
-					updated_at = excluded.updated_at
-			`).run({ briefJson: JSON.stringify(normalized), updatedAt });
-			// Human-authorized intent supersedes session-derived memory immediately.
-			// Keeping both writes in this transaction prevents either record from
-			// surviving alone if SQLite refuses the other one.
-			this.setOrchestratorHandoff(emptyOrchestratorHandoff(), updatedAt);
-		});
-		replace();
-	}
-
-	appendOrchestratorMessage(input: {
-		providerId: AgentProviderId;
-		role: OrchestratorMessageRole;
-		text: string;
-		createdAt: string;
-		/** Captured only for the orchestrator's own message (GSHIP-634); absent for every other role. */
-		usage?: OrchestratorMessageUsage;
-	}): OrchestratorMessage {
-		const text = input.text.trim();
-		if (text.length === 0) throw new Error('orchestrator message text is required');
-		const usage = input.usage;
-		const row = this.#db.query(`
-			INSERT INTO orchestrator_messages (
-				provider_id, role, text, created_at,
-				model, effort, total_cost_usd, input_tokens, output_tokens,
-				cache_creation_input_tokens, cache_read_input_tokens, thinking_tokens
-			)
-			VALUES (
-				$providerId, $role, $text, $createdAt,
-				$model, $effort, $totalCostUsd, $inputTokens, $outputTokens,
-				$cacheCreationInputTokens, $cacheReadInputTokens, $thinkingTokens
-			)
-			RETURNING *
-		`).get({
-			providerId: input.providerId,
-			role: input.role,
-			text,
-			createdAt: input.createdAt,
-			model: usage?.model ?? null,
-			effort: usage?.effort ?? null,
-			totalCostUsd: usage?.totalCostUsd ?? null,
-			inputTokens: usage?.inputTokens ?? null,
-			outputTokens: usage?.outputTokens ?? null,
-			cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? null,
-			cacheReadInputTokens: usage?.cacheReadInputTokens ?? null,
-			thinkingTokens: usage?.thinkingTokens ?? null,
-		}) as OrchestratorMessageRow;
-		return decodeOrchestratorMessage(row);
-	}
-
-	/** Newest bounded transcript window, returned in chronological order. */
-	listOrchestratorMessages(limit = 100): OrchestratorMessage[] {
-		const rows = this.#db.query(`
-			SELECT * FROM (
-				SELECT * FROM orchestrator_messages ORDER BY seq DESC LIMIT $limit
-			) ORDER BY seq ASC
-		`).all({ limit }) as OrchestratorMessageRow[];
-		return rows.map(decodeOrchestratorMessage);
+		this.#db.query(`
+			INSERT INTO project_brief (id, brief_json, updated_at)
+			VALUES (1, $briefJson, $updatedAt)
+			ON CONFLICT(id) DO UPDATE SET
+				brief_json = excluded.brief_json,
+				updated_at = excluded.updated_at
+		`).run({ briefJson: JSON.stringify(normalized), updatedAt });
 	}
 
 	getRun(runId: string): RunRecord | null {

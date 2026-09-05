@@ -26,8 +26,9 @@ The loop is deliberately short:
 7. a clean run can be committed, pushed, and squash-merged.
 
 SQLite records state, public activity and the operator-owned project brief. The
-external agent is the conversational interface; Gateship's deterministic
-runtime retains ownership of state, verification, recovery and shipping.
+brief is the only durable handoff between external-agent sessions. The external
+agent is the conversational interface; Gateship's deterministic runtime retains
+ownership of state, verification, recovery and shipping.
 
 ## Differentiation
 

@@ -48,6 +48,9 @@ styling. Hugeicons supplies the icon set.
   surface. Plain links remain the routing mechanism.
 - Every screen places operator attention before autonomous activity, history and
   statistics. Pull requests, CI and merged state remain visible in the run view.
+- Ajustes exposes the operator-maintained project brief as the durable handoff
+  between external-agent sessions; it does not render an internal conversation
+  or generated handoff panel.
 - On desktop, the sidebar begins with the Control center navigation item. Its
   footer places Global settings before a quiet, non-interactive Gateship
   signature: a 18 to 20px mark, small name and secondary version. The collapsed
