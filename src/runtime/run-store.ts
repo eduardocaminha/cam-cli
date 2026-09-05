@@ -844,11 +844,6 @@ export class RunStore {
 				key TEXT PRIMARY KEY,
 				value TEXT NOT NULL
 			);
-			CREATE TABLE IF NOT EXISTS orchestrator_sessions (
-				provider_id TEXT PRIMARY KEY,
-				session_id TEXT NOT NULL,
-				updated_at TEXT NOT NULL
-			);
 			CREATE TABLE IF NOT EXISTS project_brief (
 				id INTEGER PRIMARY KEY CHECK (id = 1),
 				brief_json TEXT NOT NULL,
@@ -1549,29 +1544,6 @@ export class RunStore {
 			key: OPERATOR_PROFILE_KEY,
 			value: JSON.stringify(normalizeOperatorProfile(profile)),
 		});
-	}
-
-	getOrchestratorSession(providerId: AgentProviderId): string | null {
-		const row = this.#db.query(`
-			SELECT session_id FROM orchestrator_sessions WHERE provider_id = $providerId
-		`).get({ providerId }) as { session_id: string } | null;
-		return row?.session_id ?? null;
-	}
-
-	setOrchestratorSession(
-		providerId: AgentProviderId,
-		sessionId: string,
-		updatedAt: string,
-	): void {
-		const normalized = sessionId.trim();
-		if (normalized.length === 0) throw new Error('orchestrator sessionId is required');
-		this.#db.query(`
-			INSERT INTO orchestrator_sessions (provider_id, session_id, updated_at)
-			VALUES ($providerId, $sessionId, $updatedAt)
-			ON CONFLICT(provider_id) DO UPDATE SET
-				session_id = excluded.session_id,
-				updated_at = excluded.updated_at
-		`).run({ providerId, sessionId: normalized, updatedAt });
 	}
 
 	/** Single operator-owned record: a missing or corrupt row reads as empty. */

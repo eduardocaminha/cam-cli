@@ -1039,14 +1039,6 @@ export class RunRuntime {
 		}
 	}
 
-	getOrchestratorSession(providerId: AgentProviderId): string | null {
-		return this.#store.getOrchestratorSession(providerId);
-	}
-
-	setOrchestratorSession(providerId: AgentProviderId, sessionId: string): void {
-		this.#store.setOrchestratorSession(providerId, sessionId, this.#now());
-	}
-
 	getProjectBrief(): ProjectBrief {
 		return this.#store.getProjectBrief();
 	}
