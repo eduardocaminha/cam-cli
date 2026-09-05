@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-803",
   "title": "Reconciliar checkpoint durável após a remoção da conversa interna",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T21:58:49.867Z",
-  "updatedAt": "2026-09-05T21:58:49.867Z",
+  "updatedAt": "2026-09-05T22:16:48.095Z",
   "description": "Atualizar somente HANDOFF.md a partir de origin/main e do estado factual da v0.432.0. Trocar o checkpoint v0.380.0 por v0.432.0. Remover a afirmação obsoleta de que a conversa no navegador é a interface primária e registrar que o agente conversacional externo escolhido pelo operador é a interface primária, enquanto o Gateship permanece como control plane persistente e determinístico acessível por agent CLI, MCP ou HTTP tipado, sem backend conversacional próprio. Registrar de forma concisa, sem changelog por issue, que já foram entregues: verificação multistack declarada pelo projeto e prova JavaScript e Python; ambiente mínimo para comandos; intake compatível com main protegida; merge sem dependência de auto-merge; defaults globais e overrides por projeto com telemetria por run; diagnósticos tipados e ratchet suave; redesign e rotas reais; resolução interna de dúvidas técnicas; estado preservado na navegação; remoção da conversa interna; sidebar operacional compacta; e sistema compartilhado de espaçamento de cards, grids e formulários. Reconciliar Current evidence, Present architecture e Next ordered seams para não prometer trabalho já entregue nem afirmar que existe fila aprovada. Declarar que backlog, run ativa e attention requests estavam vazios no fechamento da v0.432.0; itens do product radar continuam condicionados a evidência e não são execução autorizada. Preservar decisões de segurança, serialização por repositório, paralelismo apenas entre projetos, aprovação humana de specs, provenance e orientação por evidência. Não alterar FLOW.md, docs/product-radar.md, código, dependências, testes, runtime, UI ou arquivos de issue manualmente.",
   "specSource": "operator",
   "spec": {
