@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-801",
   "title": "Tornar a sidebar recolhida uma navegação operacional compacta",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T14:35:48.634Z",
-  "updatedAt": "2026-09-05T14:35:48.634Z",
+  "updatedAt": "2026-09-05T14:53:14.124Z",
   "description": "Transformar a sidebar desktop recolhida em uma navegação compacta funcional, preservando a mesma hierarquia e os mesmos destinos da sidebar expandida. Exibir no topo o link da Central de controle; abaixo, um seletor compacto de projeto que reutilize o mesmo menu e o mesmo registro de projetos do seletor expandido, mostrando o kbd Alt+N do projeto selecionado em vez do cubo e um glifo neutro de projetos quando não houver seleção; quando houver projeto selecionado, exibir links icon-only para Runs, Trabalho e Ajustes do projeto; no fim, antes da assinatura, exibir Ajustes globais; manter somente o símbolo pequeno do Gateship no rodapé. Todos os destinos devem usar links reais, aria-label, tooltip e o fundo ativo existente, sem animação de navegação. O sinal Needs you deve continuar visível sem virar um item solto ou deslocar a ordem. Não duplicar regras de rotas nem a lista do seletor: extrair ou parametrizar componentes compartilhados quando necessário. Não alterar a sidebar expandida, o cabeçalho móvel, a seleção persistida do projeto, os atalhos Alt+1 a Alt+9 ou as rotas. Atualizar o contrato visual e testes cobrindo ordem, destinos, seleção ativa, presença condicional das operações, seletor e assinatura.",
   "specSource": "operator",
   "spec": {
