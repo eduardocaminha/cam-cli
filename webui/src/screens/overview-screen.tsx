@@ -6,6 +6,7 @@ import type { ProjectOperationalOverviewView, ProjectOverviewView, RegisteredPro
 import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { CardGrid } from '../components/ui/card-layout.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Stat } from '../components/ui/stat.tsx';
 import { cn } from '../lib/cn.ts';
@@ -108,7 +109,7 @@ export function OverviewProjectCard({ entry, catalog, projectCatalog, locale }: 
 export function OverviewProjectCards({ props, overview, catalog, projectCatalog }: { props: AppProps; overview: ProjectOperationalOverviewView | null; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog }): React.ReactElement | null {
 	if (overview === null && props.overviewLoading) return null;
 	const entries: OverviewCardEntry[] = overview === null ? props.projects.map((project) => ({ project, snapshot: false })) : overview.projects.map((entry) => ({ ...entry, snapshot: true }));
-	return <ul className="card-ring-group grid auto-rows-fr gap-6 lg:grid-cols-2 2xl:grid-cols-3">{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</ul>;
+	return <CardGrid as="ul" className="lg:grid-cols-2 2xl:grid-cols-3" equalHeight>{entries.map((entry) => <OverviewProjectCard key={entry.project.id} entry={entry} catalog={catalog} projectCatalog={projectCatalog} locale={props.locale} />)}</CardGrid>;
 }
 
 export function OverviewData({ props, overview, catalog, attention, activeProjects }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number; activeProjects: number }): React.ReactElement {
@@ -120,7 +121,7 @@ export function OverviewData({ props, overview, catalog, attention, activeProjec
 		 * allowed to go acid, and only while something actually waits; a zero
 		 * stays as quiet as every other number.
 		 */}
-		<div className="card-ring-group grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
+		<CardGrid className="sm:grid-cols-2 xl:grid-cols-3" compact equalHeight>
 			<Stat
 				className={cn(
 					attention > 0
@@ -140,7 +141,7 @@ export function OverviewData({ props, overview, catalog, attention, activeProjec
 					? catalog.noCost
 					: formatCostUsd(historical.knownCostUsd, props.locale, 2)}
 			/>
-		</div>
+		</CardGrid>
 		{historical.daily.length === 0 ? null : (
 			<ul aria-label={catalog.trend} className="sr-only">
 				{historical.daily.map((day) => (

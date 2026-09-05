@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
+import { FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
@@ -95,8 +96,7 @@ export function IssueIntakePanel({
 			description={catalog.intake.description}
 			title={catalog.intake.title}
 		>
-			<form
-				className="flex flex-col gap-4"
+			<FormStack
 				onSubmit={(event) => {
 					event.preventDefault();
 					const value = fieldReader(event.currentTarget);
@@ -107,15 +107,15 @@ export function IssueIntakePanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-title">
+				<FormField className="text-sm" htmlFor="issue-title">
 					<span className="font-medium">{catalog.form.title}</span>
 					<Input id="issue-title" name="title" required />
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-scope">
+				</FormField>
+				<FormField className="text-sm" htmlFor="issue-scope">
 					<span className="font-medium">{catalog.form.scope}</span>
 					<Textarea className="min-h-24" id="issue-scope" name="scope" required />
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="issue-command">
+				</FormField>
+				<FormField className="text-sm" htmlFor="issue-command">
 					<span className="font-medium">{catalog.form.verificationCommand}</span>
 					<Input
 						className="font-mono"
@@ -124,11 +124,11 @@ export function IssueIntakePanel({
 						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
-				</label>
+				</FormField>
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.intake.create}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
@@ -145,8 +145,7 @@ export function IssueSpecifyPanel({
 			description={catalog.specification.description}
 			title={catalog.specification.title}
 		>
-			<form
-				className="flex flex-col gap-4"
+			<FormStack
 				onSubmit={(event) => {
 					event.preventDefault();
 					const value = fieldReader(event.currentTarget);
@@ -156,7 +155,7 @@ export function IssueSpecifyPanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-id">
+				<FormField className="text-sm" htmlFor="idea-id">
 					<span className="font-medium">{catalog.specification.idea}</span>
 					<SelectField
 						defaultValue={ideas[0]?.id}
@@ -165,12 +164,12 @@ export function IssueSpecifyPanel({
 						name="ideaId"
 						required
 					/>
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-scope">
+				</FormField>
+				<FormField className="text-sm" htmlFor="idea-scope">
 					<span className="font-medium">{catalog.form.scope}</span>
 					<Textarea className="min-h-24" id="idea-scope" name="ideaScope" required />
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="idea-command">
+				</FormField>
+				<FormField className="text-sm" htmlFor="idea-command">
 					<span className="font-medium">{catalog.form.verificationCommand}</span>
 					<Input
 						className="font-mono"
@@ -179,11 +178,11 @@ export function IssueSpecifyPanel({
 						placeholder={catalog.form.verificationPlaceholder}
 						required
 					/>
-				</label>
+				</FormField>
 				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
 					{catalog.specification.submit}
 				</button>
-			</form>
+			</FormStack>
 		</ContextPanel>
 	);
 }
@@ -213,8 +212,7 @@ export function IssueReviewForm({
 	const dirty = draftChanged(draft, scope, verificationCommand);
 
 	return (
-		<form
-			className="flex flex-col gap-4"
+		<FormStack
 			onSubmit={(event) => {
 				event.preventDefault();
 				setConfirmed(false);
@@ -226,14 +224,14 @@ export function IssueReviewForm({
 			}}
 		>
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
-			<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
+			<FormField className="text-sm" htmlFor="review-scope">
 				<span className="font-medium">{catalog.form.scope}</span>
 				<Textarea className="min-h-24" id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
-			</label>
-			<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
+			</FormField>
+			<FormField className="text-sm" htmlFor="review-command">
 				<span className="font-medium">{catalog.form.verificationCommand}</span>
 				<Input className="font-mono" id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
-			</label>
+			</FormField>
 			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
 				<div className="flex flex-col gap-2 text-sm">
 					<span className="font-medium">{catalog.review.evidence}</span>
@@ -258,10 +256,10 @@ export function IssueReviewForm({
 				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
 				type="button"
 			>{catalog.review.approve}</button>
-			<label className="flex flex-col gap-1 text-sm" htmlFor="abandon-reason">
+			<FormField className="text-sm" htmlFor="abandon-reason">
 				<span className="font-medium">{catalog.review.abandonReason}</span>
 				<Textarea className="min-h-20" id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
-			</label>
+			</FormField>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
@@ -275,7 +273,7 @@ export function IssueReviewForm({
 				}}
 				type="button"
 			>{catalog.review.abandon}</button>
-		</form>
+		</FormStack>
 	);
 }
 
@@ -305,7 +303,7 @@ export function IssueReviewPanel({
 				<CardDescription>{catalog.review.description(drafts.length, formatCount(drafts.length, locale))}</CardDescription>
 				<CardAction><Badge variant="secondary">{formatCount(drafts.length, locale)}</Badge></CardAction>
 			</CardSummary>
-			<CardPanel className="flex flex-col gap-4">
+			<CardPanel>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
 					<span className="font-medium">{catalog.review.draft}</span>
 					<SelectField
@@ -566,7 +564,7 @@ export function DiagnosticsPanel({
 				</CardDescription>
 				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? catalog.diagnostics.running : formatCount(diagnostics.findings.length, locale)}</Badge></CardAction>
 			</CardSummary>
-			<CardPanel className="flex flex-col gap-4">
+			<CardPanel>
 				<div className="flex flex-col gap-2 text-sm">
 					<p className="text-muted-foreground">
 						{catalog.diagnostics.advisory}
@@ -649,7 +647,7 @@ export function ProposalsPanel({
 				<CardDescription>{catalog.proposals.pendingCount(proposals.length, formatCount(proposals.length, locale))}</CardDescription>
 				<CardAction><Badge variant="secondary">{formatCount(proposals.length, locale)}</Badge></CardAction>
 			</CardSummary>
-			<CardPanel className="flex flex-col gap-4">
+			<CardPanel>
 				{proposals.length === 0 ? (
 					<EmptyState compact>{catalog.proposals.emptyPending}</EmptyState>
 				) : (
@@ -766,7 +764,7 @@ export function ResolvedProposalsPanel({
 				<CardDescription>{catalog.proposals.resolvedCount(resolvedProposals.length, formatCount(resolvedProposals.length, locale))}</CardDescription>
 				<CardAction><Badge variant="secondary">{formatCount(resolvedProposals.length, locale)}</Badge></CardAction>
 			</CardSummary>
-			<CardPanel className="flex flex-col gap-4">
+			<CardPanel>
 				<div className="flex flex-wrap items-center gap-2">
 					<Badge variant="outline">{catalog.proposals.readOnly}</Badge>
 					<span className="text-muted-foreground text-sm">

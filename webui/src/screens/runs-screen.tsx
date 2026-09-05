@@ -4,6 +4,7 @@ import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { IssueReviewDraft } from '../client.ts';
 import { Stat } from '../components/ui/stat.tsx';
+import { CardGrid, CardSplit, CardStack } from '../components/ui/card-layout.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
@@ -44,7 +45,7 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 			 * History closes the page full-width.
 			 */}
 			{run === null ? null : (
-				<div className="card-ring-group grid gap-4 sm:grid-cols-2">
+				<CardGrid className="sm:grid-cols-2" compact>
 					{run.cost.totalCostUsd === null ? null : (
 						<Stat
 							label={catalog.stats.expectedCost}
@@ -55,10 +56,10 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 						label={catalog.stats.events}
 						value={activityFailure !== undefined && !activityLoaded ? '—' : props.events.filter((event) => event.runId === run.id).length}
 					/>
-				</div>
+				</CardGrid>
 			)}
-			<div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-				<div className="flex min-w-0 flex-col gap-6">
+			<CardSplit>
+				<CardStack className="min-w-0">
 					<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} pending={activityPending} resource="Run activity">
 						<RunActivity
 							catalog={localeCatalog.runsOperational}
@@ -68,8 +69,8 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 						/>
 					</OperationalReadPanel>
 					{run === null ? null : <RunReport catalog={catalog} run={run} />}
-				</div>
-				<div className="flex min-w-0 flex-col gap-6">
+				</CardStack>
+				<CardStack className="min-w-0">
 					{run === null ? null : (
 						<RunCostPanel catalog={localeCatalog.runsOperational} locale={props.locale} run={run} />
 					)}
@@ -83,8 +84,8 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 						locale={props.locale}
 						runs={props.runs}
 					/>
-				</div>
-			</div>
+				</CardStack>
+			</CardSplit>
 			<PreviousRunsPanel
 				catalog={localeCatalog.runsOperational}
 				locale={props.locale}

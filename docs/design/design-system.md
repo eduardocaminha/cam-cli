@@ -17,6 +17,14 @@ the web UI.
 - Cards use the shared rounded surface, hairline border and restrained inset
   highlight. Controls use the smaller shared radius. Status badges are compact
   and never replace a textual label.
+- Card siblings are composed with `CardStack` or `CardGrid`: standard stacks,
+  grids, split columns and main sections use 24px; metric grids and card-panel
+  content use 16px. `CardGrid` owns equal-height cards and collapses to one
+  column before its declared responsive columns. Forms use `FormStack` at 12px
+  between fields and `FormField` at 4px between label, control and help.
+- `CardHeader` uses 24px horizontal and 16px vertical inset. `CardPanel` uses
+  24px inset and its 16px internal stack; `Stat`, `AttentionCard` and compact
+  operational states use 16px inset. The shared card ring remains 7px.
 - Keep one centered content measure by default. The width preference may release
   that cap, but content must remain readable and grids must still collapse.
 

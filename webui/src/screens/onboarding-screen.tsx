@@ -46,7 +46,7 @@ export function OnboardingSurface({
 					<CardTitle>{catalog.cardTitle}</CardTitle>
 					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
-				<CardPanel className="flex flex-col gap-5">
+				<CardPanel>
 					{project.state === 'checking' ? (
 						<p className="text-muted-foreground text-sm">{project.detail}</p>
 					) : null}
