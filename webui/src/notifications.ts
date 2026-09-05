@@ -2,7 +2,7 @@ import type { RunEventView } from './run-view.ts';
 
 export type BrowserNotificationPermission = 'default' | 'denied' | 'granted' | 'unsupported';
 
-/** Where the click lands: the decision belongs on the conversation, the rest on the runs surface. */
+/** Every run notification returns to its project run surface. */
 export type NotificationTarget = '/' | '/runs';
 
 export interface RunNotification {

@@ -12,7 +12,6 @@ import { routeSelection } from './routes.ts';
 import { RouteScreen } from './screens/route-screen.tsx';
 import { SurfaceColumn } from './screens/surface-column.tsx';
 import { GlobalSettingsSurface } from './screens/global-settings-screen.tsx';
-import { HomeSurface } from './screens/home-screen.tsx';
 import { NonCurrentProjectSurface } from './screens/non-current-project-screen.tsx';
 import { OnboardingSurface } from './screens/onboarding-screen.tsx';
 import { OverviewSurface } from './screens/overview-screen.tsx';
@@ -29,7 +28,6 @@ import {
 import { WorkSurface } from './screens/work-screen.tsx';
 
 export { projectIdOf, routeOf } from './routes.ts';
-export { ConversationColumn } from './screens/conversation.tsx';
 export type { AppProps } from './app-props.ts';
 export type { OperatorRoute } from './routes.ts';
 
@@ -65,11 +63,6 @@ export function App(props: AppProps): React.ReactElement {
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
-	const showInspectorToggle = selection.surface === 'conversation' && (
-		selectedProject?.current === true
-			? props.project.state === 'ready'
-			: selectedProject?.readiness === 'ready'
-	);
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
@@ -85,7 +78,7 @@ export function App(props: AppProps): React.ReactElement {
 	}, [props.projects, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={showInspectorToggle} sidebarOpen={sidebarOpen} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} />}
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={props.selectedProjectId ?? null} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>
@@ -104,9 +97,8 @@ export function App(props: AppProps): React.ReactElement {
 							<p className="text-muted-foreground text-sm">{localeCatalog.projects.notFoundDescription}</p>
 						</SurfaceColumn>
 					),
-					nonCurrent: (project, surface) => <NonCurrentProjectSurface inspectorOpen={inspectorOpen} props={props} selectedProject={project} surface={surface} />,
+					nonCurrent: (project, surface) => <NonCurrentProjectSurface props={props} selectedProject={project} surface={surface} />,
 					onboarding: (project) => <OnboardingSurface catalog={localeCatalog.onboarding} project={props.project} settingsHref={`/projects/${encodeURIComponent(project.id)}/settings`} status={props.status} />,
-					conversation: () => <HomeSurface {...props} inspectorOpen={inspectorOpen} projectId={selectedProject?.id ?? ''} />,
 					runs: () => <RunsSurface {...props} />,
 					work: () => <WorkSurface {...props} />,
 					settings: () => <SettingsSurface {...props} />,

@@ -40,9 +40,10 @@ styling. Hugeicons supplies the icon set.
 ## Surfaces and navigation
 
 - `/overview` summarizes all projects.
-- `/projects/:projectId` is the project conversation.
+- `/projects/:projectId` opens the project Runs surface.
 - `/projects/:projectId/runs`, `/work` and `/settings` keep execution, planning
-  and configuration separate.
+  and configuration separate; `/projects/:projectId/runs` remains an accepted
+  address.
 - The project selector changes project scope; the navigation changes the current
   surface. Plain links remain the routing mechanism.
 - Every screen places operator attention before autonomous activity, history and
@@ -53,8 +54,8 @@ styling. Hugeicons supplies the icon set.
 - At 390px, the header is compact and every navigation destination remains
   reachable. The desktop sidebar becomes horizontal navigation rather than a
   stacked column.
-- Cards and metric grids collapse to one column. Conversation and run details use
-  the full content width without overlapping fixed or sticky panels.
+- Cards and metric grids collapse to one column. Run details use the full
+  content width without overlapping fixed or sticky panels.
 - Interactive targets provide at least a 44px coarse-pointer hit area. Labels may
   wrap instead of being clipped.
 - Only the content panel scrolls on desktop. On small screens, navigation may
@@ -66,8 +67,7 @@ styling. Hugeicons supplies the icon set.
   focus rings.
 - Pressable controls respond immediately with a short shadow or transform change.
   Do not animate routine navigation or use `transition: all`.
-- Conversation and live output stay pinned only while the operator is already at
-  the live edge.
+- Live output stays pinned only while the operator is already at the live edge.
 - Under `prefers-reduced-motion: reduce`, remove movement and keep only immediate
   or short opacity feedback. Theme changes never cross-fade individual tokens.
 - Both `en-US` and `pt-BR` must remain complete. Layouts must tolerate the longer

@@ -9,7 +9,6 @@ interface RouteScreens {
 	notFound: () => React.ReactElement;
 	nonCurrent: (project: RegisteredProjectView, surface: ProjectSurface) => React.ReactElement;
 	onboarding: (project: RegisteredProjectView) => React.ReactElement;
-	conversation: () => React.ReactElement;
 	runs: () => React.ReactElement;
 	work: () => React.ReactElement;
 	settings: () => React.ReactElement;
@@ -36,5 +35,5 @@ export function RouteScreen({
 	if (selection.surface === 'runs') return screens.runs();
 	if (selection.surface === 'work') return screens.work();
 	if (selection.surface === 'settings') return screens.settings();
-	return screens.conversation();
+	return screens.runs();
 }

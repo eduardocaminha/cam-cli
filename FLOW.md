@@ -6,8 +6,8 @@ by a durable SQLite run store. It does not create a tmux session.
 ```mermaid
 flowchart TD
     START["gship"] --> WEB["Bun HTTP service on 127.0.0.1"]
-    WEB --> CHAT["Read-only conversational orchestrator"]
-    CHAT --> COMMAND["Zero or one typed service command"]
+    EXTERNAL["External conversational agent"] --> COMMAND["Typed Gateship command"]
+    WEB --> RUNS["Project Runs surface"]
     COMMAND --> INTAKE["Create, specify, or approve a task"]
     INTAKE --> SOURCE["Commit task to remote main"]
     SOURCE --> RUN["Start run from origin/main"]
@@ -28,9 +28,9 @@ flowchart TD
 
 - `RunRuntime` owns the run state machine and process cancellation.
 - `RunStore` persists runs and events in `.gship/runtime.sqlite`.
-- `ConversationalOrchestrator` investigates read-only and returns at most one
-  typed command. Its public transcript and one native session id per provider
-  are persisted for cross-provider and cross-process handoff.
+- `ConversationalOrchestrator` resolves typed cycle questions internally. The
+  external agent investigates conversationally and invokes typed commands; the
+  browser does not render its transcript.
 - `GitWorkspaceManager` creates one isolated worktree per run from
   `origin/main`, releases it after a confirmed merge, and preserves dirty or
   unknown leftovers for operator inspection. It never moves local `main`.
@@ -44,8 +44,8 @@ flowchart TD
   independent review.
 - `GithubShipper` owns commit, push, PR creation, squash auto-merge, and source
   refresh after a real merge.
-- The browser is primarily a conversation. Explicit start, resume, cancel, and
-  ship controls remain as a deterministic fallback; both paths reach the same
+- The external agent is the primary conversational interface. The browser's
+  Runs, Trabalho and Ajustes surfaces invoke the same typed deterministic
   service methods.
 
 Recovery is the durable run state plus explicit resume in the web UI. No tmux,

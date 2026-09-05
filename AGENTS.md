@@ -20,9 +20,10 @@ are installed in the image and authenticated by the operator on first boot.
 - Provider and GitHub authentication happens inside the container and persists
   on the volume. Never copy host credentials into the image, and never trade the
   operator's subscription login for API-key billing.
-- The operator-facing conversational orchestrator may investigate the project,
-  refine intent and invoke typed Gateship commands. The deterministic runtime,
-  not the conversational agent, owns run state, verification and shipping.
+- The external agent is the operator's primary conversational interface. It may
+  investigate the project, refine intent and invoke typed Gateship commands.
+  The deterministic runtime, not the conversational agent, owns run state,
+  verification and shipping.
 - The operator specification is the execution contract. Do not require planner
   and auditor convergence before work can start.
 - Keep review independent and read-only. Findings may trigger one bounded fix;
@@ -43,9 +44,9 @@ are installed in the image and authenticated by the operator on first boot.
 - After a confirmed merge, release the clean managed worktree, local branch and
   stale remote-tracking ref. Preserve dirty, failed or unknown leftovers and
   surface them to the operator.
-- Keep role contracts in provider adapters: the orchestrator converses and
-  invokes typed commands, the executor edits only its assigned worktree, and a
-  fresh reviewer session is mechanically read-only.
+- Keep role contracts in provider adapters: the cycle resolver handles typed
+  cycle questions, the executor edits only its assigned worktree, and a fresh
+  reviewer session is mechanically read-only.
 
 ## Runtime and dependencies
 
