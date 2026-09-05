@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-799",
+  "title": "Eliminar a sessão órfã da antiga conversa",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-05T13:40:31.318Z",
+  "updatedAt": "2026-09-05T13:40:31.318Z",
+  "description": "Remover o último resíduo da Conversa aposentada que ficou fora de GSHIP-798: a criação da tabela orchestrator_sessions e os métodos getOrchestratorSession/setOrchestratorSession de RunStore e RunRuntime. O AgentCycleQuestionResolver usa randomUUID e uma sessão fresca por pergunta, portanto não depende dessa persistência; preservar seu funcionamento, o slot interno de modelo orchestrator e a telemetria run.cycle-response. Atualizar a cobertura de RunStore para provar que bancos novos não criam orchestrator_sessions, orchestrator_messages nem orchestrator_handoff, enquanto bancos antigos contendo as três tabelas continuam abrindo sem DROP, leitura ou mutação desses dados. Remover comentários ou fixtures que afirmem dependência inexistente. Não alterar brief, rotas, UI, executor, reviewer ou autenticação.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Remover o último resíduo da Conversa aposentada que ficou fora de GSHIP-798: a criação da tabela orchestrator_sessions e os métodos getOrchestratorSession/setOrchestratorSession de RunStore e RunRuntime. O AgentCycleQuestionResolver usa randomUUID e uma sessão fresca por pergunta, portanto não depende dessa persistência; preservar seu funcionamento, o slot interno de modelo orchestrator e a telemetria run.cycle-response. Atualizar a cobertura de RunStore para provar que bancos novos não criam orchestrator_sessions, orchestrator_messages nem orchestrator_handoff, enquanto bancos antigos contendo as três tabelas continuam abrindo sem DROP, leitura ou mutação desses dados. Remover comentários ou fixtures que afirmem dependência inexistente. Não alterar brief, rotas, UI, executor, reviewer ou autenticação.",
+    "verify": [
+      "bun test test/runtime/run-store.test.ts test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-review.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "4cf0bb8d33e07c0158a42d5e34ce3d512ff4f4e00948469f360c7316008442b8",
+    "approvedAt": "2026-09-05T13:40:31.318Z"
+  }
+}
