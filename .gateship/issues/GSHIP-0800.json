@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-800",
   "title": "Restaurar o wordmark oficial preto no rodapé da sidebar",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T14:07:16.822Z",
-  "updatedAt": "2026-09-05T14:07:16.822Z",
+  "updatedAt": "2026-09-05T14:11:01.024Z",
   "description": "No rodapé da sidebar desktop expandida, substituir o símbolo GateshipMark seguido do texto literal Gateship pelo componente GateshipWordmark, que renderiza o SVG oficial escolhido. O wordmark deve permanecer pequeno, legível e em preto/cor normal de foreground, sem herdar opacidade ou tonalidade muted. Manter a versão como elemento separado em cinza secundário. Não alterar a assinatura da sidebar recolhida, o cabeçalho compacto, a posição do rodapé, a navegação ou qualquer comportamento. Atualizar o contrato visual e os testes para impedir retorno do texto literal, do símbolo separado ou da cor cinza no wordmark expandido.",
   "specSource": "operator",
   "spec": {

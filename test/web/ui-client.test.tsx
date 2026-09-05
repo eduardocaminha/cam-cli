@@ -4292,9 +4292,14 @@ describe('operator shell', () => {
 		expect(compactHeader).toContain('viewBox="3250 0 10187 2750"');
 		expect(html.indexOf('>Control center</span>')).toBeLessThan(html.indexOf('data-slot="project-navigation"'));
 		expect(settingsEnd).toBeLessThan(signatureStart);
-		expect(signature).toContain('size-5');
-		expect(signature).toContain('>Gateship</span>');
+		expect(signature).toContain('viewBox="3250 0 10187 2750"');
+		expect(signature).toContain('h-4');
+		expect(signature).toContain('text-foreground');
+		expect(signature).not.toContain('viewBox="0 0 2750 2750"');
+		expect(signature).not.toContain('>Gateship</span>');
+		expect(signature).not.toContain('text-sidebar-foreground/60');
 		expect(signature).toContain('>v0.292.0</span>');
+		expect(signature).toContain('text-sidebar-foreground/50');
 	});
 
 	test('the collapsed rail keeps its attention signal and a centered footer mark', () => {
