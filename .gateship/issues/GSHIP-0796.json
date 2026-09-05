@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-796",
+  "title": "Tornar o agente externo a interface primária do projeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-05T12:05:12.031Z",
+  "updatedAt": "2026-09-05T12:05:12.031Z",
+  "description": "Retirar a aba e a superfície Conversa da navegação web. Fazer /projects/:projectId abrir a superfície Runs, preservando /projects/:projectId/runs como endereço aceito e todos os links existentes. Parar de buscar ou renderizar o transcript conversacional no cliente normal. Manter Central, Runs, Trabalho e Ajustes acessíveis, inclusive em 390 px e nos dois idiomas. O agente externo passa a ser descrito como interface conversacional primária por meio das operações tipadas existentes; o runtime determinístico continua dono do ciclo. Renomear apenas a apresentação do papel interno de modelo para Resolvedor do ciclo/Cycle resolver, sem migrar ainda a chave persistida. Atualizar AGENTS.md, HANDOFF.md, FLOW.md, docs/positioning.md e o contrato de design para refletir a decisão. Não apagar nesta etapa APIs, tabelas ou código backend da conversa; esse corte fica para uma segunda issue após a validação da superfície.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Retirar a aba e a superfície Conversa da navegação web. Fazer /projects/:projectId abrir a superfície Runs, preservando /projects/:projectId/runs como endereço aceito e todos os links existentes. Parar de buscar ou renderizar o transcript conversacional no cliente normal. Manter Central, Runs, Trabalho e Ajustes acessíveis, inclusive em 390 px e nos dois idiomas. O agente externo passa a ser descrito como interface conversacional primária por meio das operações tipadas existentes; o runtime determinístico continua dono do ciclo. Renomear apenas a apresentação do papel interno de modelo para Resolvedor do ciclo/Cycle resolver, sem migrar ainda a chave persistida. Atualizar AGENTS.md, HANDOFF.md, FLOW.md, docs/positioning.md e o contrato de design para refletir a decisão. Não apagar nesta etapa APIs, tabelas ou código backend da conversa; esse corte fica para uma segunda issue após a validação da superfície.",
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/commands/agent.test.ts test/web/project-scoped-agent-api.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "07aeb45f949b84bdacf17dd20af783d69cef15475e8a6efba0cd3f2d81379330",
+    "approvedAt": "2026-09-05T12:05:12.031Z"
+  }
+}
