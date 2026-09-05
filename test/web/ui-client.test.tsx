@@ -125,6 +125,13 @@ import {
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
+import {
+	PROJECT_SELECTION_STORAGE_KEY,
+	reconciledProjectSelection,
+	readProjectSelection,
+	writeProjectSelection,
+} from '../../webui/src/project-selection.ts';
+import { routeSelection } from '../../webui/src/routes.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
 import {
 	createOperationalRefreshCoalescer,
@@ -4375,6 +4382,70 @@ describe('operator shell', () => {
 
 		expect(nav).toContain('data-slot="project-switcher"');
 		expect(nav).not.toContain('data-slot="project-surface-navigation"');
+	});
+
+	test('overview retains a registered project only for contextual navigation in both locales', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const html = renderAt('/overview', {
+				locale,
+				projects: [CURRENT_PROJECT, OTHER_PROJECT],
+				selectedProjectId: OTHER_PROJECT.id,
+			});
+			const navStart = html.indexOf('<nav aria-label=');
+			const nav = html.slice(navStart, html.indexOf('</nav>', navStart));
+			const triggerStart = html.indexOf('data-slot="project-switcher"');
+			const trigger = html.slice(triggerStart, html.indexOf('</button>', triggerStart));
+
+			expect(trigger).toContain(`>${OTHER_PROJECT.name}<`);
+			for (const suffix of ['', '/runs', '/work', '/settings']) {
+				expect(nav).toContain(`href="/projects/${OTHER_PROJECT.id}${suffix}"`);
+			}
+			const overviewLink = openingTags(nav).find((tag) => tag.includes('href="/overview"'));
+			expect(overviewLink).toContain('aria-current="page"');
+		}
+	});
+
+	test('project selection persists only registered route targets and clears obsolete entries', () => {
+		expect(readProjectSelection(() => 'project-other')).toBe('project-other');
+		expect(readProjectSelection(() => '')).toBeNull();
+		expect(readProjectSelection(() => { throw new Error('storage unavailable'); })).toBeNull();
+
+		expect(reconciledProjectSelection('project-other', null, [CURRENT_PROJECT, OTHER_PROJECT]))
+			.toBe('project-other');
+		expect(reconciledProjectSelection(null, 'project-other', [CURRENT_PROJECT, OTHER_PROJECT]))
+			.toBe('project-other');
+		expect(reconciledProjectSelection(null, 'removed-project', [CURRENT_PROJECT, OTHER_PROJECT]))
+			.toBeNull();
+		expect(reconciledProjectSelection(null, null, [CURRENT_PROJECT, OTHER_PROJECT])).toBeNull();
+		expect(reconciledProjectSelection('missing-project', 'project-other', [CURRENT_PROJECT, OTHER_PROJECT]))
+			.toBe('project-other');
+
+		const writes: string[] = [];
+		writeProjectSelection({
+			getItem: () => null,
+			setItem: (key, value) => { writes.push(`set:${key}:${value}`); },
+			removeItem: (key) => { writes.push(`remove:${key}`); },
+		}, 'project-other');
+		writeProjectSelection({
+			getItem: () => null,
+			setItem: (key, value) => { writes.push(`set:${key}:${value}`); },
+			removeItem: (key) => { writes.push(`remove:${key}`); },
+		}, null);
+		expect(writes).toEqual([
+			`set:${PROJECT_SELECTION_STORAGE_KEY}:project-other`,
+			`remove:${PROJECT_SELECTION_STORAGE_KEY}`,
+		]);
+	});
+
+	test('overview navigation context never changes the global route selection', () => {
+		expect(routeSelection('/overview', CURRENT_PROJECT.id, OTHER_PROJECT.id)).toEqual({
+			projectId: OTHER_PROJECT.id,
+			surface: 'overview',
+		});
+		expect(routeSelection('/projects/project-other/work', CURRENT_PROJECT.id, CURRENT_PROJECT.id)).toEqual({
+			projectId: OTHER_PROJECT.id,
+			surface: 'work',
+		});
 	});
 
 	test('project switcher renders Alt shortcuts in the leading column and marks the selection', () => {

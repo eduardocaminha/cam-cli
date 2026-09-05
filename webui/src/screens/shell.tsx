@@ -551,6 +551,7 @@ export function ShellSidebar({
 	locale,
 	runInspectorCatalog,
 	route,
+	selectedProjectId,
 	projects,
 	run,
 	staleService,
@@ -560,6 +561,7 @@ export function ShellSidebar({
 }: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
+	selectedProjectId: string | null;
 	run: RunView | null;
 	version: string;
 	open: boolean;
@@ -571,7 +573,7 @@ export function ShellSidebar({
 	// something else stopped it, never for the switch simply being off.
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const currentId = projects.find((project) => project.current)?.id ?? null;
-	const selection = routeSelection(route, currentId);
+	const selection = routeSelection(route, currentId, selectedProjectId);
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
 	const { operational, queuePause, attention } = shellAttention(
 		selected,

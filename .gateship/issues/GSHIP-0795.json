@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-795",
   "title": "Preservar o projeto selecionado ao abrir a Central de controle",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-05T10:51:14.622Z",
-  "updatedAt": "2026-09-05T10:51:14.622Z",
+  "updatedAt": "2026-09-05T10:57:30.302Z",
   "description": "Ao navegar de uma superfície de projeto para /overview, manter o último projeto selecionado no seletor e manter disponível seu menu de Conversa, Runs, Trabalho e Ajustes. A Central continua sendo uma superfície global: suas leituras, métricas e stream não podem passar a usar o escopo do projeto retido. Persistir a seleção para sobreviver a recarregamentos; atualizar a seleção ao entrar em qualquer rota /projects/:projectId; ignorar e limpar uma seleção persistida que não exista mais no registro. Não selecionar automaticamente um projeto numa instalação que nunca teve seleção. Cobrir navegação direta, navegação via histórico e os dois idiomas sem alterar a URL canônica /overview.",
   "specSource": "operator",
   "spec": {

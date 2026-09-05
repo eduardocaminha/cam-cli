@@ -42,6 +42,8 @@ export interface AppProps {
 	onNavigate?: (destination: string) => void;
 	route: OperatorRoute;
 	surfaceRoute?: OperatorRoute;
+	/** Persisted context for overview navigation; it never scopes operational reads. */
+	selectedProjectId?: string | null;
 	locale: Locale;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];

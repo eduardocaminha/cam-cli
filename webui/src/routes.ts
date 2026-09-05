@@ -1,6 +1,6 @@
 import type { ShellCatalog } from './locale.ts';
 
-/** Project selection and surface both come from this URL, never hidden state. */
+/** The URL owns the surface and project scope; overview may retain navigation context. */
 export type OperatorRoute = '/overview' | '/projects' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
 
 export type ProjectSurface = 'conversation' | 'runs' | 'work' | 'settings';
@@ -33,8 +33,8 @@ export function routeOf(pathname: string): OperatorRoute {
 	return '/overview';
 }
 
-export function routeSelection(route: OperatorRoute, currentId: string | null): RouteSelection {
-	if (route === '/overview') return { projectId: null, surface: 'overview' };
+export function routeSelection(route: OperatorRoute, currentId: string | null, selectedProjectId: string | null = null): RouteSelection {
+	if (route === '/overview') return { projectId: selectedProjectId, surface: 'overview' };
 	if (route === '/projects') return { projectId: null, surface: 'projects' };
 	const legacy = route === '/' ? 'conversation' : route.slice(1);
 	if (route === '/settings') return { projectId: null, surface: 'global-settings' };
