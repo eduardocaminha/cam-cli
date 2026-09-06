@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-812",
+  "title": "Reconciliar a fila após cada entrega",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:27.352Z",
+  "updatedAt": "2026-09-06T16:04:27.352Z",
+  "description": "Adicionar um checkpoint de reconciliação entre uma run entregue e o despacho automático da próxima issue aprovada, executado apenas quando o encadeamento está ligado e ainda há trabalho planejado. Usar o resolvedor configurado para comparar o novo origin/main, a entrega anterior e a próxima especificação. Produzir um resultado tipado: unchanged continua; clarified registra orientação de execução não vinculante sem alterar a especificação nem seu fingerprint; material pausa a fila e cria uma proposta derivada para o operador. Objetivo, comportamento observável, risco, efeitos irreversíveis e comandos de verificação aprovados nunca podem ser alterados automaticamente. Registrar evento com revisão do workflow, run de origem, issue alvo, provider, modelo, esforço, latência, resultado, justificativa e orientação; incluir essas chamadas nas métricas. Falha transitória de provider segue a política existente de espera e retomada; resultado inválido falha fechado sem consumir a próxima issue. Não adicionar planner, reescrever specs silenciosamente ou criar memória global. Testar continuidade, clarificação, mudança material, restart, idempotência, limite de provider e compatibilidade com execução serial.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar um checkpoint de reconciliação entre uma run entregue e o despacho automático da próxima issue aprovada, executado apenas quando o encadeamento está ligado e ainda há trabalho planejado. Usar o resolvedor configurado para comparar o novo origin/main, a entrega anterior e a próxima especificação. Produzir um resultado tipado: unchanged continua; clarified registra orientação de execução não vinculante sem alterar a especificação nem seu fingerprint; material pausa a fila e cria uma proposta derivada para o operador. Objetivo, comportamento observável, risco, efeitos irreversíveis e comandos de verificação aprovados nunca podem ser alterados automaticamente. Registrar evento com revisão do workflow, run de origem, issue alvo, provider, modelo, esforço, latência, resultado, justificativa e orientação; incluir essas chamadas nas métricas. Falha transitória de provider segue a política existente de espera e retomada; resultado inválido falha fechado sem consumir a próxima issue. Não adicionar planner, reescrever specs silenciosamente ou criar memória global. Testar continuidade, clarificação, mudança material, restart, idempotência, limite de provider e compatibilidade com execução serial.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "62a9525600d40fa3adaf68610c7bd51aa8cf8e271bba538c97311e3e71d2a1cf",
+    "approvedAt": "2026-09-06T16:04:27.352Z"
+  }
+}
