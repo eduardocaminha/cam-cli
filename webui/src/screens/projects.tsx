@@ -1,15 +1,13 @@
 // webui/src/screens/projects.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
-import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
-import { cn } from '../lib/cn.ts';
 import type { ProjectsCatalog } from '../locale.ts';
-import { useState } from 'react';
 import { BUTTON_CLASS, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
 import { fieldReader } from './runs.tsx';
 
@@ -24,9 +22,9 @@ export function RegisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.register.title}</CardTitle>
-				<CardDescription>{catalog.register.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
+				<p className="text-muted-foreground text-sm">{catalog.register.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -44,9 +42,11 @@ export function RegisterProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.register.rootGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
 					</FormField>
-					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+					<CardFooter>
+						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 						{catalog.register.submit}
 					</button>
+					</CardFooter>
 				</FormStack>
 			</CardPanel>
 		</Card>
@@ -70,9 +70,9 @@ export function ImportProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.import.title}</CardTitle>
-				<CardDescription>{catalog.import.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
+				<p className="text-muted-foreground text-sm">{catalog.import.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -90,12 +90,14 @@ export function ImportProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.import.destinationGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.import.credentialGuidance}</span>
 					</FormField>
-					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
-						{catalog.import.submit}
-					</button>
 					{projectOnboardingPending === 'import'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
 						: null}
+					<CardFooter>
+						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+							{catalog.import.submit}
+						</button>
+					</CardFooter>
 				</FormStack>
 			</CardPanel>
 		</Card>
@@ -124,9 +126,9 @@ export function CreateProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.create.title}</CardTitle>
-				<CardDescription>{catalog.create.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
+				<p className="text-muted-foreground text-sm">{catalog.create.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -196,12 +198,14 @@ export function CreateProjectPanel({
 						/>
 						<span>{authorization}</span>
 					</label>
-					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending || !confirmed || namedRepository === ''} type="submit">
-						{catalog.create.submit}
-					</button>
 					{projectOnboardingPending === 'create'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
+					<CardFooter>
+						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !confirmed || namedRepository === ''} type="submit">
+							{catalog.create.submit}
+						</button>
+					</CardFooter>
 				</FormStack>
 			</CardPanel>
 		</Card>
@@ -228,9 +232,9 @@ export function UnregisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.remove.title}</CardTitle>
-				<CardDescription>{catalog.remove.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
+				<p className="text-muted-foreground text-sm">{catalog.remove.description}</p>
 				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
 				<label className="flex items-start gap-2 text-sm">
 					<input
@@ -243,8 +247,9 @@ export function UnregisterProjectPanel({
 					/>
 					<span>{catalog.remove.confirm(project.name)}</span>
 				</label>
-				<button
-					className={cn(BUTTON_CLASS, 'self-end')}
+				<CardFooter>
+					<button
+					className={BUTTON_CLASS}
 					disabled={pending || !confirmed}
 					onClick={() => {
 						setConfirmed(false);
@@ -254,6 +259,7 @@ export function UnregisterProjectPanel({
 				>
 					{catalog.remove.submit}
 				</button>
+				</CardFooter>
 			</CardPanel>
 		</Card>
 	);

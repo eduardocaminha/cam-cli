@@ -23,7 +23,9 @@ the web UI.
   column before its declared responsive columns. Forms use `FormStack` at 12px
   between fields and `FormField` at 4px between label, control and help.
 - `CardHeader` uses 24px horizontal and 16px vertical inset. `CardPanel` uses
-  24px inset and its 16px internal stack; `Stat`, `AttentionCard` and compact
+  24px inset and its 16px internal stack; `CardFooter` uses a muted surface,
+  top border and the same 24px horizontal / 16px vertical inset, stacking
+  actions on narrow screens. `Stat`, `AttentionCard` and compact
   operational states use 16px inset. The shared card ring remains 7px.
 - Keep one centered content measure by default. The width preference may release
   that cap, but content must remain readable and grids must still collapse.
@@ -36,6 +38,10 @@ styling. Hugeicons supplies the icon set.
 
 - A panel has one constructive primary action. Secondary and destructive actions
   remain visually distinct.
+- Card titles and metric labels use the system monospace stack. Explanatory
+  subtitles do not appear in card headers; factual availability and repository
+  details remain in card content. `CardFooter` is rendered only by cards with
+  actions.
 - Attention cards are the only acid surfaces and only appear for work waiting on
   the operator.
 - Empty states contain a short explanation and a useful next action when one is

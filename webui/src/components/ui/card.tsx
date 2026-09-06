@@ -1,7 +1,7 @@
 // webui/src/components/ui/card.tsx
 //
 // The panel surface of the operator shell. The outer frame provides the border,
-// hairline bevel and muted wash; CardPanel supplies the nested content surface.
+// hairline bevel; CardPanel supplies the nested content surface.
 // The shared card ring lives in index.css, focus uses the acid --ring token, and
 // details/summary disclosure pair (a disclosure has to be a real <details>;
 // collapsed is a rendering state, never an unmounted branch, ADR-0067).
@@ -12,15 +12,13 @@ import { cn } from '../../lib/cn.ts';
 /*
  * The frame has three pieces: the surface, the child-card
  * plumbing (margins, rounding, clip and shadow suppression for a nested
- * [data-slot=card]), and the muted wash. The wash is guarded behind
- * has-data-[slot=card]. This screen has one component for both, and a frame with no inner card
- * (a plain padded card) must not render all-gray.
+ * [data-slot=card]). This screen has one component for both, and a frame with no inner card
+ * (a plain padded card) stays a plain surface.
  */
 const FRAME =
 	'card-ring relative flex flex-col rounded-2xl border bg-card not-dark:bg-clip-padding text-card-foreground ' +
 	'[--clip-bottom:-1rem] [--clip-top:-1rem] ' +
 	'before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] ' +
-	'has-data-[slot=card]:before:bg-muted/72 ' +
 	'before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)] ' +
 	'has-data-[slot=table-container]:overflow-hidden ' +
 	'*:data-[slot=card]:-m-px *:data-[slot=table-container]:-m-px *:data-[slot=table-container]:w-[calc(100%+2px)] ' +
@@ -94,8 +92,28 @@ export function CardSummary({
 export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): React.ReactElement {
 	return (
 		<h2
-			className={cn('self-center font-bold font-heading text-base', className)}
+			className={cn('self-center font-bold font-mono text-base', className)}
 			data-slot="card-frame-title"
+			{...props}
+		/>
+	);
+}
+
+/**
+ * The optional action edge of a card panel. It is only rendered by callers
+ * with actions, so a read-only card never reserves an empty muted band.
+ */
+export function CardFooter({
+	className,
+	...props
+}: React.ComponentProps<'div'>): React.ReactElement {
+	return (
+		<div
+			className={cn(
+				'-mx-6 -mb-6 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-6 py-4 sm:flex-row sm:items-center sm:justify-end',
+				className,
+			)}
+			data-slot="card-footer"
 			{...props}
 		/>
 	);
