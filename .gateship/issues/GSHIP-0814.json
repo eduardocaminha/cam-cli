@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-814",
+  "title": "Adicionar Insights ao Control Center",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:34.427Z",
+  "updatedAt": "2026-09-06T16:04:34.427Z",
+  "description": "Adicionar /overview/insights e completar a navegação local Agora, Execuções, Filas e Insights. Criar uma interface de leitura com seletor 7d, 30d e histórico completo, filtro global ou por projeto e seções compactas para Entrega, Autonomia, Providers e Economia. Mostrar outcome ao longo do tempo, mediana de dispatch-to-merge, rodadas de revisão, intervenções do operador, perguntas resolvidas internamente, esperas de provider, correções de CI e cobertura de custos/tokens. Gráficos devem representar valores exatos acessíveis em tabela ou texto e não animar em navegação frequente. Insights comparativos por modelo só aparecem com amostra explícita e nunca declaram vencedor. Custo deve ser rotulado como equivalente à API quando essa for a origem, separado do consumo da assinatura. Preservar dados durante refresh, filtros na URL, tema, localização, teclado e responsividade. Não adicionar biblioteca de gráficos sem demonstrar que SVG/CSS e os componentes atuais são insuficientes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar /overview/insights e completar a navegação local Agora, Execuções, Filas e Insights. Criar uma interface de leitura com seletor 7d, 30d e histórico completo, filtro global ou por projeto e seções compactas para Entrega, Autonomia, Providers e Economia. Mostrar outcome ao longo do tempo, mediana de dispatch-to-merge, rodadas de revisão, intervenções do operador, perguntas resolvidas internamente, esperas de provider, correções de CI e cobertura de custos/tokens. Gráficos devem representar valores exatos acessíveis em tabela ou texto e não animar em navegação frequente. Insights comparativos por modelo só aparecem com amostra explícita e nunca declaram vencedor. Custo deve ser rotulado como equivalente à API quando essa for a origem, separado do consumo da assinatura. Preservar dados durante refresh, filtros na URL, tema, localização, teclado e responsividade. Não adicionar biblioteca de gráficos sem demonstrar que SVG/CSS e os componentes atuais são insuficientes.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "d47e93330f8f4666a8fc128ccaa500815ccd7b85d3d5b48578a20f454a80afe7",
+    "approvedAt": "2026-09-06T16:04:34.427Z"
+  }
+}
