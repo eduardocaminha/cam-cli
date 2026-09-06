@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-813",
+  "title": "Expor o contrato completo de Insights",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:30.582Z",
+  "updatedAt": "2026-09-06T16:04:30.582Z",
+  "description": "Expor de forma tipada no cliente e no endpoint global de overview as métricas históricas que o backend já calcula, sem novo armazenamento: outcomes, runs ativas, wall time, fix rounds, attention requests, operator interventions, provider holds, resolved cycle questions, tokens reportados, configurações e séries diárias. Acrescentar somente as derivações necessárias e reprodutíveis para entregas: runs terminais, shipped sem intervenção, dispatch-to-merge quando os timestamps existem, first review pass quando demonstrável e CI corrections. Documentar fórmulas, denominadores, exclusões e cobertura desconhecida. Separar custo equivalente à API de uso ou cobrança de assinatura; nunca apresentar ausência como zero. Suportar janelas 7d, 30d e all, e filtros opcionais por projeto, provider, modelo, papel e esforço. Não criar score composto, ranking de modelos, recomendação automática ou alteração de roteamento. Cobrir fórmulas, amostras vazias, dados parciais e proveniência com testes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Expor de forma tipada no cliente e no endpoint global de overview as métricas históricas que o backend já calcula, sem novo armazenamento: outcomes, runs ativas, wall time, fix rounds, attention requests, operator interventions, provider holds, resolved cycle questions, tokens reportados, configurações e séries diárias. Acrescentar somente as derivações necessárias e reprodutíveis para entregas: runs terminais, shipped sem intervenção, dispatch-to-merge quando os timestamps existem, first review pass quando demonstrável e CI corrections. Documentar fórmulas, denominadores, exclusões e cobertura desconhecida. Separar custo equivalente à API de uso ou cobrança de assinatura; nunca apresentar ausência como zero. Suportar janelas 7d, 30d e all, e filtros opcionais por projeto, provider, modelo, papel e esforço. Não criar score composto, ranking de modelos, recomendação automática ou alteração de roteamento. Cobrir fórmulas, amostras vazias, dados parciais e proveniência com testes.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "8b8a6726ef460cce216743e66e451a39cfe94d863f3dc60e2231c6f0bdf87cce",
+    "approvedAt": "2026-09-06T16:04:30.582Z"
+  }
+}
