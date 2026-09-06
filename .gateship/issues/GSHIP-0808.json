@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-06T16:04:06.353Z",
-  "updatedAt": "2026-09-06T20:47:15.477Z",
+  "updatedAt": "2026-09-06T20:47:31.633Z",
   "description": "Recompor /overview como a visão imediata do control plane usando o read model já existente e os novos componentes compartilhados, sem adicionar dependências. Mostrar exatamente quatro métricas de mesmo tamanho: Requer atenção, Runs ativas, Issues aprovadas e Entregas nos últimos 7 dias. A atenção deve contar apenas estados acionáveis pelo operador e usar destaque ácido somente quando maior que zero. Substituir a grade de cards de projetos por duas coleções compactas: trabalho ativo ou bloqueado com links para a run e tabela de estado dos projetos com prontidão, atividade atual, fila aprovada e última entrega. Manter cards apenas para os quatro resumos. Não usar título ou subtítulo visual redundante; manter heading acessível. Preservar o projeto selecionado, dados já carregados durante refresh, falhas parciais por projeto e ausência de vazio falso. Em larguras menores, ocultar colunas secundárias por prioridade em vez de exigir rolagem horizontal. Cobrir pt-BR, en-US, tema claro/escuro, teclado, foco e o viewport do MacBook Pro 14 com testes estruturais proporcionais.",
   "specSource": "operator",
   "spec": {
@@ -13,5 +13,9 @@
     "verify": [
       "bun run check:all"
     ]
+  },
+  "approval": {
+    "fingerprint": "74a435415fde41964be0a60bddfa3d258c14bc726bec27da9557616f561d9483",
+    "approvedAt": "2026-09-06T20:47:31.633Z"
   }
 }
