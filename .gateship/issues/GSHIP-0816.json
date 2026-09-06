@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-816",
+  "title": "Endurecer instalação container-first multiplataforma",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:40.987Z",
+  "updatedAt": "2026-09-06T16:04:40.987Z",
+  "description": "Tornar o container o caminho principal e reproduzível de instalação em macOS, Linux e Windows com Docker Desktop ou Engine, mantendo binários nativos como conveniência. Fornecer uma configuração suportada em um comando, volume único e documentado para estado e autenticações, porta configurável, healthcheck, política de restart e atualização explícita com checksum, backup e rollback. Adicionar diagnóstico que confirme arquitetura, permissões do volume, Git, gh, Claude, Codex, conectividade local e compatibilidade da imagem sem revelar credenciais. Garantir imagem amd64 e arm64 e smoke tests em CI para Linux nativo e os contratos de montagem/caminhos usados por macOS e Windows; evitar código específico de SO fora do adaptador de paths. Documentar login dentro do container, importação de projeto, atualização e recuperação de estado. Não adicionar Kubernetes, daemon auxiliar, instalador Electron, proxy privilegiado ou segundo volume sem necessidade demonstrada.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Tornar o container o caminho principal e reproduzível de instalação em macOS, Linux e Windows com Docker Desktop ou Engine, mantendo binários nativos como conveniência. Fornecer uma configuração suportada em um comando, volume único e documentado para estado e autenticações, porta configurável, healthcheck, política de restart e atualização explícita com checksum, backup e rollback. Adicionar diagnóstico que confirme arquitetura, permissões do volume, Git, gh, Claude, Codex, conectividade local e compatibilidade da imagem sem revelar credenciais. Garantir imagem amd64 e arm64 e smoke tests em CI para Linux nativo e os contratos de montagem/caminhos usados por macOS e Windows; evitar código específico de SO fora do adaptador de paths. Documentar login dentro do container, importação de projeto, atualização e recuperação de estado. Não adicionar Kubernetes, daemon auxiliar, instalador Electron, proxy privilegiado ou segundo volume sem necessidade demonstrada.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "de612690efee707308cb47630e6a34fca9db241194149dc6e293bf77d58e6351",
+    "approvedAt": "2026-09-06T16:04:40.987Z"
+  }
+}
