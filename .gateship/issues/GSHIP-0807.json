@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-807",
+  "title": "Adicionar leitura paginada de runs multiprojeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:02.869Z",
+  "updatedAt": "2026-09-06T16:04:02.869Z",
+  "description": "Adicionar um read model tipado e somente leitura que agregue runs dos projetos registrados a partir dos SQLite já existentes, sem ativar workers, criar outro banco ou manter cache persistente. Expor uma rota HTTP global sob /api/overview/runs e uma operação agent CLI runs.list_all. Aceitar limit e offset limitados, filtros opcionais por projectId, state e providerId, e ordenar deterministicamente por updatedAt decrescente com desempate estável por projectId e runId. Cada linha deve preservar projectId, nome e repositório do projeto, runId, issueId, estado, timestamps, provider, modelos/papéis/esforços conhecidos, avaliação, custo conhecido e cobertura, PR, CI e merge quando existentes. Um projeto indisponível deve produzir erro parcial identificado sem derrubar os resultados dos demais. Não expor credenciais, paths sensíveis ou output bruto. Atualizar tipos do cliente, operação agent, testes de paginação, filtros, ordenação, disponibilidade parcial e compatibilidade dos endpoints atuais.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar um read model tipado e somente leitura que agregue runs dos projetos registrados a partir dos SQLite já existentes, sem ativar workers, criar outro banco ou manter cache persistente. Expor uma rota HTTP global sob /api/overview/runs e uma operação agent CLI runs.list_all. Aceitar limit e offset limitados, filtros opcionais por projectId, state e providerId, e ordenar deterministicamente por updatedAt decrescente com desempate estável por projectId e runId. Cada linha deve preservar projectId, nome e repositório do projeto, runId, issueId, estado, timestamps, provider, modelos/papéis/esforços conhecidos, avaliação, custo conhecido e cobertura, PR, CI e merge quando existentes. Um projeto indisponível deve produzir erro parcial identificado sem derrubar os resultados dos demais. Não expor credenciais, paths sensíveis ou output bruto. Atualizar tipos do cliente, operação agent, testes de paginação, filtros, ordenação, disponibilidade parcial e compatibilidade dos endpoints atuais.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "1990fd4b5a59ac31640dadaf4ef11f22a8350592786f505f4d21703fc2a0e85b",
+    "approvedAt": "2026-09-06T16:04:02.869Z"
+  }
+}
