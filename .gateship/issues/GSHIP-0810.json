@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-810",
+  "title": "Agregar filas autônomas de todos os projetos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:19.532Z",
+  "updatedAt": "2026-09-06T16:04:19.532Z",
+  "description": "Criar um read model global somente leitura para o estado de encadeamento e backlog aprovado de cada projeto registrado, sem introduzir Plan, PlanRun, scheduler, broker ou banco adicional. Expor /api/overview/queues e a operação agent CLI queues.list. Para cada projeto, retornar prontidão, chain enabled, pausa tipada e timestamp, run atual quando houver, issue atual, issues planejadas na ordem determinística realmente usada pelo backlog e a próxima issue admissível. Falhas de um projeto devem ser parciais e identificadas. Não disparar, aprovar, reordenar ou editar issues por essa leitura. Garantir que a mesma fonte utilizada pelo dispatcher determine a ordem apresentada, evitando uma fila visual divergente da execução. Atualizar contratos, cliente e testes de projeto vazio, bloqueado, indisponível, encadeamento desligado, pausa, run ativa e múltiplos projetos.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Criar um read model global somente leitura para o estado de encadeamento e backlog aprovado de cada projeto registrado, sem introduzir Plan, PlanRun, scheduler, broker ou banco adicional. Expor /api/overview/queues e a operação agent CLI queues.list. Para cada projeto, retornar prontidão, chain enabled, pausa tipada e timestamp, run atual quando houver, issue atual, issues planejadas na ordem determinística realmente usada pelo backlog e a próxima issue admissível. Falhas de um projeto devem ser parciais e identificadas. Não disparar, aprovar, reordenar ou editar issues por essa leitura. Garantir que a mesma fonte utilizada pelo dispatcher determine a ordem apresentada, evitando uma fila visual divergente da execução. Atualizar contratos, cliente e testes de projeto vazio, bloqueado, indisponível, encadeamento desligado, pausa, run ativa e múltiplos projetos.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "60d87c8c8c31712a62ce4c77d6a2bac8b4c86300a12c50e07addc13afe8659fd",
+    "approvedAt": "2026-09-06T16:04:19.532Z"
+  }
+}
