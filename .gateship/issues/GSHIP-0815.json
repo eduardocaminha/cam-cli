@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-815",
+  "title": "Consolidar onboarding de projeto em um fluxo guiado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:37.812Z",
+  "updatedAt": "2026-09-06T16:04:37.812Z",
+  "description": "Consolidar cadastro local, importação e criação de projeto em um fluxo guiado único, preservando as operações tipadas existentes. O primeiro passo escolhe Projeto existente ou Projeto novo; em seguida o Gateship detecta Git, remote GitHub, branch principal, disponibilidade do container, Claude, Codex, gh, manifesto .gateship/project.json e comandos de verificação do projeto. Para projeto existente, oferecer registrar checkout ou importar owner/repo. Para novo, oferecer criar repositório GitHub com visibilidade e autorização explícitas. Quando o manifesto não existir, gerar apenas uma proposta revisável com comandos detectados, exclusões e riscos; nenhum comando é executado nem arquivo é gravado antes da confirmação. Orientar login interativo preferencial para Claude, Codex e GitHub de modo credential-blind; não capturar tokens na UI ou SQLite. Incluir teste de notificação e uma primeira mudança reversível sugerida, nunca iniciada automaticamente. Manter rota de gerenciamento de projetos, acessibilidade, pt-BR/en-US e retomada após refresh. Não criar Electron, integração Linear/GitLab ou chat interno.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Consolidar cadastro local, importação e criação de projeto em um fluxo guiado único, preservando as operações tipadas existentes. O primeiro passo escolhe Projeto existente ou Projeto novo; em seguida o Gateship detecta Git, remote GitHub, branch principal, disponibilidade do container, Claude, Codex, gh, manifesto .gateship/project.json e comandos de verificação do projeto. Para projeto existente, oferecer registrar checkout ou importar owner/repo. Para novo, oferecer criar repositório GitHub com visibilidade e autorização explícitas. Quando o manifesto não existir, gerar apenas uma proposta revisável com comandos detectados, exclusões e riscos; nenhum comando é executado nem arquivo é gravado antes da confirmação. Orientar login interativo preferencial para Claude, Codex e GitHub de modo credential-blind; não capturar tokens na UI ou SQLite. Incluir teste de notificação e uma primeira mudança reversível sugerida, nunca iniciada automaticamente. Manter rota de gerenciamento de projetos, acessibilidade, pt-BR/en-US e retomada após refresh. Não criar Electron, integração Linear/GitLab ou chat interno.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f23e607b35cfb030b485c41f0b177002b4340c8349d0e4f5dc19098513e4af67",
+    "approvedAt": "2026-09-06T16:04:37.812Z"
+  }
+}
