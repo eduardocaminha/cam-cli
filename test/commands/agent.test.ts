@@ -66,7 +66,7 @@ describe('canonical agent CLI', () => {
 		const result = await executeAgent(['operations']);
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
-			'project.inspect', 'projects.list', 'projects.overview', 'projects.status', 'projects.register',
+			'project.inspect', 'projects.list', 'projects.overview', 'runs.list_all', 'projects.status', 'projects.register',
 			'projects.import', 'projects.create',
 			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
@@ -87,7 +87,7 @@ describe('canonical agent CLI', () => {
 		// Removing one names the registration, never a location on disk.
 		expect(operations.find(({ name }) => name === 'projects.unregister')?.input).toBe('{projectId}');
 		for (const operation of operations.filter(({ name }) =>
-			!['project.inspect', 'projects.list', 'projects.overview', 'projects.status', 'projects.register', 'projects.import', 'projects.create']
+			!['project.inspect', 'projects.list', 'projects.overview', 'runs.list_all', 'projects.status', 'projects.register', 'projects.import', 'projects.create']
 				.includes(name))) {
 			expect(operation.input).toContain('projectId');
 		}
