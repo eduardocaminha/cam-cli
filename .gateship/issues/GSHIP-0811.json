@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-811",
+  "title": "Adicionar Filas ao Control Center",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:22.934Z",
+  "updatedAt": "2026-09-06T16:04:22.934Z",
+  "description": "Adicionar /overview/queues e incluir Filas na navegação local da Central. Exibir uma linha por projeto com encadeamento ligado/desligado, estado atual, issue em execução, próxima issue, quantidade planejada, última entrega e eventual motivo de pausa. Ao expandir uma linha, mostrar a sequência aprovada na mesma ordem do dispatcher, usando estados compactos e links para Trabalho ou a run. A tela é observacional na primeira versão: ligar encadeamento, aprovar, reordenar ou abandonar continua nas superfícies contextuais existentes. Destacar apenas pausas que realmente requerem o operador; espera de provider e retomadas automáticas permanecem estados informativos. Preservar dados durante atualização, falhas parciais, filtros na URL e seleção de projeto. Não criar Kanban, drag and drop, timeline animada ou entidade de lote. Atualizar localização, acessibilidade, responsividade e testes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar /overview/queues e incluir Filas na navegação local da Central. Exibir uma linha por projeto com encadeamento ligado/desligado, estado atual, issue em execução, próxima issue, quantidade planejada, última entrega e eventual motivo de pausa. Ao expandir uma linha, mostrar a sequência aprovada na mesma ordem do dispatcher, usando estados compactos e links para Trabalho ou a run. A tela é observacional na primeira versão: ligar encadeamento, aprovar, reordenar ou abandonar continua nas superfícies contextuais existentes. Destacar apenas pausas que realmente requerem o operador; espera de provider e retomadas automáticas permanecem estados informativos. Preservar dados durante atualização, falhas parciais, filtros na URL e seleção de projeto. Não criar Kanban, drag and drop, timeline animada ou entidade de lote. Atualizar localização, acessibilidade, responsividade e testes.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "cc322171a9b2bc6c795fba180a287e50e77b105fafcdec26959a86e6975edb3f",
+    "approvedAt": "2026-09-06T16:04:22.934Z"
+  }
+}
