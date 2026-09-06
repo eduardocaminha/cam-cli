@@ -1,10 +1,11 @@
 // webui/src/screens/settings.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { AppProps } from '../app-props.ts';
-import { MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS, emptyModelSettings } from '../client.ts';
 import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
+import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
+import { CardFooter } from '../components/ui/card.tsx';
 import { FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
@@ -12,10 +13,9 @@ import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
-import { useState } from 'react';
-import type { ProviderPanelProps } from './runs.tsx';
 import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
+import type { ProviderPanelProps } from './runs.tsx';
 import { fieldReader, formatCount, formatExactPercent, formatRunTimestamp, formatUsageTime, providerDescription, usageWindowLabel, usageWindowVariant } from './runs.tsx';
 
 export function ProviderUsageWindowRow({ window, locale, catalog }: { window: ProviderUsageWindowView; locale: Locale; catalog: SettingsCatalog }): React.ReactElement {
@@ -408,11 +408,6 @@ export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'provi
 			title={props.catalog.providers.title}
 	>
 		<AgentSourceNotice catalog={props.catalog} source={props.providerSource} />
-		{props.providerSource === 'project' ? (
-			<button className={cn(BUTTON_CLASS, 'self-start')} disabled={props.pending} onClick={props.onResetProvider} type="button">
-				{props.catalog.agentSources.resetProvider}
-			</button>
-		) : null}
 		<ul className="flex flex-col gap-3">
 				{props.providers.map((provider) => (
 					<ProviderRow
@@ -429,8 +424,13 @@ export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'provi
 						provider={provider}
 						selectedProvider={props.selectedProvider}
 					/>
-				))}
-			</ul>
+			))}
+		</ul>
+		{props.providerSource === 'project' ? (
+			<CardFooter><button className={BUTTON_CLASS} disabled={props.pending} onClick={props.onResetProvider} type="button">
+				{props.catalog.agentSources.resetProvider}
+			</button></CardFooter>
+		) : null}
 		</ContextPanel>
 	);
 }
@@ -578,15 +578,17 @@ export function ModelSettingsPanel({
 						providerId={providerId}
 					/>
 				))}
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
-					{catalog.models.save}
-				</button>
+				<CardFooter>
+					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+						{catalog.models.save}
+					</button>
+					{modelSettingsSource === 'project' ? (
+						<button className={BUTTON_CLASS} disabled={pending} onClick={onResetModelSettings} type="button">
+							{catalog.agentSources.resetModels}
+						</button>
+					) : null}
+				</CardFooter>
 			</FormStack>
-		{modelSettingsSource === 'project' ? (
-			<button className={cn(BUTTON_CLASS, 'self-start')} disabled={pending} onClick={onResetModelSettings} type="button">
-				{catalog.agentSources.resetModels}
-			</button>
-		) : null}
 		</ContextPanel>
 	);
 }
@@ -623,9 +625,9 @@ export function AgentDefaultsPanel({
 				{MODEL_PROVIDER_IDS.map((providerId) => (
 					<ModelProviderFields catalog={catalog} key={providerId} modelSettings={agentDefaults.modelSettings} providerId={providerId} />
 				))}
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.agentDefaults.save}
-				</button>
+				</button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
@@ -1021,9 +1023,9 @@ export function ProjectBriefPanel({
 						/>
 					</label>
 				))}
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.brief.save}
-				</button>
+				</button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
@@ -1117,9 +1119,9 @@ export function OperatorProfilePanel({
 						{catalog.operator.timezoneGuidance}
 					</span>
 				</label>
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.operator.save}
-				</button>
+				</button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
@@ -1188,9 +1190,9 @@ export function DiagnosticSchedulePanel({
 
 				</p>
 				<p className="text-muted-foreground text-xs">{catalog.diagnostics.guidance}</p>
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.diagnostics.save}
-				</button>
+				</button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);

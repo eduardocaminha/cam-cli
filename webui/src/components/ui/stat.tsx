@@ -33,7 +33,7 @@ export function Stat({
 		>
 			{/* Label first, value under it (dashboard-01's section cards): the
 			 * eye scans labels across a row, then drops to the number it wants. */}
-			<p className="text-muted-foreground text-xs">{label}</p>
+			<p className="font-mono text-muted-foreground text-xs">{label}</p>
 			<p className="mt-1.5 font-medium font-mono text-2xl tabular-nums">{value}</p>
 			{hint === undefined ? null : <p className="mt-1.5 text-muted-foreground text-xs">{hint}</p>}
 		</div>

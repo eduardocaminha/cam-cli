@@ -11,16 +11,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
 	App,
-	handleProjectShortcut,
 	type AppProps,
+	handleProjectShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
-import { PanelToggleGlyph, ShellRail, type PanelKeyEvent } from '../../webui/src/screens/shell.tsx';
 import {
+	AGENT_DEFAULTS_PATH,
 	abandonIssue,
 	approveIssue,
-	AGENT_DEFAULTS_PATH,
 	BRIEF_PATH,
 	CHAIN_RUNS_PATH,
 	type ChainPauseReason,
@@ -41,10 +40,10 @@ import {
 	EXECUTOR_HANDOFF_PATH,
 	type ExecutorHandoffSettingView,
 	emptyDiagnostics,
-	fetchAgentDefaults,
 	emptyModelSettings,
 	emptyNotificationChannels,
 	emptySelfUpdate,
+	fetchAgentDefaults,
 	fetchBacklog,
 	fetchBrief,
 	fetchChainRuns,
@@ -87,8 +86,8 @@ import {
 	resetModelSettings,
 	resetSelectedProvider,
 	SNAPSHOT_PATH,
-	saveBrief,
 	saveAgentDefaults,
+	saveBrief,
 	saveChainRuns,
 	saveDiagnosticSchedule,
 	saveExecutorHandoff,
@@ -105,9 +104,10 @@ import {
 	UPDATE_PATH,
 	unregisterProject,
 } from '../../webui/src/client.ts';
+import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
 import {
-	createLiveEdgeController,
 	canReturnToLiveEdge,
+	createLiveEdgeController,
 	isAtLiveEdge,
 	LIVE_EDGE_TOLERANCE_PX,
 	liveEdgeSession,
@@ -121,23 +121,22 @@ import {
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
 import {
-	PROJECT_SELECTION_STORAGE_KEY,
-	reconciledProjectSelection,
-	readProjectSelection,
-	writeProjectSelection,
-} from '../../webui/src/project-selection.ts';
-import { routeSelection } from '../../webui/src/routes.ts';
-import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
-import {
-	createOperationalRefreshCoalescer,
-	createOperationalSnapshotCycle,
 	beginOperationalReads,
 	beginOperationalRefresh,
+	createOperationalRefreshCoalescer,
+	createOperationalSnapshotCycle,
 	pendingOperationalReads,
 	preserveGlobalOperationalLoaded,
 	readOperationalPart,
 	settleOperationalRead,
 } from '../../webui/src/operational-snapshot.ts';
+import {
+	PROJECT_SELECTION_STORAGE_KEY,
+	readProjectSelection,
+	reconciledProjectSelection,
+	writeProjectSelection,
+} from '../../webui/src/project-selection.ts';
+import { routeSelection } from '../../webui/src/routes.ts';
 import {
 	actionsFor,
 	aggregateRunCosts,
@@ -152,6 +151,7 @@ import {
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
+import { type PanelKeyEvent, PanelToggleGlyph, ShellRail } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -1982,6 +1982,8 @@ describe('work surface', () => {
 		// Abandoning needs a justification before its own confirmation unlocks.
 		expect(card).toContain('Reason for abandonment');
 		expect(buttonIsEnabled(card, 'Abandon')).toBe(false);
+		expect([...card.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
+		expect(card.lastIndexOf('data-slot="card-footer"')).toBe(card.lastIndexOf('data-slot="'));
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
 		expect(card).not.toContain('Evidence captured when specified');
@@ -2153,6 +2155,16 @@ describe('work surface', () => {
 		expect(buttonIsEnabled(html, 'Promote')).toBe(true);
 		expect(html).toContain('Resolved (1)');
 		expect(html).toContain('GSHIP-900');
+		expect(panel(workPage(), 'Gateship Diagnostics')).not.toContain('data-slot="card-footer"');
+		const nextPanel = html.indexOf('>Derived proposals</h2>');
+		const diagnosticsCard = html.slice(
+			html.indexOf('>Gateship Diagnostics</h2>'),
+			html.lastIndexOf('<details', nextPanel),
+		);
+		expect([...diagnosticsCard.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
+		expect(diagnosticsCard.indexOf('data-slot="card-footer"')).toBeGreaterThan(
+			diagnosticsCard.lastIndexOf('GSHIP-900'),
+		);
 		expect(html).toContain('+3 not shown.');
 		expect(html).toContain('Local history: 1 promoted, 1 dismissed');
 		expect(html).toContain('Dismissal does not mean false positive');
@@ -3076,10 +3088,18 @@ describe('settings surface', () => {
 		expect(inherited).not.toContain('Reset models to global defaults');
 
 		const override = settingsPage({ providerSource: 'project', modelSettingsSource: 'project' });
-		expect(panel(override, 'Local agents')).toContain('Customized for this project.');
+		const providerSettings = panel(override, 'Local agents');
+		expect(providerSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset provider to global default')).toBe(true);
-		expect(panel(override, 'Model and effort by role')).toContain('Customized for this project.');
+		expect(providerSettings.lastIndexOf('data-slot="card-footer"')).toBe(
+			providerSettings.lastIndexOf('data-slot="'),
+		);
+		const modelSettings = panel(override, 'Model and effort by role');
+		expect(modelSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset models to global defaults')).toBe(true);
+		const footer = modelSettings.slice(modelSettings.indexOf('data-slot="card-footer"'));
+		expect(footer).toContain('>Save models</button>');
+		expect(footer).toContain('>Reset models to global defaults</button>');
 	});
 
 	test('an empty brief remains editable', () => {
@@ -3661,6 +3681,9 @@ describe('operator shell', () => {
 		});
 		expect(creating).toContain('Creating the repository and pushing main');
 		expect(creating).not.toContain('Cloning the repository');
+		expect(creating.indexOf('Creating the repository and pushing main')).toBeLessThan(
+			creating.indexOf('data-slot="card-footer"', creating.indexOf('Creating the repository and pushing main')),
+		);
 	});
 
 	// The other onboarding write is a GitHub repository, never a
@@ -3701,6 +3724,9 @@ describe('operator shell', () => {
 		expect(buttonIsEnabled(importing, 'Import repository')).toBe(false);
 		expect(importing).toContain('Cloning the repository');
 		expect(importing).not.toContain('Creating the repository and pushing main');
+		expect(importing.indexOf('Cloning the repository')).toBeLessThan(
+			importing.indexOf('data-slot="card-footer"', importing.indexOf('Cloning the repository')),
+		);
 		// A typed refusal reaches the operator on the surface that asked for it.
 		expect(renderAt('/projects', {
 			status: 'That repository is already a checkout of a different one.',

@@ -1,12 +1,12 @@
 // webui/src/screens/work-screen.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { DiagnosticFindingView, DiagnosticsView, IssueReviewDraft } from '../client.ts';
-import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
+import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Card, CardAction, CardDescription, CardDisclosure, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 import { FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -15,15 +15,14 @@ import { Separator } from '../components/ui/separator.tsx';
 import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
-import { LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, WorkCatalog } from '../locale.ts';
-import { actionsFor, activeRunIssueId } from '../run-view.ts';
-import { SurfaceColumn } from './surface-column.tsx';
+import { LOCALE_CATALOG } from '../locale.ts';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
-import { useState } from 'react';
+import { actionsFor, activeRunIssueId } from '../run-view.ts';
 import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
-import { draftChanged } from './runs-screen.tsx';
 import { fieldReader, formatCount } from './runs.tsx';
+import { draftChanged } from './runs-screen.tsx';
+import { SurfaceColumn } from './surface-column.tsx';
 
 export function BacklogPanel({
 	backlog,
@@ -76,11 +75,11 @@ export function BacklogPanel({
 						</li>
 					))}
 				</ul>
-				<div className="flex justify-end">
+				<CardFooter>
 					<Button disabled={!canStart} onClick={onStart} type="button">
 						{catalog.start}
 					</Button>
-				</div>
+				</CardFooter>
 			</div>
 		</ContextPanel>
 	);
@@ -125,9 +124,11 @@ export function IssueIntakePanel({
 						required
 					/>
 				</FormField>
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter>
+					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.intake.create}
 				</button>
+				</CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
@@ -179,9 +180,11 @@ export function IssueSpecifyPanel({
 						required
 					/>
 				</FormField>
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+				<CardFooter>
+					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.specification.submit}
 				</button>
+				</CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
@@ -245,17 +248,10 @@ export function IssueReviewForm({
 					</ul>
 				</div>
 			)}
-			<button className={cn(BUTTON_CLASS, 'self-end')} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmPersisted}</span>
 			</label>
-			<button
-				className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
-				disabled={pending || dirty || !confirmed}
-				onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
-				type="button"
-			>{catalog.review.approve}</button>
 			<FormField className="text-sm" htmlFor="abandon-reason">
 				<span className="font-medium">{catalog.review.abandonReason}</span>
 				<Textarea className="min-h-20" id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
@@ -264,15 +260,24 @@ export function IssueReviewForm({
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
 			</label>
-			<button
-				className={cn(BUTTON_CLASS, 'self-end')}
-				disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
-				onClick={() => {
-					setAbandonConfirmed(false);
-					onAbandonIssue(draft.id, abandonReason.trim());
-				}}
-				type="button"
-			>{catalog.review.abandon}</button>
+			<CardFooter>
+				<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
+				<button
+					className={PRIMARY_BUTTON_CLASS}
+					disabled={pending || dirty || !confirmed}
+					onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
+					type="button"
+				>{catalog.review.approve}</button>
+				<button
+					className={BUTTON_CLASS}
+					disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
+					onClick={() => {
+						setAbandonConfirmed(false);
+						onAbandonIssue(draft.id, abandonReason.trim());
+					}}
+					type="button"
+				>{catalog.review.abandon}</button>
+			</CardFooter>
 		</FormStack>
 	);
 }
@@ -371,6 +376,36 @@ export function DiagnosticScanSummary({
 			</div>
 			{scan.error === null ? null : <p className="text-destructive-foreground">{scan.error}</p>}
 		</div>
+	);
+}
+
+function DiagnosticsFooter({
+	active,
+	analyzer,
+	pending,
+	scan,
+	catalog,
+	onStartDiagnostic,
+	onCancelDiagnostic,
+}: {
+	active: boolean;
+	analyzer: DiagnosticsView['analyzers'][number] | undefined;
+	pending: boolean;
+	scan: DiagnosticsView['scan'];
+	catalog: WorkCatalog['diagnostics'];
+	onStartDiagnostic: AppProps['onStartDiagnostic'];
+	onCancelDiagnostic: AppProps['onCancelDiagnostic'];
+}): React.ReactElement | null {
+	if (!active && analyzer === undefined) return null;
+	return (
+		<CardFooter>
+			{!active && analyzer !== undefined ? (
+				<ActionButton enabled={!pending} label={catalog.runNow} onClick={() => onStartDiagnostic(analyzer.id)} />
+			) : null}
+			{active && scan !== null ? (
+				<ActionButton enabled={!pending} label={catalog.cancel} onClick={() => onCancelDiagnostic(scan.id)} />
+			) : null}
+		</CardFooter>
 	);
 }
 
@@ -582,22 +617,6 @@ export function DiagnosticsPanel({
 					)}
 				</div>
 				<DiagnosticScanSummary catalog={catalog.diagnostics} scan={scan} />
-				<div className="flex flex-wrap gap-2">
-					{!active && analyzer !== undefined ? (
-						<ActionButton
-							enabled={!pending}
-							label={catalog.diagnostics.runNow}
-							onClick={() => onStartDiagnostic(analyzer.id)}
-						/>
-					) : null}
-					{active && scan !== null ? (
-						<ActionButton
-							enabled={!pending}
-							label={catalog.diagnostics.cancel}
-							onClick={() => onCancelDiagnostic(scan.id)}
-						/>
-					) : null}
-				</div>
 				{diagnostics.workspaceNotices.map((notice) => (
 					<p className="text-warning-foreground text-sm" key={notice}>{notice}</p>
 				))}
@@ -616,6 +635,15 @@ export function DiagnosticsPanel({
 					findings={diagnostics.resolvedFindings}
 					locale={locale}
 					omittedCount={diagnostics.resolvedFindingsOmittedCount}
+				/>
+				<DiagnosticsFooter
+					active={active}
+					analyzer={analyzer}
+					catalog={catalog.diagnostics}
+					onCancelDiagnostic={onCancelDiagnostic}
+					onStartDiagnostic={onStartDiagnostic}
+					pending={pending}
+					scan={scan}
 				/>
 			</CardPanel>
 		</CardDisclosure>

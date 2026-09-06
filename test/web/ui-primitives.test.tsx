@@ -13,6 +13,7 @@ import { AttentionCard } from '../../webui/src/components/ui/attention-card.tsx'
 import { Badge } from '../../webui/src/components/ui/badge.tsx';
 import {
 	CardDisclosure,
+	CardFooter,
 	CardPanel,
 	CardSummary,
 	CardTitle,
@@ -28,6 +29,7 @@ import {
 	TabsTab,
 } from '../../webui/src/components/ui/tabs.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
+import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
 
 describe('ui primitives', () => {
 	test('card composition owns its standard, compact, split and form rhythm', () => {
@@ -63,6 +65,22 @@ describe('ui primitives', () => {
 		expect(html).toContain('duas issues');
 		expect(html).not.toContain('open=""');
 		expect(renderToStaticMarkup(<CardDisclosure open />)).toContain('open=""');
+	});
+
+	test('card titles and metric labels use mono, and the footer exists only with actions', () => {
+		const title = renderToStaticMarkup(<CardTitle>Run</CardTitle>);
+		const footer = renderToStaticMarkup(<CardFooter><button type="button">Save</button></CardFooter>);
+		const context = renderToStaticMarkup(
+			<ContextPanel description="Supporting context" title="Context"><form><CardFooter><button type="submit">Save</button></CardFooter></form></ContextPanel>,
+		);
+		expect(title).toContain('font-mono');
+		expect(footer).toContain('data-slot="card-footer"');
+		expect(footer).toContain('border-t');
+		expect(footer).toContain('bg-muted');
+		expect(renderToStaticMarkup(<CardPanel>read only</CardPanel>)).not.toContain('card-footer');
+		expect(context).not.toContain('data-slot="card-frame-description"');
+		expect(context).toContain('Supporting context');
+		expect(context).toContain('<button type="submit">Save</button>');
 	});
 
 	test('progress states its position to assistive tech and to the eye', () => {
