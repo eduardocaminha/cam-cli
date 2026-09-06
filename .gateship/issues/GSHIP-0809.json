@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-809",
+  "title": "Adicionar Execuções globais ao Control Center",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:04:09.523Z",
+  "updatedAt": "2026-09-06T16:04:09.523Z",
+  "description": "Adicionar a rota /overview/runs e navegação local da Central contendo Agora e Execuções, sem transformar os itens em novas entradas principais da sidebar. Renderizar uma tabela paginada baseada no read model multiprojeto, com filtros refletidos na URL por projeto, estado, provider e período, além de busca por runId ou issueId. Priorizar estado, issue, projeto, duração e entrega; mostrar provider/modelo e custo apenas onde couber ou no detalhe. PR deve ser linkável, CI deve indicar estado verificável e merge confirmado deve usar o sinal roxo já adotado. Uma linha abre uma URL profunda /projects/:projectId/runs/:runId; adicionar suporte a essa rota sem duplicar o estado da run, reutilizando o detalhe existente. Manter os dados anteriores durante mudanças de filtro e refresh. Não mostrar outputs ou eventos brutos na tabela; eles permanecem no detalhe avançado. Atualizar cliente, rotas, localização, acessibilidade e testes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Adicionar a rota /overview/runs e navegação local da Central contendo Agora e Execuções, sem transformar os itens em novas entradas principais da sidebar. Renderizar uma tabela paginada baseada no read model multiprojeto, com filtros refletidos na URL por projeto, estado, provider e período, além de busca por runId ou issueId. Priorizar estado, issue, projeto, duração e entrega; mostrar provider/modelo e custo apenas onde couber ou no detalhe. PR deve ser linkável, CI deve indicar estado verificável e merge confirmado deve usar o sinal roxo já adotado. Uma linha abre uma URL profunda /projects/:projectId/runs/:runId; adicionar suporte a essa rota sem duplicar o estado da run, reutilizando o detalhe existente. Manter os dados anteriores durante mudanças de filtro e refresh. Não mostrar outputs ou eventos brutos na tabela; eles permanecem no detalhe avançado. Atualizar cliente, rotas, localização, acessibilidade e testes.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "0e88d16ccf546177891062024022c7c7a8deee664c729effc54f6535db37ea19",
+    "approvedAt": "2026-09-06T16:04:09.523Z"
+  }
+}
