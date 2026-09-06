@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-05, against the `v0.432.0` tag.
+> Updated: 2026-09-06, against the `v0.435.0` tag.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -39,9 +39,16 @@ separate database service, or conversational backend. The container is the
 isolation boundary; provider and GitHub authentication happens inside it and
 persists on the single state volume.
 
+The multiproject control center is organized as Agora at `/overview`,
+Execuções at `/overview/runs`, Filas at `/overview/queues`, and Insights at
+`/overview/insights`. `/projects` is project management; project context lives
+at `/projects/:projectId/{runs,work,settings}` and global configuration at
+`/settings`. Project selection persists when the operator visits the Control
+center and remains navigation context rather than an implicit API scope.
+
 ## Current evidence
 
-By `v0.432.0`, Gateship has delivered project-declared multistack verification
+By `v0.435.0`, Gateship has delivered project-declared multistack verification
 and a JavaScript/Python proof; the minimum environment for project commands;
 protected-main-compatible intake; merge without an auto-merge dependency;
 global defaults and per-project overrides with per-run telemetry; typed
@@ -55,9 +62,10 @@ Project-defined commands run with the shared minimum child-environment
 allowlist rather than the service's ambient environment. Provider, GitHub CLI,
 update, and notification environments remain independently owned.
 
-The `v0.432.0` closure had an empty backlog, no active run, and no attention
-requests. That is a point-in-time observation, not an approved queue or a
-standing authorization to execute more work.
+The control plane reports independent operational metrics and evidence types;
+it does not collapse them into a composite score. Autonomous adaptation must
+preserve the approved objective, behavior, risk and verification. A change to
+any of those dimensions returns to the operator as a proposal.
 
 Use the tag, commit graph, and the running service's `/api/snapshot` as factual
 evidence for an installed version. Git history and GitHub Releases own older
@@ -78,6 +86,9 @@ duplicate issue-by-issue history.
   review session mechanically read-only.
 - Keep same-project runs serial. Parallelism belongs only across independent
   projects.
+- Keep the control center focused on project state, executions, queues and
+  independent insights. Do not add a global agent page, generic memory,
+  generic Kanban, primary event explorer or AI-decided merge.
 - Keep one specification and approval contract whose depth scales with delivery
   risk. Shipped AI behavior, sensitive data, security boundaries, or
   irreversible effects require proportionate evaluation cases, limits,
@@ -111,3 +122,7 @@ operator-approved specification.
 Comparable projects and tools, adopted and rejected decisions, and items held
 pending evidence live in `docs/product-radar.md`. The radar is conditional on
 evidence, approves nothing, and is never execution authorization.
+
+The radar records Warren only as a reference for operational density and Aperant
+only as a reference for onboarding and distribution. Third-party names do not
+enter the interface or catalogs.

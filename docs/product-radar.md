@@ -1,6 +1,6 @@
 # Product radar
 
-> Reviewed: 2026-08-23 against Gateship v0.342.0.
+> Reviewed: 2026-09-06 against Gateship v0.435.0.
 
 This file records product decisions taken while looking at comparable projects.
 It keeps competitive detail out of the durable checkpoint in `HANDOFF.md`.
@@ -121,6 +121,18 @@ already integrated as an advisory analyzer, pinned and run with telemetry
 disabled. It stays advisory: it may produce a reviewable proposal and never
 approves, starts, fixes, or blocks work.
 
+### Control center references
+
+These references remain competitive context only. They do not enter the
+interface, catalogs or operator workflow:
+
+- **Operational density.** Warren is a reference for the density of an
+  operational control plane. This does not approve its self-improvement model
+  or a second service architecture.
+- **Onboarding and distribution.** Aperant is a reference for reducing the
+  friction of getting a project into the system and distributing the runtime.
+  The reference does not authorize a broad adapter catalog or hosted service.
+
 ## Reject in the current design
 
 Rejecting these is a design decision, not a quality judgment of the sources.
@@ -177,3 +189,6 @@ Rejecting these is a design decision, not a quality judgment of the sources.
   more agent CLIs. Gateship supports the two subscription-backed providers it
   can authenticate credential-blind and verify; each additional adapter is
   surface without evidence.
+- **A global agent page or generic memory.** The control center organizes
+  projects, runs, queues and independent insights; it does not become an agent
+  directory, event explorer or generic memory store.
