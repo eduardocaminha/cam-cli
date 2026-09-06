@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-806",
+  "title": "Formalizar a entrega do control plane multiprojeto",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-06T16:03:59.193Z",
+  "updatedAt": "2026-09-06T16:03:59.193Z",
+  "description": "Criar docs/control-plane-delivery.md como plano canônico e atualizar docs/positioning.md, docs/product-radar.md e HANDOFF.md para a realidade da v0.435.0. Registrar a arquitetura da Central de controle com Agora em /overview, Execuções em /overview/runs, Filas em /overview/queues e Insights em /overview/insights; manter /projects apenas para gerenciamento, /projects/:projectId/{runs,work,settings} para o contexto do projeto e /settings global. Documentar que a seleção de projeto persiste ao visitar a Central. Formalizar métricas sem score composto, o envelope de adaptação autônoma que preserva objetivo, comportamento, risco e verificação aprovados, execução serial por repositório e paralela apenas entre projetos. Registrar como referências competitivas, apenas no radar, a densidade operacional do Warren e o onboarding/distribuição do Aperant; nomes de terceiros não entram na interface nem nos catálogos. Rejeitar terminal web, Kanban genérico, página global de agentes, event explorer principal, merge decidido por IA, memória genérica, paralelismo no mesmo repositório e novos daemons ou bancos. Esta issue altera somente documentação e não aprova as entregas posteriores por conta própria.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Criar docs/control-plane-delivery.md como plano canônico e atualizar docs/positioning.md, docs/product-radar.md e HANDOFF.md para a realidade da v0.435.0. Registrar a arquitetura da Central de controle com Agora em /overview, Execuções em /overview/runs, Filas em /overview/queues e Insights em /overview/insights; manter /projects apenas para gerenciamento, /projects/:projectId/{runs,work,settings} para o contexto do projeto e /settings global. Documentar que a seleção de projeto persiste ao visitar a Central. Formalizar métricas sem score composto, o envelope de adaptação autônoma que preserva objetivo, comportamento, risco e verificação aprovados, execução serial por repositório e paralela apenas entre projetos. Registrar como referências competitivas, apenas no radar, a densidade operacional do Warren e o onboarding/distribuição do Aperant; nomes de terceiros não entram na interface nem nos catálogos. Rejeitar terminal web, Kanban genérico, página global de agentes, event explorer principal, merge decidido por IA, memória genérica, paralelismo no mesmo repositório e novos daemons ou bancos. Esta issue altera somente documentação e não aprova as entregas posteriores por conta própria.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "26be513753bcd58226b081dc02d0b0a2ab4d763178dad12245f4d8bc224b091a",
+    "approvedAt": "2026-09-06T16:03:59.193Z"
+  }
+}
