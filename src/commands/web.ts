@@ -45,7 +45,6 @@ import {
 	ReactDoctorAdapter,
 } from '../runtime/diagnostics.ts';
 import { checkGitIdentity, ensureGitIdentity, type GitIdentityResult } from '../runtime/git-identity.ts';
-import { resolveProjectCheckout } from '../runtime/project-checkout.ts';
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
@@ -55,7 +54,6 @@ import {
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
-import { isTerminalRunState } from '../runtime/run-state.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
 	abandonOperatorIssue,
@@ -69,12 +67,12 @@ import {
 	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
 import {
+	type AgentDefaults,
 	changedModelSlots,
 	emptyModelSettings,
 	isModelProvider,
 	isModelRole,
 	type ModelProbeResult,
-	type AgentDefaults,
 	type ModelRole,
 	type ModelSettings,
 	type ModelSlot,
@@ -85,6 +83,7 @@ import {
 	OPERATOR_PROFILE_LIMITS,
 	type OperatorProfile,
 } from '../runtime/operator-profile.ts';
+import { resolveProjectCheckout } from '../runtime/project-checkout.ts';
 import {
 	createProject,
 	type ProjectCreateCommandRunner,
@@ -109,14 +108,14 @@ import {
 	resolveGateshipHome,
 } from '../runtime/project-registry.ts';
 import {
+	type ManagedProjectRuntime,
 	ProjectRuntimeLookupError,
 	ProjectRuntimeManager,
-	type ManagedProjectRuntime,
 } from '../runtime/project-runtime-manager.ts';
 import {
+	type OverviewWindow,
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
-	type OverviewWindow,
 } from '../runtime/project-status.ts';
 import {
 	ProjectUnregistrationError,
@@ -136,6 +135,7 @@ import {
 	writeResendApiKey,
 	writeResendSettings,
 } from '../runtime/remote-notifier.ts';
+import { parseRunOverviewFilters, readRunOverview } from '../runtime/run-overview.ts';
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	type ChainPauseView,
@@ -144,6 +144,7 @@ import {
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
+import { isTerminalRunState } from '../runtime/run-state.ts';
 import {
 	PROJECT_BRIEF_LIMITS,
 	type ProjectBrief,
@@ -2821,6 +2822,20 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(readProjectOperationalOverview(
 					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
 				));
+			},
+			'/api/overview/runs': (request) => {
+				try {
+					return Response.json(readRunOverview(
+						projectRegistry.list(projectRoot),
+						parseRunOverviewFilters(new URL(request.url).searchParams),
+					));
+				} catch (error) {
+					return Response.json({
+						ok: false,
+						code: 'invalid-query',
+						message: error instanceof Error ? error.message : 'Invalid query.',
+					}, { status: 400 });
+				}
 			},
 			'/api/projects': {
 				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),

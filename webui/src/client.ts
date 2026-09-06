@@ -8,6 +8,9 @@
 import type {
 	PlannableIssue,
 	ProviderUsageView,
+	PullRequestDeliveryView,
+	RunCostView,
+	RunEvaluationView,
 	RunEventView,
 	RunProviderWaitView,
 	RunView,
@@ -34,6 +37,7 @@ export const EXECUTOR_HANDOFF_PATH = '/api/executor-handoff';
 export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
 export const OVERVIEW_PATH = '/api/overview';
+export const OVERVIEW_RUNS_PATH = '/api/overview/runs';
 
 /**
  * Which project a run- or issue-facing read or write names (GSHIP-707,
@@ -223,6 +227,24 @@ export interface OverviewRunView {
 	createdAt: string;
 	updatedAt: string;
 	providerId: 'claude' | 'codex';
+}
+
+export interface OverviewRunsPageView {
+	runs: Array<OverviewRunView & {
+		projectId: string;
+		projectName: string;
+		repository?: string;
+		runId: string;
+		roles: RunEvaluationView['roles'];
+		evaluation: RunEvaluationView;
+		cost: RunCostView;
+		coverage: { verified: boolean; reviewed: boolean; fullVerification: boolean };
+		pullRequest: PullRequestDeliveryView | null;
+		ci: { status: string } | null;
+		merge: { status: 'merged' } | null;
+	}>;
+	page: { limit: number; offset: number; returned: number; total: number };
+	errors: Array<{ projectId: string; projectName: string; code: 'project-unavailable'; message: string }>;
 }
 
 export interface ProjectOverviewView {
@@ -532,6 +554,30 @@ export async function fetchOverview(signal?: AbortSignal): Promise<ProjectOperat
 	const overview = overviewRecord(await readJson<unknown>(response, 'Overview'));
 	if (overview === null) throw new Error('Gateship returned an unreadable overview.');
 	return overview;
+}
+
+export interface OverviewRunsQuery {
+	limit?: number;
+	offset?: number;
+	projectId?: string;
+	state?: RunView['state'];
+	providerId?: 'claude' | 'codex';
+}
+
+export async function fetchOverviewRuns(
+	query: OverviewRunsQuery = {}, signal?: AbortSignal,
+): Promise<OverviewRunsPageView> {
+	const params = new URLSearchParams();
+	for (const [key, value] of Object.entries(query)) {
+		if (value !== undefined) params.set(key, String(value));
+	}
+	const response = await fetch(
+		`${OVERVIEW_RUNS_PATH}${params.toString().length === 0 ? '' : `?${params}`}`,
+		{ signal },
+	);
+	const page = await readJson<unknown>(response, 'Overview runs');
+	if (page === null || typeof page !== 'object') throw new Error('Gateship returned an unreadable runs overview.');
+	return page as OverviewRunsPageView;
 }
 
 interface ProjectCommandPayload extends CommandPayload {
